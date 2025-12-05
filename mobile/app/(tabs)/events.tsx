@@ -34,6 +34,12 @@ interface Event {
   image?: string;
   description?: string;
   shareToken: string;
+  isPublic: boolean;
+  isPaid: boolean;
+  ticketPrice?: number;
+  maxGuests?: number;
+  ticketsSold?: number;
+  ticketsRemaining?: number;
   createdBy: {
     _id: string;
     username: string;
@@ -359,7 +365,15 @@ export default function EventsPage() {
         )}
 
         <View style={styles.eventContent}>
-          <Text style={styles.eventTitle}>{event.title}</Text>
+          <View style={styles.eventTitleRow}>
+            <Text style={styles.eventTitle}>{event.title}</Text>
+            {event.isPublic && (
+              <View style={styles.publicBadge}>
+                <Ionicons name="globe-outline" size={14} color="#10b981" />
+                <Text style={styles.publicBadgeText}>PUBLIC</Text>
+              </View>
+            )}
+          </View>
 
           <View style={styles.eventDetail}>
             <Ionicons name="calendar" size={16} color="#a855f7" />
@@ -386,12 +400,22 @@ export default function EventsPage() {
             </View>
           ) : null}
 
-          <View style={styles.eventDetail}>
-            <Ionicons name="people" size={16} color="#a855f7" />
-            <Text style={styles.eventDetailText}>
-              {event.invitedUsers.length} invited
-            </Text>
-          </View>
+          {/* Show ticket stats for public paid events, invited count for private events */}
+          {event.isPublic && event.isPaid ? (
+            <View style={styles.eventDetail}>
+              <Ionicons name="ticket" size={16} color="#a855f7" />
+              <Text style={styles.eventDetailText}>
+                {event.ticketsSold || 0} / {event.maxGuests} tickets sold
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.eventDetail}>
+              <Ionicons name="people" size={16} color="#a855f7" />
+              <Text style={styles.eventDetailText}>
+                {event.invitedUsers.length} invited
+              </Text>
+            </View>
+          )}
 
           <View style={styles.eventActions}>
             <TouchableOpacity
@@ -404,15 +428,18 @@ export default function EventsPage() {
               <Ionicons name="share-social" size={20} color="#a855f7" />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={(e) => {
-                e.stopPropagation();
-                openInviteModal(event);
-              }}
-            >
-              <Ionicons name="person-add" size={20} color="#a855f7" />
-            </TouchableOpacity>
+            {/* Only show invite button for private events */}
+            {!event.isPublic && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  openInviteModal(event);
+                }}
+              >
+                <Ionicons name="person-add" size={20} color="#a855f7" />
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={styles.actionButton}
@@ -820,11 +847,33 @@ const styles = StyleSheet.create({
   eventContent: {
     padding: 16,
   },
+  eventTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
   eventTitle: {
     fontSize: 20,
     fontFamily: Fonts.bold,
     color: "#fff",
-    marginBottom: 12,
+    flex: 1,
+  },
+  publicBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(16, 185, 129, 0.2)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  publicBadgeText: {
+    fontSize: 10,
+    fontFamily: Fonts.bold,
+    color: "#10b981",
+    letterSpacing: 0.5,
   },
   eventDetail: {
     flexDirection: "row",

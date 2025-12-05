@@ -68,7 +68,20 @@ export const getUserEvents = async (req, res) => {
       .populate('invitedUsers', 'username email profilePicture')
       .sort({ date: -1 });
 
-    res.status(200).json({ events });
+    // Add ticket counts for public paid events
+    const eventsWithTicketInfo = await Promise.all(
+      events.map(async (event) => {
+        const eventObj = event.toObject();
+        if (event.isPublic && event.isPaid && event.maxGuests > 0) {
+          const soldTickets = await Ticket.countDocuments({ event: event._id, isValid: true });
+          eventObj.ticketsSold = soldTickets;
+          eventObj.ticketsRemaining = event.maxGuests - soldTickets;
+        }
+        return eventObj;
+      })
+    );
+
+    res.status(200).json({ events: eventsWithTicketInfo });
   } catch (error) {
     console.error("Get user events error:", error);
     res.status(500).json({ message: "Error fetching events", error: error.message });
@@ -90,8 +103,15 @@ export const getEventById = async (req, res) => {
     }
 
     // Check if user has access to this event
-    const hasAccess = event.createdBy._id.toString() === userId ||
-                      event.invitedUsers.some(user => user._id.toString() === userId);
+    // Access granted if: creator, invited user, or has a valid ticket
+    const isCreator = event.createdBy._id.toString() === userId;
+    const isInvited = event.invitedUsers.some(user => user._id.toString() === userId);
+
+    // Check if user has a valid ticket for this event
+    const userTicket = await Ticket.findOne({ event: eventId, user: userId, isValid: true });
+    const hasTicket = !!userTicket;
+
+    const hasAccess = isCreator || isInvited || hasTicket;
 
     if (!hasAccess) {
       return res.status(403).json({ message: "You don't have access to this event" });
@@ -312,6 +332,7 @@ export const joinEventByShareLink = async (req, res) => {
 export const getPublicEvents = async (req, res) => {
   try {
     const { limit = 20 } = req.query;
+    const userId = req.user.id;
 
     const events = await Event.find({
       isPublic: true,
@@ -322,15 +343,26 @@ export const getPublicEvents = async (req, res) => {
       .sort({ date: 1 })
       .limit(parseInt(limit));
 
-    // Get ticket counts for paid events
+    // Get ticket counts and check if user has purchased
     const eventsWithTicketInfo = await Promise.all(
       events.map(async (event) => {
         const eventObj = event.toObject();
+
+        // Check if current user created this event
+        eventObj.isCreator = event.createdBy._id.toString() === userId;
+
         if (event.isPaid && event.maxGuests > 0) {
           const soldTickets = await Ticket.countDocuments({ event: event._id, isValid: true });
           eventObj.ticketsSold = soldTickets;
           eventObj.ticketsRemaining = event.maxGuests - soldTickets;
+
+          // Check if current user has already purchased a ticket
+          const userTicket = await Ticket.findOne({ event: event._id, user: userId, isValid: true });
+          eventObj.userHasPurchased = !!userTicket;
+        } else {
+          eventObj.userHasPurchased = false;
         }
+
         return eventObj;
       })
     );

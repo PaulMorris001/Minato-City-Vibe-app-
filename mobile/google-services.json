@@ -1,0 +1,9 @@
+{
+  "installed": {
+    "client_id": "80317886238-bqe4qmih1kktoghl4lvdfrp86hjf3mji.apps.googleusercontent.com",
+    "project_id": "nightvibe-480320",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
+  }
+}

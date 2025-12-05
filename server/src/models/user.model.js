@@ -3,7 +3,11 @@ import mongoose from "mongoose";
 const userSchema = mongoose.Schema({
   username: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
+  password: { type: String, required: false }, // Optional for OAuth users
+
+  // OAuth authentication fields
+  authProvider: { type: String, enum: ['local', 'google'], default: 'local' },
+  googleId: { type: String, sparse: true, unique: true },
 
   // User is always a client by default, can optionally become a vendor
   isVendor: { type: Boolean, default: false },

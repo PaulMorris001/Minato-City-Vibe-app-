@@ -38,6 +38,8 @@ interface PublicEvent {
   maxGuests?: number;
   ticketsSold?: number;
   ticketsRemaining?: number;
+  userHasPurchased?: boolean;
+  isCreator?: boolean;
   createdBy: {
     _id: string;
     username: string;
@@ -589,24 +591,43 @@ export default function Home() {
                                 )}
                               </View>
 
-                              <TouchableOpacity
-                                style={styles.buyTicketButton}
-                                onPress={(e) => {
-                                  e.stopPropagation();
-                                  handlePurchaseTicket(event._id, event.title);
-                                }}
-                                activeOpacity={0.8}
-                              >
-                                <LinearGradient
-                                  colors={["#a855f7", "#7c3aed"]}
-                                  start={{ x: 0, y: 0 }}
-                                  end={{ x: 1, y: 0 }}
-                                  style={styles.buyTicketGradient}
+                              {/* Show Buy Ticket button only if user hasn't purchased and isn't the creator */}
+                              {!event.userHasPurchased && !event.isCreator && (
+                                <TouchableOpacity
+                                  style={styles.buyTicketButton}
+                                  onPress={(e) => {
+                                    e.stopPropagation();
+                                    handlePurchaseTicket(event._id, event.title);
+                                  }}
+                                  activeOpacity={0.8}
                                 >
-                                  <Ionicons name="ticket" size={16} color="#fff" />
-                                  <Text style={styles.buyTicketText}>Buy Ticket</Text>
-                                </LinearGradient>
-                              </TouchableOpacity>
+                                  <LinearGradient
+                                    colors={["#a855f7", "#7c3aed"]}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 0 }}
+                                    style={styles.buyTicketGradient}
+                                  >
+                                    <Ionicons name="ticket" size={16} color="#fff" />
+                                    <Text style={styles.buyTicketText}>Buy Ticket</Text>
+                                  </LinearGradient>
+                                </TouchableOpacity>
+                              )}
+
+                              {/* Show "Purchased" badge if user has a ticket */}
+                              {event.userHasPurchased && (
+                                <View style={styles.purchasedBadge}>
+                                  <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                                  <Text style={styles.purchasedText}>Purchased</Text>
+                                </View>
+                              )}
+
+                              {/* Show "Your Event" badge if user is the creator */}
+                              {event.isCreator && (
+                                <View style={styles.creatorBadge}>
+                                  <Ionicons name="star" size={16} color="#f59e0b" />
+                                  <Text style={styles.creatorText}>Your Event</Text>
+                                </View>
+                              )}
                             </>
                           )}
 
@@ -1733,6 +1754,36 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     color: "#fff",
     letterSpacing: 0.5,
+  },
+  purchasedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(16, 185, 129, 0.2)",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  purchasedText: {
+    fontSize: 16,
+    fontFamily: Fonts.bold,
+    color: "#10b981",
+  },
+  creatorBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(245, 158, 11, 0.2)",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  creatorText: {
+    fontSize: 16,
+    fontFamily: Fonts.bold,
+    color: "#f59e0b",
   },
   visibilityOptions: {
     flexDirection: "row",

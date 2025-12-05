@@ -1,10 +1,11 @@
-// import Constants from "expo-constants";
+import Constants from "expo-constants";
 
 /**
  * Get the API base URL
- * Currently set to always use deployed Render backend for testing
- * To use local backend, uncomment the imports and local URL below
+ * Set USE_LOCAL to true for local development, false for deployed backend
  */
+const USE_LOCAL = false; // Toggle this: true = local, false = Render
+
 const getBaseUrl = () => {
   // Check for explicit environment variable first
   const envApiUrl = process.env.EXPO_PUBLIC_API_URL;
@@ -12,16 +13,18 @@ const getBaseUrl = () => {
     return envApiUrl;
   }
 
-  // Always use Render backend (for testing deployed backend)
-  return "https://nightvibe-backend.onrender.com/api";
+  // Use local backend during development
+  if (USE_LOCAL) {
+    let host = "localhost";
+    if (Constants.expoConfig?.hostUri) {
+      host = Constants.expoConfig.hostUri.split(":")[0];
+    }
+    const port = process.env.EXPO_PUBLIC_API_PORT || "3000";
+    return `http://${host}:${port}/api`;
+  }
 
-  // Uncomment below (and the import above) to use local backend during development:
-  // let host = "localhost";
-  // if (Constants.expoConfig?.hostUri) {
-  //   host = Constants.expoConfig.hostUri.split(":")[0];
-  // }
-  // const port = process.env.EXPO_PUBLIC_API_PORT || "3000";
-  // return `http://${host}:${port}/api`;
+  // Use Render backend (for production/testing deployed backend)
+  return "https://nightvibe-backend.onrender.com/api";
 };
 
 export const BASE_URL = getBaseUrl();
