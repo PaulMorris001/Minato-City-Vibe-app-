@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,11 +9,12 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
-import { GUIDE_TOPICS, CITIES, GuideSection } from "@/libs/interfaces";
+import { GUIDE_TOPICS, GuideSection, City } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { Picker } from "@react-native-picker/picker";
@@ -30,6 +31,33 @@ export default function CreateGuidePage() {
     { title: "", rank: 1, description: "" },
   ]);
   const [loading, setLoading] = useState(false);
+  const [cities, setCities] = useState<City[]>([]);
+  const [loadingCities, setLoadingCities] = useState(true);
+
+  // Fetch cities from API on component mount
+  useEffect(() => {
+    fetchCities();
+  }, []);
+
+  const fetchCities = async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/cities`);
+      const data = await response.json();
+
+      if (response.ok) {
+        // Vendor endpoint returns array directly, not wrapped in { cities: [...] }
+        setCities(Array.isArray(data) ? data : []);
+      } else {
+        console.error("Failed to fetch cities:", data.message);
+        Alert.alert("Error", "Failed to load cities. Please try again.");
+      }
+    } catch (error) {
+      console.error("Fetch cities error:", error);
+      Alert.alert("Error", "Failed to load cities. Please check your connection.");
+    } finally {
+      setLoadingCities(false);
+    }
+  };
 
   const addSection = () => {
     if (sections.length >= 10) {
@@ -228,23 +256,31 @@ export default function CreateGuidePage() {
           <Text style={styles.label}>
             City <Text style={styles.required}>*</Text>
           </Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={city}
-              onValueChange={setCity}
-              style={styles.picker}
-              dropdownIconColor="#fff"
-            >
-              <Picker.Item label="Select a city..." value="" />
-              {CITIES.map((c) => (
-                <Picker.Item
-                  key={c.name}
-                  label={`${c.name}, ${c.state}`}
-                  value={c.name}
-                />
-              ))}
-            </Picker>
-          </View>
+          {loadingCities ? (
+            <View style={[styles.pickerContainer, styles.loadingContainer]}>
+              <ActivityIndicator size="small" color="#a855f7" />
+              <Text style={styles.loadingText}>Loading cities...</Text>
+            </View>
+          ) : (
+            <View style={styles.pickerContainer}>
+              <Picker
+                selectedValue={city}
+                onValueChange={setCity}
+                style={styles.picker}
+                dropdownIconColor="#fff"
+                enabled={!loadingCities && cities.length > 0}
+              >
+                <Picker.Item label="Select a city..." value="" />
+                {cities.map((c) => (
+                  <Picker.Item
+                    key={c._id}
+                    label={`${c.name}, ${c.state}`}
+                    value={c._id}
+                  />
+                ))}
+              </Picker>
+            </View>
+          )}
         </View>
 
         <View style={styles.inputGroup}>
@@ -429,6 +465,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#374151",
     overflow: "hidden",
+  },
+  loadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 14,
+    gap: 10,
+  },
+  loadingText: {
+    fontSize: 14,
+    fontFamily: Fonts.regular,
+    color: "#9ca3af",
   },
   picker: {
     color: "#fff",

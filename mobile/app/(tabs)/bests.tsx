@@ -10,19 +10,22 @@ import {
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
-import { CITIES } from "@/libs/interfaces";
+import { City } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { AnimatedListCard, LoadingScreen } from "@/components/shared";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { BASE_URL } from "@/constants/constants";
 
 export default function BestsPage() {
   const router = useRouter();
-  const [loading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [cities, setCities] = useState<City[]>([]);
   const headerAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     checkAuthStatus();
+    fetchCities();
 
     Animated.timing(headerAnim, {
       toValue: 1,
@@ -36,6 +39,23 @@ export default function BestsPage() {
     setIsLoggedIn(!!token);
   };
 
+  const fetchCities = async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/cities`);
+      const data = await response.json();
+
+      if (response.ok) {
+        setCities(Array.isArray(data) ? data : []);
+      } else {
+        console.error("Failed to fetch cities:", data.message);
+      }
+    } catch (error) {
+      console.error("Fetch cities error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCreateGuide = () => {
     if (isLoggedIn) {
       router.push("/guide/create" as any);
@@ -44,10 +64,10 @@ export default function BestsPage() {
     }
   };
 
-  const handleCityPress = (city: string) => {
+  const handleCityPress = (cityId: string, cityName: string) => {
     router.push({
       pathname: "/guide/city/[cityName]" as any,
-      params: { cityName: city },
+      params: { cityName, cityId },
     });
   };
 
@@ -80,8 +100,8 @@ export default function BestsPage() {
       </Animated.View>
 
       <FlatList
-        data={CITIES}
-        keyExtractor={(item, index) => `${item.name}-${index}`}
+        data={cities}
+        keyExtractor={(item) => item._id}
         ListHeaderComponent={
           <View style={styles.scrollableHeader}>
             <Text style={styles.subtitle}>Lists and Guides</Text>
@@ -124,7 +144,7 @@ export default function BestsPage() {
             title={item.name}
             subtitle={item.state}
             index={index}
-            onPress={() => handleCityPress(item.name)}
+            onPress={() => handleCityPress(item._id, item.name)}
           />
         )}
         showsVerticalScrollIndicator={false}

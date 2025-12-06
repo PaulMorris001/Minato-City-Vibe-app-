@@ -2,9 +2,11 @@ import jwt from "jsonwebtoken";
 import config from "../config/env.js";
 
 export function authenticate(req, res, next) {
+  console.log("🔒 Auth middleware called for:", req.method, req.path);
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    console.log("❌ No token provided for:", req.path);
     return res.status(401).json({ message: "No token provided" });
   }
 

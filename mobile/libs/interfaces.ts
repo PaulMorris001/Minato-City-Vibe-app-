@@ -78,7 +78,7 @@ export interface Guide {
   authorName: string;
   description: string;
   price: number;
-  city: string;
+  city: City | string; // Can be populated City object or just ID string
   topic: string;
   sections: GuideSection[];
   isDraft: boolean;

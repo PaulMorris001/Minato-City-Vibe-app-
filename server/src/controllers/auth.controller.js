@@ -237,17 +237,43 @@ export async function searchUsers(req, res) {
 
 // Google OAuth authentication
 export async function googleAuth(req, res) {
-  const { idToken } = req.body;
+  const { idToken, accessToken } = req.body;
 
   try {
-    // Verify the Google ID token
-    const ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
+    let googleId, email, name, picture;
 
-    const payload = ticket.getPayload();
-    const { sub: googleId, email, name, picture } = payload;
+    if (idToken) {
+      // Verify the Google ID token
+      const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+
+      const payload = ticket.getPayload();
+      googleId = payload.sub;
+      email = payload.email;
+      name = payload.name;
+      picture = payload.picture;
+    } else if (accessToken) {
+      // Use access token to get user info from Google
+      const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch user info from Google');
+      }
+
+      const userInfo = await response.json();
+      googleId = userInfo.id;
+      email = userInfo.email;
+      name = userInfo.name;
+      picture = userInfo.picture;
+    } else {
+      return res.status(400).json({ message: "Either idToken or accessToken is required" });
+    }
 
     if (!email) {
       return res.status(400).json({ message: "Email not provided by Google" });

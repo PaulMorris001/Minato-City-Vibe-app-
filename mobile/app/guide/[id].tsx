@@ -136,7 +136,9 @@ export default function GuideDetailPage() {
           <View style={styles.metaRow}>
             <View style={styles.metaItem}>
               <Ionicons name="location" size={16} color="#a855f7" />
-              <Text style={styles.metaText}>{guide.city}</Text>
+              <Text style={styles.metaText}>
+                {typeof guide.city === 'string' ? guide.city : guide.city?.name || 'Unknown'}
+              </Text>
             </View>
             <View style={styles.metaItem}>
               <Ionicons name="pricetag" size={16} color="#a855f7" />

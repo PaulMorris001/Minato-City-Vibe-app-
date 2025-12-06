@@ -69,13 +69,14 @@ export default function Signup() {
     try {
       const userInfo = await signInWithGoogle();
 
-      if (!userInfo.data?.idToken) {
-        throw new Error("No ID token received from Google");
+      if (!userInfo.data?.idToken && !userInfo.data?.accessToken) {
+        throw new Error("No token received from Google");
       }
 
-      // Send the ID token to your backend
+      // Send the ID token or access token to your backend
       const res = await axios.post(`${BASE_URL}/google-auth`, {
         idToken: userInfo.data.idToken,
+        accessToken: userInfo.data.accessToken,
       });
 
       const user = res.data.user;
@@ -143,7 +144,7 @@ export default function Signup() {
               Sign Up
             </PrimaryButton>
 
-            <View style={styles.divider}>
+            {/* <View style={styles.divider}>
               <View style={styles.dividerLine} />
               <Text style={styles.dividerText}>OR</Text>
               <View style={styles.dividerLine} />
@@ -170,7 +171,7 @@ export default function Signup() {
                   </>
                 )}
               </LinearGradient>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </View>
 
           <View style={styles.footer}>

@@ -35,6 +35,9 @@ app.use("/api/", eventRoutes);
 app.use("/api/", chatRoutes);
 app.use("/api/", guideRoutes);
 
+// This will be executed after server starts
+// (removed route debugging for now)
+
 // Initialize Socket.IO
 const io = initializeSocket(httpServer);
 

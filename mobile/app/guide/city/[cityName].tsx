@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -18,7 +18,7 @@ import { BASE_URL } from "@/constants/constants";
 
 export default function CityGuidesPage() {
   const router = useRouter();
-  const { cityName } = useLocalSearchParams<{ cityName: string }>();
+  const { cityName, cityId } = useLocalSearchParams<{ cityName: string; cityId?: string }>();
 
   const [guides, setGuides] = useState<Guide[]>([]);
   const [filteredGuides, setFilteredGuides] = useState<Guide[]>([]);
@@ -27,18 +27,13 @@ export default function CityGuidesPage() {
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [priceFilter, setPriceFilter] = useState<"all" | "free" | "paid">("all");
 
-  useEffect(() => {
-    fetchGuides();
-  }, [cityName]);
-
-  useEffect(() => {
-    filterGuides();
-  }, [guides, searchQuery, selectedTopic, priceFilter]);
-
-  const fetchGuides = async () => {
+  const fetchGuides = useCallback(async () => {
     try {
       setLoading(true);
-      const url = `${BASE_URL}/guides?city=${encodeURIComponent(cityName as string)}`;
+      // Use cityId if available (new way), otherwise fall back to cityName (legacy)
+      const url = cityId
+        ? `${BASE_URL}/cities/${cityId}/guides`
+        : `${BASE_URL}/guides?city=${encodeURIComponent(cityName as string)}`;
 
       const response = await fetch(url);
       const data = await response.json();
@@ -51,9 +46,9 @@ export default function CityGuidesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [cityId, cityName]);
 
-  const filterGuides = () => {
+  const filterGuides = useCallback(() => {
     let filtered = [...guides];
 
     if (searchQuery) {
@@ -77,7 +72,17 @@ export default function CityGuidesPage() {
     }
 
     setFilteredGuides(filtered);
-  };
+  }, [guides, searchQuery, selectedTopic, priceFilter]);
+
+  useEffect(() => {
+    fetchGuides();
+  }, [fetchGuides]);
+
+  useEffect(() => {
+    filterGuides();
+  }, [filterGuides]);
+
+  console.log(guides)
 
   const renderGuideCard = ({ item }: { item: Guide }) => (
     <TouchableOpacity

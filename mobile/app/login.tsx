@@ -44,10 +44,15 @@ export default function Login() {
 
     setLoading(true);
     try {
+      console.log("Attempting login to:", `${BASE_URL}/login`);
+      console.log("Email:", email);
+
       const res = await axios.post(`${BASE_URL}/login`, {
         email,
         password,
       });
+
+      console.log("Login response:", res.data);
       const user = res.data.user;
       const token = res.data.token;
 
@@ -65,9 +70,26 @@ export default function Login() {
         router.replace("/(tabs)/home");
       }
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || "Login failed. Please try again.";
+      console.error("Login error details:");
+      console.error("Error message:", error.message);
+      console.error("Error code:", error.code);
+      console.error("Response data:", error.response?.data);
+      console.error("Response status:", error.response?.status);
+      console.error("Request URL:", error.config?.url);
+
+      let errorMessage = "Login failed. Please try again.";
+
+      if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+        errorMessage = `Cannot connect to server at ${BASE_URL}. Make sure the backend is running.`;
+      } else if (error.code === 'ETIMEDOUT' || error.message.includes('timeout')) {
+        errorMessage = "Connection timeout. Check your network connection.";
+      } else if (error.message.includes('Network Error')) {
+        errorMessage = `Network error. Cannot reach ${BASE_URL}. Check if backend is running and accessible.`;
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+
       Alert.alert("Error", errorMessage);
-      console.error(error.response?.data || error.message);
       setLoading(false);
     }
   };
@@ -90,13 +112,14 @@ export default function Login() {
     try {
       const userInfo = await signInWithGoogle();
 
-      if (!userInfo.data?.idToken) {
-        throw new Error("No ID token received from Google");
+      if (!userInfo.data?.idToken && !userInfo.data?.accessToken) {
+        throw new Error("No token received from Google");
       }
 
-      // Send the ID token to your backend
+      // Send the ID token or access token to your backend
       const res = await axios.post(`${BASE_URL}/google-auth`, {
         idToken: userInfo.data.idToken,
+        accessToken: userInfo.data.accessToken,
       });
 
       const user = res.data.user;
@@ -161,7 +184,7 @@ export default function Login() {
             Log In
           </PrimaryButton>
 
-          <View style={styles.divider}>
+          {/* <View style={styles.divider}>
             <View style={styles.dividerLine} />
             <Text style={styles.dividerText}>OR</Text>
             <View style={styles.dividerLine} />
@@ -188,7 +211,7 @@ export default function Login() {
                 </>
               )}
             </LinearGradient>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
 
         <View style={styles.footer}>

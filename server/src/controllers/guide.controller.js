@@ -1,5 +1,7 @@
 import Guide, { guideTopicsList } from "../models/guide.model.js";
 import User from "../models/user.model.js";
+import { City } from "../models/vendor.model.js";
+import mongoose from "mongoose";
 
 // Get all topics
 export const getTopics = async (req, res) => {
@@ -20,6 +22,23 @@ export const createGuide = async (req, res) => {
     // Validate required fields
     if (!title || !description || price === undefined || !city || !topic || !sections) {
       return res.status(400).json({ message: "All required fields must be provided" });
+    }
+
+    // Validate city ID format
+    if (!mongoose.Types.ObjectId.isValid(city)) {
+      return res.status(400).json({
+        message: "Invalid city ID format. Please select a city from the list.",
+        hint: "City must be a valid ID, not a city name. Use GET /api/guides/cities to fetch available cities."
+      });
+    }
+
+    // Check if city exists in database
+    const cityExists = await City.findById(city);
+    if (!cityExists) {
+      return res.status(400).json({
+        message: "City not found in database. Please select a valid city from the list.",
+        hint: "Use GET /api/guides/cities to fetch available cities."
+      });
     }
 
     // Validate sections
@@ -57,6 +76,9 @@ export const createGuide = async (req, res) => {
 
     await guide.save();
 
+    // Populate city data before returning
+    await guide.populate("city", "name state");
+
     res.status(201).json({
       message: isDraft ? "Guide draft saved successfully" : "Guide created successfully",
       guide
@@ -74,6 +96,7 @@ export const getGuides = async (req, res) => {
 
     const filter = { isDraft: false, isActive: true };
 
+    // Filter by city ID if provided
     if (city) filter.city = city;
     if (topic) filter.topic = topic;
     if (minPrice || maxPrice) {
@@ -91,6 +114,7 @@ export const getGuides = async (req, res) => {
 
     const guides = await Guide.find(filter)
       .populate("author", "username email profilePicture")
+      .populate("city", "name state")
       .sort({ createdAt: -1 });
 
     res.status(200).json({ guides });
@@ -106,6 +130,7 @@ export const getUserGuides = async (req, res) => {
     const userId = req.user.id;
 
     const guides = await Guide.find({ author: userId })
+      .populate("city", "name state")
       .sort({ createdAt: -1 });
 
     res.status(200).json({ guides });
@@ -122,7 +147,8 @@ export const getGuideById = async (req, res) => {
     const userId = req.user?.id;
 
     const guide = await Guide.findById(id)
-      .populate("author", "username email profilePicture");
+      .populate("author", "username email profilePicture")
+      .populate("city", "name state");
 
     if (!guide) {
       return res.status(404).json({ message: "Guide not found" });
@@ -176,6 +202,26 @@ export const updateGuide = async (req, res) => {
       return res.status(403).json({ message: "You can only edit your own guides" });
     }
 
+    // Validate city if provided
+    if (city !== undefined) {
+      // Validate city ID format
+      if (!mongoose.Types.ObjectId.isValid(city)) {
+        return res.status(400).json({
+          message: "Invalid city ID format. Please select a city from the list.",
+          hint: "City must be a valid ID, not a city name. Use GET /api/guides/cities to fetch available cities."
+        });
+      }
+
+      // Check if city exists in database
+      const cityExists = await City.findById(city);
+      if (!cityExists) {
+        return res.status(400).json({
+          message: "City not found in database. Please select a valid city from the list.",
+          hint: "Use GET /api/guides/cities to fetch available cities."
+        });
+      }
+    }
+
     // Validate sections if provided
     if (sections) {
       if (!Array.isArray(sections) || sections.length === 0 || sections.length > 10) {
@@ -202,6 +248,9 @@ export const updateGuide = async (req, res) => {
     if (isDraft !== undefined) guide.isDraft = isDraft;
 
     await guide.save();
+
+    // Populate city data before returning
+    await guide.populate("city", "name state");
 
     res.status(200).json({
       message: "Guide updated successfully",
@@ -291,11 +340,51 @@ export const getPurchasedGuides = async (req, res) => {
       isActive: true
     })
       .populate("author", "username email profilePicture")
+      .populate("city", "name state")
       .sort({ createdAt: -1 });
 
     res.status(200).json({ guides });
   } catch (error) {
     console.error("Get purchased guides error:", error);
     res.status(500).json({ message: "Failed to fetch purchased guides" });
+  }
+};
+
+// Get guides by city ID
+export const getGuidesByCity = async (req, res) => {
+  console.log("\n\n🏙️ ========== getGuidesByCity HANDLER CALLED ==========");
+  console.log("🏙️ Method:", req.method);
+  console.log("🏙️ Path:", req.path);
+  console.log("🏙️ Original URL:", req.originalUrl);
+  console.log("🏙️ Params:", req.params);
+  console.log("🏙️  getGuidesByCity called with cityId:", req.params.cityId);
+  console.log("🏙️ =====================================================\n\n");
+  try {
+    const { cityId } = req.params;
+
+    // Verify city exists
+    const city = await City.findById(cityId);
+    if (!city) {
+      console.log("❌ City not found:", cityId);
+      return res.status(404).json({ message: "City not found" });
+    }
+
+    console.log("✅ Found city:", city.name);
+
+    const guides = await Guide.find({
+      city: cityId,
+      isDraft: false,
+      isActive: true
+    })
+      .populate("author", "username email profilePicture")
+      .populate("city", "name state")
+      .sort({ createdAt: -1 });
+
+    console.log(`📚 Found ${guides.length} guides for ${city.name}`);
+
+    res.status(200).json({ guides, city });
+  } catch (error) {
+    console.error("Get guides by city error:", error);
+    res.status(500).json({ message: "Failed to fetch guides" });
   }
 };

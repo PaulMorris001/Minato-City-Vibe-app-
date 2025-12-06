@@ -39,7 +39,11 @@ const guideSchema = mongoose.Schema({
   authorName: { type: String, required: true },
   description: { type: String, required: true },
   price: { type: Number, required: true, min: 0 },
-  city: { type: String, required: true },
+  city: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "city",
+    required: true
+  },
   topic: {
     type: String,
     required: true,
