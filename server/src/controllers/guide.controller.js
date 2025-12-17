@@ -96,8 +96,25 @@ export const getGuides = async (req, res) => {
 
     const filter = { isDraft: false, isActive: true };
 
-    // Filter by city ID if provided
-    if (city) filter.city = city;
+    // Filter by city ID if provided, or lookup by name
+    if (city) {
+      if (mongoose.Types.ObjectId.isValid(city)) {
+        filter.city = city;
+      } else {
+        // If city is a name (from query param), find the city ID first
+        const cityDoc = await City.findOne({ 
+          name: { $regex: new RegExp(`^${city}$`, 'i') } 
+        });
+        
+        if (cityDoc) {
+          filter.city = cityDoc._id;
+        } else {
+          // If city not found by name, return empty list immediately to match behavior
+           return res.status(200).json({ guides: [] });
+        }
+      }
+    }
+    
     if (topic) filter.topic = topic;
     if (minPrice || maxPrice) {
       filter.price = {};
@@ -373,8 +390,7 @@ export const getGuidesByCity = async (req, res) => {
 
     const guides = await Guide.find({
       city: cityId,
-      isDraft: false,
-      isActive: true
+      // Removed isDraft: false and isActive: true to show all guides as requested
     })
       .populate("author", "username email profilePicture")
       .populate("city", "name state")

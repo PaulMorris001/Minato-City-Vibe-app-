@@ -2,6 +2,7 @@ import Event from "../models/event.model.js";
 import User from "../models/user.model.js";
 import Ticket from "../models/ticket.model.js";
 import ChatService from "../services/chat.service.js";
+import { uploadBase64Image, deleteImage } from "../services/image.service.js";
 
 // Create a new event
 export const createEvent = async (req, res) => {
@@ -23,11 +24,28 @@ export const createEvent = async (req, res) => {
       }
     }
 
+    // Handle event image upload
+    let eventImageUrl = "";
+    if (image) {
+      if (image.startsWith('data:image')) {
+        try {
+          const result = await uploadBase64Image(image, 'events');
+          eventImageUrl = result.url;
+        } catch (error) {
+          console.error("Error uploading event image:", error);
+          return res.status(400).json({ message: "Error uploading event image", details: error.message });
+        }
+      } else {
+        // Already a URL
+        eventImageUrl = image;
+      }
+    }
+
     const event = new Event({
       title,
       date: new Date(date),
       location,
-      image: image || "",
+      image: eventImageUrl,
       description: description || "",
       createdBy: userId,
       isPublic: isPublic || false,
@@ -162,11 +180,31 @@ export const updateEvent = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to update this event" });
     }
 
+    // Handle event image upload (if provided)
+    if (image !== undefined) {
+      if (image && image.startsWith('data:image')) {
+        try {
+          // Delete old event image if it exists and is a Cloudinary URL
+          if (event.image && event.image.includes('cloudinary.com')) {
+            await deleteImage(event.image).catch(err => console.error("Error deleting old event image:", err));
+          }
+
+          const result = await uploadBase64Image(image, 'events');
+          event.image = result.url;
+        } catch (error) {
+          console.error("Error uploading event image:", error);
+          return res.status(400).json({ message: "Error uploading event image", details: error.message });
+        }
+      } else {
+        // Already a URL or empty string
+        event.image = image;
+      }
+    }
+
     // Update fields
     if (title) event.title = title;
     if (date) event.date = new Date(date);
     if (location) event.location = location;
-    if (image !== undefined) event.image = image;
     if (description !== undefined) event.description = description;
 
     await event.save();

@@ -19,6 +19,7 @@ import { fetchCities, fetchAllVendorTypes } from "@/libs/api";
 import { BASE_URL } from "@/constants/constants";
 import { City, VendorType } from "@/libs/interfaces";
 import { ImagePickerButton } from "@/components/shared";
+import { uploadImage } from "@/utils/imageUpload";
 
 interface AccountTabProps {
   onRefresh: () => void;
@@ -101,13 +102,46 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
     setSaving(true);
     try {
       const token = await SecureStore.getItemAsync("token");
+
+      let businessPictureUrl = businessPicture;
+      let profilePictureUrl = profilePicture;
+
+      // Upload business picture to Cloudinary if it's a local file
+      if (businessPicture && businessPicture.startsWith('file://')) {
+        try {
+          const result = await uploadImage(businessPicture, 'businesses', token!);
+          businessPictureUrl = result.url;
+          setBusinessPicture(businessPictureUrl);
+        } catch (uploadError) {
+          console.error("Business picture upload error:", uploadError);
+          Alert.alert("Upload Error", "Failed to upload business picture");
+          setSaving(false);
+          return;
+        }
+      }
+
+      // Upload profile picture to Cloudinary if it's a local file
+      if (profilePicture && profilePicture.startsWith('file://')) {
+        try {
+          const result = await uploadImage(profilePicture, 'profiles', token!);
+          profilePictureUrl = result.url;
+          setProfilePicture(profilePictureUrl);
+        } catch (uploadError) {
+          console.error("Profile picture upload error:", uploadError);
+          Alert.alert("Upload Error", "Failed to upload profile picture");
+          setSaving(false);
+          return;
+        }
+      }
+
+      // Now update profile with Cloudinary URLs
       await axios.put(
         `${BASE_URL}/vendor/profile`,
         {
           businessName: profile.businessName,
           businessDescription: profile.businessDescription,
-          businessPicture: businessPicture,
-          profilePicture: profilePicture,
+          businessPicture: businessPictureUrl,
+          profilePicture: profilePictureUrl,
           vendorType: profile.vendorTypeName,
           location: {
             city: profile.cityName,

@@ -2,6 +2,7 @@ import Chat from "../models/chat.model.js";
 import Message from "../models/message.model.js";
 import User from "../models/user.model.js";
 import { emitNewMessage } from "./socket.service.js";
+import { uploadBase64Image, deleteImage } from "./image.service.js";
 
 /**
  * Chat Service - Business logic layer for chat operations
@@ -115,13 +116,28 @@ class ChatService {
       throw new Error('User is not a participant in this chat');
     }
 
+    // Handle image upload to Cloudinary if it's a base64 image
+    let finalImageUrl = imageUrl;
+    if (type === 'image' && imageUrl) {
+      if (imageUrl.startsWith('data:image')) {
+        try {
+          const result = await uploadBase64Image(imageUrl, 'chat_images');
+          finalImageUrl = result.url;
+        } catch (error) {
+          console.error("Error uploading chat image to Cloudinary:", error);
+          throw new Error("Failed to upload image");
+        }
+      }
+      // If imageUrl doesn't start with 'data:image', it's already a Cloudinary URL
+    }
+
     // Create message
     const message = new Message({
       chat: chatId,
       sender: senderId,
       type: type || 'text',
       content,
-      imageUrl,
+      imageUrl: finalImageUrl,
       event: eventId,
       replyTo
     });

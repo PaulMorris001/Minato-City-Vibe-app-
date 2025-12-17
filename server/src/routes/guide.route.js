@@ -24,7 +24,8 @@ router.get("/guides/my-guides", authenticate, getUserGuides);
 router.get("/guides/purchased", authenticate, getPurchasedGuides);
 
 // Public city guides - using /city/ prefix to avoid ANY conflict with /guide/
-router.get("/city/:cityId/guides", getGuidesByCity);
+router.get("/guides/city/:cityId", getGuidesByCity);
+
 
 // Protected guide CRU(D) operations
 router.post("/guides", authenticate, createGuide);

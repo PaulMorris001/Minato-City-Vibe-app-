@@ -21,6 +21,7 @@ import {
   PrimaryButton,
   ImagePickerButton,
 } from "@/components/shared";
+import { uploadImage } from "@/utils/imageUpload";
 
 interface BecomeVendorModalProps {
   visible: boolean;
@@ -85,12 +86,27 @@ export default function BecomeVendorModal({
     try {
       const token = await SecureStore.getItemAsync("token");
 
+      let businessPictureUrl = businessPicture;
+
+      // Upload business picture to Cloudinary if it's a local file
+      if (businessPicture && businessPicture.startsWith('file://')) {
+        try {
+          const result = await uploadImage(businessPicture, 'businesses', token!);
+          businessPictureUrl = result.url;
+        } catch (uploadError) {
+          console.error("Business picture upload error:", uploadError);
+          Alert.alert("Upload Error", "Failed to upload business picture");
+          setLoading(false);
+          return;
+        }
+      }
+
       await axios.post(
         `${BASE_URL}/become-vendor`,
         {
           businessName: formData.businessName.trim(),
           businessDescription: formData.businessDescription.trim(),
-          businessPicture: businessPicture,
+          businessPicture: businessPictureUrl,
           vendorType: formData.vendorTypeName,
           location: {
             city: formData.cityName,

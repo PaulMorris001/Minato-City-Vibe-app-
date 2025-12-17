@@ -23,6 +23,7 @@ import chatService, { Message, Chat } from "@/services/chat.service";
 import socketService from "@/services/socket.service";
 import * as SecureStore from "expo-secure-store";
 import { capitalize } from "@/libs/helpers";
+import { uploadImage } from "@/utils/imageUpload";
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -132,23 +133,38 @@ export default function ChatScreen() {
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.7,
-        base64: true,
       });
 
-      if (!result.canceled && result.assets[0].base64) {
+      if (!result.canceled && result.assets[0]) {
         setSending(true);
-        const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
+        const localUri = result.assets[0].uri;
 
-        const message = await chatService.sendMessage(id, {
-          type: "image",
-          imageUrl: base64Image,
-        });
+        // Upload image to Cloudinary
+        const token = await SecureStore.getItemAsync("token");
+        if (!token) {
+          Alert.alert("Error", "Authentication token not found");
+          setSending(false);
+          return;
+        }
 
-        setMessages((prev) => [...prev, message]);
+        try {
+          const uploadResult = await uploadImage(localUri, 'chat_images', token);
 
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+          // Send message with Cloudinary URL
+          const message = await chatService.sendMessage(id, {
+            type: "image",
+            imageUrl: uploadResult.url,
+          });
+
+          setMessages((prev) => [...prev, message]);
+
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }, 100);
+        } catch (uploadError: any) {
+          console.error("Error uploading image to Cloudinary:", uploadError);
+          Alert.alert("Upload Error", "Failed to upload image");
+        }
       }
     } catch (error: any) {
       console.error("Error sending image:", error);

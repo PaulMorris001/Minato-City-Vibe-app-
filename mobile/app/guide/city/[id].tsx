@@ -30,13 +30,13 @@ export default function CityGuidesPage() {
   const fetchGuides = useCallback(async () => {
     try {
       setLoading(true);
-      // Use cityId if available (new way), otherwise fall back to cityName (legacy)
-      const url = cityId
-        ? `${BASE_URL}/cities/${cityId}/guides`
-        : `${BASE_URL}/guides?city=${encodeURIComponent(cityName as string)}`;
+
+      const url = `${BASE_URL}/city/${cityId}/guides`;
+      console.log(url)
 
       const response = await fetch(url);
       const data = await response.json();
+      console.log(data)
 
       if (response.ok) {
         setGuides(data.guides || []);
@@ -46,7 +46,7 @@ export default function CityGuidesPage() {
     } finally {
       setLoading(false);
     }
-  }, [cityId, cityName]);
+  }, [cityId]);
 
   const filterGuides = useCallback(() => {
     let filtered = [...guides];

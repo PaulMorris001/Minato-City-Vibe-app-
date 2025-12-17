@@ -66,7 +66,7 @@ export default function BestsPage() {
 
   const handleCityPress = (cityId: string, cityName: string) => {
     router.push({
-      pathname: "/guide/city/[cityName]" as any,
+      pathname: "/guide/city/[id]" as any,
       params: { cityName, cityId },
     });
   };

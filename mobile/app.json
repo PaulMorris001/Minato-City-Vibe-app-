@@ -30,7 +30,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "splash": {
-      "image": "./assets/images/splash_screen.png",
+      "image": "./assets/images/splash_v2.png",
       "resizeMode": "cover",
       "backgroundColor": "#000000"
     },
@@ -39,7 +39,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash_screen.png",
+          "image": "./assets/images/splash_v2.png",
           "resizeMode": "cover",
           "backgroundColor": "#000000"
         }

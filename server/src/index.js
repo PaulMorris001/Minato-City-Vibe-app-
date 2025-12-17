@@ -11,6 +11,7 @@ import serviceRoutes from "./routes/service.route.js";
 import eventRoutes from "./routes/event.route.js";
 import chatRoutes from "./routes/chat.route.js";
 import guideRoutes from "./routes/guide.route.js";
+import uploadRoutes from "./routes/upload.route.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -34,6 +35,7 @@ app.use("/api/", serviceRoutes);
 app.use("/api/", eventRoutes);
 app.use("/api/", chatRoutes);
 app.use("/api/", guideRoutes);
+app.use("/api/upload", uploadRoutes);
 
 // This will be executed after server starts
 // (removed route debugging for now)

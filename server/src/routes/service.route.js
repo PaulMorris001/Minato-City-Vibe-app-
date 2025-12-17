@@ -5,13 +5,17 @@ import {
   createService,
   updateService,
   deleteService,
-  getVendorStats
+  getVendorStats,
+  getServicesByVendorId
 } from "../controllers/service.controller.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
-// All routes require authentication
+// Public routes (no authentication required)
+router.get("/vendors/:vendorId/services", getServicesByVendorId);
+
+// Protected routes (require authentication)
 router.use(authenticate);
 
 // Dashboard statistics

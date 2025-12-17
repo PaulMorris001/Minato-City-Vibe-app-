@@ -18,6 +18,7 @@ import { BASE_URL } from "@/constants/constants";
 import { ImagePickerButton } from "@/components/shared";
 import { Fonts } from "@/constants/fonts";
 import { useAccount } from "@/contexts/AccountContext";
+import { uploadImage } from "@/utils/imageUpload";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -86,9 +87,28 @@ export default function SettingsScreen() {
     setSaving(true);
     try {
       const token = await SecureStore.getItemAsync("token");
+
+      let cloudinaryUrl = profilePicture;
+
+      // If it's a local URI (starts with file://), upload to Cloudinary first
+      if (profilePicture.startsWith('file://')) {
+        try {
+          const result = await uploadImage(profilePicture, 'profiles', token!);
+          cloudinaryUrl = result.url;
+          // Update local state with Cloudinary URL
+          setProfilePicture(cloudinaryUrl);
+        } catch (uploadError: any) {
+          console.error("Upload error:", uploadError);
+          Alert.alert("Upload Error", "Failed to upload image to Cloudinary");
+          setSaving(false);
+          return;
+        }
+      }
+
+      // Now update profile with Cloudinary URL
       await axios.put(
         `${BASE_URL}/profile/picture`,
-        { profilePicture },
+        { profilePicture: cloudinaryUrl },
         {
           headers: { Authorization: `Bearer ${token}` },
         }

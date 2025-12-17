@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { OAuth2Client } from "google-auth-library";
 import config from "../config/env.js";
 import User from "../models/user.model.js";
+import { uploadBase64Image, deleteImage } from "../services/image.service.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -77,11 +78,29 @@ export async function becomeVendor(req, res) {
       return res.status(400).json({ message: "User is already a vendor" });
     }
 
+    // Handle business picture upload
+    let businessPictureUrl = "";
+    if (businessPicture) {
+      // If it's a base64 image, upload to Cloudinary
+      if (businessPicture.startsWith('data:image')) {
+        try {
+          const result = await uploadBase64Image(businessPicture, 'businesses');
+          businessPictureUrl = result.url;
+        } catch (error) {
+          console.error("Error uploading business picture:", error);
+          return res.status(400).json({ message: "Error uploading business picture", details: error.message });
+        }
+      } else {
+        // Already a URL (Cloudinary or other)
+        businessPictureUrl = businessPicture;
+      }
+    }
+
     // Upgrade user to vendor
     user.isVendor = true;
     user.businessName = businessName;
     user.businessDescription = businessDescription;
-    user.businessPicture = businessPicture || "";
+    user.businessPicture = businessPictureUrl;
     user.vendorType = vendorType;
     user.location = location;
     user.contactInfo = contactInfo;
@@ -124,11 +143,51 @@ export async function updateVendorProfile(req, res) {
       return res.status(403).json({ message: "Only vendors can update business profile" });
     }
 
+    // Handle business picture upload (if provided)
+    if (businessPicture !== undefined) {
+      if (businessPicture && businessPicture.startsWith('data:image')) {
+        try {
+          // Delete old business picture if it exists and is a Cloudinary URL
+          if (user.businessPicture && user.businessPicture.includes('cloudinary.com')) {
+            await deleteImage(user.businessPicture).catch(err => console.error("Error deleting old business picture:", err));
+          }
+
+          const result = await uploadBase64Image(businessPicture, 'businesses');
+          user.businessPicture = result.url;
+        } catch (error) {
+          console.error("Error uploading business picture:", error);
+          return res.status(400).json({ message: "Error uploading business picture", details: error.message });
+        }
+      } else {
+        // Already a URL or empty string
+        user.businessPicture = businessPicture;
+      }
+    }
+
+    // Handle profile picture upload (if provided)
+    if (profilePicture !== undefined) {
+      if (profilePicture && profilePicture.startsWith('data:image')) {
+        try {
+          // Delete old profile picture if it exists and is a Cloudinary URL
+          if (user.profilePicture && user.profilePicture.includes('cloudinary.com')) {
+            await deleteImage(user.profilePicture).catch(err => console.error("Error deleting old profile picture:", err));
+          }
+
+          const result = await uploadBase64Image(profilePicture, 'profiles');
+          user.profilePicture = result.url;
+        } catch (error) {
+          console.error("Error uploading profile picture:", error);
+          return res.status(400).json({ message: "Error uploading profile picture", details: error.message });
+        }
+      } else {
+        // Already a URL or empty string
+        user.profilePicture = profilePicture;
+      }
+    }
+
     // Update vendor-specific fields
     if (businessName) user.businessName = businessName;
     if (businessDescription) user.businessDescription = businessDescription;
-    if (businessPicture !== undefined) user.businessPicture = businessPicture;
-    if (profilePicture !== undefined) user.profilePicture = profilePicture;
     if (vendorType) user.vendorType = vendorType;
     if (location) user.location = location;
     if (contactInfo) user.contactInfo = contactInfo;
@@ -183,7 +242,25 @@ export async function updateProfilePicture(req, res) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    user.profilePicture = profilePicture;
+    // Handle profile picture upload
+    if (profilePicture && profilePicture.startsWith('data:image')) {
+      try {
+        // Delete old profile picture if it exists and is a Cloudinary URL
+        if (user.profilePicture && user.profilePicture.includes('cloudinary.com')) {
+          await deleteImage(user.profilePicture).catch(err => console.error("Error deleting old profile picture:", err));
+        }
+
+        const result = await uploadBase64Image(profilePicture, 'profiles');
+        user.profilePicture = result.url;
+      } catch (error) {
+        console.error("Error uploading profile picture:", error);
+        return res.status(400).json({ message: "Error uploading profile picture", details: error.message });
+      }
+    } else {
+      // Already a URL or empty string
+      user.profilePicture = profilePicture;
+    }
+
     await user.save();
 
     res.json({

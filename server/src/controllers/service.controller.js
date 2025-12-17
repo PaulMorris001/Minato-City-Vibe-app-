@@ -1,6 +1,24 @@
 import { Service } from "../models/service.model.js";
 import User from "../models/user.model.js";
 
+// Get all services for a specific vendor (public - for clients to view)
+export async function getServicesByVendorId(req, res) {
+  try {
+    const { vendorId } = req.params;
+
+    // Find only active services
+    const services = await Service.find({
+      vendor: vendorId,
+      isActive: true
+    })
+    .sort({ createdAt: -1 });
+
+    res.status(200).json(services);
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching services", details: error.message });
+  }
+}
+
 // Get all services for the authenticated vendor
 export async function getVendorServices(req, res) {
   try {
