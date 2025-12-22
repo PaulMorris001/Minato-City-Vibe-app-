@@ -1,4 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
+import { BASE_URL } from '@/constants/constants';
 
 const IS_DEV = __DEV__;
 const MAX_LOGS = 100;
@@ -59,8 +62,8 @@ class Logger {
     // Save to storage in production
     if (!IS_DEV) {
       await this.addLog(errorLog);
-      // TODO: Send to backend API for monitoring
-      // this.sendToBackend(errorLog);
+      // Send to backend API for monitoring
+      this.sendToBackend(errorLog);
     }
   }
 
@@ -78,6 +81,7 @@ class Logger {
 
     if (!IS_DEV) {
       await this.addLog(warnLog);
+      this.sendToBackend(warnLog);
     }
   }
 
@@ -113,18 +117,27 @@ class Logger {
     return JSON.stringify(logs, null, 2);
   }
 
-  // TODO: Implement when you have a backend endpoint
-  // private async sendToBackend(log: ErrorLog) {
-  //   try {
-  //     await fetch('YOUR_API_ENDPOINT/logs', {
-  //       method: 'POST',
-  //       headers: { 'Content-Type': 'application/json' },
-  //       body: JSON.stringify(log),
-  //     });
-  //   } catch (e) {
-  //     // Silently fail - we don't want logging to crash the app
-  //   }
-  // }
+  private async sendToBackend(log: ErrorLog) {
+    try {
+      const deviceInfo = {
+        platform: Platform.OS,
+        osVersion: Platform.Version,
+        appVersion: Constants.expoConfig?.version || 'unknown',
+      };
+
+      await fetch(`${BASE_URL}/logs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...log,
+          deviceInfo,
+        }),
+        timeout: 5000,
+      } as any);
+    } catch (e) {
+      // Silently fail - we don't want logging to crash the app
+    }
+  }
 }
 
 export const logger = new Logger();
