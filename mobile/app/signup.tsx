@@ -18,7 +18,7 @@ import { BASE_URL } from "@/constants/constants";
 import * as SecureStore from "expo-secure-store";
 import { FormInput, PrimaryButton } from "@/components/shared";
 import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
-import { logger } from "@/utils/logger";
+import * as Sentry from "@sentry/react-native";
 
 export default function Signup() {
   const router = useRouter();
@@ -41,7 +41,13 @@ export default function Signup() {
 
     setLoading(true);
     try {
-      logger.info("Attempting signup", { email, username, apiUrl: BASE_URL });
+      // Add breadcrumb for tracking user flow
+      Sentry.addBreadcrumb({
+        category: 'auth',
+        message: 'Signup attempt',
+        level: 'info',
+        data: { email, username, apiUrl: BASE_URL }
+      });
 
       const res = await axios.post(`${BASE_URL}/register`, {
         username,
@@ -49,10 +55,15 @@ export default function Signup() {
         password,
       });
 
-      logger.info("Signup successful", { userId: res.data.user?._id });
-
       const user = res.data.user;
       const token = res.data.token;
+
+      // Set user context in Sentry
+      Sentry.setUser({
+        id: user._id,
+        email: user.email,
+        username: user.username,
+      });
 
       await SecureStore.setItemAsync("token", token);
       await SecureStore.setItemAsync("user", JSON.stringify(user));
@@ -60,15 +71,26 @@ export default function Signup() {
       // Always redirect to home (everyone starts as a client)
       router.replace("/(tabs)/home");
     } catch (error: any) {
-      // Log detailed error information to backend
-      await logger.error("Signup failed", error, {
-        email,
-        username,
-        apiUrl: BASE_URL,
-        statusCode: error.response?.status,
-        responseData: error.response?.data,
-        errorCode: error.code,
-        errorMessage: error.message,
+      // Capture error in Sentry with context
+      Sentry.captureException(error, {
+        tags: {
+          action: 'signup',
+          email: email,
+        },
+        contexts: {
+          signup: {
+            email: email,
+            username: username,
+            apiUrl: BASE_URL,
+            statusCode: error.response?.status,
+            errorCode: error.code,
+          },
+          response: {
+            status: error.response?.status,
+            data: error.response?.data,
+          }
+        },
+        level: 'error',
       });
 
       const errorMessage =

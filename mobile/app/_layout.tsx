@@ -20,6 +20,26 @@ import socketService from "@/services/socket.service";
 import { theme } from "@/constants/theme";
 import { StatusBar } from "expo-status-bar";
 import { setupGlobalErrorHandler, setupConsoleOverride } from "@/utils/errorHandler";
+import * as Sentry from '@sentry/react-native';
+
+Sentry.init({
+  dsn: 'https://c506563770a3f78e29dd984fe34407a7@o4510577846714368.ingest.us.sentry.io/4510577847697408',
+
+  // Adds more context data to events (IP address, cookies, user, etc.)
+  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
+  sendDefaultPii: true,
+
+  // Enable Logs
+  enableLogs: true,
+
+  // Configure Session Replay
+  replaysSessionSampleRate: 0.1,
+  replaysOnErrorSampleRate: 1,
+  integrations: [Sentry.mobileReplayIntegration()],
+
+  // uncomment the line below to enable Spotlight (https://spotlightjs.com)
+  // spotlight: __DEV__,
+});
 
 // Prevent auto-hiding splash screen
 SplashScreen.preventAutoHideAsync();
@@ -28,7 +48,7 @@ SplashScreen.preventAutoHideAsync();
 setupGlobalErrorHandler();
 setupConsoleOverride();
 
-export default function RootLayout() {
+export default Sentry.wrap(function RootLayout() {
   const colorScheme = useColorScheme() || "dark";
 
   const [fontsLoaded] = useFonts({
@@ -100,4 +120,4 @@ export default function RootLayout() {
       </PortalProvider>
     </AccountProvider>
   );
-}
+});

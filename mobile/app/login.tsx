@@ -11,6 +11,7 @@ import {
   Modal,
   ActivityIndicator,
 } from "react-native";
+import * as Sentry from "@sentry/react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import axios from "axios";
@@ -20,7 +21,6 @@ import { capitalize } from "@/libs/helpers";
 import { FormInput, PrimaryButton } from "@/components/shared";
 import { useAccount } from "@/contexts/AccountContext";
 import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
-import { logger } from "@/utils/logger";
 
 export default function Login() {
   const router = useRouter();
@@ -45,17 +45,28 @@ export default function Login() {
 
     setLoading(true);
     try {
-      logger.info("Attempting login", { email, apiUrl: BASE_URL });
+      // Add breadcrumb for tracking user flow
+      Sentry.addBreadcrumb({
+        category: 'auth',
+        message: 'Login attempt',
+        level: 'info',
+        data: { email, apiUrl: BASE_URL }
+      });
 
       const res = await axios.post(`${BASE_URL}/login`, {
         email,
         password,
       });
 
-      logger.info("Login successful", { userId: res.data.user?._id });
-
       const user = res.data.user;
       const token = res.data.token;
+
+      // Set user context in Sentry
+      Sentry.setUser({
+        id: user._id,
+        email: user.email,
+        username: user.username,
+      });
 
       await SecureStore.setItemAsync("token", token);
       await SecureStore.setItemAsync("user", JSON.stringify(user));
@@ -71,15 +82,25 @@ export default function Login() {
         router.replace("/(tabs)/home");
       }
     } catch (error: any) {
-      // Log detailed error information to backend
-      await logger.error("Login failed", error, {
-        email,
-        apiUrl: BASE_URL,
-        statusCode: error.response?.status,
-        responseData: error.response?.data,
-        errorCode: error.code,
-        errorMessage: error.message,
-        requestUrl: error.config?.url,
+      // Capture error in Sentry with context
+      Sentry.captureException(error, {
+        tags: {
+          action: 'login',
+          email: email,
+        },
+        contexts: {
+          login: {
+            email: email,
+            apiUrl: BASE_URL,
+            statusCode: error.response?.status,
+            errorCode: error.code,
+          },
+          response: {
+            status: error.response?.status,
+            data: error.response?.data,
+          }
+        },
+        level: 'error',
       });
 
       let errorMessage = "Login failed. Please try again.";

@@ -1,54 +1,46 @@
-import { logger } from './logger';
+import * as Sentry from '@sentry/react-native';
 
-// Global error handler for unhandled promise rejections
+// Global error handler - Sentry will automatically catch unhandled errors
+// But we can still add custom handling if needed
 export const setupGlobalErrorHandler = () => {
-  // Handle unhandled promise rejections
-  const originalHandler = ErrorUtils.getGlobalHandler();
-
-  ErrorUtils.setGlobalHandler((error, isFatal) => {
-    logger.error('Uncaught error', error, { isFatal });
-
-    // Call the original handler
-    if (originalHandler) {
-      originalHandler(error, isFatal);
-    }
-  });
-
-  // Handle unhandled promise rejections
-  if (typeof global.Promise !== 'undefined') {
-    const originalRejectionTracking = require('promise/setimmediate/rejection-tracking').enable;
-    require('promise/setimmediate/rejection-tracking').enable({
-      allRejections: true,
-      onUnhandled: (id: string, error: Error) => {
-        logger.error('Unhandled promise rejection', error, { id });
-      },
-      onHandled: () => {
-        // Do nothing
-      },
-    });
-  }
+  // Sentry automatically handles global errors when initialized
+  // No additional setup needed - Sentry.init() in _layout.tsx handles this
 };
 
-// Override console methods in production to also log to storage
+// Override console methods in production to send to Sentry
 export const setupConsoleOverride = () => {
   if (!__DEV__) {
     const originalError = console.error;
     const originalWarn = console.warn;
 
     console.error = (...args) => {
-      logger.error(
-        args[0]?.toString() || 'Error',
-        args[1],
-        args.slice(2)
-      );
+      // Send console.error to Sentry
+      const message = args[0]?.toString() || 'Console Error';
+      const error = args[1] instanceof Error ? args[1] : new Error(message);
+
+      Sentry.captureException(error, {
+        level: 'error',
+        contexts: {
+          console: {
+            args: args.map(arg => String(arg)),
+          }
+        }
+      });
+
       originalError(...args);
     };
 
     console.warn = (...args) => {
-      logger.warn(
-        args[0]?.toString() || 'Warning',
-        args.slice(1)
-      );
+      // Send console.warn to Sentry
+      Sentry.captureMessage(args[0]?.toString() || 'Console Warning', {
+        level: 'warning',
+        contexts: {
+          console: {
+            args: args.map(arg => String(arg)),
+          }
+        }
+      });
+
       originalWarn(...args);
     };
   }
