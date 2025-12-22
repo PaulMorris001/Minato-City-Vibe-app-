@@ -4,18 +4,16 @@
     "slug": "nightvibe",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/ios/icon.png",
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.nightvibe.mobile",
-      "googleServicesFile": "./GoogleService-Info.plist"
+      "bundleIdentifier": "com.nightvibe.mobile"
     },
     "android": {
       "package": "com.nightvibe.mobile",
-      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

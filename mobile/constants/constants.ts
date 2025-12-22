@@ -4,7 +4,7 @@ import Constants from "expo-constants";
  * Get the API base URL
  * Set USE_LOCAL to true for local development, false for deployed backend
  */
-const USE_LOCAL = true; // Toggle this: true = local, false = Render
+const USE_LOCAL = false; // Toggle this: true = local, false = Render
 
 const getBaseUrl = () => {
   // Check for explicit environment variable first
