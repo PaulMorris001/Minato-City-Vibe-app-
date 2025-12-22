@@ -25,6 +25,7 @@ import * as ImagePicker from "expo-image-picker";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
 interface Event {
   _id: string;
@@ -149,10 +150,31 @@ export default function EventsPage() {
   };
 
   const onDateChange = (event: any, date?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
-    if (date) {
-      setSelectedDate(date);
-      setEditData({ ...editData, date: date.toISOString() });
+    try {
+      // Handle dismissal on Android
+      if (Platform.OS === 'android') {
+        setShowDatePicker(false);
+
+        // If user cancelled or no date, don't update
+        if (!event || event.type === 'dismissed' || !date) {
+          return;
+        }
+      }
+
+      // On iOS, handle dismissal
+      if (event && event.type === 'dismissed') {
+        setShowDatePicker(false);
+        return;
+      }
+
+      // Update the selected date
+      if (date) {
+        setSelectedDate(date);
+        setEditData({ ...editData, date: date.toISOString() });
+      }
+    } catch (error) {
+      console.error('Date picker error:', error);
+      setShowDatePicker(false);
     }
   };
 
@@ -328,7 +350,7 @@ export default function EventsPage() {
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [16, 9],
       quality: 0.8,
@@ -555,11 +577,20 @@ export default function EventsPage() {
                     {formatDisplayDate(editData.date)}
                   </Text>
                 </TouchableOpacity>
-                {showDatePicker && (
+                {showDatePicker && Platform.OS === 'ios' && (
                   <DateTimePicker
                     value={selectedDate}
                     mode="datetime"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    display="spinner"
+                    onChange={onDateChange}
+                    minimumDate={new Date()}
+                    themeVariant="dark"
+                  />
+                )}
+                {showDatePicker && Platform.OS === 'android' && (
+                  <DateTimePicker
+                    value={selectedDate}
+                    mode="date"
                     onChange={onDateChange}
                     minimumDate={new Date()}
                   />
@@ -790,12 +821,12 @@ const styles = StyleSheet.create({
   header: {
     paddingTop: 10,
     paddingBottom: 20,
-    paddingHorizontal: 24,
+    paddingHorizontal: getResponsivePadding(),
     borderBottomWidth: 1,
     borderBottomColor: "#374151",
   },
   headerTitle: {
-    fontSize: 32,
+    fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
     color: "#fff",
   },
@@ -803,7 +834,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
+    padding: getResponsivePadding(),
   },
   emptyState: {
     flex: 1,
@@ -812,14 +843,14 @@ const styles = StyleSheet.create({
     paddingVertical: 80,
   },
   emptyStateTitle: {
-    fontSize: 20,
+    fontSize: scaleFontSize(20),
     fontFamily: Fonts.bold,
     color: "#fff",
     marginTop: 16,
     marginBottom: 8,
   },
   emptyStateText: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
     color: "#9ca3af",
     textAlign: "center",
@@ -854,7 +885,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   eventTitle: {
-    fontSize: 20,
+    fontSize: scaleFontSize(20),
     fontFamily: Fonts.bold,
     color: "#fff",
     flex: 1,
@@ -870,7 +901,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   publicBadgeText: {
-    fontSize: 10,
+    fontSize: scaleFontSize(10),
     fontFamily: Fonts.bold,
     color: "#10b981",
     letterSpacing: 0.5,
@@ -882,7 +913,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   eventDetailText: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
     color: "#e5e7eb",
     flex: 1,
@@ -930,7 +961,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#374151",
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
     color: "#fff",
   },
@@ -938,13 +969,13 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   modalBody: {
-    padding: 20,
+    padding: getResponsivePadding(),
   },
   inputGroup: {
     marginBottom: 20,
   },
   inputLabel: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.semiBold,
     color: "#e5e7eb",
     marginBottom: 8,
@@ -953,7 +984,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#374151",
     borderRadius: 12,
     padding: 14,
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
     color: "#fff",
     borderWidth: 1,
@@ -979,7 +1010,7 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     color: "#9ca3af",
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.semiBold,
   },
   createButton: {
@@ -993,7 +1024,7 @@ const styles = StyleSheet.create({
   },
   createButtonText: {
     color: "white",
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
   },
   imagePickerButton: {
@@ -1011,7 +1042,7 @@ const styles = StyleSheet.create({
   },
   imagePickerText: {
     color: "white",
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.semiBold,
   },
   imagePreviewContainer: {
@@ -1043,7 +1074,7 @@ const styles = StyleSheet.create({
     borderColor: "#4b5563",
   },
   datePickerText: {
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
     color: "#fff",
     flex: 1,
@@ -1063,7 +1094,7 @@ const styles = StyleSheet.create({
   },
   searchInputInModal: {
     flex: 1,
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
     color: "#fff",
   },
@@ -1097,12 +1128,12 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   userSearchName: {
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.semiBold,
     color: "#fff",
   },
   userSearchEmail: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
     color: "#6b7280",
     marginTop: 2,
@@ -1114,7 +1145,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   vendorBadgeText: {
-    fontSize: 12,
+    fontSize: scaleFontSize(12),
     fontFamily: Fonts.semiBold,
     color: "#fff",
   },
@@ -1123,7 +1154,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   emptyUserSearchText: {
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
     color: "#6b7280",
     marginTop: 12,

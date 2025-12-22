@@ -43,7 +43,7 @@ export default function ImagePickerButton({
 
     // Launch image picker
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: shape === "circle" ? [1, 1] : [16, 9],
       quality: 0.8,

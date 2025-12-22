@@ -22,6 +22,7 @@ import chatService, { Chat } from "@/services/chat.service";
 import { BASE_URL } from "@/constants/constants";
 import * as SecureStore from "expo-secure-store";
 import { capitalize } from "@/libs/helpers";
+import { scaleFontSize } from "@/utils/responsive";
 
 interface SearchUser {
   id: string;
@@ -375,7 +376,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   headerTitle: {
-    fontSize: 32,
+    fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
     color: "#fff",
   },

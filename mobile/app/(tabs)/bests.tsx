@@ -15,6 +15,7 @@ import { Fonts } from "@/constants/fonts";
 import { AnimatedListCard, LoadingScreen } from "@/components/shared";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CITIES } from "@/constants/constants";
+import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
 export default function BestsPage() {
   const router = useRouter();
@@ -88,38 +89,45 @@ export default function BestsPage() {
         keyExtractor={(item) => item._id}
         ListHeaderComponent={
           <View style={styles.scrollableHeader}>
-            <Text style={styles.subtitle}>Lists and Guides</Text>
+            <Text style={styles.subtitle}>City Guides & Lists</Text>
             <Text style={styles.description}>
-              Create and sell guides and lists of the best things in your city for
-              others to purchase! Make money and share your opinion on the best
-              things in your city!
+              Share your favorite spots and create curated guides for your city.
+              Others can purchase your guides to discover the best places!
             </Text>
+
+            <View style={styles.highlightBox}>
+              <View style={styles.highlightIconContainer}>
+                <Ionicons name="bulb" size={24} color="#a855f7" />
+              </View>
+              <View style={styles.highlightContent}>
+                <Text style={styles.highlightTitle}>How it Works</Text>
+                <Text style={styles.highlightText}>
+                  1. Create a list of your favorite spots in your city{"\n"}
+                  2. Set a price for your guide{"\n"}
+                  3. Earn money when others purchase it
+                </Text>
+              </View>
+            </View>
 
             <TouchableOpacity
               style={styles.sampleGuideLink}
               onPress={() => router.push("/guide/sample" as any)}
             >
-              <Ionicons name="document-text-outline" size={16} color="#a855f7" />
-              <Text style={styles.sampleGuideText}>See a sample guide HERE</Text>
+              <Ionicons name="document-text-outline" size={18} color="#a855f7" />
+              <Text style={styles.sampleGuideText}>View Sample Guide</Text>
             </TouchableOpacity>
-
-            <Text style={styles.examplesText}>
-              Sample topics: &ldquo;Best Pizza spots in New York City,&rdquo; &ldquo;Best Night Clubs
-              in Washington DC,&rdquo; &ldquo;Best Hair salons in Miami, Florida,&rdquo; &ldquo;Best plastic
-              surgeons in Los Angeles.&rdquo;
-            </Text>
 
             <TouchableOpacity
               style={styles.createButton}
               onPress={handleCreateGuide}
             >
-              <Ionicons name="add-circle" size={20} color="#fff" />
+              <Ionicons name="add-circle" size={22} color="#fff" />
               <Text style={styles.createButtonText}>
-                Create your Best of Your City List and Guide
+                Create Your Guide
               </Text>
             </TouchableOpacity>
 
-            <Text style={styles.sectionTitle}>Select Your City</Text>
+            <Text style={styles.sectionTitle}>Browse Guides by City</Text>
           </View>
         }
         renderItem={({ item, index }) => (
@@ -144,7 +152,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#0f0f1a",
   },
   fixedHeader: {
-    paddingHorizontal: 20,
+    paddingHorizontal: getResponsivePadding(),
     paddingTop: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
@@ -154,6 +162,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: 12,
   },
   myGuidesButton: {
     flexDirection: "row",
@@ -165,51 +174,74 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   myGuidesText: {
-    fontSize: 13,
+    fontSize: scaleFontSize(13),
     fontFamily: Fonts.semiBold,
     color: "#a855f7",
   },
   scrollableHeader: {
-    paddingHorizontal: 20,
+    paddingHorizontal: getResponsivePadding(),
     paddingTop: 16,
   },
   title: {
-    fontSize: 32,
+    fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
     color: "#fff",
+    flex: 1,
   },
   subtitle: {
-    fontSize: 24,
+    fontSize: scaleFontSize(20),
     fontFamily: Fonts.semiBold,
     color: "#a855f7",
     marginBottom: 12,
   },
   description: {
-    fontSize: 14,
+    fontSize: scaleFontSize(15),
     fontFamily: Fonts.regular,
     color: "#9ca3af",
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  highlightBox: {
+    flexDirection: "row",
+    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(168, 85, 247, 0.3)",
+  },
+  highlightIconContainer: {
+    marginRight: 12,
+  },
+  highlightContent: {
+    flex: 1,
+  },
+  highlightTitle: {
+    fontSize: scaleFontSize(16),
+    fontFamily: Fonts.bold,
+    color: "#fff",
+    marginBottom: 8,
+  },
+  highlightText: {
+    fontSize: scaleFontSize(13),
+    fontFamily: Fonts.regular,
+    color: "#e5e7eb",
     lineHeight: 20,
-    marginBottom: 12,
   },
   sampleGuideLink: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginBottom: 12,
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 16,
+    paddingVertical: 12,
+    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    borderRadius: 8,
   },
   sampleGuideText: {
-    fontSize: 14,
+    fontSize: scaleFontSize(15),
     fontFamily: Fonts.semiBold,
     color: "#a855f7",
-    textDecorationLine: "underline",
-  },
-  examplesText: {
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: "#6b7280",
-    lineHeight: 18,
-    fontStyle: "italic",
-    marginBottom: 20,
   },
   createButton: {
     flexDirection: "row",
@@ -224,18 +256,18 @@ const styles = StyleSheet.create({
   },
   createButtonText: {
     color: "#fff",
-    fontSize: 15,
+    fontSize: scaleFontSize(15),
     fontFamily: Fonts.semiBold,
     textAlign: "center",
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: scaleFontSize(18),
     fontFamily: Fonts.bold,
     color: "#fff",
     marginBottom: 16,
   },
   listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 90,
+    paddingHorizontal: getResponsivePadding(),
+    paddingBottom: 20,
   },
 });

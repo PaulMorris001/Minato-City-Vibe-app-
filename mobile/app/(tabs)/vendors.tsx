@@ -18,6 +18,8 @@ import { City } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import BecomeVendorModal from "@/components/client/BecomeVendorModal";
 import { AnimatedListCard, LoadingScreen } from "@/components/shared";
+import { scaleFontSize } from "@/utils/responsive";
+
 
 export default function VendorsPage() {
   const router = useRouter();
@@ -180,8 +182,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#a855f7",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 12,
     gap: 6,
   },
@@ -191,7 +193,7 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.semiBold,
   },
   title: {
-    fontSize: 32,
+    fontSize: scaleFontSize(28),
     fontFamily: Fonts.bold,
     color: "#fff",
     marginBottom: 8,
@@ -202,7 +204,7 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
   },
   listContent: {
-    paddingBottom: 90,
+    paddingBottom: 20,
   },
   emptyContainer: {
     alignItems: "center",

@@ -19,6 +19,7 @@ import * as SecureStore from "expo-secure-store";
 import { FormInput, PrimaryButton } from "@/components/shared";
 import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
 import * as Sentry from "@sentry/react-native";
+import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
 export default function Signup() {
   const router = useRouter();
@@ -236,20 +237,20 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: "center",
-    padding: 24,
+    padding: getResponsivePadding(),
   },
   header: {
     marginBottom: 40,
   },
   logo: {
-    fontSize: 42,
+    fontSize: scaleFontSize(42),
     fontWeight: "bold",
     color: "#a855f7",
     textAlign: "center",
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 18,
+    fontSize: scaleFontSize(18),
     color: "#9ca3af",
     textAlign: "center",
   },
@@ -272,7 +273,7 @@ const styles = StyleSheet.create({
   dividerText: {
     marginHorizontal: 16,
     color: "#9ca3af",
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontWeight: "600",
   },
   googleButton: {
@@ -288,7 +289,7 @@ const styles = StyleSheet.create({
   },
   googleButtonText: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontWeight: "600",
   },
   footer: {
@@ -297,7 +298,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     color: "#9ca3af",
-    fontSize: 15,
+    fontSize: scaleFontSize(15),
   },
   link: {
     color: "#a855f7",

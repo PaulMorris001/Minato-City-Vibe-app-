@@ -28,7 +28,8 @@ class SocketService {
       // Get authentication token
       const token = await SecureStore.getItemAsync("token");
       if (!token) {
-        console.error("No auth token found");
+        // Silently skip connection if not authenticated
+        // User will need to log in first
         return;
       }
 

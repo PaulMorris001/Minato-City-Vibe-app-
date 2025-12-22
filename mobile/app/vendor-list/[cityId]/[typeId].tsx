@@ -14,6 +14,7 @@ import {
 import { Vendor } from "@/libs/interfaces";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "@/constants/colors";
+import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
 export default function VendorsList() {
   const { cityId, typeId } = useLocalSearchParams();
@@ -24,17 +25,29 @@ export default function VendorsList() {
   useEffect(() => {
     const loadVendors = async () => {
       try {
+        console.log(`Fetching vendors for cityId: ${cityId}, typeId: ${typeId}`);
         const data = await fetchVendors(cityId as string, typeId as string);
-        setVendors(data);
+        console.log("Vendors received:", data);
+
+        // Handle both array response and object with vendors array
+        if (Array.isArray(data)) {
+          setVendors(data);
+        } else if (data && Array.isArray(data.vendors)) {
+          setVendors(data.vendors);
+        } else {
+          console.warn("Unexpected data format:", data);
+          setVendors([]);
+        }
       } catch (error) {
         console.error("Error loading vendors:", error);
+        setVendors([]);
       } finally {
         setLoading(false);
       }
     };
     loadVendors();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [cityId, typeId]);
 
   const renderPriceRange = (price: number) => {
     const dollars = [];
@@ -207,7 +220,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: getResponsivePadding(),
     paddingTop: 16,
     paddingBottom: 12,
   },
@@ -215,13 +228,14 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   title: {
-    fontSize: 24,
+    fontSize: scaleFontSize(20),
     fontWeight: "bold",
     color: "#fff",
     marginLeft: 12,
+    flex: 1,
   },
   listContent: {
-    padding: 16,
+    padding: getResponsivePadding(),
     paddingBottom: 100,
   },
   card: {
@@ -245,7 +259,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   vendorName: {
-    fontSize: 20,
+    fontSize: scaleFontSize(18),
     fontWeight: "bold",
     color: "#fff",
     flex: 1,
@@ -260,12 +274,12 @@ const styles = StyleSheet.create({
   },
   verifiedText: {
     color: "#22c55e",
-    fontSize: 12,
+    fontSize: scaleFontSize(12),
     fontWeight: "600",
     marginLeft: 4,
   },
   description: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     color: "#9ca3af",
     marginBottom: 12,
     lineHeight: 20,
@@ -280,7 +294,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   dollar: {
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontWeight: "bold",
     marginRight: 2,
   },
@@ -296,7 +310,7 @@ const styles = StyleSheet.create({
   },
   ratingText: {
     color: "#fbbf24",
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontWeight: "600",
     marginLeft: 6,
   },
@@ -315,7 +329,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: "#9ca3af",
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     marginTop: 12,
   },
   footer: {
@@ -324,19 +338,19 @@ const styles = StyleSheet.create({
   ctaContainer: {
     backgroundColor: "#1f1f2e",
     borderRadius: 16,
-    padding: 24,
+    padding: getResponsivePadding(),
     alignItems: "center",
     borderWidth: 1,
     borderColor: Colors.primary,
   },
   ctaTitle: {
-    fontSize: 22,
+    fontSize: scaleFontSize(20),
     fontWeight: "bold",
     color: "#fff",
     marginBottom: 8,
   },
   ctaText: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     color: "#9ca3af",
     textAlign: "center",
     marginBottom: 20,
@@ -353,7 +367,7 @@ const styles = StyleSheet.create({
   },
   ctaButtonText: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontWeight: "700",
   },
 });

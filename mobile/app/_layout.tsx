@@ -13,7 +13,6 @@ import {
 } from "@expo-google-fonts/outfit";
 import * as SplashScreen from "expo-splash-screen";
 import * as NavigationBar from "expo-navigation-bar";
-import { setBackgroundColorAsync } from "expo-system-ui";
 import { PortalProvider } from "@gorhom/portal";
 import { AccountProvider } from "@/contexts/AccountContext";
 import socketService from "@/services/socket.service";
@@ -87,15 +86,6 @@ export default Sentry.wrap(function RootLayout() {
           : theme.colors.light.background
       );
     }
-  }, [colorScheme]);
-
-  // Keep the root view background color in sync with the current theme
-  useEffect(() => {
-    setBackgroundColorAsync(
-      colorScheme === "dark"
-        ? theme.colors.dark.background
-        : theme.colors.light.background
-    );
   }, [colorScheme]);
 
   if (!fontsLoaded) {

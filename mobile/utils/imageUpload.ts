@@ -28,7 +28,7 @@ export async function pickImage(): Promise<string | null> {
 
   // Pick image
   const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    mediaTypes: ['images'],
     allowsEditing: true,
     aspect: [4, 3],
     quality: 0.8, // Compress to reduce file size
@@ -55,7 +55,7 @@ export async function pickMultipleImages(): Promise<string[]> {
 
   // Pick images
   const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    mediaTypes: ['images'],
     allowsMultipleSelection: true,
     quality: 0.8,
   });

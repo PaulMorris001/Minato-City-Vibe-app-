@@ -24,6 +24,7 @@ import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Carousel from "@/components/Carousel";
+import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
 interface PublicEvent {
   _id: string;
@@ -141,7 +142,7 @@ export default function Home() {
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [16, 9],
       quality: 0.8,
@@ -155,11 +156,31 @@ export default function Home() {
   };
 
   const onDateChange = (event: any, date?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
-    if (date) {
-      setSelectedDate(date);
-      // Format date as ISO string for the backend
-      setEventData({ ...eventData, date: date.toISOString() });
+    try {
+      // Handle dismissal on Android
+      if (Platform.OS === 'android') {
+        setShowDatePicker(false);
+
+        // If user cancelled or no date, don't update
+        if (!event || event.type === 'dismissed' || !date) {
+          return;
+        }
+      }
+
+      // On iOS, handle dismissal
+      if (event && event.type === 'dismissed') {
+        setShowDatePicker(false);
+        return;
+      }
+
+      // Update the selected date
+      if (date) {
+        setSelectedDate(date);
+        setEventData({ ...eventData, date: date.toISOString() });
+      }
+    } catch (error) {
+      console.error('Date picker error:', error);
+      setShowDatePicker(false);
     }
   };
 
@@ -300,91 +321,6 @@ export default function Home() {
     }
   };
 
-  // Mock top vendors data
-  const topVendors: {
-    id: number;
-    name: string;
-    category: string;
-    rating: number;
-    icon: React.ComponentProps<typeof Ionicons>["name"];
-    gradient: readonly [string, string];
-  }[] = [
-    {
-      id: 1,
-      name: "Electric Lounge",
-      category: "Nightclub",
-      rating: 4.8,
-      icon: "musical-notes",
-      gradient: ["#667eea", "#764ba2"] as const,
-    },
-    {
-      id: 2,
-      name: "Skybar Rooftop",
-      category: "Bar & Lounge",
-      rating: 4.9,
-      icon: "wine",
-      gradient: ["#f093fb", "#f5576c"] as const,
-    },
-    {
-      id: 3,
-      name: "Groove Station",
-      category: "DJ Services",
-      rating: 4.7,
-      icon: "disc",
-      gradient: ["#4facfe", "#00f2fe"] as const,
-    },
-  ];
-
-  // Pricing plans
-  const pricingPlans: {
-    id: number;
-    name: string;
-    price: string;
-    period: string;
-    features: string[];
-    gradient: readonly [string, string];
-    popular?: boolean;
-  }[] = [
-    {
-      id: 1,
-      name: "Basic",
-      price: "$20",
-      period: "/month",
-      features: [
-        "Profile listing",
-        "Contact information",
-        "Basic analytics",
-      ],
-      gradient: ["#667eea", "#764ba2"] as const,
-    },
-    {
-      id: 2,
-      name: "Pro",
-      price: "$35",
-      period: "/month",
-      features: [
-        "Everything in Basic",
-        "Featured placement",
-        "Advanced analytics",
-        "Priority support",
-      ],
-      gradient: ["#f093fb", "#f5576c"] as const,
-      popular: true,
-    },
-    {
-      id: 3,
-      name: "Premium",
-      price: "$50",
-      period: "/month",
-      features: [
-        "Everything in Pro",
-        "Top placement",
-        "Booking system",
-        "Dedicated account manager",
-      ],
-      gradient: ["#43e97b", "#38f9d7"] as const,
-    },
-  ];
 
   const AnimatedFeatureCard = ({
     icon,
@@ -681,143 +617,93 @@ export default function Home() {
           </View>
         </View>
 
-        {/* Top Vendors Section */}
-        <View style={styles.vendorsSection}>
-          <Text style={styles.sectionTitle}>Top Rated Vendors</Text>
+        {/* Quick Actions Section */}
+        <View style={styles.quickActionsSection}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
           <Text style={styles.sectionSubtitle}>
-            Trusted partners for exceptional experiences
+            Everything you need at your fingertips
           </Text>
 
-          {topVendors.map((vendor, index) => {
-            const VendorCard = () => {
-              const vendorFade = useRef(new Animated.Value(0)).current;
-              const vendorSlide = useRef(new Animated.Value(50)).current;
-
-              useEffect(() => {
-                Animated.parallel([
-                  Animated.timing(vendorFade, {
-                    toValue: 1,
-                    duration: 500,
-                    delay: index * 150,
-                    useNativeDriver: true,
-                  }),
-                  Animated.spring(vendorSlide, {
-                    toValue: 0,
-                    delay: index * 150,
-                    tension: 50,
-                    friction: 8,
-                    useNativeDriver: true,
-                  }),
-                ]).start();
-              }, []);
-
-              return (
-                <Animated.View
-                  style={{
-                    opacity: vendorFade,
-                    transform: [{ translateX: vendorSlide }],
-                  }}
-                >
-                  <TouchableOpacity
-                    style={styles.vendorCard}
-                    activeOpacity={0.8}
-                  >
-                    <LinearGradient
-                      colors={vendor.gradient}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.vendorIconGradient}
-                    >
-                      <Ionicons name={vendor.icon} size={24} color="white" />
-                    </LinearGradient>
-                    <View style={styles.vendorInfo}>
-                      <Text style={styles.vendorName}>{vendor.name}</Text>
-                      <Text style={styles.vendorCategory}>
-                        {vendor.category}
-                      </Text>
-                      <View style={styles.ratingContainer}>
-                        <Ionicons name="star" size={14} color="#fbbf24" />
-                        <Text style={styles.ratingText}>{vendor.rating}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.vendorArrow}>
-                      <Ionicons
-                        name="chevron-forward"
-                        size={20}
-                        color="#9ca3af"
-                      />
-                    </View>
-                  </TouchableOpacity>
-                </Animated.View>
-              );
-            };
-            return <VendorCard key={vendor.id} />;
-          })}
-        </View>
-
-        {/* Pricing Section */}
-        <LinearGradient
-          colors={["#1a1a2e", "#16213e", "#0f0f1a"]}
-          style={styles.pricingSection}
-        >
-          <Text style={styles.pricingSectionTitle}>Become a Vendor</Text>
-          <Text style={styles.pricingSectionSubtitle}>
-            Choose the perfect plan for your business
-          </Text>
-
-          {pricingPlans.map((plan) => (
-            <View
-              key={plan.id}
-              style={[styles.pricingCard, plan.popular && styles.popularCard]}
-            >
-              {plan.popular && (
+          <View style={styles.quickActionsGrid}>
+            {/* Row 1 */}
+            <View style={styles.quickActionRow}>
+              <TouchableOpacity
+                style={[styles.quickActionCard, styles.quickActionCardHalf]}
+                activeOpacity={0.8}
+                onPress={() => router.push("/(tabs)/vendors")}
+              >
                 <LinearGradient
-                  colors={["#f093fb", "#f5576c"]}
+                  colors={["#5b21b6", "#7c3aed"]}
                   start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.popularBadge}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.quickActionGradient}
                 >
-                  <Text style={styles.popularText}>MOST POPULAR</Text>
-                </LinearGradient>
-              )}
-              <Text style={styles.planName}>{plan.name}</Text>
-              <View style={styles.priceContainer}>
-                <LinearGradient
-                  colors={plan.gradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.priceGradientBg}
-                >
-                  <Text style={styles.price}>{plan.price}</Text>
-                </LinearGradient>
-                <Text style={styles.period}>{plan.period}</Text>
-              </View>
-              <View style={styles.planFeaturesContainer}>
-                {plan.features.map((feature, idx) => (
-                  <View key={idx} style={styles.planFeatureRow}>
-                    <LinearGradient
-                      colors={plan.gradient}
-                      style={styles.checkCircle}
-                    >
-                      <Ionicons name="checkmark" size={12} color="white" />
-                    </LinearGradient>
-                    <Text style={styles.planFeatureText}>{feature}</Text>
+                  <View style={styles.quickActionIconBg}>
+                    <Ionicons name="business" size={24} color="white" />
                   </View>
-                ))}
-              </View>
-              <TouchableOpacity style={styles.planButton} activeOpacity={0.8}>
+                  <Text style={styles.quickActionText}>Browse Vendors</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.quickActionCard, styles.quickActionCardHalf]}
+                activeOpacity={0.8}
+                onPress={() => router.push("/(tabs)/events")}
+              >
                 <LinearGradient
-                  colors={plan.gradient}
+                  colors={["#be123c", "#e11d48"]}
                   start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.planButtonGradient}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.quickActionGradient}
                 >
-                  <Text style={styles.planButtonText}>Get Started</Text>
+                  <View style={styles.quickActionIconBg}>
+                    <Ionicons name="calendar" size={24} color="white" />
+                  </View>
+                  <Text style={styles.quickActionText}>My Events</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
-          ))}
-        </LinearGradient>
+
+            {/* Row 2 */}
+            <View style={styles.quickActionRow}>
+              <TouchableOpacity
+                style={[styles.quickActionCard, styles.quickActionCardHalf]}
+                activeOpacity={0.8}
+                onPress={() => router.push("/(tabs)/bests")}
+              >
+                <LinearGradient
+                  colors={["#0369a1", "#0284c7"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.quickActionGradient}
+                >
+                  <View style={styles.quickActionIconBg}>
+                    <Ionicons name="star" size={24} color="white" />
+                  </View>
+                  <Text style={styles.quickActionText}>Best of Lists</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.quickActionCard, styles.quickActionCardHalf]}
+                activeOpacity={0.8}
+                onPress={() => router.push("/(tabs)/chats")}
+              >
+                <LinearGradient
+                  colors={["#15803d", "#16a34a"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.quickActionGradient}
+                >
+                  <View style={styles.quickActionIconBg}>
+                    <Ionicons name="chatbubbles" size={24} color="white" />
+                  </View>
+                  <Text style={styles.quickActionText}>Messages</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
 
         {/* Footer */}
         <View style={styles.footer}>
@@ -896,11 +782,20 @@ export default function Home() {
                     {formatDisplayDate(eventData.date)}
                   </Text>
                 </TouchableOpacity>
-                {showDatePicker && (
+                {showDatePicker && Platform.OS === 'ios' && (
                   <DateTimePicker
                     value={selectedDate}
                     mode="datetime"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    display="spinner"
+                    onChange={onDateChange}
+                    minimumDate={new Date()}
+                    themeVariant="dark"
+                  />
+                )}
+                {showDatePicker && Platform.OS === 'android' && (
+                  <DateTimePicker
+                    value={selectedDate}
+                    mode="date"
                     onChange={onDateChange}
                     minimumDate={new Date()}
                   />
@@ -1162,7 +1057,7 @@ const styles = StyleSheet.create({
   heroSection: {
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight! + 40 : 80,
     paddingBottom: 60,
-    paddingHorizontal: 24,
+    paddingHorizontal: getResponsivePadding(),
     position: "relative",
     overflow: "hidden",
   },
@@ -1170,7 +1065,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   logoText: {
-    fontSize: 48,
+    fontSize: scaleFontSize(40),
     fontFamily: Fonts.black,
     color: "#a855f7",
     marginBottom: 16,
@@ -1179,15 +1074,15 @@ const styles = StyleSheet.create({
     textShadowRadius: 20,
   },
   heroTitle: {
-    fontSize: 28,
+    fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
     color: "#fff",
     textAlign: "center",
     marginBottom: 12,
-    lineHeight: 36,
+    lineHeight: 32,
   },
   heroSubtitle: {
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
     color: "#9ca3af",
     textAlign: "center",
@@ -1212,7 +1107,7 @@ const styles = StyleSheet.create({
   },
   ctaText: {
     color: "white",
-    fontSize: 18,
+    fontSize: scaleFontSize(18),
     fontFamily: Fonts.bold,
   },
   decorCircle1: {
@@ -1235,18 +1130,18 @@ const styles = StyleSheet.create({
   },
   featuresSection: {
     paddingVertical: 50,
-    paddingHorizontal: 24,
+    paddingHorizontal: getResponsivePadding(),
     backgroundColor: "#0f0f1a",
   },
   sectionTitle: {
-    fontSize: 28,
+    fontSize: scaleFontSize(22),
     fontFamily: Fonts.bold,
     color: "#fff",
     textAlign: "center",
     marginBottom: 8,
   },
   sectionSubtitle: {
-    fontSize: 15,
+    fontSize: scaleFontSize(15),
     fontFamily: Fonts.regular,
     color: "#9ca3af",
     textAlign: "center",
@@ -1278,181 +1173,70 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   featureTitle: {
-    fontSize: 18,
+    fontSize: scaleFontSize(18),
     fontFamily: Fonts.bold,
     color: "white",
     marginBottom: 8,
     textAlign: "center",
   },
   featureDescription: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
     color: "rgba(255, 255, 255, 0.8)",
     textAlign: "center",
     lineHeight: 20,
   },
-  vendorsSection: {
-    paddingVertical: 50,
-    paddingHorizontal: 24,
+  quickActionsSection: {
+    paddingVertical: 40,
+    paddingHorizontal: getResponsivePadding(),
     backgroundColor: "#1f1f2e",
   },
-  vendorCard: {
-    backgroundColor: "#0f0f1a",
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#374151",
-  },
-  vendorIconGradient: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 14,
-  },
-  vendorInfo: {
-    flex: 1,
-  },
-  vendorName: {
-    fontSize: 17,
-    fontFamily: Fonts.bold,
-    color: "#fff",
-    marginBottom: 4,
-  },
-  vendorCategory: {
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: "#9ca3af",
-    marginBottom: 6,
-  },
-  ratingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  ratingText: {
-    fontSize: 14,
-    fontFamily: Fonts.semiBold,
-    color: "#fbbf24",
-  },
-  vendorArrow: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#374151",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  pricingSection: {
-    paddingVertical: 50,
-    paddingHorizontal: 24,
-  },
-  pricingSectionTitle: {
-    fontSize: 28,
-    fontFamily: Fonts.bold,
-    color: "#fff",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  pricingSectionSubtitle: {
-    fontSize: 15,
-    fontFamily: Fonts.regular,
-    color: "#9ca3af",
-    textAlign: "center",
-    marginBottom: 32,
-  },
-  pricingCard: {
-    backgroundColor: "#1f1f2e",
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: "#374151",
-    position: "relative",
-  },
-  popularCard: {
-    borderColor: "#f093fb",
-    borderWidth: 2,
-  },
-  popularBadge: {
-    position: "absolute",
-    top: -14,
-    right: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  popularText: {
-    color: "white",
-    fontSize: 11,
-    fontFamily: Fonts.extraBold,
-    letterSpacing: 1,
-  },
-  planName: {
-    fontSize: 24,
-    fontFamily: Fonts.bold,
-    color: "#fff",
-    marginBottom: 12,
-  },
-  priceContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 24,
-  },
-  priceGradientBg: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginRight: 8,
-  },
-  price: {
-    fontSize: 36,
-    fontFamily: Fonts.black,
-    color: "white",
-  },
-  period: {
-    fontSize: 16,
-    fontFamily: Fonts.regular,
-    color: "#9ca3af",
-  },
-  planFeaturesContainer: {
-    gap: 14,
-    marginBottom: 24,
-  },
-  planFeatureRow: {
-    flexDirection: "row",
-    alignItems: "center",
+  quickActionsGrid: {
     gap: 12,
   },
-  checkCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    justifyContent: "center",
-    alignItems: "center",
+  quickActionRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 0,
   },
-  planFeatureText: {
-    fontSize: 15,
-    fontFamily: Fonts.regular,
-    color: "#e5e7eb",
+  quickActionCard: {
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  quickActionCardHalf: {
     flex: 1,
   },
-  planButton: {
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-  planButtonGradient: {
-    paddingVertical: 14,
+  quickActionGradient: {
+    paddingVertical: 20,
+    paddingHorizontal: 16,
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 110,
   },
-  planButtonText: {
-    color: "white",
-    fontSize: 16,
+  quickActionIconBg: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  quickActionText: {
+    fontSize: scaleFontSize(13),
     fontFamily: Fonts.bold,
+    color: "white",
+    textAlign: "center",
+    textShadowColor: "rgba(0, 0, 0, 0.4)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   footer: {
     paddingVertical: 30,
@@ -1460,7 +1244,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#0f0f1a",
   },
   footerText: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
     color: "#6b7280",
   },
@@ -1504,7 +1288,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#374151",
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
     color: "#fff",
   },
@@ -1518,7 +1302,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   inputLabel: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.semiBold,
     color: "#e5e7eb",
     marginBottom: 8,
@@ -1527,7 +1311,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#374151",
     borderRadius: 12,
     padding: 14,
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
     color: "#fff",
     borderWidth: 1,
@@ -1553,7 +1337,7 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     color: "#9ca3af",
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.semiBold,
   },
   createButton: {
@@ -1567,7 +1351,7 @@ const styles = StyleSheet.create({
   },
   createButtonText: {
     color: "white",
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
   },
   imagePickerButton: {
@@ -1585,7 +1369,7 @@ const styles = StyleSheet.create({
   },
   imagePickerText: {
     color: "white",
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.semiBold,
   },
   imagePreviewContainer: {
@@ -1617,7 +1401,7 @@ const styles = StyleSheet.create({
     borderColor: "#4b5563",
   },
   datePickerText: {
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
     color: "#fff",
     flex: 1,
@@ -1630,11 +1414,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: getResponsivePadding(),
     marginBottom: 8,
   },
   seeAllText: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.semiBold,
     color: "#a855f7",
   },
@@ -1681,7 +1465,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   eventCardTitle: {
-    fontSize: 22,
+    fontSize: scaleFontSize(22),
     fontFamily: Fonts.bold,
     color: "#fff",
     marginBottom: 12,
@@ -1693,7 +1477,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   eventCardDetailText: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
     color: "#e5e7eb",
     flex: 1,
@@ -1714,12 +1498,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   eventCardPriceText: {
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
     color: "#fff",
   },
   eventCardTicketsText: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.medium,
     color: "#fbbf24",
   },
@@ -1737,7 +1521,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   buyTicketText: {
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
     color: "#fff",
   },
@@ -1750,7 +1534,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   freeEventText: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.bold,
     color: "#fff",
     letterSpacing: 0.5,
@@ -1766,7 +1550,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   purchasedText: {
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
     color: "#10b981",
   },
@@ -1781,7 +1565,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   creatorText: {
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
     color: "#f59e0b",
   },
@@ -1807,7 +1591,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(168, 85, 247, 0.1)",
   },
   visibilityOptionText: {
-    fontSize: 15,
+    fontSize: scaleFontSize(15),
     fontFamily: Fonts.semiBold,
     color: "#9ca3af",
   },

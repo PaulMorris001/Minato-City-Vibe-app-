@@ -21,6 +21,7 @@ import { capitalize } from "@/libs/helpers";
 import { FormInput, PrimaryButton } from "@/components/shared";
 import { useAccount } from "@/contexts/AccountContext";
 import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
+import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
 export default function Login() {
   const router = useRouter();
@@ -321,20 +322,20 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: "center",
-    padding: 24,
+    padding: getResponsivePadding(),
   },
   header: {
     marginBottom: 40,
   },
   logo: {
-    fontSize: 42,
+    fontSize: scaleFontSize(42),
     fontWeight: "bold",
     color: "#a855f7",
     textAlign: "center",
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 18,
+    fontSize: scaleFontSize(18),
     color: "#9ca3af",
     textAlign: "center",
   },
@@ -357,7 +358,7 @@ const styles = StyleSheet.create({
   dividerText: {
     marginHorizontal: 16,
     color: "#9ca3af",
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontWeight: "600",
   },
   googleButton: {
@@ -373,7 +374,7 @@ const styles = StyleSheet.create({
   },
   googleButtonText: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontWeight: "600",
   },
   footer: {
@@ -382,7 +383,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     color: "#9ca3af",
-    fontSize: 15,
+    fontSize: scaleFontSize(15),
   },
   link: {
     color: "#a855f7",
@@ -398,7 +399,7 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: "#1f1f2e",
     borderRadius: 20,
-    padding: 24,
+    padding: getResponsivePadding(),
     width: "100%",
     maxWidth: 400,
   },
@@ -407,14 +408,14 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: scaleFontSize(24),
     fontWeight: "bold",
     color: "#fff",
     marginTop: 16,
     marginBottom: 4,
   },
   modalSubtitle: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     color: "#9ca3af",
   },
   roleButton: {
@@ -422,7 +423,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#0f0f1a",
     borderRadius: 16,
-    padding: 20,
+    padding: getResponsivePadding(),
     marginBottom: 16,
     borderWidth: 2,
     borderColor: "#374151",
@@ -440,13 +441,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   roleTitle: {
-    fontSize: 18,
+    fontSize: scaleFontSize(18),
     fontWeight: "600",
     color: "#fff",
     marginBottom: 4,
   },
   roleDescription: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     color: "#9ca3af",
   },
 });

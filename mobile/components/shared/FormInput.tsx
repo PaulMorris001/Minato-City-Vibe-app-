@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TextInputProps,
   ViewStyle,
+  Platform,
 } from "react-native";
 import { Fonts } from "@/constants/fonts";
 
@@ -24,8 +25,18 @@ export default function FormInput({
   style,
   editable = true,
   multiline = false,
+  secureTextEntry,
   ...textInputProps
 }: FormInputProps) {
+  // Optimize password inputs for better performance
+  const passwordProps = secureTextEntry
+    ? {
+        textContentType: "password" as const,
+        autoComplete: Platform.OS === "android" ? "password" : "off",
+        importantForAutofill: "yes" as const,
+      }
+    : {};
+
   return (
     <View style={[styles.container, containerStyle]}>
       {label && (
@@ -46,6 +57,8 @@ export default function FormInput({
         editable={editable}
         multiline={multiline}
         textAlignVertical={multiline ? "top" : "center"}
+        secureTextEntry={secureTextEntry}
+        {...passwordProps}
         {...textInputProps}
       />
       {error && <Text style={styles.errorText}>{error}</Text>}

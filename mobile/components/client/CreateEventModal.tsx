@@ -20,6 +20,7 @@ import { Colors } from "@/constants/colors";
 import { Fonts } from "@/constants/fonts";
 import { ImagePickerButton } from "@/components/shared";
 import { uploadImage } from "@/utils/imageUpload";
+import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
 interface City {
   _id: string;
@@ -365,7 +366,7 @@ const styles = StyleSheet.create({
     maxHeight: "90%",
     backgroundColor: Colors.darkBackground,
     borderRadius: 16,
-    padding: 20,
+    padding: getResponsivePadding(),
   },
   header: {
     flexDirection: "row",
@@ -374,7 +375,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
     color: "#fff",
   },
@@ -388,11 +389,11 @@ const styles = StyleSheet.create({
   },
   closeButtonText: {
     color: "#fff",
-    fontSize: 18,
+    fontSize: scaleFontSize(18),
     fontFamily: Fonts.bold,
   },
   label: {
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.semiBold,
     color: "#e5e7eb",
     marginBottom: 8,
@@ -405,7 +406,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 12,
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
     color: "#fff",
     backgroundColor: "#1f1f2e",
@@ -439,7 +440,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginLeft: 8,
-    fontSize: 14,
+    fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
     color: "#9ca3af",
   },
@@ -465,11 +466,11 @@ const styles = StyleSheet.create({
   },
   checkmark: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
   },
   checkboxLabel: {
-    fontSize: 15,
+    fontSize: scaleFontSize(15),
     fontFamily: Fonts.medium,
     color: "#e5e7eb",
   },
@@ -486,7 +487,7 @@ const styles = StyleSheet.create({
   },
   createButtonText: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
   },
 });
