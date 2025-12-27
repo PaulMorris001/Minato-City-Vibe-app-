@@ -165,7 +165,7 @@ export default function VendorsPage() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    // flex: 1,
     backgroundColor: "#0f0f1a",
     paddingHorizontal: 20,
     paddingTop: 20,

@@ -1,7 +1,7 @@
 import Chat from "../models/chat.model.js";
 import Message from "../models/message.model.js";
 import User from "../models/user.model.js";
-import { emitNewMessage } from "./socket.service.js";
+import { emitNewMessage, getSocketInstance } from "./socket.service.js";
 import { uploadBase64Image, deleteImage } from "./image.service.js";
 
 /**
@@ -244,6 +244,15 @@ class ChatService {
         }
       }
     );
+
+    // Emit socket event to notify chat participants
+    const io = getSocketInstance();
+    if (io) {
+      io.to(`chat:${chatId}`).emit("message:read", {
+        chatId: chatId.toString(),
+        readerId: userId.toString()
+      });
+    }
 
     return { success: true };
   }

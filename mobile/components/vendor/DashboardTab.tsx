@@ -11,6 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "@/constants/colors";
 import { VendorStats } from "@/libs/interfaces";
+import { useFormatPrice } from "@/hooks/useFormatPrice";
 
 interface DashboardTabProps {
   stats: VendorStats | null;
@@ -23,6 +24,8 @@ export default function DashboardTab({
   onRefresh,
   refreshing,
 }: DashboardTabProps) {
+  const formatPrice = useFormatPrice();
+
   const renderStatCard = (
     icon: keyof typeof Ionicons.glyphMap,
     title: string,
@@ -81,7 +84,7 @@ export default function DashboardTab({
         {renderStatCard(
           "cash",
           "Avg. Price",
-          `$${stats?.averagePrice || "0.00"}`,
+          `$${formatPrice(stats?.averagePrice || 0)}`,
           "#3b82f6"
         )}
       </View>

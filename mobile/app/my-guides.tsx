@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  Dimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,9 +17,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Guide } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
+import { useFormatPrice } from "@/hooks/useFormatPrice";
+
+const { width: screenWidth } = Dimensions.get("window");
 
 export default function MyGuidesPage() {
   const router = useRouter();
+  const formatPrice = useFormatPrice();
   const [guides, setGuides] = useState<Guide[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -135,7 +140,7 @@ export default function MyGuidesPage() {
           <Text style={styles.statsText}>{item.views} views</Text>
           <Text style={styles.statsSeparator}>•</Text>
           <Text style={styles.priceText}>
-            {item.price === 0 ? "FREE" : `$${item.price.toFixed(2)}`}
+            {item.price === 0 ? "FREE" : `$${formatPrice(item.price)}`}
           </Text>
         </View>
         <View style={styles.actionsRow}>
@@ -242,12 +247,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: screenWidth > 400 ? 28 : 24,
     fontFamily: Fonts.bold,
     color: "#fff",
   },
   headerSubtitle: {
-    fontSize: 13,
+    fontSize: screenWidth > 400 ? 13 : 12,
     fontFamily: Fonts.regular,
     color: "#9ca3af",
     marginTop: 2,

@@ -16,10 +16,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "@/constants/colors";
 import { LinearGradient } from "expo-linear-gradient";
 import { Fonts } from "@/constants/fonts";
+import { useFormatPrice } from "@/hooks/useFormatPrice";
 
 export default function VendorDetails() {
   const { vendorId, vendorName } = useLocalSearchParams();
   const router = useRouter();
+  const formatPrice = useFormatPrice();
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -115,7 +117,7 @@ export default function VendorDetails() {
               style={styles.priceGradient}
             >
               <Text style={styles.price}>
-                {item.currency} {item.price.toLocaleString()}
+                {item.currency} {formatPrice(item.price)}
               </Text>
             </LinearGradient>
           </View>

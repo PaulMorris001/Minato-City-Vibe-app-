@@ -25,35 +25,14 @@ import { BASE_URL } from "@/constants/constants";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Carousel from "@/components/Carousel";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
-
-interface PublicEvent {
-  _id: string;
-  title: string;
-  date: string;
-  location: string;
-  image?: string;
-  description?: string;
-  isPublic: boolean;
-  isPaid: boolean;
-  ticketPrice?: number;
-  maxGuests?: number;
-  ticketsSold?: number;
-  ticketsRemaining?: number;
-  userHasPurchased?: boolean;
-  isCreator?: boolean;
-  createdBy: {
-    _id: string;
-    username: string;
-    email: string;
-    profilePicture?: string;
-  };
-}
+import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 
 export default function Home() {
   const router = useRouter();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
@@ -165,6 +144,13 @@ export default function Home() {
         if (!event || event.type === 'dismissed' || !date) {
           return;
         }
+
+        // On Android, after selecting date, show time picker
+        if (date) {
+          setSelectedDate(date);
+          setShowTimePicker(true);
+        }
+        return;
       }
 
       // On iOS, handle dismissal
@@ -173,7 +159,7 @@ export default function Home() {
         return;
       }
 
-      // Update the selected date
+      // Update the selected date (iOS only - handles both date and time)
       if (date) {
         setSelectedDate(date);
         setEventData({ ...eventData, date: date.toISOString() });
@@ -181,6 +167,29 @@ export default function Home() {
     } catch (error) {
       console.error('Date picker error:', error);
       setShowDatePicker(false);
+    }
+  };
+
+  const onTimeChange = (event: any, date?: Date) => {
+    try {
+      setShowTimePicker(false);
+
+      // If user cancelled or no date, don't update
+      if (!event || event.type === 'dismissed' || !date) {
+        return;
+      }
+
+      // Combine the selected date with the new time
+      if (date) {
+        const updatedDate = new Date(selectedDate);
+        updatedDate.setHours(date.getHours());
+        updatedDate.setMinutes(date.getMinutes());
+        setSelectedDate(updatedDate);
+        setEventData({ ...eventData, date: updatedDate.toISOString() });
+      }
+    } catch (error) {
+      console.error('Time picker error:', error);
+      setShowTimePicker(false);
     }
   };
 
@@ -449,7 +458,7 @@ export default function Home() {
           <View style={styles.exploreSection}>
             <View style={styles.exploreSectionHeader}>
               <Text style={styles.sectionTitle}>Explore Events</Text>
-              <TouchableOpacity onPress={() => router.push("/(tabs)/events")}>
+              <TouchableOpacity onPress={() => router.push("/public-events" as any)}>
                 <Text style={styles.seeAllText}>See All</Text>
               </TouchableOpacity>
             </View>
@@ -464,118 +473,11 @@ export default function Home() {
             ) : (
               <Carousel itemWidth={320} gap={16}>
                 {publicEvents.map((event) => (
-                  <TouchableOpacity
+                  <PublicEventCard
                     key={event._id}
-                    style={styles.eventCard}
-                    activeOpacity={0.9}
-                    onPress={() => router.push(`/event/${event._id}` as any)}
-                  >
-                    <View style={styles.eventCardInner}>
-                      {event.image ? (
-                        <Image source={{ uri: event.image }} style={styles.eventCardImage} />
-                      ) : (
-                        <LinearGradient
-                          colors={["#667eea", "#764ba2"]}
-                          style={styles.eventCardImagePlaceholder}
-                        >
-                          <Ionicons name="calendar" size={48} color="rgba(255,255,255,0.5)" />
-                        </LinearGradient>
-                      )}
-
-                      <LinearGradient
-                        colors={["transparent", "rgba(0,0,0,0.9)"]}
-                        style={styles.eventCardGradient}
-                      >
-                        <View style={styles.eventCardContent}>
-                          <Text style={styles.eventCardTitle} numberOfLines={2}>
-                            {event.title}
-                          </Text>
-
-                          <View style={styles.eventCardDetail}>
-                            <Ionicons name="location" size={14} color="#a855f7" />
-                            <Text style={styles.eventCardDetailText} numberOfLines={1}>
-                              {event.location}
-                            </Text>
-                          </View>
-
-                          <View style={styles.eventCardDetail}>
-                            <Ionicons name="calendar" size={14} color="#a855f7" />
-                            <Text style={styles.eventCardDetailText}>
-                              {new Date(event.date).toLocaleDateString()}
-                            </Text>
-                          </View>
-
-                          {event.isPaid && (
-                            <>
-                              <View style={styles.eventCardPriceContainer}>
-                                <LinearGradient
-                                  colors={["#f093fb", "#f5576c"]}
-                                  start={{ x: 0, y: 0 }}
-                                  end={{ x: 1, y: 0 }}
-                                  style={styles.eventCardPriceBadge}
-                                >
-                                  <Ionicons name="pricetag" size={12} color="#fff" />
-                                  <Text style={styles.eventCardPriceText}>
-                                    ${event.ticketPrice}
-                                  </Text>
-                                </LinearGradient>
-
-                                {event.ticketsRemaining !== undefined && (
-                                  <Text style={styles.eventCardTicketsText}>
-                                    {event.ticketsRemaining} left
-                                  </Text>
-                                )}
-                              </View>
-
-                              {/* Show Buy Ticket button only if user hasn't purchased and isn't the creator */}
-                              {!event.userHasPurchased && !event.isCreator && (
-                                <TouchableOpacity
-                                  style={styles.buyTicketButton}
-                                  onPress={(e) => {
-                                    e.stopPropagation();
-                                    handlePurchaseTicket(event._id, event.title);
-                                  }}
-                                  activeOpacity={0.8}
-                                >
-                                  <LinearGradient
-                                    colors={["#a855f7", "#7c3aed"]}
-                                    start={{ x: 0, y: 0 }}
-                                    end={{ x: 1, y: 0 }}
-                                    style={styles.buyTicketGradient}
-                                  >
-                                    <Ionicons name="ticket" size={16} color="#fff" />
-                                    <Text style={styles.buyTicketText}>Buy Ticket</Text>
-                                  </LinearGradient>
-                                </TouchableOpacity>
-                              )}
-
-                              {/* Show "Purchased" badge if user has a ticket */}
-                              {event.userHasPurchased && (
-                                <View style={styles.purchasedBadge}>
-                                  <Ionicons name="checkmark-circle" size={16} color="#10b981" />
-                                  <Text style={styles.purchasedText}>Purchased</Text>
-                                </View>
-                              )}
-
-                              {/* Show "Your Event" badge if user is the creator */}
-                              {event.isCreator && (
-                                <View style={styles.creatorBadge}>
-                                  <Ionicons name="star" size={16} color="#f59e0b" />
-                                  <Text style={styles.creatorText}>Your Event</Text>
-                                </View>
-                              )}
-                            </>
-                          )}
-
-                          {!event.isPaid && (
-                            <View style={styles.freeEventBadge}>
-                              <Text style={styles.freeEventText}>FREE EVENT</Text>
-                            </View>
-                          )}
-                        </View>
-                      </LinearGradient>
-                    </View>
-                  </TouchableOpacity>
+                    event={event}
+                    onPurchaseTicket={handlePurchaseTicket}
+                  />
                 ))}
               </Carousel>
             )}
@@ -798,6 +700,14 @@ export default function Home() {
                     mode="date"
                     onChange={onDateChange}
                     minimumDate={new Date()}
+                  />
+                )}
+                {showTimePicker && Platform.OS === 'android' && (
+                  <DateTimePicker
+                    value={selectedDate}
+                    mode="time"
+                    onChange={onTimeChange}
+                    is24Hour={false}
                   />
                 )}
               </View>
@@ -1426,148 +1336,6 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
     alignItems: "center",
     justifyContent: "center",
-  },
-  eventCard: {
-    width: "100%",
-    height: 400,
-    borderRadius: 20,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  eventCardInner: {
-    flex: 1,
-    position: "relative",
-  },
-  eventCardImage: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "cover",
-  },
-  eventCardImagePlaceholder: {
-    width: "100%",
-    height: "100%",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  eventCardGradient: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: "60%",
-    justifyContent: "flex-end",
-  },
-  eventCardContent: {
-    padding: 20,
-  },
-  eventCardTitle: {
-    fontSize: scaleFontSize(22),
-    fontFamily: Fonts.bold,
-    color: "#fff",
-    marginBottom: 12,
-  },
-  eventCardDetail: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-    gap: 8,
-  },
-  eventCardDetailText: {
-    fontSize: scaleFontSize(14),
-    fontFamily: Fonts.regular,
-    color: "#e5e7eb",
-    flex: 1,
-  },
-  eventCardPriceContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 8,
-    marginBottom: 12,
-    gap: 12,
-  },
-  eventCardPriceBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    gap: 6,
-  },
-  eventCardPriceText: {
-    fontSize: scaleFontSize(16),
-    fontFamily: Fonts.bold,
-    color: "#fff",
-  },
-  eventCardTicketsText: {
-    fontSize: scaleFontSize(14),
-    fontFamily: Fonts.medium,
-    color: "#fbbf24",
-  },
-  buyTicketButton: {
-    borderRadius: 12,
-    overflow: "hidden",
-    marginTop: 4,
-  },
-  buyTicketGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  buyTicketText: {
-    fontSize: scaleFontSize(16),
-    fontFamily: Fonts.bold,
-    color: "#fff",
-  },
-  freeEventBadge: {
-    backgroundColor: "#10b981",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    alignSelf: "flex-start",
-    marginTop: 8,
-  },
-  freeEventText: {
-    fontSize: scaleFontSize(14),
-    fontFamily: Fonts.bold,
-    color: "#fff",
-    letterSpacing: 0.5,
-  },
-  purchasedBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(16, 185, 129, 0.2)",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginTop: 4,
-  },
-  purchasedText: {
-    fontSize: scaleFontSize(16),
-    fontFamily: Fonts.bold,
-    color: "#10b981",
-  },
-  creatorBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(245, 158, 11, 0.2)",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginTop: 4,
-  },
-  creatorText: {
-    fontSize: scaleFontSize(16),
-    fontFamily: Fonts.bold,
-    color: "#f59e0b",
   },
   visibilityOptions: {
     flexDirection: "row",

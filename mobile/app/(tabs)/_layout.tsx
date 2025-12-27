@@ -334,10 +334,10 @@ export default function TabsLayout() {
           name="home"
           options={{
             title: "Home",
-            tabBarIcon: ({ focused, color, size }) => (
+            tabBarIcon: ({ focused, color }) => (
               <Ionicons
                 name={focused ? "home" : "home-outline"}
-                size={size}
+                size={20}
                 color={color}
               />
             ),
@@ -347,10 +347,10 @@ export default function TabsLayout() {
           name="vendors"
           options={{
             title: "Vendors",
-            tabBarIcon: ({ focused, color, size }) => (
+            tabBarIcon: ({ focused, color }) => (
               <Ionicons
                 name={focused ? "compass" : "compass-outline"}
-                size={size}
+                size={20}
                 color={color}
               />
             ),
@@ -360,10 +360,10 @@ export default function TabsLayout() {
           name="bests"
           options={{
             title: "Best Of Lists",
-            tabBarIcon: ({ focused, color, size }) => (
+            tabBarIcon: ({ focused, color }) => (
               <Ionicons
                 name={focused ? "trophy" : "trophy-outline"}
-                size={size}
+                size={20}
                 color={color}
               />
             ),
@@ -373,10 +373,10 @@ export default function TabsLayout() {
           name="events"
           options={{
             title: "Events",
-            tabBarIcon: ({ focused, color, size }) => (
+            tabBarIcon: ({ focused, color }) => (
               <Ionicons
                 name={focused ? "calendar" : "calendar-outline"}
-                size={size}
+                size={20}
                 color={color}
               />
             ),
@@ -386,10 +386,10 @@ export default function TabsLayout() {
           name="chats"
           options={{
             title: "Chats",
-            tabBarIcon: ({ focused, color, size }) => (
+            tabBarIcon: ({ focused, color }) => (
               <Ionicons
                 name={focused ? "chatbubbles" : "chatbubbles-outline"}
-                size={size}
+                size={20}
                 color={color}
               />
             ),

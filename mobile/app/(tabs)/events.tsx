@@ -69,6 +69,7 @@ export default function EventsPage() {
   const [searchedUsers, setSearchedUsers] = useState<any[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editData, setEditData] = useState({
     title: "",
@@ -159,6 +160,13 @@ export default function EventsPage() {
         if (!event || event.type === 'dismissed' || !date) {
           return;
         }
+
+        // On Android, after selecting date, show time picker
+        if (date) {
+          setSelectedDate(date);
+          setShowTimePicker(true);
+        }
+        return;
       }
 
       // On iOS, handle dismissal
@@ -167,7 +175,7 @@ export default function EventsPage() {
         return;
       }
 
-      // Update the selected date
+      // Update the selected date (iOS only - handles both date and time)
       if (date) {
         setSelectedDate(date);
         setEditData({ ...editData, date: date.toISOString() });
@@ -175,6 +183,29 @@ export default function EventsPage() {
     } catch (error) {
       console.error('Date picker error:', error);
       setShowDatePicker(false);
+    }
+  };
+
+  const onTimeChange = (event: any, date?: Date) => {
+    try {
+      setShowTimePicker(false);
+
+      // If user cancelled or no date, don't update
+      if (!event || event.type === 'dismissed' || !date) {
+        return;
+      }
+
+      // Combine the selected date with the new time
+      if (date) {
+        const updatedDate = new Date(selectedDate);
+        updatedDate.setHours(date.getHours());
+        updatedDate.setMinutes(date.getMinutes());
+        setSelectedDate(updatedDate);
+        setEditData({ ...editData, date: updatedDate.toISOString() });
+      }
+    } catch (error) {
+      console.error('Time picker error:', error);
+      setShowTimePicker(false);
     }
   };
 
@@ -593,6 +624,14 @@ export default function EventsPage() {
                     mode="date"
                     onChange={onDateChange}
                     minimumDate={new Date()}
+                  />
+                )}
+                {showTimePicker && Platform.OS === 'android' && (
+                  <DateTimePicker
+                    value={selectedDate}
+                    mode="time"
+                    onChange={onTimeChange}
+                    is24Hour={false}
                   />
                 )}
               </View>

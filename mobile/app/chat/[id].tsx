@@ -34,39 +34,6 @@ export default function ChatScreen() {
   const [currentUserId, setCurrentUserId] = useState<string>("");
   const flatListRef = useRef<FlatList>(null);
 
-  useEffect(() => {
-    loadCurrentUser();
-    if (id) {
-      loadChatAndMessages();
-
-      // Join chat room via socket
-      socketService.joinChat(id);
-
-      // Listen for new messages
-      socketService.on({
-        onNewMessage: (message: Message) => {
-          // Only add if message is for this chat and not from current user
-          if (message.chat === id && message.sender._id !== currentUserId) {
-            setMessages((prev) => [...prev, message]);
-
-            // Scroll to bottom
-            setTimeout(() => {
-              flatListRef.current?.scrollToEnd({ animated: true });
-            }, 100);
-          }
-        },
-      });
-    }
-
-    // Cleanup on unmount
-    return () => {
-      if (id) {
-        socketService.leaveChat(id);
-        socketService.off();
-      }
-    };
-  }, [id, currentUserId]);
-
   const loadCurrentUser = async () => {
     try {
       const userJson = await SecureStore.getItemAsync("user");
@@ -79,7 +46,7 @@ export default function ChatScreen() {
     }
   };
 
-  const loadChatAndMessages = async () => {
+  const loadChatAndMessages = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -93,26 +60,65 @@ export default function ChatScreen() {
 
       // Mark messages as read
       await chatService.markMessagesAsRead(id);
+
+      // Emit socket event to notify others
+      if (currentUserId) {
+        socketService.markMessagesAsRead(id, currentUserId);
+      }
     } catch (error: any) {
       console.error("❌ Error loading chat:", error);
       Alert.alert("Error", "Failed to load chat");
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, currentUserId]);
+
+  useEffect(() => {
+    loadCurrentUser();
+  }, []);
+
+  useEffect(() => {
+    if (!id || !currentUserId) return;
+
+    loadChatAndMessages();
+    socketService.joinChat(id);
+
+    socketService.on({
+      onNewMessage: (message: Message) => {
+        if (message.chat === id) {
+          setMessages((prev) => {
+            // prevent duplicates
+            if (prev.some((m) => m._id === message._id)) return prev;
+            return [...prev, message];
+          });
+
+          // Auto-mark as read if message is from someone else
+          if (message.sender._id !== currentUserId && currentUserId) {
+            chatService.markMessagesAsRead(id);
+            socketService.markMessagesAsRead(id, currentUserId);
+          }
+        }
+      },
+    });
+
+    return () => {
+      socketService.leaveChat(id);
+      socketService.off();
+    };
+  }, [id, currentUserId, loadChatAndMessages]);
 
   const handleSendMessage = async (content: string) => {
     if (!content.trim() || sending) return;
 
     try {
       setSending(true);
-      const message = await chatService.sendMessage(id, {
+      await chatService.sendMessage(id, {
         type: "text",
         content: content.trim(),
       });
 
-      // Add new message to the list
-      setMessages((prev) => [...prev, message]);
+      // Don't add message locally - socket will handle it
+      // This prevents duplicate messages
 
       // Scroll to bottom
       setTimeout(() => {
@@ -129,7 +135,7 @@ export default function ChatScreen() {
   const handleImagePick = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
+        mediaTypes: ["images"],
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.7,
@@ -148,15 +154,20 @@ export default function ChatScreen() {
         }
 
         try {
-          const uploadResult = await uploadImage(localUri, 'chat_images', token);
+          const uploadResult = await uploadImage(
+            localUri,
+            "chat_images",
+            token
+          );
 
           // Send message with Cloudinary URL
-          const message = await chatService.sendMessage(id, {
+          await chatService.sendMessage(id, {
             type: "image",
             imageUrl: uploadResult.url,
           });
 
-          setMessages((prev) => [...prev, message]);
+          // Don't add message locally - socket will handle it
+          // This prevents duplicate messages
 
           setTimeout(() => {
             flatListRef.current?.scrollToEnd({ animated: true });
@@ -228,7 +239,7 @@ export default function ChatScreen() {
 
   return (
     <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
         <KeyboardAvoidingView
           style={styles.keyboardView}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -236,78 +247,78 @@ export default function ChatScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.back()}
+            >
+              <Ionicons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
 
-          <View style={styles.headerCenter}>
-            {getChatAvatar() ? (
-              <Image
-                source={{ uri: getChatAvatar()! }}
-                style={styles.headerAvatar}
-              />
-            ) : (
-              <View style={styles.headerAvatarPlaceholder}>
-                <Ionicons
-                  name={chat?.type === "group" ? "people" : "person"}
-                  size={20}
-                  color="#a855f7"
+            <View style={styles.headerCenter}>
+              {getChatAvatar() ? (
+                <Image
+                  source={{ uri: getChatAvatar()! }}
+                  style={styles.headerAvatar}
                 />
-              </View>
-            )}
-            <View style={styles.headerTextContainer}>
-              <Text style={styles.headerTitle}>{capitalize(getChatName())}</Text>
-              {chat?.type === "group" && (
-                <Text style={styles.headerSubtitle}>
-                  {chat.participants.length} participants
-                </Text>
+              ) : (
+                <View style={styles.headerAvatarPlaceholder}>
+                  <Ionicons
+                    name={chat?.type === "group" ? "people" : "person"}
+                    size={20}
+                    color="#a855f7"
+                  />
+                </View>
               )}
+              <View style={styles.headerTextContainer}>
+                <Text style={styles.headerTitle}>
+                  {capitalize(getChatName())}
+                </Text>
+                {chat?.type === "group" && (
+                  <Text style={styles.headerSubtitle}>
+                    {chat.participants.length} participants
+                  </Text>
+                )}
+              </View>
             </View>
+
+            <TouchableOpacity
+              style={styles.moreButton}
+              onPress={() => {
+                // Future: Open chat settings
+                Alert.alert("Coming Soon", "Chat settings");
+              }}
+            >
+              <Ionicons name="ellipsis-vertical" size={24} color="#fff" />
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.moreButton}
-            onPress={() => {
-              // Future: Open chat settings
-              Alert.alert("Coming Soon", "Chat settings");
-            }}
-          >
-            <Ionicons name="ellipsis-vertical" size={24} color="#fff" />
-          </TouchableOpacity>
-        </View>
+          {/* Messages List */}
+          <FlatList
+            ref={flatListRef}
+            data={messages || []}
+            renderItem={renderMessage}
+            keyExtractor={(item) => item._id}
+            contentContainerStyle={styles.messagesList}
+            showsVerticalScrollIndicator={false}
+            onContentSizeChange={() =>
+              flatListRef.current?.scrollToEnd({ animated: false })
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Ionicons name="chatbubble-outline" size={64} color="#6b7280" />
+                <Text style={styles.emptyText}>No messages yet</Text>
+                <Text style={styles.emptySubtext}>Start the conversation!</Text>
+              </View>
+            }
+          />
 
-        {/* Messages List */}
-        <FlatList
-          ref={flatListRef}
-          data={messages || []}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item._id}
-          contentContainerStyle={styles.messagesList}
-          showsVerticalScrollIndicator={false}
-          onContentSizeChange={() =>
-            flatListRef.current?.scrollToEnd({ animated: false })
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="chatbubble-outline" size={64} color="#6b7280" />
-              <Text style={styles.emptyText}>No messages yet</Text>
-              <Text style={styles.emptySubtext}>
-                Start the conversation!
-              </Text>
-            </View>
-          }
-        />
-
-        {/* Input */}
-        <ChatInput
-          onSend={handleSendMessage}
-          onImagePick={handleImagePick}
-          disabled={sending}
-        />
-      </KeyboardAvoidingView>
+          {/* Input */}
+          <ChatInput
+            onSend={handleSendMessage}
+            onImagePick={handleImagePick}
+            disabled={sending}
+          />
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </LinearGradient>
   );

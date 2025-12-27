@@ -1,9 +1,12 @@
 import React from "react";
-import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Fonts } from "@/constants/fonts";
+import { useFormatPrice } from "@/hooks/useFormatPrice";
+
+const { width: screenWidth } = Dimensions.get("window");
 
 interface Ticket {
   _id: string;
@@ -32,6 +35,7 @@ interface TicketCardProps {
 
 export default function TicketCard({ ticket }: TicketCardProps) {
   const router = useRouter();
+  const formatPrice = useFormatPrice();
   const eventDate = new Date(ticket.event.date);
   const isPastEvent = eventDate < new Date();
 
@@ -104,7 +108,7 @@ export default function TicketCard({ ticket }: TicketCardProps) {
           <View style={styles.rightSection}>
             <View style={styles.priceContainer}>
               <Text style={styles.priceLabel}>PRICE</Text>
-              <Text style={styles.priceValue}>${ticket.ticketPrice}</Text>
+              <Text style={styles.priceValue}>${formatPrice(ticket.ticketPrice)}</Text>
             </View>
 
             <View style={styles.qrPlaceholder}>
@@ -161,13 +165,18 @@ export default function TicketCard({ ticket }: TicketCardProps) {
   );
 }
 
+// Calculate responsive dimensions based on screen width
+const cardPadding = screenWidth > 400 ? 20 : 16;
+const imageSize = screenWidth > 400 ? 80 : screenWidth * 0.18;
+const rightSectionWidth = screenWidth > 400 ? 100 : screenWidth * 0.25;
+
 const styles = StyleSheet.create({
   container: {
     marginBottom: 20,
   },
   ticketContainer: {
     borderRadius: 20,
-    padding: 20,
+    padding: cardPadding,
     position: "relative",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
@@ -178,7 +187,7 @@ const styles = StyleSheet.create({
   perforation: {
     position: "absolute",
     top: "50%",
-    right: 100,
+    right: rightSectionWidth,
     flexDirection: "column",
     gap: 8,
     transform: [{ translateY: -60 }],
@@ -191,7 +200,7 @@ const styles = StyleSheet.create({
   },
   ticketContent: {
     flexDirection: "row",
-    gap: 16,
+    gap: screenWidth > 400 ? 16 : 12,
   },
   leftSection: {
     flex: 1,
@@ -199,14 +208,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   eventImage: {
-    width: 80,
-    height: 80,
+    width: imageSize,
+    height: imageSize,
     borderRadius: 12,
     backgroundColor: "rgba(255,255,255,0.1)",
   },
   eventImagePlaceholder: {
-    width: 80,
-    height: 80,
+    width: imageSize,
+    height: imageSize,
     borderRadius: 12,
     backgroundColor: "rgba(255,255,255,0.1)",
     justifyContent: "center",
@@ -217,7 +226,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   eventTitle: {
-    fontSize: 18,
+    fontSize: screenWidth > 400 ? 18 : 16,
     fontFamily: Fonts.bold,
     color: "#fff",
     marginBottom: 8,
@@ -229,13 +238,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   eventDetailText: {
-    fontSize: 13,
+    fontSize: screenWidth > 400 ? 13 : 12,
     fontFamily: Fonts.regular,
     color: "rgba(255,255,255,0.9)",
     flex: 1,
   },
   rightSection: {
-    width: 100,
+    width: rightSectionWidth,
     alignItems: "center",
     justifyContent: "space-between",
   },
@@ -249,7 +258,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   priceValue: {
-    fontSize: 24,
+    fontSize: screenWidth > 400 ? 24 : 20,
     fontFamily: Fonts.black,
     color: "#fff",
     marginTop: 4,
@@ -311,7 +320,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   purchaseInfoText: {
-    fontSize: 12,
+    fontSize: screenWidth > 400 ? 12 : 11,
     fontFamily: Fonts.regular,
     color: "rgba(255,255,255,0.8)",
   },

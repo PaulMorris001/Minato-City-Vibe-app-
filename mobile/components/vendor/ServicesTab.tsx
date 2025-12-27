@@ -17,6 +17,7 @@ import { Colors } from "@/constants/colors";
 import { Service } from "@/libs/interfaces";
 import { BASE_URL } from "@/constants/constants";
 import ServiceModal from "./ServiceModal";
+import { useFormatPrice } from "@/hooks/useFormatPrice";
 
 interface ServicesTabProps {
   services: Service[];
@@ -29,6 +30,7 @@ export default function ServicesTab({
   onRefresh,
   refreshing,
 }: ServicesTabProps) {
+  const formatPrice = useFormatPrice();
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
 
@@ -138,7 +140,7 @@ export default function ServicesTab({
         <View style={styles.infoItem}>
           <Ionicons name="cash" size={16} color="#9ca3af" />
           <Text style={styles.infoText}>
-            ${item.price} {item.currency}
+            ${formatPrice(item.price)} {item.currency}
           </Text>
         </View>
       </View>

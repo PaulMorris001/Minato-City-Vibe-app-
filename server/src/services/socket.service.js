@@ -62,8 +62,11 @@ export const initializeSocket = (server) => {
 
     // Message read
     socket.on("message:read", ({ chatId, userId }) => {
-      // Emit to chat participants
-      io.to(`chat:${chatId}`).emit("message:read", { chatId, userId });
+      // Emit to chat participants with readerId
+      io.to(`chat:${chatId}`).emit("message:read", {
+        chatId,
+        readerId: userId
+      });
     });
 
     // ============ Typing Events ============

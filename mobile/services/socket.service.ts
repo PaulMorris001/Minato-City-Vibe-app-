@@ -166,6 +166,16 @@ class SocketService {
   }
 
   /**
+   * Mark messages as read in a chat
+   */
+  markMessagesAsRead(chatId: string, userId: string) {
+    if (this.socket && this.connected) {
+      this.socket.emit("message:read", { chatId, userId });
+      console.log(`✅ Marked messages as read in chat: ${chatId}`);
+    }
+  }
+
+  /**
    * Register event listeners
    */
   on(events: SocketEvents) {

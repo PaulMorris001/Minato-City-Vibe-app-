@@ -15,10 +15,12 @@ import * as SecureStore from "expo-secure-store";
 import { Guide, GUIDE_TOPICS } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
+import { useFormatPrice } from "@/hooks/useFormatPrice";
 
 export default function CityGuidesPage() {
   const router = useRouter();
   const { cityName } = useLocalSearchParams<{ cityName: string }>();
+  const formatPrice = useFormatPrice();
 
   const [guides, setGuides] = useState<Guide[]>([]);
   const [filteredGuides, setFilteredGuides] = useState<Guide[]>([]);
@@ -122,7 +124,7 @@ export default function CityGuidesPage() {
         <View style={styles.priceContainer}>
           <Text style={styles.priceLabel}>Price</Text>
           <Text style={styles.priceValue}>
-            {item.price === 0 ? "FREE" : `$${item.price.toFixed(2)}`}
+            {item.price === 0 ? "FREE" : `$${formatPrice(item.price)}`}
           </Text>
         </View>
       </View>

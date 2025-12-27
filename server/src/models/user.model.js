@@ -34,7 +34,13 @@ const userSchema = mongoose.Schema({
     phone: { type: String },
     website: { type: String }
   },
-  verified: { type: Boolean, default: false }
+  verified: { type: Boolean, default: false },
+
+  // Password reset fields
+  resetPasswordOTP: { type: String },
+  resetPasswordOTPExpires: { type: Date },
+  resetPasswordToken: { type: String },
+  resetPasswordTokenExpires: { type: Date }
 }, {
   timestamps: true
 });

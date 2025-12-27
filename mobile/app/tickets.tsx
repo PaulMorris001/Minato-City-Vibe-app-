@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Alert,
+  Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -16,6 +17,8 @@ import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import TicketCard from "@/components/TicketCard";
+
+const { width: screenWidth } = Dimensions.get("window");
 
 interface Ticket {
   _id: string;
@@ -147,13 +150,13 @@ const styles = StyleSheet.create({
     borderBottomColor: "#374151",
   },
   headerTitle: {
-    fontSize: 32,
+    fontSize: screenWidth > 400 ? 32 : 28,
     fontFamily: Fonts.bold,
     color: "#fff",
     marginBottom: 4,
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: screenWidth > 400 ? 14 : 13,
     fontFamily: Fonts.regular,
     color: "#9ca3af",
   },

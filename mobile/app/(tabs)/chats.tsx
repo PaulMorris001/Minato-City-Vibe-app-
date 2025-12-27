@@ -23,6 +23,7 @@ import { BASE_URL } from "@/constants/constants";
 import * as SecureStore from "expo-secure-store";
 import { capitalize } from "@/libs/helpers";
 import { scaleFontSize } from "@/utils/responsive";
+import socketService from "@/services/socket.service";
 
 interface SearchUser {
   id: string;
@@ -61,8 +62,62 @@ export default function ChatsScreen() {
 
   useEffect(() => {
     loadCurrentUser();
-    fetchChats();
   }, []);
+
+  useEffect(() => {
+    if (currentUserId) {
+      fetchChats();
+    }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    socketService.on({
+      onNewMessage: (message) => {
+        setChats((prev) =>
+          prev.map((chat) => {
+            if (chat._id !== message.chat) return chat;
+
+            // Increment unread count if message is from someone else
+            const isFromCurrentUser = message.sender._id === currentUserId;
+            const currentUnread = chat.unreadCount?.get?.(currentUserId) || 0;
+
+            return {
+              ...chat,
+              lastMessage: message,
+              unreadCount: isFromCurrentUser
+                ? chat.unreadCount
+                : new Map(chat.unreadCount).set(
+                    currentUserId,
+                    currentUnread + 1
+                  ),
+            };
+          })
+        );
+      },
+
+      onMessageRead: ({ chatId, readerId }) => {
+        setChats((prev) =>
+          prev.map((chat) => {
+            if (chat._id !== chatId || !chat.lastMessage) return chat;
+
+            // Only the sender should see the message as "read"
+            if (chat.lastMessage.sender._id !== currentUserId) return chat;
+
+            return {
+              ...chat,
+              lastMessage: {
+                ...chat.lastMessage,
+                read: true,
+              },
+              unreadCount: new Map(chat.unreadCount).set(currentUserId, 0),
+            };
+          })
+        );
+      },
+    });
+
+    return () => socketService.off();
+  }, [currentUserId]);
 
   const loadCurrentUser = async () => {
     try {

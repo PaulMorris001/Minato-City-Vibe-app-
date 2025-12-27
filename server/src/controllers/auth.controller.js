@@ -1,9 +1,11 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { OAuth2Client } from "google-auth-library";
 import config from "../config/env.js";
 import User from "../models/user.model.js";
 import { uploadBase64Image, deleteImage } from "../services/image.service.js";
+import { generateOTP, sendPasswordResetOTP, sendPasswordResetSuccessEmail } from "../services/email.service.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -407,5 +409,186 @@ export async function googleAuth(req, res) {
   } catch (error) {
     console.error("Google auth error:", error);
     res.status(400).json({ message: "Google authentication failed", details: error.message });
+  }
+}
+
+// Forgot password - Send OTP to email
+export async function forgotPassword(req, res) {
+  const { email } = req.body;
+
+  try {
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    // Find user by email
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+
+    if (!user) {
+      return res.status(404).json({ message: "Invalid email. This email is not registered." });
+    }
+
+    // Check if user signed up with Google OAuth
+    if (user.authProvider === 'google' && !user.password) {
+      return res.status(400).json({
+        message: "This account was created with Google. Please use Google Sign-In to access your account."
+      });
+    }
+
+    // Generate 6-digit OTP
+    const otp = generateOTP();
+
+    // Set OTP expiry (10 minutes from now)
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+    // Save OTP to user document
+    user.resetPasswordOTP = otp;
+    user.resetPasswordOTPExpires = otpExpiry;
+    await user.save();
+
+    // Send OTP email
+    await sendPasswordResetOTP(email, otp, user.username);
+
+    console.log(`Password reset OTP sent to ${email}: ${otp}`); // For development
+
+    res.json({
+      success: true,
+      message: "Verification code sent to your email"
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({
+      message: "Failed to send verification code. Please try again.",
+      details: error.message
+    });
+  }
+}
+
+// Verify OTP
+export async function verifyOTP(req, res) {
+  const { email, otp } = req.body;
+
+  try {
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP are required" });
+    }
+
+    // Find user
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check if OTP exists
+    if (!user.resetPasswordOTP) {
+      return res.status(400).json({ message: "No OTP found. Please request a new code." });
+    }
+
+    // Check if OTP has expired
+    if (new Date() > user.resetPasswordOTPExpires) {
+      // Clear expired OTP
+      user.resetPasswordOTP = undefined;
+      user.resetPasswordOTPExpires = undefined;
+      await user.save();
+
+      return res.status(410).json({ message: "OTP has expired. Please request a new code." });
+    }
+
+    // Verify OTP
+    if (user.resetPasswordOTP !== otp.trim()) {
+      return res.status(400).json({ message: "Invalid OTP. Please check the code and try again." });
+    }
+
+    // OTP is valid - generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+
+    // Clear OTP and save reset token
+    user.resetPasswordOTP = undefined;
+    user.resetPasswordOTPExpires = undefined;
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordTokenExpires = resetTokenExpiry;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "OTP verified successfully",
+      resetToken
+    });
+  } catch (error) {
+    console.error("Verify OTP error:", error);
+    res.status(500).json({
+      message: "Failed to verify OTP. Please try again.",
+      details: error.message
+    });
+  }
+}
+
+// Reset password
+export async function resetPassword(req, res) {
+  const { email, resetToken, newPassword } = req.body;
+
+  try {
+    if (!email || !resetToken || !newPassword) {
+      return res.status(400).json({ message: "Email, reset token, and new password are required" });
+    }
+
+    // Validate password length
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters long" });
+    }
+
+    // Find user
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check if reset token exists
+    if (!user.resetPasswordToken) {
+      return res.status(400).json({ message: "Invalid or expired reset token. Please request a new password reset." });
+    }
+
+    // Check if reset token has expired
+    if (new Date() > user.resetPasswordTokenExpires) {
+      // Clear expired token
+      user.resetPasswordToken = undefined;
+      user.resetPasswordTokenExpires = undefined;
+      await user.save();
+
+      return res.status(400).json({ message: "Reset token has expired. Please request a new password reset." });
+    }
+
+    // Verify reset token
+    if (user.resetPasswordToken !== resetToken.trim()) {
+      return res.status(400).json({ message: "Invalid reset token. Please request a new password reset." });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password and clear reset token
+    user.password = hashedPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordTokenExpires = undefined;
+    await user.save();
+
+    // Send success notification email (non-blocking)
+    sendPasswordResetSuccessEmail(email, user.username).catch(err =>
+      console.error("Error sending success email:", err)
+    );
+
+    res.json({
+      success: true,
+      message: "Password reset successfully. You can now log in with your new password."
+    });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({
+      message: "Failed to reset password. Please try again.",
+      details: error.message
+    });
   }
 }

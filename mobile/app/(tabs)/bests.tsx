@@ -148,7 +148,7 @@ export default function BestsPage() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    // flex: 1,
     backgroundColor: "#0f0f1a",
   },
   fixedHeader: {
@@ -179,7 +179,6 @@ const styles = StyleSheet.create({
     color: "#a855f7",
   },
   scrollableHeader: {
-    paddingHorizontal: getResponsivePadding(),
     paddingTop: 16,
   },
   title: {

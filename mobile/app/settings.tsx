@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -243,17 +242,6 @@ export default function SettingsScreen() {
             <Text style={styles.preferenceValue}>English</Text>
             <Ionicons name="chevron-forward" size={20} color="#6b7280" />
           </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.preferenceItem}
-          onPress={() => router.push("/debug-logs" as any)}
-        >
-          <View style={styles.preferenceLeft}>
-            <Ionicons name="bug-outline" size={22} color="#e5e7eb" />
-            <Text style={styles.preferenceText}>Debug Logs</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
         </TouchableOpacity>
       </View>
 
