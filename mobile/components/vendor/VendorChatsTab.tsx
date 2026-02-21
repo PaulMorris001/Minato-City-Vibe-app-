@@ -13,7 +13,6 @@ import {
   Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { router } from "expo-router";
@@ -34,7 +33,7 @@ interface SearchUser {
   businessName?: string;
 }
 
-export default function ChatsScreen() {
+export default function VendorChatsTab() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [filteredChats, setFilteredChats] = useState<Chat[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -77,10 +76,9 @@ export default function ChatsScreen() {
           prev.map((chat) => {
             if (chat._id !== message.chat) return chat;
 
-            // Increment unread count if message is from someone else
             const isFromCurrentUser = message.sender._id === currentUserId;
-            // unreadCount comes from API as a plain object, not a Map
-            const unreadObj = (chat.unreadCount as unknown as Record<string, number>) || {};
+            const unreadObj =
+              (chat.unreadCount as unknown as Record<string, number>) || {};
             const currentUnread = unreadObj[currentUserId] || 0;
 
             return {
@@ -88,7 +86,10 @@ export default function ChatsScreen() {
               lastMessage: message,
               unreadCount: isFromCurrentUser
                 ? chat.unreadCount
-                : { ...unreadObj, [currentUserId]: currentUnread + 1 } as unknown as Map<string, number>,
+                : ({
+                    ...unreadObj,
+                    [currentUserId]: currentUnread + 1,
+                  } as unknown as Map<string, number>),
             };
           })
         );
@@ -98,12 +99,10 @@ export default function ChatsScreen() {
         setChats((prev) =>
           prev.map((chat) => {
             if (chat._id !== chatId || !chat.lastMessage) return chat;
-
-            // Only the sender should see the message as "read"
             if (chat.lastMessage.sender._id !== currentUserId) return chat;
 
-            // unreadCount comes from API as a plain object, not a Map
-            const unreadObj = (chat.unreadCount as unknown as Record<string, number>) || {};
+            const unreadObj =
+              (chat.unreadCount as unknown as Record<string, number>) || {};
 
             return {
               ...chat,
@@ -111,7 +110,10 @@ export default function ChatsScreen() {
                 ...chat.lastMessage,
                 read: true,
               },
-              unreadCount: { ...unreadObj, [currentUserId]: 0 } as unknown as Map<string, number>,
+              unreadCount: {
+                ...unreadObj,
+                [currentUserId]: 0,
+              } as unknown as Map<string, number>,
             };
           })
         );
@@ -194,10 +196,8 @@ export default function ChatsScreen() {
       setUserSearchQuery("");
       setSearchedUsers([]);
 
-      // Create or get existing direct chat
       const chat = await chatService.getOrCreateDirectChat(user.id);
 
-      // Navigate to the chat
       router.push({
         pathname: "/chat/[id]",
         params: { id: chat._id },
@@ -230,36 +230,40 @@ export default function ChatsScreen() {
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
       <Ionicons name="chatbubbles-outline" size={64} color="#6b7280" />
-      <Text style={styles.emptyText}>No chats yet</Text>
+      <Text style={styles.emptyText}>No conversations yet</Text>
       <Text style={styles.emptySubtext}>
-        Start a conversation with your friends
+        Start messaging your customers
       </Text>
+      <TouchableOpacity
+        style={styles.startChatButton}
+        onPress={() => setNewChatModalVisible(true)}
+      >
+        <Ionicons name="add-circle" size={20} color="#fff" />
+        <Text style={styles.startChatButtonText}>Start a Chat</Text>
+      </TouchableOpacity>
     </View>
   );
 
   if (loading) {
     return (
-      <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#a855f7" />
-        </View>
-      </LinearGradient>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#a855f7" />
+      </View>
     );
   }
 
   return (
-    <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Messages</Text>
-          <TouchableOpacity
-            style={styles.newChatButton}
-            onPress={() => setNewChatModalVisible(true)}
-          >
-            <Ionicons name="create-outline" size={24} color="#a855f7" />
-          </TouchableOpacity>
-        </View>
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Customer Messages</Text>
+        <TouchableOpacity
+          style={styles.newChatButton}
+          onPress={() => setNewChatModalVisible(true)}
+        >
+          <Ionicons name="create-outline" size={24} color="#a855f7" />
+        </TouchableOpacity>
+      </View>
 
       {/* Search Bar */}
       <View style={styles.searchContainer}>
@@ -271,7 +275,7 @@ export default function ChatsScreen() {
         />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search chats..."
+          placeholder="Search conversations..."
           placeholderTextColor="#6b7280"
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -290,7 +294,8 @@ export default function ChatsScreen() {
         keyExtractor={(item) => item._id}
         contentContainerStyle={[
           styles.listContent,
-          (!filteredChats || filteredChats.length === 0) && styles.emptyListContent,
+          (!filteredChats || filteredChats.length === 0) &&
+            styles.emptyListContent,
         ]}
         refreshControl={
           <RefreshControl
@@ -303,7 +308,6 @@ export default function ChatsScreen() {
         ListEmptyComponent={renderEmptyState}
         showsVerticalScrollIndicator={false}
       />
-      </SafeAreaView>
 
       {/* New Chat Modal */}
       <Modal
@@ -349,7 +353,7 @@ export default function ChatsScreen() {
             </View>
 
             {searchingUsers && (
-              <View style={styles.loadingContainer}>
+              <View style={styles.searchLoadingContainer}>
                 <ActivityIndicator size="small" color="#a855f7" />
               </View>
             )}
@@ -373,23 +377,15 @@ export default function ChatsScreen() {
                     </View>
                   )}
                   <View style={styles.userInfo}>
-                    <Text style={styles.userName}>{capitalize(item.username)}</Text>
-                    <Text style={styles.userEmail}>
-                      {item.isVendor && item.businessName
-                        ? item.businessName
-                        : item.email}
+                    <Text style={styles.userName}>
+                      {capitalize(item.username)}
                     </Text>
+                    <Text style={styles.userEmail}>{item.email}</Text>
                   </View>
-                  {item.isVendor && (
-                    <View style={styles.vendorBadge}>
-                      <Text style={styles.vendorBadgeText}>Vendor</Text>
-                    </View>
-                  )}
                 </TouchableOpacity>
               )}
               ListEmptyComponent={
-                !searchingUsers &&
-                userSearchQuery.length >= 2 ? (
+                !searchingUsers && userSearchQuery.length >= 2 ? (
                   <View style={styles.emptySearchContainer}>
                     <Ionicons name="people-outline" size={48} color="#6b7280" />
                     <Text style={styles.emptySearchText}>No users found</Text>
@@ -398,7 +394,7 @@ export default function ChatsScreen() {
                   <View style={styles.emptySearchContainer}>
                     <Ionicons name="search-outline" size={48} color="#6b7280" />
                     <Text style={styles.emptySearchText}>
-                      Search for users to start chatting
+                      Search for customers to message
                     </Text>
                   </View>
                 ) : null
@@ -408,21 +404,20 @@ export default function ChatsScreen() {
           </View>
         </View>
       </Modal>
-    </LinearGradient>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  safeArea: {
-    flex: 1,
+    backgroundColor: "#0f0f1a",
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#0f0f1a",
   },
   header: {
     flexDirection: "row",
@@ -489,6 +484,21 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     marginTop: 8,
   },
+  startChatButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#a855f7",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 24,
+    gap: 8,
+  },
+  startChatButtonText: {
+    fontSize: 16,
+    fontFamily: Fonts.semiBold,
+    color: "#fff",
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
@@ -522,6 +532,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#374151",
     borderRadius: 12,
     height: 48,
+  },
+  searchLoadingContainer: {
+    paddingVertical: 20,
+    alignItems: "center",
   },
   userListContent: {
     paddingHorizontal: 20,
@@ -562,17 +576,6 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.regular,
     color: "#6b7280",
     marginTop: 2,
-  },
-  vendorBadge: {
-    backgroundColor: "#a855f7",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  vendorBadgeText: {
-    fontSize: 12,
-    fontFamily: Fonts.semiBold,
-    color: "#fff",
   },
   emptySearchContainer: {
     paddingVertical: 60,

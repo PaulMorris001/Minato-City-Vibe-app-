@@ -122,6 +122,34 @@ export default function PublicEventsPage() {
     }
   };
 
+  const handleJoinFreeEvent = async (eventId: string, eventTitle: string) => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) return;
+
+      const response = await fetch(`${BASE_URL}/events/${eventId}/join`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        Alert.alert("Success!", `You've joined "${eventTitle}"`);
+        // Refresh the current page to show updated status
+        fetchPublicEvents(1, true);
+        setPage(1);
+      } else {
+        Alert.alert("Error", data.message || "Failed to join event");
+      }
+    } catch (error) {
+      console.error("Join event error:", error);
+      Alert.alert("Error", "Failed to join event");
+    }
+  };
+
   const renderEventItem = ({ item, index }: { item: PublicEvent; index: number }) => {
     // Calculate if this is left or right column
     const isLeftColumn = index % 2 === 0;
@@ -136,6 +164,7 @@ export default function PublicEventsPage() {
         <PublicEventCard
           event={item}
           onPurchaseTicket={handlePurchaseTicket}
+          onJoinFreeEvent={handleJoinFreeEvent}
         />
       </View>
     );

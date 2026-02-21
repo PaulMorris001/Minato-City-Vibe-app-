@@ -77,6 +77,7 @@ export default function EventsPage() {
     location: "",
     image: "",
     description: "",
+    isPublic: false,
   });
 
   const fetchEvents = async () => {
@@ -146,6 +147,7 @@ export default function EventsPage() {
       location: event.location,
       image: event.image || "",
       description: event.description || "",
+      isPublic: event.isPublic,
     });
     setIsEditModalVisible(true);
   };
@@ -698,6 +700,58 @@ export default function EventsPage() {
                   numberOfLines={4}
                 />
               </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Visibility</Text>
+                <TouchableOpacity
+                  style={styles.visibilityToggle}
+                  onPress={() =>
+                    setEditData({ ...editData, isPublic: !editData.isPublic })
+                  }
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.visibilityOption}>
+                    <View
+                      style={[
+                        styles.radioButton,
+                        !editData.isPublic && styles.radioButtonSelected,
+                      ]}
+                    >
+                      {!editData.isPublic && <View style={styles.radioButtonInner} />}
+                    </View>
+                    <View style={styles.visibilityTextContainer}>
+                      <Text style={styles.visibilityLabel}>Private</Text>
+                      <Text style={styles.visibilityHint}>
+                        Only invited users can see this event
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.visibilityToggle}
+                  onPress={() =>
+                    setEditData({ ...editData, isPublic: !editData.isPublic })
+                  }
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.visibilityOption}>
+                    <View
+                      style={[
+                        styles.radioButton,
+                        editData.isPublic && styles.radioButtonSelected,
+                      ]}
+                    >
+                      {editData.isPublic && <View style={styles.radioButtonInner} />}
+                    </View>
+                    <View style={styles.visibilityTextContainer}>
+                      <Text style={styles.visibilityLabel}>Public</Text>
+                      <Text style={styles.visibilityHint}>
+                        Anyone can discover and join this event
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              </View>
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -1201,5 +1255,50 @@ const styles = StyleSheet.create({
   },
   userSearchListContent: {
     flexGrow: 1,
+  },
+  visibilityToggle: {
+    marginBottom: 8,
+  },
+  visibilityOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#374151",
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#4b5563",
+  },
+  radioButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "#6b7280",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  radioButtonSelected: {
+    borderColor: "#a855f7",
+  },
+  radioButtonInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#a855f7",
+  },
+  visibilityTextContainer: {
+    flex: 1,
+  },
+  visibilityLabel: {
+    fontSize: scaleFontSize(16),
+    fontFamily: Fonts.semiBold,
+    color: "#fff",
+  },
+  visibilityHint: {
+    fontSize: scaleFontSize(12),
+    fontFamily: Fonts.regular,
+    color: "#9ca3af",
+    marginTop: 2,
   },
 });

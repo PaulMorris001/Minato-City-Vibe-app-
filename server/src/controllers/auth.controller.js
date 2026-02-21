@@ -13,10 +13,13 @@ export async function register(req, res) {
   const { username, email, password } = req.body;
 
   try {
+    // Normalize email to lowercase and trim whitespace
+    const normalizedEmail = email.toLowerCase().trim();
+
     const hashed = await bcrypt.hash(password, 10);
     const user = new User({
       username,
-      email,
+      email: normalizedEmail,
       password: hashed,
       isVendor: false // All users start as clients
     });
@@ -45,7 +48,9 @@ export async function register(req, res) {
 
 export async function login(req, res) {
   const { email, password } = req.body;
-  const user = await User.findOne({ email });
+  // Normalize email to match how it's stored in the database
+  const normalizedEmail = email.toLowerCase().trim();
+  const user = await User.findOne({ email: normalizedEmail });
   if (!user) return res.status(404).json({ message: "User not found" });
 
   const valid = await bcrypt.compare(password, user.password);
@@ -358,11 +363,14 @@ export async function googleAuth(req, res) {
       return res.status(400).json({ message: "Email not provided by Google" });
     }
 
+    // Normalize email to lowercase
+    const normalizedEmail = email.toLowerCase().trim();
+
     // Check if user already exists
     let user = await User.findOne({
       $or: [
         { googleId },
-        { email }
+        { email: normalizedEmail }
       ]
     });
 
@@ -379,8 +387,8 @@ export async function googleAuth(req, res) {
     } else {
       // Create new user
       user = new User({
-        username: name || email.split('@')[0],
-        email,
+        username: name || normalizedEmail.split('@')[0],
+        email: normalizedEmail,
         authProvider: 'google',
         googleId,
         profilePicture: picture || "",

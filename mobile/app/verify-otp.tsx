@@ -9,6 +9,7 @@ import {
   Platform,
   Alert,
   TouchableOpacity,
+  Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
@@ -19,41 +20,24 @@ import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 export default function VerifyOTP() {
   const router = useRouter();
   const { email } = useLocalSearchParams();
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+  const [otpValue, setOtpValue] = useState("");
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
-  const inputRefs = useRef<Array<TextInput | null>>([]);
+  const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
-    // Focus the first input on mount
-    inputRefs.current[0]?.focus();
+    // Focus the input on mount
+    inputRef.current?.focus();
   }, []);
 
-  const handleOtpChange = (value: string, index: number) => {
-    // Only allow numbers
-    if (value && !/^\d+$/.test(value)) return;
-
-    const newOtp = [...otp];
-    newOtp[index] = value;
-    setOtp(newOtp);
-
-    // Auto-focus next input
-    if (value && index < 5) {
-      inputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleKeyPress = (e: any, index: number) => {
-    // Handle backspace
-    if (e.nativeEvent.key === "Backspace" && !otp[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-    }
+  const handleOtpChange = (value: string) => {
+    // Only allow numbers and max 6 digits
+    const numericValue = value.replace(/[^0-9]/g, "").slice(0, 6);
+    setOtpValue(numericValue);
   };
 
   const handleVerifyOTP = async () => {
-    const otpCode = otp.join("");
-
-    if (otpCode.length !== 6) {
+    if (otpValue.length !== 6) {
       Alert.alert("Error", "Please enter the complete 6-digit code");
       return;
     }
@@ -62,7 +46,7 @@ export default function VerifyOTP() {
     try {
       const res = await axios.post(`${BASE_URL}/auth/verify-otp`, {
         email,
-        otp: otpCode,
+        otp: otpValue,
       });
 
       if (res.data.success) {
@@ -100,9 +84,9 @@ export default function VerifyOTP() {
       });
 
       if (res.data.success) {
-        // Clear the OTP inputs
-        setOtp(["", "", "", "", "", ""]);
-        inputRefs.current[0]?.focus();
+        // Clear the OTP input
+        setOtpValue("");
+        inputRef.current?.focus();
 
         Alert.alert(
           "OTP Sent!",
@@ -117,6 +101,13 @@ export default function VerifyOTP() {
       setResending(false);
     }
   };
+
+  const focusInput = () => {
+    inputRef.current?.focus();
+  };
+
+  // Convert otpValue string to array for display
+  const otpDigits = otpValue.split("");
 
   return (
     <KeyboardAvoidingView
@@ -144,26 +135,36 @@ export default function VerifyOTP() {
           </Text>
         </View>
 
-        <View style={styles.otpContainer}>
-          {otp.map((digit, index) => (
-            <TextInput
+        {/* Hidden input that captures the full OTP (for keyboard autofill) */}
+        <TextInput
+          ref={inputRef}
+          style={styles.hiddenInput}
+          value={otpValue}
+          onChangeText={handleOtpChange}
+          keyboardType="number-pad"
+          textContentType="oneTimeCode"
+          autoComplete="one-time-code"
+          maxLength={6}
+          caretHidden
+        />
+
+        {/* Visual OTP boxes */}
+        <Pressable style={styles.otpContainer} onPress={focusInput}>
+          {[0, 1, 2, 3, 4, 5].map((index) => (
+            <View
               key={index}
-              ref={(ref) => {
-                inputRefs.current[index] = ref;
-              }}
               style={[
-                styles.otpInput,
-                digit ? styles.otpInputFilled : null,
+                styles.otpBox,
+                otpDigits[index] ? styles.otpBoxFilled : null,
+                otpValue.length === index ? styles.otpBoxFocused : null,
               ]}
-              value={digit}
-              onChangeText={(value) => handleOtpChange(value, index)}
-              onKeyPress={(e) => handleKeyPress(e, index)}
-              keyboardType="number-pad"
-              maxLength={1}
-              selectTextOnFocus
-            />
+            >
+              <Text style={styles.otpDigit}>
+                {otpDigits[index] || ""}
+              </Text>
+            </View>
           ))}
-        </View>
+        </Pressable>
 
         <PrimaryButton
           onPress={handleVerifyOTP}
@@ -237,27 +238,40 @@ const styles = StyleSheet.create({
     color: "#a855f7",
     fontWeight: "600",
   },
+  hiddenInput: {
+    position: "absolute",
+    opacity: 0,
+    height: 0,
+    width: 0,
+  },
   otpContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 32,
     paddingHorizontal: 10,
   },
-  otpInput: {
+  otpBox: {
     width: 48,
     height: 56,
     borderRadius: 12,
     backgroundColor: "#1f1f2e",
     borderWidth: 2,
     borderColor: "#374151",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  otpBoxFilled: {
+    borderColor: "#a855f7",
+    backgroundColor: "rgba(168, 85, 247, 0.1)",
+  },
+  otpBoxFocused: {
+    borderColor: "#a855f7",
+  },
+  otpDigit: {
     color: "#fff",
     fontSize: scaleFontSize(24),
     fontWeight: "bold",
     textAlign: "center",
-  },
-  otpInputFilled: {
-    borderColor: "#a855f7",
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
   },
   verifyButton: {
     marginBottom: 24,

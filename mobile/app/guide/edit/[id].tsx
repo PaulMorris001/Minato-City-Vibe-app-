@@ -74,7 +74,9 @@ export default function CreateGuidePage() {
       setTitle(guide.title);
       setDescription(guide.description);
       setPrice(guide.price.toString());
-      setCity(guide.city);
+      // Find the city ID from the city name
+      const matchedCity = CITIES.find((c) => c.name === guide.city);
+      setCity(matchedCity?._id || "");
       setTopic(guide.topic);
       setSections(guide.sections);
     }

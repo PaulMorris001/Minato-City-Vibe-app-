@@ -179,7 +179,7 @@ export const sendPasswordResetOTP = async (email, otp, username) => {
               <div class="otp-container">
                 <div class="otp-label">Your Verification Code</div>
                 <div class="otp-code">${otp}</div>
-                <div class="expiry-notice">⏰ This code will expire in 10 minutes</div>
+                <div class="expiry-notice">This code will expire in 10 minutes</div>
               </div>
 
               <div class="warning">
@@ -275,7 +275,6 @@ export const sendPasswordResetSuccessEmail = async (email, username) => {
               <h1>🌙 NightVibe</h1>
             </div>
             <div class="content">
-              <div class="success-icon">✅</div>
               <h2 style="text-align: center; color: #10b981;">Password Reset Successful!</h2>
               <p>Hello ${username || 'there'},</p>
               <p>Your password has been successfully reset. You can now log in to your NightVibe account with your new password.</p>

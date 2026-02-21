@@ -19,6 +19,8 @@ interface ImagePickerButtonProps {
   shape?: "circle" | "square";
   showLabel?: boolean;
   disabled?: boolean;
+  allowsEditing?: boolean;
+  aspect?: [number, number];
 }
 
 export default function ImagePickerButton({
@@ -29,6 +31,8 @@ export default function ImagePickerButton({
   shape = "circle",
   showLabel = true,
   disabled = false,
+  allowsEditing = false,
+  aspect,
 }: ImagePickerButtonProps) {
   const pickImage = async () => {
     if (disabled) return;
@@ -41,11 +45,14 @@ export default function ImagePickerButton({
       return;
     }
 
-    // Launch image picker
+    // Determine aspect ratio - only used if allowsEditing is true
+    const aspectRatio = aspect || (shape === "circle" ? [1, 1] : [16, 9]);
+
+    // Launch image picker - allowsEditing defaults to false to let users pick full images
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: shape === "circle" ? [1, 1] : [16, 9],
+      allowsEditing,
+      aspect: aspectRatio as [number, number],
       quality: 0.8,
     });
 

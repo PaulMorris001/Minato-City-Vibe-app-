@@ -100,33 +100,115 @@ export default function MessageBubble({
         );
 
       case "event":
+        const eventData = message.event;
+        const eventDate = eventData?.date ? new Date(eventData.date) : null;
         return (
           <TouchableOpacity
-            style={styles.eventContainer}
+            style={[
+              styles.eventContainer,
+              isOwnMessage ? styles.ownEventContainer : styles.otherEventContainer,
+            ]}
             onPress={handleEventPress}
             activeOpacity={0.7}
           >
-            <View style={styles.eventIconContainer}>
-              <Ionicons name="calendar" size={24} color="#a855f7" />
-            </View>
-            <View style={styles.eventContent}>
+            {/* Event Image or Icon */}
+            {eventData?.image ? (
+              <Image
+                source={{ uri: eventData.image }}
+                style={styles.eventImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[
+                styles.eventIconContainer,
+                isOwnMessage ? styles.ownEventIcon : styles.otherEventIcon,
+              ]}>
+                <Ionicons name="calendar" size={28} color="#a855f7" />
+              </View>
+            )}
+
+            {/* Event Details */}
+            <View style={styles.eventDetails}>
+              <View style={styles.eventHeader}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={14}
+                  color={isOwnMessage ? "rgba(255,255,255,0.8)" : "#a855f7"}
+                />
+                <Text style={[
+                  styles.eventLabel,
+                  isOwnMessage ? styles.ownEventLabel : styles.otherEventLabel,
+                ]}>
+                  EVENT INVITATION
+                </Text>
+              </View>
+
               <Text
                 style={[
-                  styles.eventText,
+                  styles.eventTitle,
                   isOwnMessage ? styles.ownMessageText : styles.otherMessageText,
                 ]}
+                numberOfLines={2}
               >
-                {message.content}
+                {eventData?.title || message.content}
               </Text>
-              <Text style={styles.eventTapHint}>
-                Tap to view details
-              </Text>
+
+              {eventDate && (
+                <View style={styles.eventMetaRow}>
+                  <Ionicons
+                    name="time-outline"
+                    size={14}
+                    color={isOwnMessage ? "rgba(255,255,255,0.7)" : "#9ca3af"}
+                  />
+                  <Text style={[
+                    styles.eventMeta,
+                    isOwnMessage ? styles.ownEventMeta : styles.otherEventMeta,
+                  ]}>
+                    {eventDate.toLocaleDateString(undefined, {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                    })} at {eventDate.toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                </View>
+              )}
+
+              {eventData?.location && (
+                <View style={styles.eventMetaRow}>
+                  <Ionicons
+                    name="location-outline"
+                    size={14}
+                    color={isOwnMessage ? "rgba(255,255,255,0.7)" : "#9ca3af"}
+                  />
+                  <Text style={[
+                    styles.eventMeta,
+                    isOwnMessage ? styles.ownEventMeta : styles.otherEventMeta,
+                  ]} numberOfLines={1}>
+                    {eventData.location}
+                  </Text>
+                </View>
+              )}
+
+              <View style={[
+                styles.viewEventButton,
+                isOwnMessage ? styles.ownViewButton : styles.otherViewButton,
+              ]}>
+                <Text style={[
+                  styles.viewEventText,
+                  isOwnMessage ? styles.ownViewText : styles.otherViewText,
+                ]}>
+                  View Event
+                </Text>
+                <Ionicons
+                  name="arrow-forward"
+                  size={14}
+                  color={isOwnMessage ? "#fff" : "#a855f7"}
+                />
+              </View>
             </View>
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={isOwnMessage ? "rgba(255, 255, 255, 0.7)" : "#9ca3af"}
-            />
           </TouchableOpacity>
         );
 
@@ -303,35 +385,100 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.7)",
   },
   eventContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: "rgba(0, 0, 0, 0.1)",
+    borderRadius: 12,
+    overflow: "hidden",
+    minWidth: 220,
+  },
+  ownEventContainer: {
+    backgroundColor: "rgba(0, 0, 0, 0.15)",
+  },
+  otherEventContainer: {
+    backgroundColor: "rgba(168, 85, 247, 0.1)",
+  },
+  eventImage: {
+    width: "100%",
+    height: 120,
   },
   eventIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(168, 85, 247, 0.2)",
+    width: "100%",
+    height: 80,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
   },
-  eventContent: {
+  ownEventIcon: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+  },
+  otherEventIcon: {
+    backgroundColor: "rgba(168, 85, 247, 0.15)",
+  },
+  eventDetails: {
+    padding: 12,
+  },
+  eventHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 6,
+  },
+  eventLabel: {
+    fontSize: 10,
+    fontFamily: Fonts.bold,
+    letterSpacing: 0.5,
+  },
+  ownEventLabel: {
+    color: "rgba(255, 255, 255, 0.8)",
+  },
+  otherEventLabel: {
+    color: "#a855f7",
+  },
+  eventTitle: {
+    fontSize: 15,
+    fontFamily: Fonts.semiBold,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  eventMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
+  eventMeta: {
+    fontSize: 12,
+    fontFamily: Fonts.regular,
     flex: 1,
   },
-  eventText: {
-    fontSize: 14,
-    fontFamily: Fonts.regular,
-    lineHeight: 20,
+  ownEventMeta: {
+    color: "rgba(255, 255, 255, 0.7)",
   },
-  eventTapHint: {
-    fontSize: 11,
-    fontFamily: Fonts.regular,
+  otherEventMeta: {
     color: "#9ca3af",
-    marginTop: 4,
-    fontStyle: "italic",
+  },
+  viewEventButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  ownViewButton: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
+  otherViewButton: {
+    backgroundColor: "rgba(168, 85, 247, 0.2)",
+  },
+  viewEventText: {
+    fontSize: 13,
+    fontFamily: Fonts.semiBold,
+  },
+  ownViewText: {
+    color: "#fff",
+  },
+  otherViewText: {
+    color: "#a855f7",
   },
   systemContainer: {
     alignItems: "center",

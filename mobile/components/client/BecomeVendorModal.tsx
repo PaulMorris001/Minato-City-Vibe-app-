@@ -21,6 +21,7 @@ import {
   ImagePickerButton,
 } from "@/components/shared";
 import { uploadImage } from "@/utils/imageUpload";
+import { useAccount } from "@/contexts/AccountContext";
 
 interface BecomeVendorModalProps {
   visible: boolean;
@@ -32,6 +33,7 @@ export default function BecomeVendorModal({
   onClose,
 }: BecomeVendorModalProps) {
   const router = useRouter();
+  const { setActiveAccount } = useAccount();
   const [loading, setLoading] = useState(false);
   const [cities, setCities] = useState<City[]>([]);
   const [vendorTypes, setVendorTypes] = useState<VendorType[]>([]);
@@ -121,9 +123,14 @@ export default function BecomeVendorModal({
         [
           {
             text: "Go to Dashboard",
-            onPress: () => {
+            onPress: async () => {
               onClose();
-              router.push("/(vendor)/dashboard");
+              // Set account to vendor mode before navigating
+              await setActiveAccount("vendor");
+              // Use replace to avoid navigation stack issues
+              setTimeout(() => {
+                router.replace("/(vendor)/dashboard");
+              }, 100);
             },
           },
         ]

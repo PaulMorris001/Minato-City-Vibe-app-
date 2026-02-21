@@ -39,12 +39,14 @@ export interface PublicEvent {
 interface PublicEventCardProps {
   event: PublicEvent;
   onPurchaseTicket?: (eventId: string, eventTitle: string) => void;
+  onJoinFreeEvent?: (eventId: string, eventTitle: string) => void;
   style?: any;
 }
 
 export default function PublicEventCard({
   event,
   onPurchaseTicket,
+  onJoinFreeEvent,
   style,
 }: PublicEventCardProps) {
   const router = useRouter();
@@ -154,9 +156,49 @@ export default function PublicEventCard({
             )}
 
             {!event.isPaid && (
-              <View style={styles.freeEventBadge}>
-                <Text style={styles.freeEventText}>FREE EVENT</Text>
-              </View>
+              <>
+                <View style={styles.freeEventBadge}>
+                  <Text style={styles.freeEventText}>FREE EVENT</Text>
+                </View>
+
+                {/* Show Join button only if user hasn't joined and isn't the creator */}
+                {!event.userHasPurchased && !event.isCreator && onJoinFreeEvent && (
+                  <TouchableOpacity
+                    style={styles.joinEventButton}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      onJoinFreeEvent(event._id, event.title);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <LinearGradient
+                      colors={["#10b981", "#059669"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.joinEventGradient}
+                    >
+                      <Ionicons name="add-circle" size={16} color="#fff" />
+                      <Text style={styles.joinEventText}>Join Event</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                )}
+
+                {/* Show "Joined" badge if user has joined */}
+                {event.userHasPurchased && (
+                  <View style={styles.joinedBadge}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <Text style={styles.joinedText}>Joined</Text>
+                  </View>
+                )}
+
+                {/* Show "Your Event" badge if user is the creator */}
+                {event.isCreator && (
+                  <View style={styles.creatorBadge}>
+                    <Ionicons name="star" size={16} color="#f59e0b" />
+                    <Text style={styles.creatorText}>Your Event</Text>
+                  </View>
+                )}
+              </>
             )}
           </View>
         </LinearGradient>
@@ -271,12 +313,46 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignSelf: "flex-start",
     marginTop: 8,
+    marginBottom: 8,
   },
   freeEventText: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.bold,
     color: "#fff",
     letterSpacing: 0.5,
+  },
+  joinEventButton: {
+    borderRadius: 12,
+    overflow: "hidden",
+    marginTop: 4,
+  },
+  joinEventGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  joinEventText: {
+    fontSize: scaleFontSize(16),
+    fontFamily: Fonts.bold,
+    color: "#fff",
+  },
+  joinedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(16, 185, 129, 0.2)",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  joinedText: {
+    fontSize: scaleFontSize(16),
+    fontFamily: Fonts.bold,
+    color: "#10b981",
   },
   purchasedBadge: {
     flexDirection: "row",

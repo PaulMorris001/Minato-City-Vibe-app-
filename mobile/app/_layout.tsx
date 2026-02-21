@@ -43,6 +43,12 @@ Sentry.init({
 // Prevent auto-hiding splash screen
 SplashScreen.preventAutoHideAsync();
 
+// Set the animation options
+SplashScreen.setOptions({
+  duration: 1000,
+  fade: true,
+});
+
 // Setup global error handlers
 setupGlobalErrorHandler();
 setupConsoleOverride();

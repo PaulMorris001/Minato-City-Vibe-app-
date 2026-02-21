@@ -9,6 +9,7 @@ import {
   StatusBar,
   Image,
   useColorScheme,
+  ActivityIndicator,
 } from "react-native";
 import { Tabs, useRouter, useSegments } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -30,6 +31,7 @@ export default function TabsLayout() {
   const segments = useSegments();
   const currentTab = segments[1]; // Gets the current tab name (home, vendors, bests, etc.)
   const insets = useSafeAreaInsets();
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   const [user, setUser] = useState<{
     id: string;
@@ -47,6 +49,19 @@ export default function TabsLayout() {
   const [isProfileModalVisible, setIsProfileModalVisible] = useState(false);
   const router = useRouter();
 
+  // Check authentication immediately on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+      setIsCheckingAuth(false);
+    };
+    checkAuth();
+  }, [router]);
+
   const fetchUserProfile = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
@@ -62,24 +77,41 @@ export default function TabsLayout() {
           profilePicture: userData.profilePicture || "",
           isVendor: userData.isVendor || false,
         });
+      } else {
+        // If no token during profile fetch, redirect to login
+        router.replace("/login");
       }
     } catch (error) {
       console.error("Error fetching user profile:", error);
+      // If profile fetch fails (e.g., invalid token), redirect to login
+      await SecureStore.deleteItemAsync("token");
+      router.replace("/login");
     }
   };
 
   useEffect(() => {
-    fetchUserProfile();
-  }, []);
+    if (!isCheckingAuth) {
+      fetchUserProfile();
+    }
+  }, [isCheckingAuth]);
 
   // Check if we should redirect to vendor dashboard only on mount and account changes
   useEffect(() => {
-    if (activeAccount === "vendor" && user.isVendor) {
-      router.replace("/(vendor)/dashboard");
-    } else if (activeAccount === "client") {
-      router.replace("/(tabs)/home");
+    if (!isCheckingAuth && user.id) {
+      if (activeAccount === "vendor" && user.isVendor) {
+        router.replace("/(vendor)/dashboard");
+      }
     }
-  }, [activeAccount, user.isVendor, router]);
+  }, [activeAccount, user.isVendor, user.id, router, isCheckingAuth]);
+
+  // Show loading while checking auth
+  if (isCheckingAuth) {
+    return (
+      <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color="#a855f7" />
+      </View>
+    );
+  }
 
   const handleProfilePress = () => {
     setIsProfileModalVisible(true);

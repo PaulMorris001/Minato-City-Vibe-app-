@@ -11,8 +11,11 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { BASE_URL, CITIES } from "@/constants/constants";
@@ -54,6 +57,9 @@ export default function CreateEventModal({
     maxGuests: "",
   });
   const [eventImage, setEventImage] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date());
 
   useEffect(() => {
     if (visible) {
@@ -66,28 +72,57 @@ export default function CreateEventModal({
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  const onDateChange = (event: any, date?: Date) => {
+    if (Platform.OS === "android") {
+      setShowDatePicker(false);
+      if (event.type === "dismissed" || !date) return;
+      setSelectedDate(date);
+      // Show time picker after date selection on Android
+      setShowTimePicker(true);
+      return;
+    }
+    // iOS handles date and time together
+    if (date) {
+      setSelectedDate(date);
+      setFormData((prev) => ({ ...prev, date: date.toISOString() }));
+    }
+  };
+
+  const onTimeChange = (event: any, date?: Date) => {
+    setShowTimePicker(false);
+    if (event.type === "dismissed" || !date) return;
+    // Combine selected date with new time
+    const updatedDate = new Date(selectedDate);
+    updatedDate.setHours(date.getHours());
+    updatedDate.setMinutes(date.getMinutes());
+    setSelectedDate(updatedDate);
+    setFormData((prev) => ({ ...prev, date: updatedDate.toISOString() }));
+  };
+
+  const formatDisplayDate = (dateString: string) => {
+    if (!dateString) return "Select date and time";
+    const date = new Date(dateString);
+    return date.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   const handleCreateEvent = async () => {
     // Validation
     if (!formData.title.trim()) {
       Alert.alert("Validation Error", "Please enter an event title");
       return;
     }
-    if (!formData.date.trim()) {
-      Alert.alert("Validation Error", "Please enter an event date");
+    if (!formData.date) {
+      Alert.alert("Validation Error", "Please select an event date and time");
       return;
     }
     if (!formData.location) {
       Alert.alert("Validation Error", "Please select a location");
-      return;
-    }
-
-    // Validate date format (YYYY-MM-DD)
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(formData.date)) {
-      Alert.alert(
-        "Validation Error",
-        "Please enter date in format YYYY-MM-DD (e.g., 2025-12-31)"
-      );
       return;
     }
 
@@ -214,14 +249,42 @@ export default function CreateEventModal({
               />
 
               {/* Event Date */}
-              <Text style={styles.label}>Event Date (YYYY-MM-DD) *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., 2025-12-31"
-                placeholderTextColor="#999"
-                value={formData.date}
-                onChangeText={(value) => handleInputChange("date", value)}
-              />
+              <Text style={styles.label}>Event Date & Time *</Text>
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Ionicons name="calendar-outline" size={20} color="#a855f7" />
+                <Text style={styles.datePickerText}>
+                  {formatDisplayDate(formData.date)}
+                </Text>
+              </TouchableOpacity>
+              {showDatePicker && Platform.OS === "ios" && (
+                <DateTimePicker
+                  value={selectedDate}
+                  mode="datetime"
+                  display="spinner"
+                  onChange={onDateChange}
+                  minimumDate={new Date()}
+                  themeVariant="dark"
+                />
+              )}
+              {showDatePicker && Platform.OS === "android" && (
+                <DateTimePicker
+                  value={selectedDate}
+                  mode="date"
+                  onChange={onDateChange}
+                  minimumDate={new Date()}
+                />
+              )}
+              {showTimePicker && Platform.OS === "android" && (
+                <DateTimePicker
+                  value={selectedDate}
+                  mode="time"
+                  onChange={onTimeChange}
+                  is24Hour={false}
+                />
+              )}
 
               {/* Location/City */}
               <Text style={styles.label}>Location *</Text>
@@ -276,7 +339,12 @@ export default function CreateEventModal({
                     <Text style={styles.checkmark}>✓</Text>
                   )}
                 </View>
-                <Text style={styles.checkboxLabel}>Make this event public</Text>
+                <View style={styles.checkboxTextContainer}>
+                  <Text style={styles.checkboxLabel}>Make this event public</Text>
+                  <Text style={styles.checkboxHint}>
+                    Public events can be discovered by others. You can also charge for tickets!
+                  </Text>
+                </View>
               </TouchableOpacity>
 
               {/* Paid Event Toggle (only if public) */}
@@ -412,6 +480,23 @@ const styles = StyleSheet.create({
     backgroundColor: "#1f1f2e",
     marginBottom: 8,
   },
+  datePickerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#374151",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    backgroundColor: "#1f1f2e",
+    marginBottom: 8,
+  },
+  datePickerText: {
+    fontSize: scaleFontSize(16),
+    fontFamily: Fonts.regular,
+    color: "#fff",
+  },
   multilineInput: {
     height: 100,
     textAlignVertical: "top",
@@ -473,6 +558,15 @@ const styles = StyleSheet.create({
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.medium,
     color: "#e5e7eb",
+  },
+  checkboxTextContainer: {
+    flex: 1,
+  },
+  checkboxHint: {
+    fontSize: scaleFontSize(12),
+    fontFamily: Fonts.regular,
+    color: "#9ca3af",
+    marginTop: 4,
   },
   createButton: {
     marginTop: 20,

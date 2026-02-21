@@ -17,8 +17,9 @@ import { VendorStats, Service } from "@/libs/interfaces";
 import DashboardTab from "@/components/vendor/DashboardTab";
 import ServicesTab from "@/components/vendor/ServicesTab";
 import AccountTab from "@/components/vendor/AccountTab";
+import VendorChatsTab from "@/components/vendor/VendorChatsTab";
 
-type TabType = "dashboard" | "services" | "account";
+type TabType = "dashboard" | "services" | "chats" | "account";
 
 export default function VendorDashboard() {
   const [loading, setLoading] = useState(true);
@@ -123,6 +124,9 @@ export default function VendorDashboard() {
             refreshing={refreshing}
           />
         )}
+        {activeTab === "chats" && (
+          <VendorChatsTab />
+        )}
         {activeTab === "account" && (
           <AccountTab onRefresh={handleRefresh} />
         )}
@@ -132,6 +136,7 @@ export default function VendorDashboard() {
       <View style={styles.tabContainer}>
         {renderTabButton("dashboard", "grid-outline", "Dashboard")}
         {renderTabButton("services", "briefcase-outline", "Services")}
+        {renderTabButton("chats", "chatbubbles-outline", "Chats")}
         {renderTabButton("account", "person-outline", "Account")}
       </View>
     </View>

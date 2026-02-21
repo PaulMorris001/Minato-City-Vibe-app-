@@ -232,17 +232,6 @@ export default function SettingsScreen() {
           </View>
           <Ionicons name="chevron-forward" size={20} color="#6b7280" />
         </TouchableOpacity>
-
-        <TouchableOpacity style={styles.preferenceItem}>
-          <View style={styles.preferenceLeft}>
-            <Ionicons name="language-outline" size={22} color="#e5e7eb" />
-            <Text style={styles.preferenceText}>Language</Text>
-          </View>
-          <View style={styles.preferenceRight}>
-            <Text style={styles.preferenceValue}>English</Text>
-            <Ionicons name="chevron-forward" size={20} color="#6b7280" />
-          </View>
-        </TouchableOpacity>
       </View>
 
       <View style={styles.bottomPadding} />

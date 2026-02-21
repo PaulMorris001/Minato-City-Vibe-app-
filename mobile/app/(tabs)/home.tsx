@@ -338,13 +338,15 @@ export default function Home() {
     gradient,
     delay,
     page,
+    onPress,
   }: {
     icon: React.ComponentProps<typeof Ionicons>["name"];
     title: string;
     description: string;
     gradient: readonly [string, string];
-      delay: number;
+    delay: number;
     page?: string;
+    onPress?: () => void;
   }) => {
     const cardFade = useRef(new Animated.Value(0)).current;
     const cardSlide = useRef(new Animated.Value(30)).current;
@@ -378,10 +380,12 @@ export default function Home() {
           style={styles.featureCard}
           activeOpacity={0.8}
           onPress={() => {
-        if (page) {
-          const target = page.startsWith("/") ? page : `/${page}`;
-          router.push(target as any);
-        }
+            if (onPress) {
+              onPress();
+            } else if (page) {
+              const target = page.startsWith("/") ? page : `/${page}`;
+              router.push(target as any);
+            }
           }}
         >
           <LinearGradient
@@ -506,7 +510,7 @@ export default function Home() {
               description="Organize every detail of your perfect night out"
               gradient={["#f093fb", "#f5576c"] as const}
               delay={200}
-              page="events"
+              onPress={() => setIsModalVisible(true)}
             />
             <AnimatedFeatureCard
               icon="star"

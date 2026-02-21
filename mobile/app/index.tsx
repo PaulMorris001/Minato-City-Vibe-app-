@@ -3,28 +3,44 @@ import { Redirect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { View, ActivityIndicator } from "react-native";
 
+type AppState = "checking" | "onboarding" | "login" | "home";
+
 export default function Index() {
-  const [isChecking, setIsChecking] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [appState, setAppState] = useState<AppState>("checking");
 
   useEffect(() => {
-    const checkToken = async () => {
+    const checkAppState = async () => {
       const token = await SecureStore.getItemAsync("token");
-      setIsLoggedIn(!!token);
-      setIsChecking(false);
+      const hasSeenOnboarding = await SecureStore.getItemAsync("hasSeenOnboarding");
+
+      if (!token) {
+        // Not logged in - check if new user needs onboarding
+        if (!hasSeenOnboarding) {
+          setAppState("onboarding");
+        } else {
+          setAppState("login");
+        }
+      } else {
+        // Logged in - go to home
+        setAppState("home");
+      }
     };
-    checkToken();
+    checkAppState();
   }, []);
 
-  if (isChecking) {
+  if (appState === "checking") {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color="#007bff" />
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#0f0f1a" }}>
+        <ActivityIndicator size="large" color="#a855f7" />
       </View>
     );
   }
 
-  if (!isLoggedIn) {
+  if (appState === "onboarding") {
+    return <Redirect href="/onboarding" />;
+  }
+
+  if (appState === "login") {
     return <Redirect href="/login" />;
   }
 
