@@ -58,7 +58,7 @@ export default function VendorLayout() {
         // If user is not a vendor, redirect to client tabs
         if (!userData.isVendor) {
           setActiveAccount("client");
-          router.replace("/(tabs)/dashboard");
+          router.replace("/(tabs)/home" as any);
         }
       }
     } catch (error) {
@@ -82,7 +82,7 @@ export default function VendorLayout() {
   useEffect(() => {
     // Only redirect if we're not on the settings page
     if (activeAccount === "client" && !pathname.includes("settings")) {
-      router.replace("/(tabs)/dashboard");
+      router.replace("/(tabs)/home" as any);
     }
   }, [activeAccount, pathname]);
 

@@ -14,6 +14,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
+import { useRouter } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { BASE_URL, CITIES, VENDOR_TYPES } from "@/constants/constants";
 import { City, VendorType } from "@/libs/interfaces";
@@ -25,7 +26,9 @@ interface AccountTabProps {
 }
 
 export default function AccountTab({ onRefresh }: AccountTabProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [stripeOnboardingComplete, setStripeOnboardingComplete] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [cities, setCities] = useState<City[]>([]);
@@ -52,7 +55,20 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
   useEffect(() => {
     fetchProfile();
     loadCitiesAndTypes();
+    fetchStripeStatus();
   }, []);
+
+  const fetchStripeStatus = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const res = await axios.get(`${BASE_URL}/stripe/connect/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setStripeOnboardingComplete(res.data.onboardingComplete ?? false);
+    } catch {
+      // Non-critical — silently ignore
+    }
+  };
 
   const loadCitiesAndTypes = () => {
     setCities(CITIES);
@@ -226,6 +242,32 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
           </View>
         </View>
       </View>
+
+      {/* Payouts / Stripe Connect */}
+      <TouchableOpacity
+        style={styles.payoutsCard}
+        onPress={() => router.push("/stripe-onboarding")}
+        activeOpacity={0.8}
+      >
+        <View style={styles.payoutsLeft}>
+          <Ionicons
+            name={stripeOnboardingComplete ? "cash" : "cash-outline"}
+            size={24}
+            color={stripeOnboardingComplete ? "#10b981" : "#f59e0b"}
+          />
+          <View>
+            <Text style={styles.payoutsTitle}>Payouts</Text>
+            <Text style={styles.payoutsSubtitle}>
+              {stripeOnboardingComplete ? "Stripe payouts active" : "Set up to receive earnings"}
+            </Text>
+          </View>
+        </View>
+        <View style={[styles.payoutsBadge, stripeOnboardingComplete ? styles.payoutsBadgeActive : styles.payoutsBadgePending]}>
+          <Text style={styles.payoutsBadgeText}>
+            {stripeOnboardingComplete ? "Active" : "Set up"}
+          </Text>
+        </View>
+      </TouchableOpacity>
 
       {/* Account Information */}
       <View style={styles.section}>
@@ -747,5 +789,45 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 40,
+  },
+  payoutsCard: {
+    backgroundColor: "#1f1f2e",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  payoutsLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  payoutsTitle: {
+    fontSize: 16,
+    color: "#e5e7eb",
+    fontWeight: "600",
+  },
+  payoutsSubtitle: {
+    fontSize: 13,
+    color: "#9ca3af",
+    marginTop: 2,
+  },
+  payoutsBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  payoutsBadgeActive: {
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+  },
+  payoutsBadgePending: {
+    backgroundColor: "rgba(245, 158, 11, 0.15)",
+  },
+  payoutsBadgeText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 13,
   },
 });

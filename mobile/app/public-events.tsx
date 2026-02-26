@@ -17,9 +17,11 @@ import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
+import { useStripePayment } from "@/hooks/useStripePayment";
 
 export default function PublicEventsPage() {
   const router = useRouter();
+  const { payForTicket } = useStripePayment();
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -95,30 +97,30 @@ export default function PublicEventsPage() {
   }, [loading, hasMore, page]);
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      if (!token) return;
+    const result = await payForTicket(eventId);
+    if (!result.success) {
+      if (result.error) Alert.alert("Payment Failed", result.error);
+      return;
+    }
 
-      const response = await fetch(`${BASE_URL}/events/${eventId}/purchase`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+    // Confirm with backend — this actually creates the ticket in the DB
+    const token = await SecureStore.getItemAsync("token");
+    const confirmRes = await fetch(`${BASE_URL}/stripe/confirm/ticket/${eventId}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ paymentIntentId: result.paymentIntentId }),
+    });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        Alert.alert("Success!", `Successfully purchased ticket for "${eventTitle}"`);
-        // Refresh the current page to show updated ticket status
-        fetchPublicEvents(1, true);
-        setPage(1);
-      } else {
-        Alert.alert("Error", data.message || "Failed to purchase ticket");
-      }
-    } catch (error) {
-      console.error("Purchase ticket error:", error);
-      Alert.alert("Error", "Failed to purchase ticket");
+    if (confirmRes.ok) {
+      Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
+      fetchPublicEvents(1, true);
+      setPage(1);
+    } else {
+      const d = await confirmRes.json();
+      Alert.alert("Error", d.message || "Payment succeeded but ticket could not be issued. Please contact support.");
     }
   };
 

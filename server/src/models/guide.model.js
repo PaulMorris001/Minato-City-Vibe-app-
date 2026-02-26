@@ -38,7 +38,12 @@ const guideSchema = mongoose.Schema({
   },
   authorName: { type: String, required: true },
   description: { type: String, required: true },
-  price: { type: Number, required: true, min: 0 },
+  price: { type: Number, required: true, min: 0, max: 100, validate: {
+      validator: function(price) {
+        return price <= 100;
+      },
+      message: "A guide must not cost more than 100$"
+    } },
   city: { type: String, required: true },
   cityState: { type: String, required: true },
   topic: {

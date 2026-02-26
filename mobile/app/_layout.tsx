@@ -1,6 +1,6 @@
 import { Stack } from "expo-router";
 import React, { useEffect } from "react";
-import { Platform, useColorScheme } from "react-native";
+import { Platform } from "react-native";
 import {
   useFonts,
   Outfit_300Light,
@@ -16,6 +16,7 @@ import * as NavigationBar from "expo-navigation-bar";
 import { PortalProvider } from "@gorhom/portal";
 import { AccountProvider } from "@/contexts/AccountContext";
 import socketService from "@/services/socket.service";
+import { StripeProvider } from "@stripe/stripe-react-native";
 import { theme } from "@/constants/theme";
 import { StatusBar } from "expo-status-bar";
 import { setupGlobalErrorHandler, setupConsoleOverride } from "@/utils/errorHandler";
@@ -54,8 +55,6 @@ setupGlobalErrorHandler();
 setupConsoleOverride();
 
 export default Sentry.wrap(function RootLayout() {
-  const colorScheme = useColorScheme() || "dark";
-
   const [fontsLoaded] = useFonts({
     Outfit_300Light,
     Outfit_400Regular,
@@ -83,37 +82,33 @@ export default Sentry.wrap(function RootLayout() {
   // Set navigation bar color for Android
   useEffect(() => {
     if (Platform.OS === "android") {
-      NavigationBar.setButtonStyleAsync(
-        colorScheme === "light" ? "dark" : "light"
-      );
-      NavigationBar.setBackgroundColorAsync(
-        colorScheme === "dark"
-          ? theme.colors.dark.background
-          : theme.colors.light.background
-      );
+      NavigationBar.setButtonStyleAsync("light");
+      NavigationBar.setBackgroundColorAsync(theme.colors.dark.background);
     }
-  }, [colorScheme]);
+  }, []);
 
   if (!fontsLoaded) {
     return null;
   }
 
   return (
-    <AccountProvider>
-      <PortalProvider>
-        <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: {
-              backgroundColor:
-                colorScheme === "dark"
-                  ? theme.colors.dark.background
-                  : theme.colors.light.background,
-            },
-          }}
-        />
-      </PortalProvider>
-    </AccountProvider>
+    <StripeProvider
+      publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ""}
+      merchantIdentifier="merchant.com.nightvibe.mobile"
+    >
+      <AccountProvider>
+        <PortalProvider>
+          <StatusBar style="light" />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: {
+                backgroundColor: theme.colors.dark.background,
+              },
+            }}
+          />
+        </PortalProvider>
+      </AccountProvider>
+    </StripeProvider>
   );
 });

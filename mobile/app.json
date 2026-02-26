@@ -56,6 +56,13 @@
           "organization": "setemi-if",
           "setCommits": false
         }
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.nightvibe.mobile",
+          "enableGooglePay": true
+        }
       ]
     ],
     "experiments": {

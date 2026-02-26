@@ -57,23 +57,22 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleSwitchAccount = async () => {
+  const handleSwitchAccount = () => {
     if (!user.isVendor) {
-      Alert.alert("Info", "You don't have a vendor account yet. Register as a vendor to access vendor features.");
+      Alert.alert(
+        "No Vendor Account",
+        "You don't have a vendor account yet. Register as a vendor to access vendor features."
+      );
       return;
     }
 
-    // Determine target account before switching
     const targetAccount = activeAccount === "client" ? "vendor" : "client";
-
-    // Switch the account context
     switchAccount();
 
-    // Navigate to the appropriate view based on target account
     if (targetAccount === "vendor") {
-      router.replace("/(vendor)/dashboard");
+      router.replace("/(vendor)/dashboard" as any);
     } else {
-      router.replace("/(tabs)/dashboard");
+      router.replace("/(tabs)/home" as any);
     }
   };
 
@@ -193,7 +192,7 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <View style={styles.infoRow}>
+        <View style={[styles.infoRow, { borderBottomWidth: 0, marginBottom: 4 }]}>
           <View style={styles.infoIconContainer}>
             <Ionicons
               name={activeAccount === "vendor" ? "briefcase-outline" : "person-outline"}
@@ -209,9 +208,60 @@ export default function SettingsScreen() {
             </Text>
           </View>
         </View>
+
+        <TouchableOpacity
+          style={[
+            styles.switchAccountButton,
+            !user.isVendor && { opacity: 0.45 },
+          ]}
+          onPress={handleSwitchAccount}
+          activeOpacity={0.8}
+        >
+          <View style={styles.switchAccountLeft}>
+            <View style={styles.switchIconContainer}>
+              <Ionicons
+                name={activeAccount === "client" ? "briefcase" : "person"}
+                size={22}
+                color={Colors.primary}
+              />
+            </View>
+            <View>
+              <Text style={styles.switchAccountTitle}>
+                {activeAccount === "client"
+                  ? "Switch to Vendor"
+                  : "Switch to Client"}
+              </Text>
+              <Text style={styles.switchAccountSubtitle}>
+                {activeAccount === "client"
+                  ? "Manage your business dashboard"
+                  : "Browse events, guides & services"}
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="swap-horizontal" size={22} color={Colors.primary} />
+        </TouchableOpacity>
       </View>
 
       
+
+      {/* Payouts — for guide sellers */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Earnings</Text>
+        <Text style={styles.sectionDescription}>
+          Set up payouts to receive money from guide sales
+        </Text>
+
+        <TouchableOpacity
+          style={styles.preferenceItem}
+          onPress={() => router.push("/stripe-onboarding")}
+        >
+          <View style={styles.preferenceLeft}>
+            <Ionicons name="cash-outline" size={22} color={Colors.primary} />
+            <Text style={styles.preferenceText}>Payout Setup</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+        </TouchableOpacity>
+      </View>
 
       {/* Additional Settings */}
       <View style={styles.section}>

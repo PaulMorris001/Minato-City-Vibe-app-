@@ -8,7 +8,6 @@ import {
   Platform,
   StatusBar,
   Image,
-  useColorScheme,
   ActivityIndicator,
 } from "react-native";
 import { Tabs, useRouter, useSegments } from "expo-router";
@@ -26,7 +25,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function TabsLayout() {
   const { activeAccount } = useAccount();
-  const colorScheme = useColorScheme() || "dark";
   const isGlassAvailable = Platform.OS === "ios" && isLiquidGlassAvailable();
   const segments = useSegments();
   const currentTab = segments[1]; // Gets the current tab name (home, vendors, bests, etc.)
@@ -307,7 +305,7 @@ export default function TabsLayout() {
           {isGlassAvailable ? (
             <BlurView
               intensity={80}
-              tint={colorScheme === "dark" ? "dark" : "light"}
+              tint="dark"
               style={[styles.modalContent, styles.glassModalContent]}
             >
               {renderModalContent()}
@@ -347,7 +345,7 @@ export default function TabsLayout() {
             isGlassAvailable ? (
               <BlurView
                 intensity={80}
-                tint={colorScheme === "dark" ? "dark" : "light"}
+                tint="dark"
                 style={{
                   position: "absolute",
                   top: 0,

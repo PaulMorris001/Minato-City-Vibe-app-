@@ -66,6 +66,18 @@ export const config = {
       methods: ["GET", "POST"],
     },
   },
+
+  // Stripe Configuration
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || "",
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || "",
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
+    platformFeePercent: parseFloat(process.env.PLATFORM_FEE_PERCENT || "10"),
+    // Deep-link scheme used for Stripe Connect onboarding redirect
+    appUrl: process.env.APP_URL || "nightvibe://",
+    // HTTPS server URL used as Stripe's required return/refresh URLs
+    serverUrl: process.env.SERVER_URL || "https://night-vibe.onrender.com",
+  },
 };
 
 export default config;

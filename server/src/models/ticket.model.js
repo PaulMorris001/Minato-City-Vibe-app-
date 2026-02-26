@@ -23,7 +23,10 @@ const ticketSchema = mongoose.Schema({
   isValid: { type: Boolean, default: true },
 
   // Unique ticket code for verification
-  ticketCode: { type: String, unique: true, sparse: true }
+  ticketCode: { type: String, unique: true, sparse: true },
+
+  // Stripe payment tracking
+  stripePaymentIntentId: { type: String }
 }, {
   timestamps: true
 });

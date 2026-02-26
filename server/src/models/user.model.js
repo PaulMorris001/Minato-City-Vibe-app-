@@ -36,6 +36,10 @@ const userSchema = mongoose.Schema({
   },
   verified: { type: Boolean, default: false },
 
+  // Stripe Connect fields (for sellers receiving payouts)
+  stripeAccountId: { type: String },
+  stripeOnboardingComplete: { type: Boolean, default: false },
+
   // Password reset fields
   resetPasswordOTP: { type: String },
   resetPasswordOTPExpires: { type: Date },

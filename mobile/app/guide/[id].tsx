@@ -15,11 +15,13 @@ import { Guide } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
+import { useStripePayment } from "@/hooks/useStripePayment";
 
 export default function GuideDetailPage() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const formatPrice = useFormatPrice();
+  const { payForGuide } = useStripePayment();
 
   const [guide, setGuide] = useState<Guide | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,34 +65,38 @@ export default function GuideDetailPage() {
   };
 
   const handlePurchase = async () => {
-    try {
-      setPurchasing(true);
-      const token = await SecureStore.getItemAsync("token");
+    const token = await SecureStore.getItemAsync("token");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
 
-      if (!token) {
-        router.push("/login");
+    setPurchasing(true);
+    try {
+      const result = await payForGuide(id);
+      if (!result.success) {
+        if (result.error) Alert.alert("Payment Failed", result.error);
         return;
       }
 
-      const response = await fetch(`${BASE_URL}/guides/${id}/purchase`, {
+      // Confirm with backend — this actually grants access to the guide
+      const confirmRes = await fetch(`${BASE_URL}/stripe/confirm/guide/${id}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({ paymentIntentId: result.paymentIntentId }),
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        Alert.alert("Success", "Guide purchased successfully!");
+      if (confirmRes.ok) {
+        Alert.alert("Success", "Guide unlocked! Enjoy reading.");
         setHasPurchased(true);
         fetchGuide();
       } else {
-        Alert.alert("Error", data.message || "Failed to purchase guide");
+        const d = await confirmRes.json();
+        Alert.alert("Error", d.message || "Payment succeeded but access could not be granted. Please contact support.");
       }
-    } catch (error) {
-      console.error("Purchase error:", error);
-      Alert.alert("Error", "Failed to purchase guide");
     } finally {
       setPurchasing(false);
     }

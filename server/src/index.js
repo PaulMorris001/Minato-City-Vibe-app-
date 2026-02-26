@@ -13,11 +13,16 @@ import chatRoutes from "./routes/chat.route.js";
 import guideRoutes from "./routes/guide.route.js";
 import uploadRoutes from "./routes/upload.route.js";
 import logRoutes from "./routes/log.route.js";
+import stripeRoutes from "./routes/stripe.route.js";
 
 const app = express();
 const httpServer = createServer(app);
 
 app.use(cors(config.cors));
+
+// Stripe webhook needs raw body — must be registered BEFORE express.json()
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -38,6 +43,7 @@ app.use("/api/", chatRoutes);
 app.use("/api/", guideRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/", logRoutes);
+app.use("/api/", stripeRoutes);
 
 
 // Initialize Socket.IO
