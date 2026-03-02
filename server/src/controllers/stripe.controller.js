@@ -4,6 +4,7 @@ import User from "../models/user.model.js";
 import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
 import Ticket from "../models/ticket.model.js";
+import { sendPushNotification } from "../services/notification.service.js";
 
 const PLATFORM_FEE_PERCENT = config.stripe.platformFeePercent; // e.g. 10
 
@@ -260,6 +261,16 @@ export const confirmGuidePurchase = async (req, res) => {
       await guide.save();
     }
 
+    // Notify the guide author
+    const buyer = await User.findById(userId).select("username");
+    const author = await User.findById(guide.author._id).select("expoPushToken");
+    await sendPushNotification(
+      author?.expoPushToken,
+      "📖 Guide Purchased!",
+      `${buyer.username} just bought your guide "${guide.title}"`,
+      { type: "guide_sold", guideId }
+    );
+
     res.status(200).json({ message: "Guide purchase confirmed", hasPurchased: true });
   } catch (error) {
     console.error("Confirm guide purchase error:", error);
@@ -312,6 +323,16 @@ export const confirmTicketPurchase = async (req, res) => {
     const populated = await Ticket.findById(ticket._id)
       .populate("event", "title date location image")
       .populate("user", "username email profilePicture");
+
+    // Notify the event creator
+    const buyer = await User.findById(userId).select("username");
+    const creator = await User.findById(event.createdBy).select("expoPushToken");
+    await sendPushNotification(
+      creator?.expoPushToken,
+      "🎟️ New Ticket Sold!",
+      `${buyer.username} just bought a ticket to "${event.title}"`,
+      { type: "ticket_sold", eventId }
+    );
 
     res.status(201).json({ message: "Ticket confirmed", ticket: populated });
   } catch (error) {

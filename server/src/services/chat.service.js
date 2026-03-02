@@ -3,6 +3,7 @@ import Message from "../models/message.model.js";
 import User from "../models/user.model.js";
 import { emitNewMessage, getSocketInstance } from "./socket.service.js";
 import { uploadBase64Image, deleteImage } from "./image.service.js";
+import { sendPushNotification } from "./notification.service.js";
 
 /**
  * Chat Service - Business logic layer for chat operations
@@ -173,6 +174,21 @@ class ChatService {
       chat.participants.forEach(participantId => {
         io.to(`user:${participantId.toString()}`).emit("message:new", message);
       });
+    }
+
+    // Push notification to each recipient (fires even when app is in background)
+    const notificationBody = message.type === "image" ? "📷 Photo" : message.content;
+    for (const participantId of chat.participants) {
+      if (participantId.toString() === senderId.toString()) continue;
+      const recipient = await User.findById(participantId).select("expoPushToken");
+      if (recipient?.expoPushToken) {
+        await sendPushNotification(
+          recipient.expoPushToken,
+          message.sender.username,
+          notificationBody,
+          { type: "new_message", chatId: chatId.toString() }
+        );
+      }
     }
 
     return message;

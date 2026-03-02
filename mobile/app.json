@@ -63,6 +63,12 @@
           "merchantIdentifier": "merchant.com.nightvibe.mobile",
           "enableGooglePay": true
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#a855f7"
+        }
       ]
     ],
     "experiments": {

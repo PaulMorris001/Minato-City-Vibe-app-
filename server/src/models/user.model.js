@@ -40,6 +40,9 @@ const userSchema = mongoose.Schema({
   stripeAccountId: { type: String },
   stripeOnboardingComplete: { type: Boolean, default: false },
 
+  // Expo push notification token (updated on each app launch)
+  expoPushToken: { type: String, default: null },
+
   // Password reset fields
   resetPasswordOTP: { type: String },
   resetPasswordOTPExpires: { type: Date },
