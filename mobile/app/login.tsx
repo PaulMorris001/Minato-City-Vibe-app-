@@ -22,6 +22,7 @@ import { FormInput, PrimaryButton } from "@/components/shared";
 import { useAccount } from "@/contexts/AccountContext";
 import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
+import { registerForPushNotifications } from "@/utils/pushNotifications";
 
 export default function Login() {
   const router = useRouter();
@@ -71,6 +72,7 @@ export default function Login() {
 
       await SecureStore.setItemAsync("token", token);
       await SecureStore.setItemAsync("user", JSON.stringify(user));
+      registerForPushNotifications(); // Save push token now that auth token exists
 
       // If user is a vendor, show role picker
       if (user.isVendor) {
@@ -157,6 +159,7 @@ export default function Login() {
 
       await SecureStore.setItemAsync("token", token);
       await SecureStore.setItemAsync("user", JSON.stringify(user));
+      registerForPushNotifications(); // Save push token now that auth token exists
 
       // If user is a vendor, show role picker
       if (user.isVendor) {
