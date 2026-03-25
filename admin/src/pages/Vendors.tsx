@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { adminApi } from "../api/admin";
-import type { AdminUser } from "../types";
+import type { AdminVendor } from "../types";
 import Table, { Column } from "../components/ui/Table";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
@@ -13,7 +13,7 @@ import { colors } from "../constants/colors";
 const LIMIT = 20;
 
 export default function Vendors() {
-  const [vendors, setVendors] = useState<AdminUser[]>([]);
+  const [vendors, setVendors] = useState<AdminVendor[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -24,10 +24,8 @@ export default function Vendors() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Reuse the users endpoint but filter by vendor role client-side via search
-      const res = await adminApi.getUsers({ search, page, limit: LIMIT });
-      const vendorList = res.data.users.filter((u) => u.isVendor);
-      setVendors(vendorList);
+      const res = await adminApi.getVendors({ search, page, limit: LIMIT });
+      setVendors(res.data.vendors);
       setTotal(res.data.total);
     } finally {
       setLoading(false);
@@ -42,7 +40,7 @@ export default function Vendors() {
     if (!confirmId) return;
     setDeletingId(confirmId);
     try {
-      await adminApi.deleteUser(confirmId);
+      await adminApi.deleteVendor(confirmId);
       setConfirmId(null);
       load();
     } finally {
@@ -55,20 +53,22 @@ export default function Vendors() {
     load();
   };
 
-  const columns: Column<AdminUser>[] = [
+  const columns: Column<AdminVendor>[] = [
     {
       key: "business",
       header: "Business",
-      render: (u) => (
+      render: (v) => (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {u.profilePicture ? (
-            <img src={u.profilePicture} style={avatarStyle} alt="" />
+          {v.images && v.images[0] ? (
+            <img src={v.images[0]} style={avatarStyle} alt="" />
           ) : (
-            <div style={avatarPlaceholderStyle}>{(u.businessName ?? u.username)[0].toUpperCase()}</div>
+            <div style={avatarPlaceholderStyle}>{v.name[0]?.toUpperCase()}</div>
           )}
           <div>
-            <div style={{ fontWeight: 600 }}>{u.businessName || u.username}</div>
-            <div style={{ fontSize: 12, color: colors.textMuted }}>{u.email}</div>
+            <div style={{ fontWeight: 600 }}>{v.name}</div>
+            <div style={{ fontSize: 12, color: colors.textMuted }}>
+              {v.user ? v.user.email : "Seeded vendor"}
+            </div>
           </div>
         </div>
       ),
@@ -77,21 +77,29 @@ export default function Vendors() {
       key: "city",
       header: "City",
       width: 120,
-      render: (u) => <span style={{ color: colors.textMuted }}>{u.location?.city || "—"}</span>,
+      render: (v) => <span style={{ color: colors.textMuted }}>{v.city?.name || "—"}</span>,
     },
     {
       key: "type",
       header: "Type",
       width: 140,
-      render: (u) => u.vendorType ? <Badge variant="primary">{u.vendorType}</Badge> : <span style={{ color: colors.textDim }}>—</span>,
+      render: (v) => v.vendorType?.name
+        ? <Badge variant="primary">{v.vendorType.name}</Badge>
+        : <span style={{ color: colors.textDim }}>—</span>,
+    },
+    {
+      key: "rating",
+      header: "Rating",
+      width: 80,
+      render: (v) => <span style={{ color: colors.textMuted }}>★ {v.rating?.toFixed(1) ?? "—"}</span>,
     },
     {
       key: "verified",
       header: "Verified",
       width: 100,
-      render: (u) => (
-        <Badge variant={u.verified ? "success" : "default"}>
-          {u.verified ? "✓ Verified" : "Unverified"}
+      render: (v) => (
+        <Badge variant={v.verified ? "success" : "default"}>
+          {v.verified ? "✓ Verified" : "Unverified"}
         </Badge>
       ),
     },
@@ -99,12 +107,12 @@ export default function Vendors() {
       key: "actions",
       header: "Actions",
       width: 160,
-      render: (u) => (
+      render: (v) => (
         <div style={{ display: "flex", gap: 6 }}>
-          <Button variant="secondary" size="sm" onClick={() => handleVerify(u._id)}>
-            {u.verified ? "Unverify" : "Verify"}
+          <Button variant="secondary" size="sm" onClick={() => handleVerify(v._id)}>
+            {v.verified ? "Unverify" : "Verify"}
           </Button>
-          <Button variant="danger" size="sm" onClick={() => setConfirmId(u._id)}>
+          <Button variant="danger" size="sm" onClick={() => setConfirmId(v._id)}>
             Delete
           </Button>
         </div>
@@ -119,7 +127,7 @@ export default function Vendors() {
           <SearchInput value={search} onSearch={handleSearch} placeholder="Search vendors..." />
         }
       >
-        <Table columns={columns} data={vendors} keyExtractor={(u) => u._id} loading={loading} emptyMessage="No vendors found" />
+        <Table columns={columns} data={vendors} keyExtractor={(v) => v._id} loading={loading} emptyMessage="No vendors found" />
         <Pagination page={page} total={total} limit={LIMIT} onPageChange={setPage} />
       </PageShell>
 

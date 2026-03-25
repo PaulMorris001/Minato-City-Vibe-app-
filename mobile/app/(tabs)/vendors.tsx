@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
 import { BASE_URL, CITIES } from "@/constants/constants";
+import { fetchCities } from "@/libs/api";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
@@ -26,7 +27,7 @@ import { scaleFontSize } from "@/utils/responsive";
 
 export default function VendorsPage() {
   const router = useRouter();
-  const [cities, setCities] = useState<City[]>([]);
+  const [cities, setCities] = useState<City[]>(CITIES);
   const [loading, setLoading] = useState(true);
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -75,7 +76,6 @@ export default function VendorsPage() {
 
   useEffect(() => {
     checkAuthStatus();
-    setCities(CITIES);
     setLoading(false);
 
     Animated.timing(headerAnim, {
@@ -83,6 +83,11 @@ export default function VendorsPage() {
       duration: 600,
       useNativeDriver: true,
     }).start();
+
+    // Fetch cities from API and override the initial static list
+    fetchCities()
+      .then((data) => { if (Array.isArray(data) && data.length > 0) setCities(data); })
+      .catch(() => {}); // silently fall back to CITIES static list on error
   }, []);
 
   const checkAuthStatus = async () => {

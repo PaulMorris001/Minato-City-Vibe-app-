@@ -6,6 +6,8 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Users from "./pages/Users";
 import Vendors from "./pages/Vendors";
+import Cities from "./pages/Cities";
+import VendorTypes from "./pages/VendorTypes";
 import Events from "./pages/Events";
 import Guides from "./pages/Guides";
 
@@ -29,6 +31,8 @@ function AppRoutes() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/users" element={<Users />} />
                 <Route path="/vendors" element={<Vendors />} />
+                <Route path="/cities" element={<Cities />} />
+                <Route path="/vendor-types" element={<VendorTypes />} />
                 <Route path="/events" element={<Events />} />
                 <Route path="/guides" element={<Guides />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

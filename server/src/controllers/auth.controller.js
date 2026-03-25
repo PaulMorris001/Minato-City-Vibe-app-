@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { OAuth2Client } from "google-auth-library";
 import config from "../config/env.js";
 import User from "../models/user.model.js";
+import { Vendor } from "../models/vendor.model.js";
 import { uploadBase64Image, deleteImage } from "../services/image.service.js";
 import { generateOTP, sendPasswordResetOTP, sendPasswordResetSuccessEmail } from "../services/email.service.js";
 
@@ -72,7 +73,7 @@ export async function login(req, res) {
 
 // Become a vendor (upgrade from client to vendor)
 export async function becomeVendor(req, res) {
-  const { businessName, businessDescription, businessPicture, vendorType, location, contactInfo } = req.body;
+  const { businessName, businessDescription, businessPicture, vendorType, vendorTypeId, location, contactInfo } = req.body;
 
   try {
     const user = await User.findById(req.user.id);
@@ -88,7 +89,6 @@ export async function becomeVendor(req, res) {
     // Handle business picture upload
     let businessPictureUrl = "";
     if (businessPicture) {
-      // If it's a base64 image, upload to Cloudinary
       if (businessPicture.startsWith('data:image')) {
         try {
           const result = await uploadBase64Image(businessPicture, 'businesses');
@@ -98,12 +98,11 @@ export async function becomeVendor(req, res) {
           return res.status(400).json({ message: "Error uploading business picture", details: error.message });
         }
       } else {
-        // Already a URL (Cloudinary or other)
         businessPictureUrl = businessPicture;
       }
     }
 
-    // Upgrade user to vendor
+    // Upgrade user to vendor (store string fields for vendor dashboard)
     user.isVendor = true;
     user.businessName = businessName;
     user.businessDescription = businessDescription;
@@ -113,6 +112,33 @@ export async function becomeVendor(req, res) {
     user.contactInfo = contactInfo;
 
     await user.save();
+
+    // Create/upsert linked Vendor document with ObjectId refs for discovery
+    if (vendorTypeId && location?.cityId) {
+      try {
+        await Vendor.findOneAndUpdate(
+          { user: user._id },
+          {
+            name: businessName,
+            description: businessDescription,
+            images: businessPictureUrl ? [businessPictureUrl] : [],
+            vendorType: vendorTypeId,
+            city: location.cityId,
+            contact: {
+              phone: contactInfo?.phone || "",
+              instagram: contactInfo?.instagram || "",
+              website: contactInfo?.website || "",
+            },
+            user: user._id,
+            priceRange: 2,
+          },
+          { upsert: true, new: true }
+        );
+      } catch (vendorError) {
+        console.error("Error creating vendor document:", vendorError);
+        // Non-fatal: user is already a vendor, just log the error
+      }
+    }
 
     res.json({
       message: "Successfully registered as a vendor",
@@ -200,6 +226,24 @@ export async function updateVendorProfile(req, res) {
     if (contactInfo) user.contactInfo = contactInfo;
 
     await user.save();
+
+    // Sync linked Vendor document (name, description, images, contact)
+    const vendorUpdate = {};
+    if (businessName) vendorUpdate.name = businessName;
+    if (businessDescription) vendorUpdate.description = businessDescription;
+    if (user.businessPicture) vendorUpdate.images = [user.businessPicture];
+    if (contactInfo) {
+      vendorUpdate.contact = {
+        phone: contactInfo.phone || "",
+        instagram: contactInfo.instagram || "",
+        website: contactInfo.website || "",
+      };
+    }
+    if (Object.keys(vendorUpdate).length > 0) {
+      Vendor.findOneAndUpdate({ user: user._id }, vendorUpdate).catch(err =>
+        console.error("Error syncing vendor document:", err)
+      );
+    }
 
     res.json({
       message: "Vendor profile updated successfully",

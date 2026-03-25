@@ -13,6 +13,33 @@ export interface AdminUser {
   createdAt: string;
 }
 
+export interface City {
+  _id: string;
+  name: string;
+  state: string;
+}
+
+export interface VendorType {
+  _id: string;
+  name: string;
+  icon: string;
+}
+
+export interface AdminVendor {
+  _id: string;
+  name: string;
+  description?: string;
+  images?: string[];
+  city: City;
+  vendorType: VendorType;
+  priceRange: number;
+  rating: number;
+  contact: { phone: string; instagram?: string; website?: string };
+  verified: boolean;
+  user?: { _id: string; username: string; email: string };
+  createdAt: string;
+}
+
 export interface AdminEvent {
   _id: string;
   title: string;

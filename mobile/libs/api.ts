@@ -6,6 +6,16 @@ async function authHeaders(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+export async function fetchCities() {
+  const res = await fetch(`${BASE_URL}/cities`);
+  return res.json();
+}
+
+export async function fetchVendorTypes() {
+  const res = await fetch(`${BASE_URL}/vendor-types`);
+  return res.json();
+}
+
 export async function fetchVendors(cityId: string, vendorTypeId: string) {
   const res = await fetch(
     `${BASE_URL}/cities/${cityId}/vendors/${vendorTypeId}`,

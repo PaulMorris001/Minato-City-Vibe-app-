@@ -1,11 +1,9 @@
 import mongoose from "mongoose";
-import { Vendor } from "../models/vendor.model.js";
+import { City, VendorType, Vendor } from "../models/vendor.model.js";
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-
-// Your existing cities
 const cities = [
   { _id: "691660f69fce6d48f9f04c98", name: "Boston", state: "Massachusetts" },
   { _id: "691660f69fce6d48f9f04c99", name: "New York City", state: "New York" },
@@ -17,29 +15,24 @@ const cities = [
   { _id: "691660f69fce6d48f9f04c9f", name: "Miami", state: "Florida" },
   { _id: "691660f69fce6d48f9f04ca0", name: "New Orleans", state: "Louisiana" },
   { _id: "691660f69fce6d48f9f04ca1", name: "Detroit", state: "Michigan" },
-  {
-    _id: "691660f69fce6d48f9f04ca2",
-    name: "San Francisco",
-    state: "California",
-  },
+  { _id: "691660f69fce6d48f9f04ca2", name: "San Francisco", state: "California" },
 ];
 
-// Your existing vendor types
 const vendorTypes = [
-  { _id: "691660f69fce6d48f9f04ca4", name: "Chefs" },
-  { _id: "691660f69fce6d48f9f04ca5", name: "Restaurants" },
-  { _id: "691660f69fce6d48f9f04ca6", name: "Music and Bands" },
-  { _id: "691660f69fce6d48f9f04ca7", name: "Bars and Clubs" },
-  { _id: "691660f69fce6d48f9f04ca8", name: "Casinos" },
-  { _id: "691660f69fce6d48f9f04ca9", name: "Concerts" },
-  { _id: "691660f69fce6d48f9f04caa", name: "Events" },
-  { _id: "691660f69fce6d48f9f04cab", name: "Transportation" },
-  { _id: "691660f69fce6d48f9f04cac", name: "Venues" },
-  { _id: "691660f69fce6d48f9f04cad", name: "Florists" },
-  { _id: "691660f69fce6d48f9f04cae", name: "Decorations" },
-  { _id: "691660f69fce6d48f9f04caf", name: "Desserts" },
-  { _id: "691660f69fce6d48f9f04cb0", name: "Beverages" },
-  { _id: "691660f69fce6d48f9f04cb1", name: "Other" },
+  { _id: "691660f69fce6d48f9f04ca4", name: "Chefs", icon: "restaurant" },
+  { _id: "691660f69fce6d48f9f04ca5", name: "Restaurants", icon: "fast-food" },
+  { _id: "691660f69fce6d48f9f04ca6", name: "Music and Bands", icon: "musical-notes" },
+  { _id: "691660f69fce6d48f9f04ca7", name: "Bars and Clubs", icon: "beer" },
+  { _id: "691660f69fce6d48f9f04ca8", name: "Casinos", icon: "dice" },
+  { _id: "691660f69fce6d48f9f04ca9", name: "Concerts", icon: "mic" },
+  { _id: "691660f69fce6d48f9f04caa", name: "Events", icon: "calendar" },
+  { _id: "691660f69fce6d48f9f04cab", name: "Transportation", icon: "car" },
+  { _id: "691660f69fce6d48f9f04cac", name: "Venues", icon: "business" },
+  { _id: "691660f69fce6d48f9f04cad", name: "Florists", icon: "flower" },
+  { _id: "691660f69fce6d48f9f04cae", name: "Decorations", icon: "color-palette" },
+  { _id: "691660f69fce6d48f9f04caf", name: "Desserts", icon: "ice-cream" },
+  { _id: "691660f69fce6d48f9f04cb0", name: "Beverages", icon: "wine" },
+  { _id: "691660f69fce6d48f9f04cb1", name: "Other", icon: "ellipsis-horizontal" },
 ];
 
 // Vendor name templates by type
@@ -144,40 +137,9 @@ const vendorTemplates = {
   ],
 };
 
-const adjectives = [
-  "Elegant",
-  "Premium",
-  "Royal",
-  "Golden",
-  "Silver",
-  "Divine",
-  "Grand",
-  "Elite",
-  "Luxury",
-  "Classic",
-];
-const names = [
-  "Alexander",
-  "Victoria",
-  "Madison",
-  "Savannah",
-  "Jackson",
-  "Brooklyn",
-  "Austin",
-  "Phoenix",
-  "Harper",
-  "Lincoln",
-];
-const foods = [
-  "Plate",
-  "Grill",
-  "Kitchen",
-  "Dining",
-  "Feast",
-  "Table",
-  "Cuisine",
-  "Fork",
-];
+const adjectives = ["Elegant", "Premium", "Royal", "Golden", "Silver", "Divine", "Grand", "Elite", "Luxury", "Classic"];
+const names = ["Alexander", "Victoria", "Madison", "Savannah", "Jackson", "Brooklyn", "Austin", "Phoenix", "Harper", "Lincoln"];
+const foods = ["Plate", "Grill", "Kitchen", "Dining", "Feast", "Table", "Cuisine", "Fork"];
 
 const descriptions = [
   "Providing exceptional service for your special occasions with attention to detail and professionalism.",
@@ -192,23 +154,8 @@ const descriptions = [
   "Premium quality services designed to exceed your expectations every time.",
 ];
 
-const phoneFormats = [
-  "(555) 123-",
-  "(555) 234-",
-  "(555) 345-",
-  "(555) 456-",
-  "(555) 567-",
-];
-const instagramHandles = [
-  "deluxe",
-  "premium",
-  "elite",
-  "royal",
-  "golden",
-  "signature",
-  "exclusive",
-  "luxury",
-];
+const phoneFormats = ["(555) 123-", "(555) 234-", "(555) 345-", "(555) 456-", "(555) 567-"];
+const instagramHandles = ["deluxe", "premium", "elite", "royal", "golden", "signature", "exclusive", "luxury"];
 
 function randomElement(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -221,7 +168,6 @@ function randomNumber(min, max) {
 function generateVendorName(vendorType) {
   const templates = vendorTemplates[vendorType];
   const template = randomElement(templates);
-
   return template
     .replace("{name}", randomElement(names))
     .replace("{adjective}", randomElement(adjectives))
@@ -244,17 +190,14 @@ function generateWebsite(vendorName) {
 
 function generateVendors() {
   const vendors = [];
-
-  // Generate at least one vendor for each city and vendor type combination
   cities.forEach((city) => {
     vendorTypes.forEach((vendorType) => {
       const vendorName = generateVendorName(vendorType.name);
       const phone = generatePhone();
-
-      const vendor = {
+      vendors.push({
         name: vendorName,
-        vendorType: vendorType._id,
-        city: city._id,
+        vendorType: new mongoose.Types.ObjectId(vendorType._id),
+        city: new mongoose.Types.ObjectId(city._id),
         description: randomElement(descriptions),
         images: [
           `https://picsum.photos/800/600?random=${Math.random()}`,
@@ -262,52 +205,65 @@ function generateVendors() {
           `https://picsum.photos/800/600?random=${Math.random()}`,
         ],
         priceRange: randomNumber(1, 5),
-        rating: parseFloat((Math.random() * 2 + 3).toFixed(1)), // 3.0 to 5.0
+        rating: parseFloat((Math.random() * 2 + 3).toFixed(1)),
         contact: {
           phone: phone,
           instagram: generateInstagram(vendorName),
           website: generateWebsite(vendorName),
         },
-      };
-
-      vendors.push(vendor);
+      });
     });
   });
-
   return vendors;
 }
 
-// Seed function to run
-async function seedVendors() {
+async function seedAll() {
   try {
-    // Replace with your MongoDB connection string
     await mongoose.connect(process.env.MONGO_URI);
+    console.log("Connected to MongoDB");
 
-
-    // Clear existing vendors (optional)
-    // await Vendor.deleteMany({});
-
-    const vendors = generateVendors();
-
-    console.log(`Generating ${vendors.length} vendors...`);
-
-    await Vendor.insertMany(vendors);
-
-    console.log(`Successfully seeded ${vendors.length} vendors!`);
-    console.log(`- ${cities.length} cities`);
-    console.log(`- ${vendorTypes.length} vendor types`);
-    console.log(
-      `- ${vendors.length} total vendors (at least 1 per city/type combination)`
+    // 1. Upsert Cities
+    await City.bulkWrite(
+      cities.map((c) => ({
+        updateOne: {
+          filter: { _id: new mongoose.Types.ObjectId(c._id) },
+          update: { $set: { name: c.name, state: c.state } },
+          upsert: true,
+        },
+      }))
     );
+    console.log(`✓ Seeded ${cities.length} cities`);
 
+    // 2. Upsert VendorTypes
+    await VendorType.bulkWrite(
+      vendorTypes.map((t) => ({
+        updateOne: {
+          filter: { _id: new mongoose.Types.ObjectId(t._id) },
+          update: { $set: { name: t.name, icon: t.icon } },
+          upsert: true,
+        },
+      }))
+    );
+    console.log(`✓ Seeded ${vendorTypes.length} vendor types`);
+
+    // 3. Seed Vendors (skip existing to avoid duplicates)
+    const existingCount = await Vendor.countDocuments();
+    if (existingCount === 0) {
+      const vendors = generateVendors();
+      await Vendor.insertMany(vendors, { ordered: false });
+      console.log(`✓ Seeded ${vendors.length} vendors`);
+    } else {
+      console.log(`⚠ Vendors already exist (${existingCount} found), skipping vendor seed`);
+      console.log(`  To reseed vendors, drop the vendors collection first`);
+    }
+
+    console.log("\nSeed complete!");
     await mongoose.disconnect();
   } catch (error) {
-    console.error("Error seeding vendors:", error);
+    console.error("Error seeding:", error);
     process.exit(1);
   }
 }
-
-
 
 import { fileURLToPath } from "url";
 import path from "path";
@@ -315,5 +271,5 @@ import path from "path";
 const __filename = fileURLToPath(import.meta.url);
 
 if (process.argv[1] === __filename) {
-  seedVendors();
+  seedAll();
 }

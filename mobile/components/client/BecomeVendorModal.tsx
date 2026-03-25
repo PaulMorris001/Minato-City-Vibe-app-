@@ -22,6 +22,7 @@ import {
 } from "@/components/shared";
 import { uploadImage } from "@/utils/imageUpload";
 import { useAccount } from "@/contexts/AccountContext";
+import { fetchCities, fetchVendorTypes } from "@/libs/api";
 
 interface BecomeVendorModalProps {
   visible: boolean;
@@ -35,17 +36,17 @@ export default function BecomeVendorModal({
   const router = useRouter();
   const { setActiveAccount } = useAccount();
   const [loading, setLoading] = useState(false);
-  const [cities, setCities] = useState<City[]>([]);
-  const [vendorTypes, setVendorTypes] = useState<VendorType[]>([]);
+  const [cities, setCities] = useState<City[]>(CITIES);
+  const [vendorTypes, setVendorTypes] = useState<VendorType[]>(VENDOR_TYPES);
   const [showCityDropdown, setShowCityDropdown] = useState(false);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
   const [businessPicture, setBusinessPicture] = useState("");
+  const [selectedCity, setSelectedCity] = useState<City | null>(null);
+  const [selectedVendorType, setSelectedVendorType] = useState<VendorType | null>(null);
 
   const [formData, setFormData] = useState({
     businessName: "",
     businessDescription: "",
-    vendorTypeName: "",
-    cityName: "",
     address: "",
     phone: "",
     website: "",
@@ -57,22 +58,26 @@ export default function BecomeVendorModal({
     }
   }, [visible]);
 
-  const loadCitiesAndTypes = () => {
-    setCities(CITIES);
-    setVendorTypes(VENDOR_TYPES);
+  const loadCitiesAndTypes = async () => {
+    try {
+      const [c, t] = await Promise.all([fetchCities(), fetchVendorTypes()]);
+      if (Array.isArray(c) && c.length > 0) setCities(c);
+      if (Array.isArray(t) && t.length > 0) setVendorTypes(t);
+    } catch {
+      // Fall back to static constants silently
+    }
   };
 
   const handleSubmit = async () => {
-    // Validation
     if (!formData.businessName.trim()) {
       Alert.alert("Error", "Please enter your business name");
       return;
     }
-    if (!formData.vendorTypeName) {
+    if (!selectedVendorType) {
       Alert.alert("Error", "Please select a vendor type");
       return;
     }
-    if (!formData.cityName) {
+    if (!selectedCity) {
       Alert.alert("Error", "Please select a city");
       return;
     }
@@ -82,11 +87,9 @@ export default function BecomeVendorModal({
       const token = await SecureStore.getItemAsync("token");
 
       let businessPictureUrl = businessPicture;
-
-      // Upload business picture to Cloudinary if it's a local file
-      if (businessPicture && businessPicture.startsWith('file://')) {
+      if (businessPicture && businessPicture.startsWith("file://")) {
         try {
-          const result = await uploadImage(businessPicture, 'businesses', token!);
+          const result = await uploadImage(businessPicture, "businesses", token!);
           businessPictureUrl = result.url;
         } catch (uploadError) {
           console.error("Business picture upload error:", uploadError);
@@ -102,9 +105,13 @@ export default function BecomeVendorModal({
           businessName: formData.businessName.trim(),
           businessDescription: formData.businessDescription.trim(),
           businessPicture: businessPictureUrl,
-          vendorType: formData.vendorTypeName,
+          // String fields for vendor dashboard display
+          vendorType: selectedVendorType.name,
+          // ObjectId fields for vendor discovery
+          vendorTypeId: selectedVendorType._id,
           location: {
-            city: formData.cityName,
+            city: selectedCity.name,
+            cityId: selectedCity._id,
             address: formData.address.trim(),
           },
           contactInfo: {
@@ -125,9 +132,7 @@ export default function BecomeVendorModal({
             text: "Go to Dashboard",
             onPress: async () => {
               onClose();
-              // Set account to vendor mode before navigating
               await setActiveAccount("vendor");
-              // Use replace to avoid navigation stack issues
               setTimeout(() => {
                 router.replace("/(vendor)/dashboard");
               }, 100);
@@ -145,18 +150,12 @@ export default function BecomeVendorModal({
   };
 
   const selectCity = (city: City) => {
-    setFormData({
-      ...formData,
-      cityName: city.name,
-    });
+    setSelectedCity(city);
     setShowCityDropdown(false);
   };
 
   const selectVendorType = (type: VendorType) => {
-    setFormData({
-      ...formData,
-      vendorTypeName: type.name,
-    });
+    setSelectedVendorType(type);
     setShowTypeDropdown(false);
   };
 
@@ -205,10 +204,10 @@ export default function BecomeVendorModal({
           <Text
             style={[
               styles.pickerText,
-              !formData.vendorTypeName && styles.pickerPlaceholder,
+              !selectedVendorType && styles.pickerPlaceholder,
             ]}
           >
-            {formData.vendorTypeName || "Select vendor type"}
+            {selectedVendorType?.name || "Select vendor type"}
           </Text>
           <Ionicons
             name={showTypeDropdown ? "chevron-up" : "chevron-down"}
@@ -224,7 +223,7 @@ export default function BecomeVendorModal({
                   key={type._id}
                   style={[
                     styles.dropdownItem,
-                    formData.vendorTypeName === type.name &&
+                    selectedVendorType?._id === type._id &&
                       styles.dropdownItemSelected,
                   ]}
                   onPress={() => selectVendorType(type)}
@@ -233,7 +232,7 @@ export default function BecomeVendorModal({
                     name={type.icon as any}
                     size={24}
                     color={
-                      formData.vendorTypeName === type.name
+                      selectedVendorType?._id === type._id
                         ? Colors.primary
                         : "#9ca3af"
                     }
@@ -242,7 +241,7 @@ export default function BecomeVendorModal({
                   <Text
                     style={[
                       styles.dropdownItemText,
-                      formData.vendorTypeName === type.name &&
+                      selectedVendorType?._id === type._id &&
                         styles.dropdownItemTextSelected,
                     ]}
                   >
@@ -278,10 +277,10 @@ export default function BecomeVendorModal({
           <Text
             style={[
               styles.pickerText,
-              !formData.cityName && styles.pickerPlaceholder,
+              !selectedCity && styles.pickerPlaceholder,
             ]}
           >
-            {formData.cityName || "Select city"}
+            {selectedCity?.name || "Select city"}
           </Text>
           <Ionicons
             name={showCityDropdown ? "chevron-up" : "chevron-down"}
@@ -297,7 +296,7 @@ export default function BecomeVendorModal({
                   key={city._id}
                   style={[
                     styles.dropdownItem,
-                    formData.cityName === city.name &&
+                    selectedCity?._id === city._id &&
                       styles.dropdownItemSelected,
                   ]}
                   onPress={() => selectCity(city)}
@@ -306,7 +305,7 @@ export default function BecomeVendorModal({
                     <Text
                       style={[
                         styles.dropdownItemText,
-                        formData.cityName === city.name &&
+                        selectedCity?._id === city._id &&
                           styles.dropdownItemTextSelected,
                       ]}
                     >

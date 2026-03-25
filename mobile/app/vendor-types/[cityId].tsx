@@ -13,16 +13,16 @@ import { VendorType } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { AnimatedListCard, LoadingScreen } from "@/components/shared";
 import { VENDOR_TYPES } from "@/constants/constants";
+import { fetchVendorTypes } from "@/libs/api";
 
 export default function VendorTypesPage() {
   const { cityId } = useLocalSearchParams();
   const router = useRouter();
-  const [types, setTypes] = useState<VendorType[]>([]);
+  const [types, setTypes] = useState<VendorType[]>(VENDOR_TYPES);
   const [loading, setLoading] = useState(true);
   const headerAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    setTypes(VENDOR_TYPES);
     setLoading(false);
 
     Animated.timing(headerAnim, {
@@ -30,6 +30,11 @@ export default function VendorTypesPage() {
       duration: 600,
       useNativeDriver: true,
     }).start();
+
+    // Fetch vendor types from API and override the initial static list
+    fetchVendorTypes()
+      .then((data) => { if (Array.isArray(data) && data.length > 0) setTypes(data); })
+      .catch(() => {}); // silently fall back to VENDOR_TYPES static list on error
   }, [cityId]);
 
   if (loading) {
