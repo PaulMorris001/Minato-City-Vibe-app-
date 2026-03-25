@@ -103,6 +103,23 @@ export async function getVendorsByCityAndType(req, res) {
   }
 }
 
+// Debug: returns raw stored fields for every vendor user so you can see what's in the DB
+export async function debugVendors(req, res) {
+  try {
+    const vendorUsers = await User.find({ isVendor: true })
+      .select("businessName vendorType location isVendor");
+    res.json(vendorUsers.map(u => ({
+      _id: u._id,
+      businessName: u.businessName,
+      vendorType: u.vendorType,
+      locationCity: u.location?.city,
+      locationFull: u.location,
+    })));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
 export async function getAllVendorTypes(req, res) {
   try {
     const vendorTypes = await VendorType.find();

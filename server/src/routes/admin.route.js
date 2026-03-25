@@ -1,5 +1,6 @@
 import express from "express";
 import { authenticateAdmin } from "../middleware/admin.middleware.js";
+import { debugVendors } from "../controllers/vendors.controller.js";
 import {
   adminLogin,
   getStats,
@@ -17,6 +18,7 @@ import {
 const router = express.Router();
 
 router.post("/admin/login", adminLogin);
+router.get("/admin/debug/vendors", debugVendors); // temp: remove after diagnosis
 
 // All routes below require admin authentication
 router.get("/admin/stats", authenticateAdmin, getStats);
