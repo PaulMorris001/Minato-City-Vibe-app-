@@ -5,6 +5,7 @@ import User from "../models/user.model.js";
 import { City, VendorType, Vendor } from "../models/vendor.model.js";
 import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
+import AnalyticsLog from "../models/analytics.model.js";
 
 export async function adminLogin(req, res) {
   const { username, password } = req.body;
@@ -302,6 +303,105 @@ export async function deleteGuide(req, res) {
     const { id } = req.params;
     await Guide.findByIdAndDelete(id);
     res.json({ message: "Guide deleted" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// ── Analytics ──────────────────────────────────────────────────────────────
+
+export async function getAnalyticsSummary(req, res) {
+  try {
+    const now = new Date();
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const [totalEvents, eventBreakdown, dailyTotals, topUsers] = await Promise.all([
+      AnalyticsLog.countDocuments(),
+
+      // Count by event type
+      AnalyticsLog.aggregate([
+        { $group: { _id: "$event", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
+
+      // Daily totals for last 7 days
+      AnalyticsLog.aggregate([
+        { $match: { timestamp: { $gte: sevenDaysAgo } } },
+        {
+          $group: {
+            _id: {
+              year: { $year: "$timestamp" },
+              month: { $month: "$timestamp" },
+              day: { $dayOfMonth: "$timestamp" },
+            },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 } },
+      ]),
+
+      // Top active users
+      AnalyticsLog.aggregate([
+        { $match: { userId: { $ne: null } } },
+        { $group: { _id: "$userId", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 5 },
+        {
+          $lookup: {
+            from: "users",
+            localField: "_id",
+            foreignField: "_id",
+            as: "user",
+          },
+        },
+        { $unwind: { path: "$user", preserveNullAndEmpty: true } },
+        {
+          $project: {
+            count: 1,
+            username: "$user.username",
+            email: "$user.email",
+          },
+        },
+      ]),
+    ]);
+
+    // Fill missing days with 0
+    const dailyMap = {};
+    dailyTotals.forEach(({ _id, count }) => {
+      const key = `${_id.year}-${String(_id.month).padStart(2, "0")}-${String(_id.day).padStart(2, "0")}`;
+      dailyMap[key] = count;
+    });
+    const dailySeries = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      dailySeries.push({ date: key, count: dailyMap[key] ?? 0 });
+    }
+
+    res.json({ totalEvents, eventBreakdown, dailySeries, topUsers });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function getAnalyticsEvents(req, res) {
+  try {
+    const { event = "", page = 1, limit = 20 } = req.query;
+    const query = event ? { event } : {};
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [logs, total] = await Promise.all([
+      AnalyticsLog.find(query)
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .populate("userId", "username email"),
+      AnalyticsLog.countDocuments(query),
+    ]);
+
+    res.json({ logs, total, page: Number(page), limit: Number(limit) });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

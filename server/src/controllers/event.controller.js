@@ -6,6 +6,7 @@ import Notification from "../models/notification.model.js";
 import ChatService from "../services/chat.service.js";
 import { uploadBase64Image, deleteImage } from "../services/image.service.js";
 import { emitEventInvite } from "../services/socket.service.js";
+import { setCache, getCache, invalidateCache, invalidateCachePattern } from "../utils/cache.js";
 
 // Create a new event
 export const createEvent = async (req, res) => {
@@ -63,6 +64,8 @@ export const createEvent = async (req, res) => {
       .populate('createdBy', 'username email profilePicture')
       .populate('invitedUsers', 'username email profilePicture');
 
+    invalidateCachePattern('public_events_');
+    invalidateCachePattern('event_highlights_');
     res.status(201).json({
       message: "Event created successfully",
       event: populatedEvent
@@ -132,6 +135,10 @@ export const getEventById = async (req, res) => {
     const { eventId } = req.params;
     const userId = req.user.id;
 
+    const cacheKey = `event_detail_${eventId}_${userId}`;
+    const cached = getCache(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
     const event = await Event.findById(eventId)
       .populate('createdBy', 'username email profilePicture')
       .populate('invitedUsers', 'username email profilePicture')
@@ -167,7 +174,9 @@ export const getEventById = async (req, res) => {
     else if (isPending) eventObj.userStatus = 'pending';
     else eventObj.userStatus = 'none';
 
-    res.status(200).json({ event: eventObj });
+    const response = { event: eventObj };
+    setCache(cacheKey, response, 180); // 3 min TTL
+    res.status(200).json(response);
   } catch (error) {
     console.error("Get event error:", error);
     res.status(500).json({ message: "Error fetching event", error: error.message });
@@ -241,6 +250,7 @@ export const updateEvent = async (req, res) => {
 
     await event.save();
 
+    invalidateCachePattern(`event_detail_${eventId}_`);
     const updatedEvent = await Event.findById(eventId)
       .populate('createdBy', 'username email profilePicture')
       .populate('invitedUsers', 'username email profilePicture');
@@ -275,6 +285,7 @@ export const deleteEvent = async (req, res) => {
     event.isActive = false;
     await event.save();
 
+    invalidateCachePattern(`event_detail_${eventId}_`);
     res.status(200).json({ message: "Event deleted successfully" });
   } catch (error) {
     console.error("Delete event error:", error);
@@ -439,6 +450,7 @@ export const respondToInvite = async (req, res) => {
       .populate('pendingInvites', 'username email profilePicture')
       .populate('groupChatId', '_id name groupImage');
 
+    invalidateCachePattern(`event_detail_${eventId}_`);
     res.json({
       message: status === "accepted" ? "You've joined the event!" : "Invite declined",
       event: updatedEvent,
@@ -528,16 +540,38 @@ export const joinFreePublicEvent = async (req, res) => {
 // Get public events for exploration
 export const getPublicEvents = async (req, res) => {
   try {
-    const { limit = 20 } = req.query;
+    const { limit = 20, page = 1, city, date, sort } = req.query;
     const userId = req.user.id;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const events = await Event.find({
+    const cacheKey = `public_events_${page}_${limit}_${city || ''}_${date || ''}`;
+    const cached = getCache(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const query = {
       isPublic: true,
       isActive: true,
-      date: { $gte: new Date() } // Only future events
-    })
+      date: { $gte: new Date() },
+    };
+
+    if (city) {
+      query.location = { $regex: city, $options: 'i' };
+    }
+
+    if (date) {
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+      query.date = { $gte: startOfDay, $lte: endOfDay };
+    }
+
+    const total = await Event.countDocuments(query);
+
+    const events = await Event.find(query)
       .populate('createdBy', 'username email profilePicture')
       .sort({ date: 1 })
+      .skip(skip)
       .limit(parseInt(limit));
 
     // Get ticket counts and check if user has purchased
@@ -566,7 +600,9 @@ export const getPublicEvents = async (req, res) => {
       })
     );
 
-    res.status(200).json({ events: eventsWithTicketInfo });
+    const result = { events: eventsWithTicketInfo, total, page: parseInt(page) };
+    setCache(cacheKey, result, 120); // 2 min TTL
+    res.status(200).json(result);
   } catch (error) {
     console.error("Get public events error:", error);
     res.status(500).json({ message: "Error fetching public events", error: error.message });
@@ -618,6 +654,7 @@ export const purchaseTicket = async (req, res) => {
       .populate('event', 'title date location image')
       .populate('user', 'username email profilePicture');
 
+    invalidateCache(`event_detail_${eventId}_${userId}`);
     res.status(201).json({
       message: "Ticket purchased successfully",
       ticket: populatedTicket
@@ -683,6 +720,9 @@ export const rsvpEvent = async (req, res) => {
     }
 
     await event.save();
+    invalidateCachePattern('public_events_');
+    invalidateCachePattern('event_highlights_');
+    invalidateCachePattern(`event_detail_${eventId}_`);
     res.json({ message: status === "going" ? "You're marked as going!" : "RSVP removed", rsvpCount: event.rsvpUsers.length });
   } catch (error) {
     console.error("RSVP error:", error);
@@ -725,5 +765,61 @@ export const getEventTicketSales = async (req, res) => {
   } catch (error) {
     console.error("Get event ticket sales error:", error);
     res.status(500).json({ message: "Error fetching ticket sales", error: error.message });
+  }
+};
+
+// Get event highlights: trending (most RSVPs) + upcoming (next 7 days)
+export const getEventHighlights = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const cacheKey = `event_highlights_${userId}`;
+    const cached = getCache(cacheKey);
+    if (cached) return res.status(200).json(cached);
+    const now = new Date();
+    const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const [trendingRaw, upcoming] = await Promise.all([
+      Event.find({ isPublic: true, isActive: true, date: { $gte: now } })
+        .populate('createdBy', 'username email profilePicture')
+        .sort({ date: 1 })
+        .limit(20),
+      Event.find({ isPublic: true, isActive: true, date: { $gte: now, $lte: sevenDaysFromNow } })
+        .populate('createdBy', 'username email profilePicture')
+        .sort({ date: 1 })
+        .limit(5),
+    ]);
+
+    const trending = [...trendingRaw]
+      .sort((a, b) => (b.rsvpUsers?.length || 0) - (a.rsvpUsers?.length || 0))
+      .slice(0, 5);
+
+    const enrichEvent = async (event) => {
+      const obj = event.toObject();
+      obj.isCreator = event.createdBy._id.toString() === userId;
+      obj.rsvpCount = event.rsvpUsers?.length || 0;
+      if (event.isPaid && event.maxGuests > 0) {
+        const sold = await Ticket.countDocuments({ event: event._id, isValid: true });
+        obj.ticketsSold = sold;
+        obj.ticketsRemaining = event.maxGuests - sold;
+        const userTicket = await Ticket.findOne({ event: event._id, user: userId, isValid: true });
+        obj.userHasPurchased = !!userTicket;
+      } else {
+        obj.userHasPurchased = event.invitedUsers.some(id => id.toString() === userId);
+      }
+      return obj;
+    };
+
+    const [trendingEnriched, upcomingEnriched] = await Promise.all([
+      Promise.all(trending.map(enrichEvent)),
+      Promise.all(upcoming.map(enrichEvent)),
+    ]);
+
+    const result = { trending: trendingEnriched, upcoming: upcomingEnriched };
+    setCache(cacheKey, result, 120); // 2 min TTL
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Get event highlights error:", error);
+    res.status(500).json({ message: "Error fetching highlights", error: error.message });
   }
 };

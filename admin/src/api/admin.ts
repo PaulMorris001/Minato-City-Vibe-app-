@@ -1,5 +1,5 @@
 import client from "./client";
-import type { Stats, AdminUser, AdminVendor, AdminEvent, AdminGuide, City, VendorType } from "../types";
+import type { Stats, AdminUser, AdminVendor, AdminEvent, AdminGuide, City, VendorType, AnalyticsLog, AnalyticsSummary } from "../types";
 
 export const adminApi = {
   login: (username: string, password: string) =>
@@ -44,4 +44,9 @@ export const adminApi = {
   toggleGuideActive: (id: string) =>
     client.patch<{ isActive: boolean }>(`/admin/guides/${id}/toggle`),
   deleteGuide: (id: string) => client.delete(`/admin/guides/${id}`),
+
+  // Analytics
+  getAnalyticsSummary: () => client.get<AnalyticsSummary>("/admin/analytics/summary"),
+  getAnalyticsEvents: (params?: { event?: string; page?: number; limit?: number }) =>
+    client.get<{ logs: AnalyticsLog[]; total: number; page: number; limit: number }>("/admin/analytics/events", { params }),
 };

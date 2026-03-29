@@ -1,9 +1,11 @@
+import AnalyticsLog from "../models/analytics.model.js";
+
 export const logClientError = async (req, res) => {
   try {
     const { timestamp, message, stack, context, level, deviceInfo } = req.body;
 
     // Format the log message for console
-    const logPrefix = `[MOBILE ${level.toUpperCase()}]`;
+    const logPrefix = `[MOBILE ${level?.toUpperCase() ?? "INFO"}]`;
     const timeStr = new Date(timestamp).toLocaleString();
 
     console.log('\n' + '='.repeat(80));
@@ -24,24 +26,33 @@ export const logClientError = async (req, res) => {
 
     console.log('='.repeat(80) + '\n');
 
-    // You can also store these logs in a database or send to a logging service
-    // For now, we're just logging to Render console
+    // Persist analytics events to MongoDB
+    if (level === "info" && message) {
+      AnalyticsLog.create({
+        userId: req.user?.id ?? null,
+        event: message,
+        properties: context ?? {},
+        platform: deviceInfo?.platform,
+        osVersion: deviceInfo?.osVersion,
+        appVersion: deviceInfo?.appVersion,
+        timestamp: timestamp ? new Date(timestamp) : new Date(),
+      }).catch(() => {}); // fire-and-forget, never fail the request
+    }
 
     res.status(200).json({ success: true, message: 'Log received' });
   } catch (error) {
     console.error('Error processing client log:', error);
-    // Don't fail the request - logging errors shouldn't break the app
     res.status(200).json({ success: true, message: 'Log processed with errors' });
   }
 };
 
 export const getRecentLogs = async (req, res) => {
   try {
-    // This is a placeholder - you could implement database storage later
-    res.status(200).json({
-      message: 'Logs are currently only visible in Render console. Check your Render dashboard logs.',
-      info: 'To persist logs, consider adding a database model or using a service like Sentry/LogRocket'
-    });
+    const logs = await AnalyticsLog.find()
+      .sort({ timestamp: -1 })
+      .limit(50)
+      .populate("userId", "username email");
+    res.status(200).json(logs);
   } catch (error) {
     console.error('Error fetching logs:', error);
     res.status(500).json({ error: 'Failed to fetch logs' });

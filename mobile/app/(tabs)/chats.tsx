@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -10,8 +10,9 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  Image,
+  AppState,
 } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -46,16 +47,18 @@ export default function ChatsScreen() {
   const [searchingUsers, setSearchingUsers] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string>("");
 
-  const fetchChats = async () => {
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchChats = async (silent = false) => {
     try {
       const chats = await chatService.getUserChats();
       setChats(chats);
       setFilteredChats(chats);
     } catch (error: any) {
       console.error("Error fetching chats:", error);
-      Alert.alert("Error", "Failed to load chats");
+      if (!silent) Alert.alert("Error", "Failed to load chats");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
       setRefreshing(false);
     }
   };
@@ -67,6 +70,20 @@ export default function ChatsScreen() {
   useEffect(() => {
     if (currentUserId) {
       fetchChats();
+
+      // Background auto-refresh every 30s
+      intervalRef.current = setInterval(() => fetchChats(true), 30000);
+
+      const subscription = AppState.addEventListener("change", (nextState) => {
+        if (nextState === "active") {
+          fetchChats(true);
+        }
+      });
+
+      return () => {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        subscription.remove();
+      };
     }
   }, [currentUserId]);
 

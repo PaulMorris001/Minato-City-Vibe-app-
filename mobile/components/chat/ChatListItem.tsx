@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Image } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import type { Chat } from "@/services/chat.service";
@@ -89,7 +90,7 @@ export default function ChatListItem({
     >
       <View style={styles.avatarContainer}>
         {chatInfo.image ? (
-          <Image source={{ uri: chatInfo.image }} style={styles.avatar} />
+          <Image source={{ uri: chatInfo.image }} style={styles.avatar} cachePolicy="memory-disk" transition={200} />
         ) : (
           <View style={styles.avatarPlaceholder}>
             <Ionicons name={chatInfo.icon} size={24} color="#9ca3af" />

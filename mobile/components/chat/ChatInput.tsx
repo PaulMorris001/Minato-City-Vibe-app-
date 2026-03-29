@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   TextInput,
@@ -12,6 +12,7 @@ import { Fonts } from "@/constants/fonts";
 interface ChatInputProps {
   onSend: (message: string) => void;
   onImagePick?: () => void;
+  onTypingChange?: (isTyping: boolean) => void;
   placeholder?: string;
   disabled?: boolean;
 }
@@ -19,13 +20,47 @@ interface ChatInputProps {
 export default function ChatInput({
   onSend,
   onImagePick,
+  onTypingChange,
   placeholder = "Type a message...",
   disabled = false,
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingRef = useRef(false);
+
+  const handleTextChange = (text: string) => {
+    setMessage(text);
+
+    if (!onTypingChange) return;
+
+    if (text.length > 0) {
+      if (!isTypingRef.current) {
+        isTypingRef.current = true;
+        onTypingChange(true);
+      }
+      // Reset stop-typing timer
+      if (typingTimer.current) clearTimeout(typingTimer.current);
+      typingTimer.current = setTimeout(() => {
+        isTypingRef.current = false;
+        onTypingChange(false);
+      }, 2000);
+    } else {
+      if (typingTimer.current) clearTimeout(typingTimer.current);
+      if (isTypingRef.current) {
+        isTypingRef.current = false;
+        onTypingChange(false);
+      }
+    }
+  };
 
   const handleSend = () => {
     if (message.trim() && !disabled) {
+      // Stop typing when message is sent
+      if (typingTimer.current) clearTimeout(typingTimer.current);
+      if (isTypingRef.current) {
+        isTypingRef.current = false;
+        onTypingChange?.(false);
+      }
       onSend(message.trim());
       setMessage("");
     }
@@ -48,7 +83,7 @@ export default function ChatInput({
           <TextInput
             style={styles.input}
             value={message}
-            onChangeText={setMessage}
+            onChangeText={handleTextChange}
             placeholder={placeholder}
             placeholderTextColor="#6b7280"
             multiline

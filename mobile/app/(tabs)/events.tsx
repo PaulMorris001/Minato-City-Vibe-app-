@@ -740,6 +740,7 @@ export default function EventsPage() {
                   <DateTimePicker
                     value={selectedDate}
                     mode="date"
+                    display="spinner"
                     onChange={onDateChange}
                     minimumDate={new Date()}
                   />
@@ -748,6 +749,7 @@ export default function EventsPage() {
                   <DateTimePicker
                     value={selectedDate}
                     mode="time"
+                    display="spinner"
                     onChange={onTimeChange}
                     is24Hour={false}
                   />

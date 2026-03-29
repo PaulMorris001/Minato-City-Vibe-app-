@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Image,
   Alert,
   ActivityIndicator,
   Modal,
@@ -16,9 +15,11 @@ import {
   Platform,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BASE_URL } from "@/constants/constants";
+import { trackEvent } from "@/utils/analytics";
 import { Fonts } from "@/constants/fonts";
 
 interface User {
@@ -89,6 +90,7 @@ export default function EventDetailsPage() {
 
       if (response.ok) {
         setEvent(data.event);
+        trackEvent("event_viewed", { eventId: data.event._id, isPublic: data.event.isPublic });
       } else {
         Alert.alert("Error", data.message || "Failed to fetch event details");
         router.back();
@@ -216,6 +218,7 @@ export default function EventDetailsPage() {
             ? { ...prev, userRsvp: status === "going", rsvpCount: data.rsvpCount }
             : prev
         );
+        trackEvent("event_rsvp", { eventId: event._id, status });
       } else {
         Alert.alert("Error", data.message || "Could not update RSVP");
       }

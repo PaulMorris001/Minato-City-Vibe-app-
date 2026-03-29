@@ -1,6 +1,7 @@
 import ChatService from "../services/chat.service.js";
 import Chat from "../models/chat.model.js";
 import User from "../models/user.model.js";
+import { setCache, getCache, invalidateCache, invalidateCachePattern } from "../utils/cache.js";
 
 /**
  * Chat Controller - Handles HTTP requests for chat operations
@@ -28,6 +29,9 @@ export const getOrCreateDirectChat = async (req, res) => {
 
     const chat = await ChatService.getOrCreateDirectChat(userId, otherUserId);
 
+    // Invalidate both users' chat lists in case a new chat was created
+    invalidateCache(`user_chats_${userId}`);
+    invalidateCache(`user_chats_${otherUserId}`);
     res.status(200).json({
       message: "Chat retrieved successfully",
       chat
@@ -57,6 +61,8 @@ export const createGroupChat = async (req, res) => {
       groupImage
     );
 
+    // Invalidate all participants' chat lists
+    invalidateCachePattern('user_chats_');
     res.status(201).json({
       message: "Group chat created successfully",
       chat
@@ -72,12 +78,15 @@ export const getUserChats = async (req, res) => {
   try {
     const userId = req.user.id;
 
+    const cacheKey = `user_chats_${userId}`;
+    const cached = getCache(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
     const chats = await ChatService.getUserChats(userId);
 
-    res.status(200).json({
-      chats,
-      count: chats.length
-    });
+    const response = { chats, count: chats.length };
+    setCache(cacheKey, response, 30); // 30s TTL
+    res.status(200).json(response);
   } catch (error) {
     console.error("Get user chats error:", error);
     res.status(500).json({ message: "Error fetching chats", error: error.message });
@@ -123,6 +132,8 @@ export const sendMessage = async (req, res) => {
 
     const message = await ChatService.sendMessage(chatId, userId, messageData);
 
+    // Invalidate all participants' chat lists (last message + unread counts change)
+    invalidateCachePattern('user_chats_');
     res.status(201).json({
       message: "Message sent successfully",
       data: message
@@ -158,6 +169,7 @@ export const markMessagesAsRead = async (req, res) => {
 
     await ChatService.markMessagesAsRead(chatId, userId);
 
+    invalidateCache(`user_chats_${userId}`);
     res.status(200).json({ message: "Messages marked as read" });
   } catch (error) {
     console.error("Mark as read error:", error);
@@ -221,6 +233,7 @@ export const updateGroupChat = async (req, res) => {
       io.to(`chat:${chatId}`).emit("group:updated", { chatId, name: chat.name, groupImage: chat.groupImage });
     }
 
+    invalidateCachePattern('user_chats_');
     res.json({ message: "Group updated", chat: updated });
   } catch (error) {
     console.error("Update group chat error:", error);

@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { useRouter } from "expo-router";
@@ -86,7 +87,9 @@ export default function MessageBubble({
                 <Image
                   source={{ uri: message.imageUrl }}
                   style={styles.messageImage}
-                  resizeMode="cover"
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  transition={200}
                 />
               </TouchableOpacity>
             )}
@@ -123,7 +126,9 @@ export default function MessageBubble({
               <Image
                 source={{ uri: eventData.image }}
                 style={styles.eventImage}
-                resizeMode="cover"
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={200}
               />
             ) : (
               <View style={[

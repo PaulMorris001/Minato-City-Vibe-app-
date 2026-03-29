@@ -7,10 +7,10 @@ import {
   Modal,
   Platform,
   StatusBar,
-  Image,
   ActivityIndicator,
   Alert,
 } from "react-native";
+import { Image } from "expo-image";
 import { Tabs, useRouter, useSegments } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";

@@ -14,6 +14,8 @@ import {
   KeyboardAvoidingView,
   Image,
   ActivityIndicator,
+  RefreshControl,
+  AppState,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -27,6 +29,8 @@ import Carousel from "@/components/Carousel";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import { useStripePayment } from "@/hooks/useStripePayment";
+import { uploadImage } from "@/utils/imageUpload";
+import { trackEvent } from "@/utils/analytics";
 
 export default function Home() {
   const router = useRouter();
@@ -37,8 +41,13 @@ export default function Home() {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
+  const [highlights, setHighlights] = useState<{ trending: PublicEvent[]; upcoming: PublicEvent[] }>({ trending: [], upcoming: [] });
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const [loadingHighlights, setLoadingHighlights] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [showCityPicker, setShowCityPicker] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [eventData, setEventData] = useState({
     title: "",
     date: "",
@@ -57,13 +66,14 @@ export default function Home() {
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  const fetchPublicEvents = async () => {
+  const fetchPublicEvents = async (city?: string | null, silent = false) => {
     try {
-      setLoadingEvents(true);
+      if (!silent) setLoadingEvents(true);
       const token = await SecureStore.getItemAsync("token");
       if (!token) return;
 
-      const response = await fetch(`${BASE_URL}/events/public/explore?limit=10`, {
+      const cityParam = city ? `&city=${encodeURIComponent(city)}` : "";
+      const response = await fetch(`${BASE_URL}/events/public/explore?limit=10${cityParam}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -78,6 +88,33 @@ export default function Home() {
     } finally {
       setLoadingEvents(false);
     }
+  };
+
+  const fetchHighlights = async () => {
+    try {
+      setLoadingHighlights(true);
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) return;
+
+      const response = await fetch(`${BASE_URL}/events/highlights`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setHighlights({ trending: data.trending || [], upcoming: data.upcoming || [] });
+      }
+    } catch (error) {
+      console.error("Fetch highlights error:", error);
+    } finally {
+      setLoadingHighlights(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchPublicEvents(selectedCity, true), fetchHighlights()]);
+    setRefreshing(false);
   };
 
   useEffect(() => {
@@ -118,8 +155,26 @@ export default function Home() {
       ])
     ).start();
 
-    // Fetch public events
-    fetchPublicEvents();
+    // Initial data fetch
+    fetchPublicEvents(null);
+    fetchHighlights();
+
+    // Background auto-refresh every 30s
+    intervalRef.current = setInterval(() => {
+      fetchPublicEvents(selectedCity, true);
+    }, 30000);
+
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        fetchPublicEvents(selectedCity, true);
+        fetchHighlights();
+      }
+    });
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      subscription.remove();
+    };
   }, []);
 
   const pickImage = async () => {
@@ -127,12 +182,10 @@ export default function Home() {
       mediaTypes: ['images'],
       allowsEditing: false,
       quality: 0.8,
-      base64: true,
     });
 
-    if (!result.canceled && result.assets[0].base64) {
-      const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
-      setEventData({ ...eventData, image: base64Image });
+    if (!result.canceled && result.assets[0]) {
+      setEventData({ ...eventData, image: result.assets[0].uri });
     }
   };
 
@@ -235,8 +288,15 @@ export default function Home() {
         return;
       }
 
+      let imageUrl = eventData.image;
+      if (imageUrl && (imageUrl.startsWith("file://") || imageUrl.startsWith("content://"))) {
+        const uploadResult = await uploadImage(imageUrl, "events", token);
+        imageUrl = uploadResult.url;
+      }
+
       const payload = {
         ...eventData,
+        image: imageUrl,
         ticketPrice: eventData.isPaid ? parseFloat(eventData.ticketPrice) : 0,
         maxGuests: eventData.isPaid ? parseInt(eventData.maxGuests) : 0,
       };
@@ -253,6 +313,7 @@ export default function Home() {
       const data = await response.json();
 
       if (response.ok) {
+        trackEvent("event_created", { isPublic: eventData.isPublic, isPaid: eventData.isPaid });
         Alert.alert(
           "Event Created!",
           `Your event "${eventData.title}" has been created successfully.`,
@@ -324,6 +385,7 @@ export default function Home() {
     });
 
     if (confirmRes.ok) {
+      trackEvent("ticket_purchased", { eventId, eventTitle });
       Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
       fetch(`${BASE_URL}/notifications/sold`, {
         method: "POST",
@@ -438,6 +500,14 @@ export default function Home() {
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#a855f7"
+            colors={["#a855f7"]}
+          />
+        }
         contentContainerStyle={styles.scrollContent}
       >
         {/* Hero Section */}
@@ -484,26 +554,56 @@ export default function Home() {
           <View style={styles.decorCircle2} />
         </LinearGradient>
 
-        {/* Explore Events Section */}
-        {publicEvents.length > 0 && (
-          <View style={styles.exploreSection}>
-            <View style={styles.exploreSectionHeader}>
-              <Text style={styles.sectionTitle}>Explore Events</Text>
-              <TouchableOpacity onPress={() => router.push("/public-events" as any)}>
-                <Text style={styles.seeAllText}>See All</Text>
+        {/* Trending Now Section */}
+        <View style={styles.exploreSection}>
+          <View style={styles.exploreSectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="flame" size={20} color="#f97316" style={{ marginRight: 6 }} />
+              <Text style={styles.sectionTitle}>Trending Now</Text>
+            </View>
+          </View>
+          {loadingHighlights ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#a855f7" />
+            </View>
+          ) : highlights.trending.length > 0 ? (
+            <Carousel itemWidth={300} gap={16}>
+              {highlights.trending.map((event) => (
+                <PublicEventCard
+                  key={event._id}
+                  event={event}
+                  onPurchaseTicket={handlePurchaseTicket}
+                  onJoinFreeEvent={handleJoinFreeEvent}
+                />
+              ))}
+            </Carousel>
+          ) : (
+            <View style={styles.emptySectionContainer}>
+              <Ionicons name="flame-outline" size={36} color="#4b5563" />
+              <Text style={styles.emptySectionText}>No trending events yet</Text>
+              <TouchableOpacity onPress={() => setIsModalVisible(true)}>
+                <Text style={styles.emptySectionCta}>Create the first one</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.sectionSubtitle}>
-              Discover amazing public events happening near you
-            </Text>
+          )}
+        </View>
 
-            {loadingEvents ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#a855f7" />
+        {/* This Week Section */}
+        {(highlights.upcoming.length > 0 || !loadingHighlights) && (
+          <View style={styles.exploreSection}>
+            <View style={styles.exploreSectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="calendar" size={18} color="#a855f7" style={{ marginRight: 6 }} />
+                <Text style={styles.sectionTitle}>This Week</Text>
               </View>
-            ) : (
-              <Carousel itemWidth={320} gap={16}>
-                {publicEvents.map((event) => (
+            </View>
+            {loadingHighlights ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color="#a855f7" />
+              </View>
+            ) : highlights.upcoming.length > 0 ? (
+              <Carousel itemWidth={300} gap={16}>
+                {highlights.upcoming.map((event) => (
                   <PublicEventCard
                     key={event._id}
                     event={event}
@@ -512,9 +612,84 @@ export default function Home() {
                   />
                 ))}
               </Carousel>
+            ) : (
+              <View style={styles.emptySectionContainer}>
+                <Text style={styles.emptySectionText}>No events this week</Text>
+              </View>
             )}
           </View>
         )}
+
+        {/* Upcoming Events Section */}
+        <View style={styles.exploreSection}>
+          <View style={styles.exploreSectionHeader}>
+            <Text style={styles.sectionTitle}>Upcoming Events</Text>
+            <TouchableOpacity onPress={() => router.push("/public-events" as any)}>
+              <Text style={styles.seeAllText}>See All</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.sectionSubtitle}>
+            Discover amazing public events happening near you
+          </Text>
+
+          {/* City filter chips */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.cityFilterScroll}
+            contentContainerStyle={styles.cityFilterContent}
+          >
+            <TouchableOpacity
+              style={[styles.cityChip, !selectedCity && styles.cityChipActive]}
+              onPress={() => {
+                setSelectedCity(null);
+                fetchPublicEvents(null);
+              }}
+            >
+              <Text style={[styles.cityChipText, !selectedCity && styles.cityChipTextActive]}>
+                All
+              </Text>
+            </TouchableOpacity>
+            {CITIES.map((city) => (
+              <TouchableOpacity
+                key={city._id}
+                style={[styles.cityChip, selectedCity === city.name && styles.cityChipActive]}
+                onPress={() => {
+                  setSelectedCity(city.name);
+                  fetchPublicEvents(city.name);
+                }}
+              >
+                <Text style={[styles.cityChipText, selectedCity === city.name && styles.cityChipTextActive]}>
+                  {city.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {loadingEvents ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#a855f7" />
+            </View>
+          ) : publicEvents.length > 0 ? (
+            <Carousel itemWidth={320} gap={16}>
+              {publicEvents.map((event) => (
+                <PublicEventCard
+                  key={event._id}
+                  event={event}
+                  onPurchaseTicket={handlePurchaseTicket}
+                  onJoinFreeEvent={handleJoinFreeEvent}
+                />
+              ))}
+            </Carousel>
+          ) : (
+            <View style={styles.emptySectionContainer}>
+              <Ionicons name="calendar-outline" size={36} color="#4b5563" />
+              <Text style={styles.emptySectionText}>
+                {selectedCity ? `No events in ${selectedCity}` : "No upcoming events"}
+              </Text>
+            </View>
+          )}
+        </View>
 
         {/* Features Section */}
         <View style={styles.featuresSection}>
@@ -730,6 +905,7 @@ export default function Home() {
                   <DateTimePicker
                     value={selectedDate}
                     mode="date"
+                    display="spinner"
                     onChange={onDateChange}
                     minimumDate={new Date()}
                   />
@@ -738,6 +914,7 @@ export default function Home() {
                   <DateTimePicker
                     value={selectedDate}
                     mode="time"
+                    display="spinner"
                     onChange={onTimeChange}
                     is24Hour={false}
                   />
@@ -1415,8 +1592,56 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.semiBold,
     color: "#a855f7",
   },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  cityFilterScroll: {
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  cityFilterContent: {
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  cityChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: "#374151",
+    marginRight: 8,
+  },
+  cityChipActive: {
+    backgroundColor: "#a855f7",
+  },
+  cityChipText: {
+    fontSize: scaleFontSize(13),
+    fontFamily: Fonts.medium,
+    color: "#9ca3af",
+  },
+  cityChipTextActive: {
+    color: "#fff",
+  },
+  emptySectionContainer: {
+    alignItems: "center",
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+  },
+  emptySectionText: {
+    fontSize: scaleFontSize(14),
+    fontFamily: Fonts.regular,
+    color: "#6b7280",
+    marginTop: 8,
+    textAlign: "center",
+  },
+  emptySectionCta: {
+    fontSize: scaleFontSize(14),
+    fontFamily: Fonts.semiBold,
+    color: "#a855f7",
+    marginTop: 6,
+  },
   loadingContainer: {
-    paddingVertical: 60,
+    paddingVertical: 40,
     alignItems: "center",
     justifyContent: "center",
   },

@@ -10,6 +10,7 @@ const navItems = [
   { to: "/vendor-types", label: "Vendor Types", icon: "🏷️" },
   { to: "/events", label: "Events", icon: "📅" },
   { to: "/guides", label: "Guides", icon: "📖" },
+  { to: "/analytics", label: "Analytics", icon: "📊" },
 ];
 
 export default function Sidebar() {

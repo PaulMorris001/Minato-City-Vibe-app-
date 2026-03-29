@@ -9,12 +9,13 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Image,
   Modal,
   TextInput,
   ScrollView,
+  Pressable,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Image } from "expo-image";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
@@ -27,16 +28,19 @@ import socketService from "@/services/socket.service";
 import * as SecureStore from "expo-secure-store";
 import { capitalize } from "@/libs/helpers";
 import { uploadImage } from "@/utils/imageUpload";
+import { trackEvent } from "@/utils/analytics";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const insets = useSafeAreaInsets();
   const [chat, setChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string>("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [editGroupName, setEditGroupName] = useState("");
   const [editGroupImage, setEditGroupImage] = useState<string | null>(null);
@@ -66,6 +70,9 @@ export default function ChatScreen() {
       // Load messages (backend already returns them in chronological order)
       const messagesData = await chatService.getChatMessages(id);
       setMessages(messagesData.messages);
+
+      // Track chat opened
+      trackEvent("chat_opened", { chatId: id, chatType: chat.type });
 
       // Mark messages as read
       await chatService.markMessagesAsRead(id);
@@ -108,6 +115,20 @@ export default function ChatScreen() {
           }
         }
       },
+      onTypingStart: (data: { chatId: string; userId: string }) => {
+        if (data.chatId === id && data.userId !== currentUserId) {
+          setTypingUsers((prev) => new Set(prev).add(data.userId));
+        }
+      },
+      onTypingStop: (data: { chatId: string; userId: string }) => {
+        if (data.chatId === id) {
+          setTypingUsers((prev) => {
+            const next = new Set(prev);
+            next.delete(data.userId);
+            return next;
+          });
+        }
+      },
     });
 
     socketService.on("chat-screen-group", {
@@ -146,6 +167,7 @@ export default function ChatScreen() {
         if (prev.some((m) => m._id === newMessage._id)) return prev;
         return [...prev, newMessage];
       });
+      trackEvent("message_sent", { chatId: id, type: "text" });
 
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
@@ -296,15 +318,67 @@ export default function ChatScreen() {
     return otherParticipant?.profilePicture || null;
   };
 
-  const renderMessage = ({ item, index }: { item: Message; index: number }) => {
-    const isOwnMessage = item.sender._id === currentUserId;
-    const previousMessage = index > 0 ? messages[index - 1] : null;
-    const showAvatar =
-      !previousMessage || previousMessage.sender._id !== item.sender._id;
+  type MessageSection = Message | { type: "date"; label: string; _id: string };
+
+  const buildMessageSections = (msgs: Message[]): MessageSection[] => {
+    const sections: MessageSection[] = [];
+    let lastDateLabel = "";
+
+    msgs.forEach((msg) => {
+      const msgDate = new Date(msg.createdAt);
+      const today = new Date();
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+
+      let label: string;
+      if (msgDate.toDateString() === today.toDateString()) {
+        label = "Today";
+      } else if (msgDate.toDateString() === yesterday.toDateString()) {
+        label = "Yesterday";
+      } else {
+        label = msgDate.toLocaleDateString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+        });
+      }
+
+      if (label !== lastDateLabel) {
+        lastDateLabel = label;
+        sections.push({ type: "date", label, _id: `date-${msg._id}` });
+      }
+      sections.push(msg);
+    });
+
+    return sections;
+  };
+
+  const messageSections = buildMessageSections(messages);
+
+  const renderMessage = ({ item, index }: { item: MessageSection; index: number }) => {
+    if ("type" in item && item.type === "date") {
+      return (
+        <View style={styles.dateSeparatorContainer}>
+          <View style={styles.dateSeparatorPill}>
+            <Text style={styles.dateSeparatorText}>{item.label}</Text>
+          </View>
+        </View>
+      );
+    }
+
+    const msg = item as Message;
+    const isOwnMessage = msg.sender._id === currentUserId;
+    // Find previous non-date item
+    let prevMsg: Message | null = null;
+    for (let i = index - 1; i >= 0; i--) {
+      const prev = messageSections[i];
+      if (!("type" in prev)) { prevMsg = prev as Message; break; }
+    }
+    const showAvatar = !prevMsg || prevMsg.sender._id !== msg.sender._id;
 
     return (
       <MessageBubble
-        message={item}
+        message={msg}
         isOwnMessage={isOwnMessage}
         showSender={showAvatar}
         onImagePress={(url) => setSelectedImage(url)}
@@ -344,6 +418,9 @@ export default function ChatScreen() {
                 <Image
                   source={{ uri: getChatAvatar()! }}
                   style={styles.headerAvatar}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  transition={200}
                 />
               ) : (
                 <View style={styles.headerAvatarPlaceholder}>
@@ -379,13 +456,14 @@ export default function ChatScreen() {
           {/* Messages List */}
           <FlatList
             ref={flatListRef}
-            data={messages || []}
+            data={messageSections}
             renderItem={renderMessage}
             keyExtractor={(item) => item._id}
             contentContainerStyle={styles.messagesList}
             showsVerticalScrollIndicator={false}
+            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
             onContentSizeChange={() =>
-              flatListRef.current?.scrollToEnd({ animated: false })
+              flatListRef.current?.scrollToEnd({ animated: true })
             }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
@@ -396,10 +474,27 @@ export default function ChatScreen() {
             }
           />
 
+          {/* Typing indicator */}
+          {typingUsers.size > 0 && (() => {
+            const typingNames = Array.from(typingUsers)
+              .map((uid) => chat?.participants.find((p) => p._id === uid)?.username)
+              .filter(Boolean);
+            const label =
+              typingNames.length === 1
+                ? `${typingNames[0]} is typing...`
+                : `${typingNames.length} people are typing...`;
+            return (
+              <View style={styles.typingContainer}>
+                <Text style={styles.typingText}>{label}</Text>
+              </View>
+            );
+          })()}
+
           {/* Input */}
           <ChatInput
             onSend={handleSendMessage}
             onImagePick={handleImagePick}
+            onTypingChange={(isTyping) => socketService.sendTyping(id, isTyping)}
             disabled={sending}
           />
         </KeyboardAvoidingView>
@@ -413,23 +508,25 @@ export default function ChatScreen() {
         onRequestClose={() => setSelectedImage(null)}
         statusBarTranslucent
       >
-        <View style={styles.imageViewerOverlay}>
-          <SafeAreaView style={styles.imageViewerSafe} edges={["top"]}>
-            <TouchableOpacity
-              style={styles.imageViewerClose}
-              onPress={() => setSelectedImage(null)}
-            >
-              <Ionicons name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
-          </SafeAreaView>
+        <Pressable
+          style={styles.imageViewerOverlay}
+          onPress={() => setSelectedImage(null)}
+        >
           {selectedImage && (
             <Image
               source={{ uri: selectedImage }}
-              style={styles.imageViewerImage}
-              resizeMode="contain"
+              style={StyleSheet.absoluteFill}
+              contentFit="contain"
             />
           )}
-        </View>
+          <TouchableOpacity
+            style={[styles.imageViewerClose, { top: insets.top + 8 }]}
+            onPress={() => setSelectedImage(null)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+        </Pressable>
       </Modal>
 
       {/* Group Settings Modal */}
@@ -458,7 +555,7 @@ export default function ChatScreen() {
               {/* Group image picker */}
               <TouchableOpacity style={styles.groupImagePicker} onPress={pickGroupImage}>
                 {editGroupImage ? (
-                  <Image source={{ uri: editGroupImage }} style={styles.groupImagePreview} />
+                  <Image source={{ uri: editGroupImage }} style={styles.groupImagePreview} contentFit="cover" />
                 ) : (
                   <View style={styles.groupImagePlaceholder}>
                     <Ionicons name="people" size={36} color="#6b7280" />
@@ -501,7 +598,7 @@ export default function ChatScreen() {
               {chat?.participants.map((p) => (
                 <View key={p._id} style={styles.participantRow}>
                   {p.profilePicture ? (
-                    <Image source={{ uri: p.profilePicture }} style={styles.participantAvatar} />
+                    <Image source={{ uri: p.profilePicture }} style={styles.participantAvatar} contentFit="cover" cachePolicy="memory-disk" transition={200} />
                   ) : (
                     <View style={styles.participantAvatarPlaceholder}>
                       <Ionicons name="person" size={16} color="#a855f7" />
@@ -617,31 +714,49 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     marginTop: 8,
   },
+  // Date separator
+  dateSeparatorContainer: {
+    alignItems: "center",
+    marginVertical: 12,
+  },
+  dateSeparatorPill: {
+    backgroundColor: "rgba(55, 65, 81, 0.7)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  dateSeparatorText: {
+    fontSize: 12,
+    fontFamily: Fonts.regular,
+    color: "#9ca3af",
+  },
+  // Typing indicator
+  typingContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 4,
+    backgroundColor: "transparent",
+  },
+  typingText: {
+    fontSize: 12,
+    fontFamily: Fonts.regular,
+    color: "#9ca3af",
+    fontStyle: "italic",
+  },
   // Full-screen image viewer
   imageViewerOverlay: {
     flex: 1,
     backgroundColor: "#000",
-    justifyContent: "center",
-  },
-  imageViewerSafe: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
   },
   imageViewerClose: {
-    margin: 12,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    position: "absolute",
+    left: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center",
     alignItems: "center",
-  },
-  imageViewerImage: {
-    width: "100%",
-    height: "100%",
+    zIndex: 20,
   },
   // Group Settings Modal
   settingsOverlay: {

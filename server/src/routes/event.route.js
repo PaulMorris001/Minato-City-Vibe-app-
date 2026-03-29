@@ -14,7 +14,8 @@ import {
   purchaseTicket,
   getUserTickets,
   getEventTicketSales,
-  rsvpEvent
+  rsvpEvent,
+  getEventHighlights
 } from "../controllers/event.controller.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 
@@ -28,6 +29,9 @@ router.get("/events", authenticate, getUserEvents);
 
 // Get public events for exploration
 router.get("/events/public/explore", authenticate, getPublicEvents);
+
+// Get event highlights (trending + upcoming)
+router.get("/events/highlights", authenticate, getEventHighlights);
 
 // Get user's purchased tickets
 router.get("/tickets", authenticate, getUserTickets);

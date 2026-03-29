@@ -4,8 +4,8 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Image,
 } from "react-native";
+import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -31,6 +31,7 @@ export interface PublicEvent {
   userHasPurchased?: boolean;
   isCreator?: boolean;
   isFavorited?: boolean;
+  rsvpCount?: number;
   createdBy: {
     _id: string;
     username: string;
@@ -83,7 +84,7 @@ export default function PublicEventCard({
     >
       <View style={styles.eventCardInner}>
         {event.image ? (
-          <Image source={{ uri: event.image }} style={styles.eventCardImage} />
+          <Image source={{ uri: event.image }} style={styles.eventCardImage} contentFit="cover" cachePolicy="memory-disk" transition={200} />
         ) : (
           <LinearGradient
             colors={["#667eea", "#764ba2"]}
@@ -104,6 +105,12 @@ export default function PublicEventCard({
             color={favorited ? "#ef4444" : "#fff"}
           />
         </TouchableOpacity>
+
+        {(event.rsvpCount ?? 0) > 0 && (
+          <View style={styles.rsvpBadge}>
+            <Text style={styles.rsvpBadgeText}>🎉 {event.rsvpCount} going</Text>
+          </View>
+        )}
 
         <LinearGradient
           colors={["transparent", "rgba(0,0,0,0.9)"]}
@@ -268,6 +275,21 @@ const styles = StyleSheet.create({
     height: "100%",
     justifyContent: "center",
     alignItems: "center",
+  },
+  rsvpBadge: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    zIndex: 10,
+  },
+  rsvpBadgeText: {
+    fontSize: scaleFontSize(12),
+    fontFamily: Fonts.semiBold,
+    color: "#fff",
   },
   favoriteButton: {
     position: "absolute",

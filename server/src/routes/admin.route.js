@@ -20,6 +20,8 @@ import {
   getGuides,
   toggleGuideActive,
   deleteGuide,
+  getAnalyticsSummary,
+  getAnalyticsEvents,
 } from "../controllers/admin.controller.js";
 
 const router = express.Router();
@@ -57,5 +59,9 @@ router.delete("/admin/events/:id", authenticateAdmin, deleteEvent);
 router.get("/admin/guides", authenticateAdmin, getGuides);
 router.patch("/admin/guides/:id/toggle", authenticateAdmin, toggleGuideActive);
 router.delete("/admin/guides/:id", authenticateAdmin, deleteGuide);
+
+// Analytics
+router.get("/admin/analytics/summary", authenticateAdmin, getAnalyticsSummary);
+router.get("/admin/analytics/events", authenticateAdmin, getAnalyticsEvents);
 
 export default router;

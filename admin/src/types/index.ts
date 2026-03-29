@@ -84,3 +84,21 @@ export interface PaginatedResponse<T> {
   limit: number;
   data?: T[];
 }
+
+export interface AnalyticsLog {
+  _id: string;
+  userId?: { _id: string; username: string; email: string };
+  event: string;
+  properties: Record<string, any>;
+  platform?: string;
+  osVersion?: string;
+  appVersion?: string;
+  timestamp: string;
+}
+
+export interface AnalyticsSummary {
+  totalEvents: number;
+  eventBreakdown: { _id: string; count: number }[];
+  dailySeries: { date: string; count: number }[];
+  topUsers: { _id: string; count: number; username: string; email: string }[];
+}
