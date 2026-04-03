@@ -25,7 +25,7 @@ const app = express();
 const httpServer = createServer(app);
 
 app.use(cors(config.cors));
-app.options('*', cors(config.cors));
+app.options(/(.*)/, cors(config.cors));
 
 // Stripe webhook needs raw body — must be registered BEFORE express.json()
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
