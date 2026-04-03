@@ -1245,6 +1245,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: getResponsivePadding(),
     position: "relative",
     overflow: "hidden",
+    height: '100%',
   },
   heroContent: {
     alignItems: "center",

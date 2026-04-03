@@ -46,6 +46,8 @@ function notifIcon(type: string) {
     case "invite_accepted": return "checkmark-circle";
     case "event_update": return "calendar";
     case "new_follower": return "person-add";
+    case "verification_approved": return "shield-checkmark";
+    case "verification_rejected": return "shield-outline";
     default: return "notifications";
   }
 }

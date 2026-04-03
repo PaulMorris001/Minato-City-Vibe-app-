@@ -22,6 +22,9 @@ import {
   deleteGuide,
   getAnalyticsSummary,
   getAnalyticsEvents,
+  getVerifications,
+  approveVerification,
+  rejectVerification,
 } from "../controllers/admin.controller.js";
 
 const router = express.Router();
@@ -63,5 +66,10 @@ router.delete("/admin/guides/:id", authenticateAdmin, deleteGuide);
 // Analytics
 router.get("/admin/analytics/summary", authenticateAdmin, getAnalyticsSummary);
 router.get("/admin/analytics/events", authenticateAdmin, getAnalyticsEvents);
+
+// Verifications
+router.get("/admin/verifications", authenticateAdmin, getVerifications);
+router.patch("/admin/verifications/:id/approve", authenticateAdmin, approveVerification);
+router.patch("/admin/verifications/:id/reject", authenticateAdmin, rejectVerification);
 
 export default router;

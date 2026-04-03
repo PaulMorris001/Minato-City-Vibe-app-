@@ -28,6 +28,7 @@ interface UserProfile {
   email: string;
   profilePicture?: string;
   isVendor?: boolean;
+  verified?: boolean;
   followersCount: number;
   followingCount: number;
 }
@@ -64,6 +65,7 @@ export default function ProfileScreen() {
         email: userData.email,
         profilePicture: userData.profilePicture || "",
         isVendor: userData.isVendor,
+        verified: userData.verified || false,
         followersCount: userData.followersCount || 0,
         followingCount: userData.followingCount || 0,
       });
@@ -177,6 +179,9 @@ export default function ProfileScreen() {
             <Text style={styles.username} numberOfLines={1}>
               {capitalize(user?.username || "")}
             </Text>
+            {user?.verified && (
+              <Ionicons name="checkmark-circle" size={18} color="#3b82f6" />
+            )}
             {user?.isVendor && (
               <View style={styles.vendorBadge}>
                 <Ionicons name="briefcase" size={10} color="#fff" />
@@ -338,7 +343,8 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 40,
+    flexGrow: 1,
   },
   profileHeader: {
     flexDirection: "row",

@@ -73,6 +73,17 @@ export const adminApi = {
   deleteGuide: (id: string) =>
     client.delete(`/admin/guides/${id}`).then((r) => { bustCache("/admin/guides"); bustCache("/admin/stats"); return r; }),
 
+  // Verifications
+  getVerifications: (params?: { status?: string; page?: number; limit?: number }) =>
+    client.get<{ requests: any[]; total: number; page: number; limit: number }>(
+      "/admin/verifications",
+      { params }
+    ),
+  approveVerification: (id: string) =>
+    client.patch<{ status: string }>(`/admin/verifications/${id}/approve`),
+  rejectVerification: (id: string, reviewNotes: string) =>
+    client.patch<{ status: string }>(`/admin/verifications/${id}/reject`, { reviewNotes }),
+
   // Analytics (shorter TTL — data changes frequently)
   getAnalyticsSummary: () =>
     cachedGet<AnalyticsSummary>("/admin/analytics/summary", { ttl: 30_000 }),

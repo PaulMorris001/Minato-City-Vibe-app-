@@ -397,7 +397,7 @@ export async function searchUsers(req, res) {
 export async function getUserById(req, res) {
   try {
     const user = await User.findById(req.params.userId)
-      .select("_id username email profilePicture isVendor businessName")
+      .select("_id username email profilePicture isVendor businessName verified")
       .lean();
 
     if (!user) {

@@ -11,6 +11,7 @@ import VendorTypes from "./pages/VendorTypes";
 import Events from "./pages/Events";
 import Guides from "./pages/Guides";
 import Analytics from "./pages/Analytics";
+import Verifications from "./pages/Verifications";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
@@ -37,6 +38,7 @@ function AppRoutes() {
                 <Route path="/events" element={<Events />} />
                 <Route path="/guides" element={<Guides />} />
                 <Route path="/analytics" element={<Analytics />} />
+                <Route path="/verifications" element={<Verifications />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Layout>

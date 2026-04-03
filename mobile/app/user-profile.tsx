@@ -31,6 +31,7 @@ interface UserData {
   profilePicture?: string;
   isVendor?: boolean;
   businessName?: string;
+  verified?: boolean;
 }
 
 interface UserEvent {
@@ -149,6 +150,9 @@ export default function UserProfileScreen() {
             <Text style={styles.username} numberOfLines={1}>
               {capitalize(user?.username || "")}
             </Text>
+            {user?.verified && (
+              <Ionicons name="checkmark-circle" size={18} color="#3b82f6" />
+            )}
             {user?.isVendor && (
               <View style={styles.vendorBadge}>
                 <Ionicons name="briefcase" size={10} color="#fff" />

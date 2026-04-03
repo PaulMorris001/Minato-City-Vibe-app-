@@ -30,6 +30,10 @@ export default function SettingsScreen() {
     email: "",
     isVendor: false,
   });
+  const [verificationStatus, setVerificationStatus] = useState<"none" | "pending" | "approved" | "rejected">("none");
+  const [verificationNotes, setVerificationNotes] = useState("");
+  const [licenseImage, setLicenseImage] = useState("");
+  const [submittingVerification, setSubmittingVerification] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -39,21 +43,63 @@ export default function SettingsScreen() {
     setLoading(true);
     try {
       const token = await SecureStore.getItemAsync("token");
-      const res = await axios.get(`${BASE_URL}/profile`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const userData = res.data.user;
+      const [profileRes, verifRes] = await Promise.all([
+        axios.get(`${BASE_URL}/profile`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        axios.get(`${BASE_URL}/verification/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => ({ data: { status: "none" } })),
+      ]);
+
+      const userData = profileRes.data.user;
       setUser({
         username: userData.username || "",
         email: userData.email || "",
         isVendor: userData.isVendor || false,
       });
       setProfilePicture(userData.profilePicture || "");
+
+      const verifData = verifRes.data;
+      setVerificationStatus(verifData.status || "none");
+      setVerificationNotes(verifData.reviewNotes || "");
     } catch (error: any) {
       console.error("Error fetching profile:", error);
       Alert.alert("Error", "Failed to load profile");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSubmitVerification = async () => {
+    if (!licenseImage) {
+      Alert.alert("Required", "Please select an image of your driver's license.");
+      return;
+    }
+    setSubmittingVerification(true);
+    try {
+      const token = await SecureStore.getItemAsync("token");
+
+      let imageUrl = licenseImage;
+      if (licenseImage.startsWith("file://")) {
+        const { uploadImage } = await import("@/utils/imageUpload");
+        const result = await uploadImage(licenseImage, "verifications", token!);
+        imageUrl = result.url;
+      }
+
+      await axios.post(
+        `${BASE_URL}/verification/submit`,
+        { documentImage: imageUrl },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setVerificationStatus("pending");
+      setLicenseImage("");
+      Alert.alert("Submitted", "Your verification request has been submitted. We'll review it shortly.");
+    } catch (error: any) {
+      Alert.alert("Error", error.response?.data?.message || "Failed to submit verification");
+    } finally {
+      setSubmittingVerification(false);
     }
   };
 
@@ -268,6 +314,68 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Business Verification — vendors only */}
+      {user.isVendor && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Business Verification</Text>
+          <Text style={styles.sectionDescription}>
+            Get a verification badge on your profile by submitting your driver's license.
+          </Text>
+
+          {verificationStatus === "approved" && (
+            <View style={styles.verifStatusRow}>
+              <Ionicons name="checkmark-circle" size={22} color="#22c55e" />
+              <Text style={[styles.verifStatusText, { color: "#22c55e" }]}>Verified</Text>
+            </View>
+          )}
+
+          {verificationStatus === "pending" && (
+            <View style={styles.verifStatusRow}>
+              <Ionicons name="time-outline" size={22} color="#f59e0b" />
+              <Text style={[styles.verifStatusText, { color: "#f59e0b" }]}>Under Review</Text>
+            </View>
+          )}
+
+          {verificationStatus === "rejected" && (
+            <>
+              <View style={styles.verifStatusRow}>
+                <Ionicons name="close-circle" size={22} color="#ef4444" />
+                <Text style={[styles.verifStatusText, { color: "#ef4444" }]}>Not Approved</Text>
+              </View>
+              {verificationNotes ? (
+                <Text style={styles.verifNotes}>Reason: {verificationNotes}</Text>
+              ) : null}
+            </>
+          )}
+
+          {(verificationStatus === "none" || verificationStatus === "rejected") && (
+            <>
+              <ImagePickerButton
+                imageUri={licenseImage}
+                onImageSelected={setLicenseImage}
+                label="Driver's License"
+                size={120}
+                shape="square"
+              />
+              <TouchableOpacity
+                style={[styles.saveButton, submittingVerification && styles.saveButtonDisabled]}
+                onPress={handleSubmitVerification}
+                disabled={submittingVerification}
+              >
+                {submittingVerification ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="shield-checkmark-outline" size={20} color="#fff" />
+                    <Text style={styles.saveButtonText}>Submit for Verification</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      )}
+
       {/* Additional Settings */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Preferences</Text>
@@ -472,5 +580,22 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 100,
+  },
+  verifStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  verifStatusText: {
+    fontSize: 16,
+    fontFamily: Fonts.semiBold,
+  },
+  verifNotes: {
+    fontSize: 13,
+    fontFamily: Fonts.regular,
+    color: "#9ca3af",
+    marginBottom: 16,
+    lineHeight: 18,
   },
 });

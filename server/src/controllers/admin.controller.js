@@ -6,6 +6,9 @@ import { City, VendorType, Vendor } from "../models/vendor.model.js";
 import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
 import AnalyticsLog from "../models/analytics.model.js";
+import VerificationRequest from "../models/verification.model.js";
+import Notification from "../models/notification.model.js";
+import { sendPushNotification } from "../services/notification.service.js";
 
 export async function adminLogin(req, res) {
   const { username, password } = req.body;
@@ -381,6 +384,116 @@ export async function getAnalyticsSummary(req, res) {
     }
 
     res.json({ totalEvents, eventBreakdown, dailySeries, topUsers });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// ── Verifications ──────────────────────────────────────────────────────────
+
+export async function getVerifications(req, res) {
+  try {
+    const { status = "", page = 1, limit = 20 } = req.query;
+    const query = status ? { status } : {};
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [requests, total] = await Promise.all([
+      VerificationRequest.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .populate("user", "username email profilePicture isVendor"),
+      VerificationRequest.countDocuments(query),
+    ]);
+
+    res.json({ requests, total, page: Number(page), limit: Number(limit) });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function approveVerification(req, res) {
+  try {
+    const { id } = req.params;
+    const { reviewedBy = "admin" } = req.body;
+
+    const request = await VerificationRequest.findById(id).populate("user", "_id fcmToken");
+    if (!request) return res.status(404).json({ message: "Verification request not found" });
+
+    request.status = "approved";
+    request.reviewedAt = new Date();
+    request.reviewedBy = reviewedBy;
+    await request.save();
+
+    // Set user.verified = true
+    await User.findByIdAndUpdate(request.user._id, { verified: true });
+
+    // Sync to linked Vendor doc if exists
+    Vendor.findOneAndUpdate({ user: request.user._id }, { verified: true }).catch(() => {});
+
+    // In-app notification
+    await Notification.create({
+      user: request.user._id,
+      type: "verification_approved",
+      title: "Business Verified!",
+      body: "Your business has been verified. You now have a verification badge on your profile.",
+      data: {},
+    });
+
+    // Push notification
+    if (request.user.fcmToken) {
+      sendPushNotification(
+        request.user.fcmToken,
+        "Business Verified!",
+        "Your business has been verified. You now have a verification badge on your profile.",
+        { type: "verification_approved" }
+      ).catch(() => {});
+    }
+
+    res.json({ status: "approved" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function rejectVerification(req, res) {
+  try {
+    const { id } = req.params;
+    const { reviewNotes = "", reviewedBy = "admin" } = req.body;
+
+    const request = await VerificationRequest.findById(id).populate("user", "_id fcmToken");
+    if (!request) return res.status(404).json({ message: "Verification request not found" });
+
+    request.status = "rejected";
+    request.reviewNotes = reviewNotes;
+    request.reviewedAt = new Date();
+    request.reviewedBy = reviewedBy;
+    await request.save();
+
+    const notifBody = reviewNotes
+      ? `Your verification request was not approved. Reason: ${reviewNotes}. You may resubmit.`
+      : "Your verification request was not approved. You may resubmit with updated documents.";
+
+    // In-app notification
+    await Notification.create({
+      user: request.user._id,
+      type: "verification_rejected",
+      title: "Verification Not Approved",
+      body: notifBody,
+      data: {},
+    });
+
+    // Push notification
+    if (request.user.fcmToken) {
+      sendPushNotification(
+        request.user.fcmToken,
+        "Verification Not Approved",
+        notifBody,
+        { type: "verification_rejected" }
+      ).catch(() => {});
+    }
+
+    res.json({ status: "rejected" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
