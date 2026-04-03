@@ -80,7 +80,7 @@ export const adminApi = {
       { params }
     ),
   approveVerification: (id: string) =>
-    client.patch<{ status: string }>(`/admin/verifications/${id}/approve`),
+    client.patch<{ status: string }>(`/admin/verifications/${id}/approve`, {}),
   rejectVerification: (id: string, reviewNotes: string) =>
     client.patch<{ status: string }>(`/admin/verifications/${id}/reject`, { reviewNotes }),
 

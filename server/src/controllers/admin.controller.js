@@ -415,7 +415,7 @@ export async function getVerifications(req, res) {
 export async function approveVerification(req, res) {
   try {
     const { id } = req.params;
-    const { reviewedBy = "admin" } = req.body;
+    const { reviewedBy = "admin" } = req.body ?? {};
 
     const request = await VerificationRequest.findById(id).populate("user", "_id fcmToken");
     if (!request) return res.status(404).json({ message: "Verification request not found" });
