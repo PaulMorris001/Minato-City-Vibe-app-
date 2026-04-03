@@ -358,7 +358,7 @@ export async function getAnalyticsSummary(req, res) {
             as: "user",
           },
         },
-        { $unwind: { path: "$user", preserveNullAndEmpty: true } },
+        { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
         {
           $project: {
             count: 1,
