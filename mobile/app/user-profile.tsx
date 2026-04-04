@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   FlatList,
-  ActivityIndicator,
   Alert,
   RefreshControl,
 } from "react-native";
@@ -22,6 +21,7 @@ import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import followService from "@/services/follow.service";
 import chatService from "@/services/chat.service";
+import ProfileHeaderSkeleton from "@/components/skeletons/ProfileHeaderSkeleton";
 import FollowButton from "@/components/shared/FollowButton";
 
 interface UserData {
@@ -248,9 +248,7 @@ export default function UserProfileScreen() {
   if (loading) {
     return (
       <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#a855f7" />
-        </View>
+        <ProfileHeaderSkeleton eventCount={3} />
       </LinearGradient>
     );
   }

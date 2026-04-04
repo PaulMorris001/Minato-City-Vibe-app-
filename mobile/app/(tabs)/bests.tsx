@@ -12,7 +12,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { City } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
-import { AnimatedListCard, LoadingScreen } from "@/components/shared";
+import { AnimatedListCard } from "@/components/shared";
+import UserListItemSkeleton from "@/components/skeletons/UserListItemSkeleton";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CITIES } from "@/constants/constants";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
@@ -57,7 +58,11 @@ export default function BestsPage() {
   };
 
   if (loading) {
-    return <LoadingScreen />;
+    return (
+      <SafeAreaView style={styles.container}>
+        <UserListItemSkeleton count={6} showButton={false} />
+      </SafeAreaView>
+    );
   }
 
   return (

@@ -21,6 +21,7 @@ import { BASE_URL, CITIES } from "@/constants/constants";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import { useStripePayment } from "@/hooks/useStripePayment";
+import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 
 export default function PublicEventsPage() {
   const router = useRouter();
@@ -258,10 +259,7 @@ export default function PublicEventsPage() {
 
       {/* Events List */}
       {loading && page === 1 ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#a855f7" />
-          <Text style={styles.loadingText}>Loading events...</Text>
-        </View>
+        <EventCardSkeleton count={6} />
       ) : (
         <FlatList
           data={publicEvents}

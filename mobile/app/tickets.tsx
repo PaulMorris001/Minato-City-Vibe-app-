@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
-  ActivityIndicator,
   Alert,
   Dimensions,
   TouchableOpacity,
@@ -18,6 +17,7 @@ import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import TicketCard from "@/components/TicketCard";
+import TicketCardSkeleton from "@/components/skeletons/TicketCardSkeleton";
 
 const { width: screenWidth } = Dimensions.get("window");
 
@@ -118,10 +118,7 @@ export default function TicketsScreen() {
           }
         >
           {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#a855f7" />
-              <Text style={styles.loadingText}>Loading tickets...</Text>
-            </View>
+            <TicketCardSkeleton count={3} />
           ) : tickets.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="ticket-outline" size={64} color="#6b7280" />

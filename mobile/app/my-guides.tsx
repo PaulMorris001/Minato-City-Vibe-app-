@@ -5,7 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   FlatList,
-  ActivityIndicator,
   Alert,
   RefreshControl,
   Dimensions,
@@ -18,6 +17,7 @@ import { Guide } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
+import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
 
 const { width: screenWidth } = Dimensions.get("window");
 
@@ -187,9 +187,7 @@ export default function MyGuidesPage() {
       </View>
 
       {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#a855f7" />
-        </View>
+        <GuideCardSkeleton count={3} />
       ) : (
         <FlatList
           data={guides}

@@ -6,7 +6,6 @@ import {
   StyleSheet,
   StatusBar,
   Platform,
-  ActivityIndicator,
   TouchableOpacity,
   RefreshControl,
 } from "react-native";
@@ -17,6 +16,7 @@ import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
+import NotificationItemSkeleton from "@/components/skeletons/NotificationItemSkeleton";
 
 interface Notification {
   _id: string;
@@ -152,9 +152,7 @@ export default function NotificationsScreen() {
       </LinearGradient>
 
       {loading && notifications.length === 0 ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#a855f7" />
-        </View>
+        <NotificationItemSkeleton count={6} />
       ) : (
         <FlatList
           data={notifications}

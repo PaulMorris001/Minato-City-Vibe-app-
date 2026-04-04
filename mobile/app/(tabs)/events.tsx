@@ -27,6 +27,7 @@ import { Fonts } from "@/constants/fonts";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import socketService from "@/services/socket.service";
+import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 
 interface Event {
   _id: string;
@@ -612,9 +613,7 @@ export default function EventsPage() {
           }
         >
           {loading ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateText}>Loading events...</Text>
-            </View>
+            <EventCardSkeleton count={5} />
           ) : (() => {
             const pending = events.filter(e => e.userStatus === "pending");
             const myEvents = events.filter(e => e.userStatus !== "pending");

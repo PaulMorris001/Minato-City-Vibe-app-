@@ -8,7 +8,6 @@ import {
   FlatList,
   Animated,
   TextInput,
-  ActivityIndicator,
   Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -21,7 +20,8 @@ import * as SecureStore from "expo-secure-store";
 import { City } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import BecomeVendorModal from "@/components/client/BecomeVendorModal";
-import { AnimatedListCard, LoadingScreen } from "@/components/shared";
+import { AnimatedListCard } from "@/components/shared";
+import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 import { scaleFontSize } from "@/utils/responsive";
 
 
@@ -139,7 +139,11 @@ export default function VendorsPage() {
   }, [searchQuery]);
 
   if (loading) {
-    return <LoadingScreen />;
+    return (
+      <SafeAreaView style={styles.container}>
+        <VendorCardSkeleton count={5} />
+      </SafeAreaView>
+    );
   }
   return (
     <SafeAreaView style={styles.container}>
@@ -192,12 +196,7 @@ export default function VendorsPage() {
       </Animated.View>
 
       {/* Show search results or cities */}
-      {searching && (
-        <View style={styles.searchingContainer}>
-          <ActivityIndicator size="small" color="#a855f7" />
-          <Text style={styles.searchingText}>Searching vendors...</Text>
-        </View>
-      )}
+      {searching && <VendorCardSkeleton count={4} />}
 
       {searchQuery.length >= 2 && searchResults.length > 0 && !searching && (
         <FlatList

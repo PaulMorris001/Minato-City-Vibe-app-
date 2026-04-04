@@ -6,7 +6,6 @@ import {
   StyleSheet,
   StatusBar,
   Platform,
-  ActivityIndicator,
   Alert,
   RefreshControl,
   TouchableOpacity,
@@ -20,6 +19,7 @@ import { BASE_URL } from "@/constants/constants";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import { useStripePayment } from "@/hooks/useStripePayment";
+import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 
 export default function FavoritesPage() {
   const router = useRouter();
@@ -116,10 +116,7 @@ export default function FavoritesPage() {
       </LinearGradient>
 
       {loading && events.length === 0 ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#a855f7" />
-          <Text style={styles.loadingText}>Loading favorites...</Text>
-        </View>
+        <EventCardSkeleton count={4} />
       ) : (
         <FlatList
           data={events}

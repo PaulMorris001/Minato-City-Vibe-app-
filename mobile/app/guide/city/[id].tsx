@@ -6,7 +6,6 @@ import {
   StyleSheet,
   FlatList,
   TextInput,
-  ActivityIndicator,
   ScrollView,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -16,6 +15,7 @@ import { Guide, GUIDE_TOPICS } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
+import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
 
 export default function CityGuidesPage() {
   const router = useRouter();
@@ -260,9 +260,7 @@ export default function CityGuidesPage() {
       </View>
 
       {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#a855f7" />
-        </View>
+        <GuideCardSkeleton count={4} />
       ) : (
         <FlatList
           data={filteredGuides}

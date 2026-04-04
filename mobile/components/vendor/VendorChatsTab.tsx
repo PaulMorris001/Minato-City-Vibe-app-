@@ -23,6 +23,7 @@ import * as SecureStore from "expo-secure-store";
 import { capitalize } from "@/libs/helpers";
 import { scaleFontSize } from "@/utils/responsive";
 import socketService from "@/services/socket.service";
+import ChatListItemSkeleton from "@/components/skeletons/ChatListItemSkeleton";
 
 interface SearchUser {
   id: string;
@@ -247,7 +248,7 @@ export default function VendorChatsTab() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#a855f7" />
+        <ChatListItemSkeleton count={4} />
       </View>
     );
   }

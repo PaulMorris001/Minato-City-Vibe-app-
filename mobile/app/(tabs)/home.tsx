@@ -13,9 +13,9 @@ import {
   Alert,
   KeyboardAvoidingView,
   Image,
-  ActivityIndicator,
   RefreshControl,
   AppState,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -28,6 +28,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import Carousel from "@/components/Carousel";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
+import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { uploadImage } from "@/utils/imageUpload";
 import { trackEvent } from "@/utils/analytics";
@@ -566,9 +567,7 @@ export default function Home() {
             </View>
           </View>
           {loadingHighlights ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#a855f7" />
-            </View>
+            <EventCardSkeleton count={3} horizontal />
           ) : highlights.trending.length > 0 ? (
             <Carousel itemWidth={300} gap={16}>
               {highlights.trending.map((event) => (
@@ -601,9 +600,7 @@ export default function Home() {
               </View>
             </View>
             {loadingHighlights ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="small" color="#a855f7" />
-              </View>
+              <EventCardSkeleton count={3} horizontal />
             ) : highlights.upcoming.length > 0 ? (
               <Carousel itemWidth={300} gap={16}>
                 {highlights.upcoming.map((event) => (
@@ -670,9 +667,7 @@ export default function Home() {
           </ScrollView>
 
           {loadingEvents ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#a855f7" />
-            </View>
+            <EventCardSkeleton count={4} horizontal />
           ) : publicEvents.length > 0 ? (
             <>
               <Carousel itemWidth={320} gap={16}>
@@ -738,94 +733,6 @@ export default function Home() {
               delay={300}
               page="bests"
             />
-          </View>
-        </View>
-
-        {/* Quick Actions Section */}
-        <View style={styles.quickActionsSection}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <Text style={styles.sectionSubtitle}>
-            Everything you need at your fingertips
-          </Text>
-
-          <View style={styles.quickActionsGrid}>
-            {/* Row 1 */}
-            <View style={styles.quickActionRow}>
-              <TouchableOpacity
-                style={[styles.quickActionCard, styles.quickActionCardHalf]}
-                activeOpacity={0.8}
-                onPress={() => router.push("/(tabs)/vendors")}
-              >
-                <LinearGradient
-                  colors={["#5b21b6", "#7c3aed"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.quickActionGradient}
-                >
-                  <View style={styles.quickActionIconBg}>
-                    <Ionicons name="business" size={24} color="white" />
-                  </View>
-                  <Text style={styles.quickActionText}>Browse Vendors</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.quickActionCard, styles.quickActionCardHalf]}
-                activeOpacity={0.8}
-                onPress={() => router.push("/(tabs)/events")}
-              >
-                <LinearGradient
-                  colors={["#be123c", "#e11d48"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.quickActionGradient}
-                >
-                  <View style={styles.quickActionIconBg}>
-                    <Ionicons name="calendar" size={24} color="white" />
-                  </View>
-                  <Text style={styles.quickActionText}>My Events</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-
-            {/* Row 2 */}
-            <View style={styles.quickActionRow}>
-              <TouchableOpacity
-                style={[styles.quickActionCard, styles.quickActionCardHalf]}
-                activeOpacity={0.8}
-                onPress={() => router.push("/(tabs)/bests")}
-              >
-                <LinearGradient
-                  colors={["#0369a1", "#0284c7"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.quickActionGradient}
-                >
-                  <View style={styles.quickActionIconBg}>
-                    <Ionicons name="star" size={24} color="white" />
-                  </View>
-                  <Text style={styles.quickActionText}>Best of Lists</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.quickActionCard, styles.quickActionCardHalf]}
-                activeOpacity={0.8}
-                onPress={() => router.push("/(tabs)/chats")}
-              >
-                <LinearGradient
-                  colors={["#15803d", "#16a34a"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.quickActionGradient}
-                >
-                  <View style={styles.quickActionIconBg}>
-                    <Ionicons name="chatbubbles" size={24} color="white" />
-                  </View>
-                  <Text style={styles.quickActionText}>Messages</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
 
@@ -1241,11 +1148,11 @@ const styles = StyleSheet.create({
   },
   heroSection: {
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight! + 40 : 80,
-    paddingBottom: 60,
     paddingHorizontal: getResponsivePadding(),
     position: "relative",
     overflow: "hidden",
-    height: '100%',
+    height: Dimensions.get('window').height,
+    justifyContent: "center",
   },
   heroContent: {
     alignItems: "center",
@@ -1371,58 +1278,6 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.8)",
     textAlign: "center",
     lineHeight: 20,
-  },
-  quickActionsSection: {
-    paddingVertical: 40,
-    paddingHorizontal: getResponsivePadding(),
-    backgroundColor: "#1f1f2e",
-  },
-  quickActionsGrid: {
-    gap: 12,
-  },
-  quickActionRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 0,
-  },
-  quickActionCard: {
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  quickActionCardHalf: {
-    flex: 1,
-  },
-  quickActionGradient: {
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 110,
-  },
-  quickActionIconBg: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  quickActionText: {
-    fontSize: scaleFontSize(13),
-    fontFamily: Fonts.bold,
-    color: "white",
-    textAlign: "center",
-    textShadowColor: "rgba(0, 0, 0, 0.4)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
   },
   footer: {
     paddingVertical: 30,
@@ -1760,10 +1615,5 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 12,
     paddingVertical: 10,
-  },
-  seeAllText: {
-    color: "#a855f7",
-    fontFamily: Fonts.semiBold,
-    fontSize: 14,
   },
 });

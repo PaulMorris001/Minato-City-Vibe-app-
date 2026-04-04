@@ -7,7 +7,6 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   Image,
   ScrollView,
   Modal,
@@ -24,6 +23,7 @@ import { Fonts } from "@/constants/fonts";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
+import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 
 export default function VendorDetails() {
   const { vendorId, vendorName } = useLocalSearchParams();
@@ -221,8 +221,7 @@ export default function VendorDetails() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading services...</Text>
+        <VendorCardSkeleton count={3} />
       </View>
     );
   }

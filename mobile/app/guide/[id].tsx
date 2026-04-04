@@ -16,6 +16,7 @@ import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { useStripePayment } from "@/hooks/useStripePayment";
+import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
 
 export default function GuideDetailPage() {
   const router = useRouter();
@@ -111,7 +112,7 @@ export default function GuideDetailPage() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#a855f7" />
+        <GuideCardSkeleton count={1} />
       </View>
     );
   }

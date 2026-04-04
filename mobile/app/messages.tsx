@@ -25,6 +25,7 @@ import * as SecureStore from "expo-secure-store";
 import { capitalize } from "@/libs/helpers";
 import { scaleFontSize } from "@/utils/responsive";
 import socketService from "@/services/socket.service";
+import ChatListItemSkeleton from "@/components/skeletons/ChatListItemSkeleton";
 
 export default function MessagesScreen() {
   const [chats, setChats] = useState<Chat[]>([]);
@@ -239,13 +240,8 @@ export default function MessagesScreen() {
 
   if (loading) {
     return (
-      <LinearGradient
-        colors={["#1a1a2e", "#16213e"]}
-        style={styles.container}
-      >
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#a855f7" />
-        </View>
+      <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
+        <ChatListItemSkeleton count={6} />
       </LinearGradient>
     );
   }

@@ -6,7 +6,6 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
-  ActivityIndicator,
 } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -18,6 +17,7 @@ import { scaleFontSize } from "@/utils/responsive";
 import { capitalize } from "@/libs/helpers";
 import followService, { FollowUser } from "@/services/follow.service";
 import FollowButton from "@/components/shared/FollowButton";
+import UserListItemSkeleton from "@/components/skeletons/UserListItemSkeleton";
 
 export default function FollowersScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
@@ -98,9 +98,7 @@ export default function FollowersScreen() {
   if (loading) {
     return (
       <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#a855f7" />
-        </View>
+        <UserListItemSkeleton count={6} />
       </LinearGradient>
     );
   }

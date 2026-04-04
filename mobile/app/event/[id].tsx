@@ -21,6 +21,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BASE_URL } from "@/constants/constants";
 import { trackEvent } from "@/utils/analytics";
 import { Fonts } from "@/constants/fonts";
+import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 
 interface User {
   _id: string;
@@ -261,9 +262,7 @@ export default function EventDetailsPage() {
   if (loading) {
     return (
       <LinearGradient colors={["#0f0f1a", "#1a1a2e"]} style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#a855f7" />
-        </View>
+        <EventCardSkeleton count={1} />
       </LinearGradient>
     );
   }

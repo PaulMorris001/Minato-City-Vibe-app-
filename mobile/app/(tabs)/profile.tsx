@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   FlatList,
   RefreshControl,
-  ActivityIndicator,
   Alert,
 } from "react-native";
 import { Image } from "expo-image";
@@ -18,6 +17,7 @@ import { router, useFocusEffect } from "expo-router";
 import { BASE_URL } from "@/constants/constants";
 import { scaleFontSize } from "@/utils/responsive";
 import { capitalize } from "@/libs/helpers";
+import ProfileHeaderSkeleton from "@/components/skeletons/ProfileHeaderSkeleton";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import followService from "@/services/follow.service";
@@ -249,13 +249,8 @@ export default function ProfileScreen() {
 
   if (loading) {
     return (
-      <LinearGradient
-        colors={["#1a1a2e", "#16213e"]}
-        style={styles.container}
-      >
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#a855f7" />
-        </View>
+      <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
+        <ProfileHeaderSkeleton eventCount={3} />
       </LinearGradient>
     );
   }

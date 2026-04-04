@@ -6,7 +6,6 @@ import {
   FlatList,
   TouchableOpacity,
   TextInput,
-  ActivityIndicator,
 } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -19,6 +18,7 @@ import { scaleFontSize } from "@/utils/responsive";
 import { capitalize } from "@/libs/helpers";
 import * as SecureStore from "expo-secure-store";
 import FollowButton from "@/components/shared/FollowButton";
+import UserListItemSkeleton from "@/components/skeletons/UserListItemSkeleton";
 
 interface SearchUser {
   id: string;
@@ -139,11 +139,7 @@ export default function SearchUsersScreen() {
           )}
         </View>
 
-        {searching && (
-          <View style={styles.searchingContainer}>
-            <ActivityIndicator size="small" color="#a855f7" />
-          </View>
-        )}
+        {searching && <UserListItemSkeleton count={4} />}
 
         <FlatList
           data={users}
