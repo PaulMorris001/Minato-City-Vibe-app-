@@ -16,6 +16,7 @@ import {
   Platform,
   ActivityIndicator,
 } from "react-native";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Service } from "@/libs/interfaces";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "@/constants/colors";
@@ -72,7 +73,9 @@ export default function VendorDetails() {
   // Booking
   const [bookingService, setBookingService] = useState<Service | null>(null);
   const [bookingMessage, setBookingMessage] = useState("");
-  const [bookingDate, setBookingDate] = useState("");
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Reviews + Rating
@@ -161,9 +164,38 @@ export default function VendorDetails() {
     }
   };
 
+  const onDateChange = (event: DateTimePickerEvent, date?: Date) => {
+    if (Platform.OS === "android") {
+      setShowDatePicker(false);
+      if (event.type === "set" && date) {
+        const updated = new Date(date);
+        updated.setHours(selectedDate.getHours(), selectedDate.getMinutes());
+        setSelectedDate(updated);
+        setShowTimePicker(true);
+      }
+    } else {
+      if (date) setSelectedDate(date);
+    }
+  };
+
+  const onTimeChange = (event: DateTimePickerEvent, date?: Date) => {
+    setShowTimePicker(false);
+    if (event.type === "set" && date) setSelectedDate(date);
+  };
+
+  const formatSelectedDate = (date: Date) =>
+    date.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+
   const handleBookService = async () => {
-    if (!bookingDate.trim()) {
-      Alert.alert("Error", "Please enter your preferred date");
+    if (selectedDate <= new Date()) {
+      Alert.alert("Error", "Please select a future date and time");
       return;
     }
     setSubmitting(true);
@@ -178,7 +210,7 @@ export default function VendorDetails() {
         body: JSON.stringify({
           vendorId,
           serviceId: bookingService?._id,
-          preferredDate: bookingDate,
+          preferredDate: selectedDate.toISOString(),
           message: bookingMessage,
         }),
       });
@@ -187,7 +219,7 @@ export default function VendorDetails() {
         Alert.alert("Booking Sent!", "The vendor will get back to you soon.");
         setBookingService(null);
         setBookingMessage("");
-        setBookingDate("");
+        setSelectedDate(new Date());
       } else {
         Alert.alert("Error", data.message || "Failed to send booking request");
       }
@@ -454,13 +486,42 @@ export default function VendorDetails() {
             <Text style={styles.modalServiceName}>{bookingService?.name}</Text>
 
             <Text style={styles.inputLabel}>Preferred Date & Time</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="e.g. Dec 25, 2025 at 7pm"
-              placeholderTextColor="#6b7280"
-              value={bookingDate}
-              onChangeText={setBookingDate}
-            />
+            <TouchableOpacity
+              style={styles.datePickerButton}
+              onPress={() => setShowDatePicker(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="calendar-outline" size={18} color="#a855f7" />
+              <Text style={styles.datePickerText}>{formatSelectedDate(selectedDate)}</Text>
+              <Ionicons name="chevron-down" size={16} color="#6b7280" />
+            </TouchableOpacity>
+
+            {showDatePicker && Platform.OS === "ios" && (
+              <DateTimePicker
+                value={selectedDate}
+                mode="datetime"
+                display="spinner"
+                onChange={onDateChange}
+                minimumDate={new Date()}
+                themeVariant="dark"
+              />
+            )}
+            {showDatePicker && Platform.OS === "android" && (
+              <DateTimePicker
+                value={selectedDate}
+                mode="date"
+                onChange={onDateChange}
+                minimumDate={new Date()}
+              />
+            )}
+            {showTimePicker && Platform.OS === "android" && (
+              <DateTimePicker
+                value={selectedDate}
+                mode="time"
+                onChange={onTimeChange}
+                is24Hour={false}
+              />
+            )}
 
             <Text style={styles.inputLabel}>Message (optional)</Text>
             <TextInput
@@ -951,6 +1012,24 @@ const styles = StyleSheet.create({
   modalTextArea: {
     height: 100,
     textAlignVertical: "top",
+  },
+  datePickerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#374151",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#4b5563",
+  },
+  datePickerText: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: Fonts.regular,
+    color: "#fff",
   },
   submitButton: {
     borderRadius: 12,

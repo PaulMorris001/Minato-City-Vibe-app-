@@ -112,14 +112,9 @@ export default function SettingsScreen() {
       return;
     }
 
-    const targetAccount = activeAccount === "client" ? "vendor" : "client";
+    // Let the layout useEffects handle navigation after context updates —
+    // calling router.replace() here too causes double-navigation that corrupts the tab state.
     switchAccount();
-
-    if (targetAccount === "vendor") {
-      router.replace("/(vendor)/dashboard" as any);
-    } else {
-      router.replace("/(tabs)/home" as any);
-    }
   };
 
   const handleSaveProfilePicture = async () => {

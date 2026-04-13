@@ -20,6 +20,7 @@ import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { Service } from "@/libs/interfaces";
 import { BASE_URL } from "@/constants/constants";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { uploadMultipleImages } from "@/utils/imageUpload";
 
 interface ServiceModalProps {

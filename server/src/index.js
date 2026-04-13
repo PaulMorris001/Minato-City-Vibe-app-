@@ -19,6 +19,7 @@ import favoritesRoutes from "./routes/favorites.route.js";
 import adminRoutes from "./routes/admin.route.js";
 import followRoutes from "./routes/follow.route.js";
 import verificationRoutes from "./routes/verification.route.js";
+import bookingRoutes from "./routes/booking.route.js";
 
 
 const app = express();
@@ -56,6 +57,7 @@ app.use("/api/", notificationRoutes);
 app.use("/api/", favoritesRoutes);
 app.use("/api/", followRoutes);
 app.use("/api/", verificationRoutes);
+app.use("/api/", bookingRoutes);
 
 
 // Initialize Socket.IO

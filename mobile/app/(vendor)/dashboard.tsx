@@ -18,8 +18,9 @@ import DashboardTab from "@/components/vendor/DashboardTab";
 import ServicesTab from "@/components/vendor/ServicesTab";
 import AccountTab from "@/components/vendor/AccountTab";
 import VendorChatsTab from "@/components/vendor/VendorChatsTab";
+import BookingsTab from "@/components/vendor/BookingsTab";
 
-type TabType = "dashboard" | "services" | "chats" | "account";
+type TabType = "dashboard" | "services" | "bookings" | "chats" | "account";
 
 export default function VendorDashboard() {
   const [loading, setLoading] = useState(true);
@@ -124,6 +125,9 @@ export default function VendorDashboard() {
             refreshing={refreshing}
           />
         )}
+        {activeTab === "bookings" && (
+          <BookingsTab />
+        )}
         {activeTab === "chats" && (
           <VendorChatsTab />
         )}
@@ -136,6 +140,7 @@ export default function VendorDashboard() {
       <View style={styles.tabContainer}>
         {renderTabButton("dashboard", "grid-outline", "Dashboard")}
         {renderTabButton("services", "briefcase-outline", "Services")}
+        {renderTabButton("bookings", "calendar-outline", "Bookings")}
         {renderTabButton("chats", "chatbubbles-outline", "Chats")}
         {renderTabButton("account", "person-outline", "Account")}
       </View>

@@ -147,6 +147,7 @@ export default function BestsPage() {
           />
         )}
         showsVerticalScrollIndicator={false}
+        style={styles.list}
         contentContainerStyle={styles.listContent}
       />
     </SafeAreaView>
@@ -155,7 +156,11 @@ export default function BestsPage() {
 
 const styles = StyleSheet.create({
   container: {
-    // flex: 1,
+    flex: 1,
+    backgroundColor: "#0f0f1a",
+  },
+  list: {
+    flex: 1,
     backgroundColor: "#0f0f1a",
   },
   fixedHeader: {
