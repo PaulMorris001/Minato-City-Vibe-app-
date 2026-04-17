@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { Colors } from "@/constants/colors";
@@ -387,6 +388,17 @@ export default function SettingsScreen() {
           <View style={styles.preferenceLeft}>
             <Ionicons name="lock-closed-outline" size={22} color="#e5e7eb" />
             <Text style={styles.preferenceText}>Privacy</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.preferenceItem, { borderBottomWidth: 0 }]}
+          onPress={() => WebBrowser.openBrowserAsync("https://night-vibe.onrender.com/delete-account")}
+        >
+          <View style={styles.preferenceLeft}>
+            <Ionicons name="trash-outline" size={22} color="#ef4444" />
+            <Text style={[styles.preferenceText, { color: "#ef4444" }]}>Delete Account</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#6b7280" />
         </TouchableOpacity>

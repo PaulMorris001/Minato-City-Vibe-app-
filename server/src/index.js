@@ -20,6 +20,7 @@ import adminRoutes from "./routes/admin.route.js";
 import followRoutes from "./routes/follow.route.js";
 import verificationRoutes from "./routes/verification.route.js";
 import bookingRoutes from "./routes/booking.route.js";
+import deleteAccountRoutes from "./routes/deleteAccount.route.js";
 
 
 const app = express();
@@ -58,6 +59,7 @@ app.use("/api/", favoritesRoutes);
 app.use("/api/", followRoutes);
 app.use("/api/", verificationRoutes);
 app.use("/api/", bookingRoutes);
+app.use("/", deleteAccountRoutes);
 
 
 // Initialize Socket.IO
