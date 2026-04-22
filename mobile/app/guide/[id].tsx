@@ -7,7 +7,9 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Share,
 } from "react-native";
+import { createGuideShareLink } from "@/utils/shareLinks";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
@@ -62,6 +64,20 @@ export default function GuideDetailPage() {
       router.back();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleShare = async () => {
+    if (!guide) return;
+    try {
+      const link = createGuideShareLink(id);
+      await Share.share({
+        message: `Check out this city guide: ${guide.title} by ${guide.authorName}\n\n${link}`,
+        title: guide.title,
+        url: link,
+      });
+    } catch (error) {
+      console.error("Share guide error:", error);
     }
   };
 
@@ -135,6 +151,9 @@ export default function GuideDetailPage() {
         <Text style={styles.headerTitle} numberOfLines={1}>
           Guide
         </Text>
+        <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+          <Ionicons name="share-social" size={22} color="#a855f7" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -259,6 +278,9 @@ const styles = StyleSheet.create({
   },
   backButton: {
     marginRight: 16,
+  },
+  shareButton: {
+    padding: 4,
   },
   headerTitle: {
     fontSize: 24,

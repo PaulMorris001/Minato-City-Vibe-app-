@@ -11,6 +11,7 @@ module.exports = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.nightvibe.mobile",
+    associatedDomains: ["applinks:night-vibe.onrender.com"],
     // In EAS Build, GOOGLE_SERVICES_PLIST is the path to the secret file.
     // Locally, fall back to the file in the project root.
     googleServicesFile: process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist",
@@ -25,6 +26,20 @@ module.exports = {
   },
   android: {
     package: "com.nightvibe.mobile",
+    intentFilters: [
+      {
+        action: "VIEW",
+        autoVerify: true,
+        data: [{ scheme: "https", host: "night-vibe.onrender.com", pathPrefix: "/event" }],
+        category: ["BROWSABLE", "DEFAULT"],
+      },
+      {
+        action: "VIEW",
+        autoVerify: true,
+        data: [{ scheme: "https", host: "night-vibe.onrender.com", pathPrefix: "/guide" }],
+        category: ["BROWSABLE", "DEFAULT"],
+      },
+    ],
     // In EAS Build, GOOGLE_SERVICES_JSON is the path to the secret file.
     // Locally, fall back to the file in the project root.
     googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",

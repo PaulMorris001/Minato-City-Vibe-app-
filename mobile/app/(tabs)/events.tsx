@@ -28,6 +28,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import socketService from "@/services/socket.service";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
+import { createEventShareLink } from "@/utils/shareLinks";
 
 interface Event {
   _id: string;
@@ -193,11 +194,11 @@ export default function EventsPage() {
 
   const handleShareEvent = async (event: Event) => {
     try {
-      const deepLink = `mobile://share/${event.shareToken}`;
+      const link = createEventShareLink(event.shareToken);
       await Share.share({
-        message: `Join my event: ${event.title}\nDate: ${new Date(event.date).toLocaleDateString()}\nLocation: ${event.location}\n\nOpen in NightVibe: ${deepLink}`,
+        message: `Join my event: ${event.title}\nDate: ${new Date(event.date).toLocaleDateString()}\nLocation: ${event.location}\n\nOpen in NightVibe: ${link}`,
         title: event.title,
-        url: deepLink,
+        url: link,
       });
     } catch (error) {
       console.error("Share error:", error);

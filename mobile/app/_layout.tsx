@@ -1,6 +1,6 @@
 import { Stack, router } from "expo-router";
-import React, { useEffect } from "react";
-import { Platform } from "react-native";
+import React, { useEffect, useCallback } from "react";
+import { Platform, Linking } from "react-native";
 import messaging from "@react-native-firebase/messaging";
 import * as Notifications from "expo-notifications";
 import { registerForPushNotifications } from "@/utils/pushNotifications";
@@ -170,6 +170,25 @@ export default Sentry.wrap(function RootLayout() {
       unsubscribeBackground?.();
     };
   }, []);
+
+  const routeDeepLink = useCallback((url: string | null) => {
+    if (!url) return;
+    try {
+      const { pathname } = new URL(url);
+      const parts = pathname.split('/').filter(Boolean);
+      if (parts[0] === 'event' && parts[1]) {
+        router.push(`/share/${parts[1]}` as any);
+      } else if (parts[0] === 'guide' && parts[1]) {
+        router.push(`/guide/${parts[1]}` as any);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    Linking.getInitialURL().then(routeDeepLink);
+    const sub = Linking.addEventListener('url', ({ url }) => routeDeepLink(url));
+    return () => sub.remove();
+  }, [routeDeepLink]);
 
   // Set navigation bar color for Android
   useEffect(() => {
