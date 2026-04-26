@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   ScrollView,
   View,
@@ -9,6 +9,7 @@ import {
   RefreshControl,
   AppState,
   FlatList,
+  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -37,6 +38,58 @@ const C = {
   cyan: "#22D3EE",
   amber: "#F59E0B",
 };
+
+function Skeleton({ width, height, borderRadius = 10, style }: { width: number | string; height: number; borderRadius?: number; style?: any }) {
+  const opacity = useRef(new Animated.Value(0.4)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.9, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
+  return (
+    <Animated.View
+      style={[{ width, height, borderRadius, backgroundColor: C.surfaceHi, opacity }, style]}
+    />
+  );
+}
+
+function HeroSkeleton() {
+  return (
+    <View style={[styles.heroCard, { overflow: "hidden" }]}>
+      <Skeleton width="100%" height={320} borderRadius={24} />
+    </View>
+  );
+}
+
+function SmallCardSkeleton() {
+  return (
+    <View style={[styles.smallCard, { overflow: "hidden", marginRight: 12 }]}>
+      <Skeleton width={160} height={100} borderRadius={0} />
+      <View style={{ padding: 10, gap: 6 }}>
+        <Skeleton width={120} height={12} />
+        <Skeleton width={80} height={10} />
+        <Skeleton width="100%" height={28} borderRadius={8} style={{ marginTop: 2 }} />
+      </View>
+    </View>
+  );
+}
+
+function VendorCardSkeleton() {
+  return (
+    <View style={[styles.vendorCard, { overflow: "hidden", marginRight: 12 }]}>
+      <Skeleton width="100%" height={100} borderRadius={0} />
+      <View style={{ padding: 10, gap: 6 }}>
+        <Skeleton width={100} height={12} />
+        <Skeleton width={70} height={10} />
+      </View>
+    </View>
+  );
+}
 
 interface Vendor {
   _id: string;
@@ -175,6 +228,7 @@ export default function Home() {
   const [highlights, setHighlights] = useState<{ trending: PublicEvent[]; upcoming: PublicEvent[] }>({ trending: [], upcoming: [] });
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [username, setUsername] = useState("");
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -260,9 +314,9 @@ export default function Home() {
 
   useEffect(() => {
     fetchUsername();
-    fetchPublicEvents(null);
-    fetchHighlights();
-    fetchVendors();
+    Promise.all([fetchPublicEvents(null), fetchHighlights(), fetchVendors()]).finally(() =>
+      setInitialLoading(false)
+    );
 
     intervalRef.current = setInterval(() => {
       fetchPublicEvents(selectedCity, true);
@@ -382,7 +436,9 @@ export default function Home() {
         </View>
 
         {/* Hero Card */}
-        {heroEvent && (
+        {initialLoading ? (
+          <HeroSkeleton />
+        ) : heroEvent && (
           <TouchableOpacity
             style={styles.heroCard}
             activeOpacity={0.92}
@@ -499,7 +555,19 @@ export default function Home() {
         )}
 
         {/* After That */}
-        {afterThat.length > 0 && (
+        {initialLoading ? (
+          <View style={styles.section}>
+            <SectionHeader title="After that →" subtitle="This week's calendar" />
+            <FlatList
+              horizontal
+              data={[1, 2, 3, 4]}
+              keyExtractor={(item) => String(item)}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalList}
+              renderItem={() => <SmallCardSkeleton />}
+            />
+          </View>
+        ) : afterThat.length > 0 && (
           <View style={styles.section}>
             <SectionHeader
               title="After that →"
@@ -552,7 +620,19 @@ export default function Home() {
         </View>
 
         {/* Trending Now */}
-        {highlights.trending.length > 0 && (
+        {initialLoading ? (
+          <View style={styles.section}>
+            <SectionHeader title="Trending Now 🔥" subtitle="Hot in your city" />
+            <FlatList
+              horizontal
+              data={[1, 2, 3]}
+              keyExtractor={(item) => String(item)}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalList}
+              renderItem={() => <Skeleton width={300} height={200} borderRadius={16} style={{ marginRight: 12 }} />}
+            />
+          </View>
+        ) : highlights.trending.length > 0 && (
           <View style={styles.section}>
             <SectionHeader
               title="Trending Now 🔥"
@@ -580,7 +660,19 @@ export default function Home() {
         )}
 
         {/* Where the city's at — vendors */}
-        {vendors.length > 0 && (
+        {initialLoading ? (
+          <View style={styles.section}>
+            <SectionHeader title="Where the city's at" subtitle="Vendors & venues near you" />
+            <FlatList
+              horizontal
+              data={[1, 2, 3, 4]}
+              keyExtractor={(item) => String(item)}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalList}
+              renderItem={() => <VendorCardSkeleton />}
+            />
+          </View>
+        ) : vendors.length > 0 && (
           <View style={styles.section}>
             <SectionHeader
               title="Where the city's at"

@@ -493,9 +493,8 @@ export default function ChatScreen() {
             keyExtractor={(item) => item._id}
             contentContainerStyle={styles.messagesList}
             showsVerticalScrollIndicator={false}
-            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
             onContentSizeChange={() =>
-              flatListRef.current?.scrollToEnd({ animated: true })
+              flatListRef.current?.scrollToEnd({ animated: false })
             }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>

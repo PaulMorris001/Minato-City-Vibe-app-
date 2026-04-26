@@ -4,6 +4,7 @@ import cors from 'cors';
 import config from './config/env.js';
 import connectDB from './config/db.js';
 import { initializeSocket } from './services/socket.service.js';
+import { startEventReminderJob } from './jobs/eventReminder.job.js';
 
 import authRoutes from './routes/auth.route.js'
 import vendorRoutes from "./routes/vendor.route.js";
@@ -76,4 +77,5 @@ httpServer.listen(config.server.port, config.server.host, async () => {
   console.log(`🚀 Backend started at http://${config.server.host}:${config.server.port}`);
   console.log(`🌍 Environment: ${config.server.env}`);
   await connectDB();
+  startEventReminderJob();
 });

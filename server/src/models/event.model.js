@@ -57,7 +57,10 @@ const eventSchema = mongoose.Schema({
   }],
 
   // Event status
-  isActive: { type: Boolean, default: true }
+  isActive: { type: Boolean, default: true },
+
+  // Prevents the 24-hour reminder from firing more than once
+  reminderSent: { type: Boolean, default: false }
 }, {
   timestamps: true
 });

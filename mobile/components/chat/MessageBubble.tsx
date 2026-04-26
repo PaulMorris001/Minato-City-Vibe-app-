@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
+˝˝˝import React from "react";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
@@ -276,7 +276,7 @@ export default function MessageBubble({
           {isOwnMessage && (
             <View style={{ marginLeft: 4, justifyContent: "center" }}>
               {message.status === "sending" ? (
-                <ActivityIndicator size={10} color="#9ca3af" />
+                <Ionicons name="time-outline" size={14} color="#9ca3af" />
               ) : message.status === "failed" ? (
                 <Ionicons name="alert-circle" size={15} color="#ef4444" />
               ) : (
