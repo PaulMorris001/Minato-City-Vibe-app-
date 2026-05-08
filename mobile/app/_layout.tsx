@@ -210,7 +210,7 @@ export default Sentry.wrap(function RootLayout() {
     <ErrorBoundary>
       <StripeProvider
         publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ""}
-        merchantIdentifier="merchant.com.nightvibe.mobile"
+        merchantIdentifier="merchant.com.nightvibe.minato"
       >
         <AccountProvider>
           <UnreadProvider>

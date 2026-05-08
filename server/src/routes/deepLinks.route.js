@@ -31,7 +31,7 @@ router.get('/.well-known/apple-app-site-association', (req, res) => {
       apps: [],
       details: [
         {
-          appID: '9DQJ7GR4MW.com.nightvibe.mobile',
+          appID: '5C28S2GD6A.com.nightvibe.minato',
           paths: ['/event/*', '/guide/*'],
         },
       ],

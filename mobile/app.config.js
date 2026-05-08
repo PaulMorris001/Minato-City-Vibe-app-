@@ -10,7 +10,7 @@ module.exports = {
   newArchEnabled: true,
   ios: {
     supportsTablet: true,
-    bundleIdentifier: "com.nightvibe.mobile",
+    bundleIdentifier: "com.nightvibe.minato",
     associatedDomains: ["applinks:night-vibe.onrender.com"],
     // In EAS Build, GOOGLE_SERVICES_PLIST is the path to the secret file.
     // Locally, fall back to the file in the project root.
@@ -87,7 +87,7 @@ module.exports = {
     [
       "@stripe/stripe-react-native",
       {
-        merchantIdentifier: "merchant.com.nightvibe.mobile",
+        merchantIdentifier: "merchant.com.nightvibe.minato",
         enableGooglePay: true,
       },
     ],
