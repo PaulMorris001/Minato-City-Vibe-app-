@@ -9,6 +9,8 @@ import { uploadBase64Image, deleteImage } from "../services/image.service.js";
 import { emitEventInvite } from "../services/socket.service.js";
 import { setCache, getCache, invalidateCache, invalidateCachePattern } from "../utils/cache.js";
 import { areMutualFollows } from "../utils/followCheck.js";
+import { getBlockedIds } from "../utils/blockFilter.js";
+import { assertClean } from "../utils/contentFilter.js";
 
 // Create a new event
 export const createEvent = async (req, res) => {
@@ -19,6 +21,12 @@ export const createEvent = async (req, res) => {
     if (!title || !date || !location) {
       return res.status(400).json({ message: "Title, date, and location are required" });
     }
+
+    assertClean([
+      { field: "Title", value: title },
+      { field: "Description", value: description },
+      { field: "Location", value: location },
+    ]);
 
     // Validate pricing options for public paid events
     if (isPublic && isPaid) {
@@ -73,6 +81,9 @@ export const createEvent = async (req, res) => {
       event: populatedEvent
     });
   } catch (error) {
+    if (error.statusCode === 400) {
+      return res.status(400).json({ message: error.message });
+    }
     console.error("Create event error:", error);
     res.status(500).json({ message: "Error creating event", error: error.message });
   }
@@ -234,6 +245,12 @@ export const updateEvent = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to update this event" });
     }
 
+    assertClean([
+      { field: "Title", value: title },
+      { field: "Description", value: description },
+      { field: "Location", value: location },
+    ]);
+
     // Handle event image upload (if provided)
     if (image !== undefined) {
       if (image && image.startsWith('data:image')) {
@@ -273,6 +290,9 @@ export const updateEvent = async (req, res) => {
       event: updatedEvent
     });
   } catch (error) {
+    if (error.statusCode === 400) {
+      return res.status(400).json({ message: error.message });
+    }
     console.error("Update event error:", error);
     res.status(500).json({ message: "Error updating event", error: error.message });
   }
@@ -567,10 +587,13 @@ export const getPublicEvents = async (req, res) => {
     const cached = getCache(cacheKey);
     if (cached) return res.status(200).json(cached);
 
+    const blockedIds = await getBlockedIds(userId);
+
     const query = {
       isPublic: true,
       isActive: true,
       date: { $gte: new Date() },
+      ...(blockedIds.length > 0 ? { createdBy: { $nin: blockedIds } } : {}),
     };
 
     if (city) {

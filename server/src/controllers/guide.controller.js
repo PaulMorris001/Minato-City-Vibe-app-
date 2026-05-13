@@ -1,5 +1,7 @@
 import Guide, { guideTopicsList } from "../models/guide.model.js";
 import User from "../models/user.model.js";
+import { getBlockedIds } from "../utils/blockFilter.js";
+import { assertClean } from "../utils/contentFilter.js";
 
 // Get all topics
 export const getTopics = async (req, res) => {
@@ -70,6 +72,16 @@ export const createGuide = async (req, res) => {
       }
     }
 
+    // Content policy filter
+    assertClean([
+      { field: "Title", value: title },
+      { field: "Description", value: description },
+      ...sections.flatMap((s, i) => [
+        { field: `Section ${i + 1} title`, value: s.title },
+        { field: `Section ${i + 1} body`, value: s.description },
+      ]),
+    ]);
+
     // Get author name
     const user = await User.findById(userId);
     if (!user) {
@@ -98,6 +110,9 @@ export const createGuide = async (req, res) => {
       guide,
     });
   } catch (error) {
+    if (error.statusCode === 400) {
+      return res.status(400).json({ message: error.message });
+    }
     console.error("Create guide error:", error);
     res.status(500).json({ message: "Failed to create guide" });
   }
@@ -108,7 +123,13 @@ export const getGuides = async (req, res) => {
   try {
     const { city, topic, minPrice, maxPrice, search } = req.query;
 
-    const filter = { isDraft: false, isActive: true };
+    const blockedIds = req.user?.id ? await getBlockedIds(req.user.id) : [];
+
+    const filter = {
+      isDraft: false,
+      isActive: true,
+      ...(blockedIds.length > 0 ? { author: { $nin: blockedIds } } : {}),
+    };
 
     // Filter by city name if provided
     if (city) {
@@ -258,6 +279,18 @@ export const updateGuide = async (req, res) => {
       }
     }
 
+    // Content policy filter on text fields being updated
+    const fieldsToCheck = [];
+    if (title !== undefined) fieldsToCheck.push({ field: "Title", value: title });
+    if (description !== undefined) fieldsToCheck.push({ field: "Description", value: description });
+    if (sections !== undefined) {
+      sections.forEach((s, i) => {
+        fieldsToCheck.push({ field: `Section ${i + 1} title`, value: s.title });
+        fieldsToCheck.push({ field: `Section ${i + 1} body`, value: s.description });
+      });
+    }
+    if (fieldsToCheck.length > 0) assertClean(fieldsToCheck);
+
     // Update fields
     if (title !== undefined) guide.title = title;
     if (description !== undefined) guide.description = description;
@@ -275,6 +308,9 @@ export const updateGuide = async (req, res) => {
       guide,
     });
   } catch (error) {
+    if (error.statusCode === 400) {
+      return res.status(400).json({ message: error.message });
+    }
     console.error("Update guide error:", error);
     res.status(500).json({ message: "Failed to update guide" });
   }
@@ -401,10 +437,13 @@ export const getGuidesByCity = async (req, res) => {
 
     console.log("✅ Searching for city:", decodedCityName);
 
+    const blockedIds = req.user?.id ? await getBlockedIds(req.user.id) : [];
+
     const guides = await Guide.find({
       city: { $regex: new RegExp(`^${decodedCityName}$`, 'i') },
       isDraft: false,
-      isActive: true
+      isActive: true,
+      ...(blockedIds.length > 0 ? { author: { $nin: blockedIds } } : {}),
     })
       .populate("author", "username email profilePicture")
       .sort({ createdAt: -1 });

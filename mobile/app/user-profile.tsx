@@ -23,6 +23,7 @@ import followService from "@/services/follow.service";
 import chatService from "@/services/chat.service";
 import ProfileHeaderSkeleton from "@/components/skeletons/ProfileHeaderSkeleton";
 import FollowButton from "@/components/shared/FollowButton";
+import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 
 interface UserData {
   _id: string;
@@ -54,6 +55,19 @@ export default function UserProfileScreen() {
   const [events, setEvents] = useState<UserEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [reportSheetVisible, setReportSheetVisible] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    SecureStore.getItemAsync("user").then((u) => {
+      if (u) {
+        try {
+          const parsed = JSON.parse(u);
+          setCurrentUserId(parsed.id || parsed._id);
+        } catch {}
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (userId) {
@@ -264,7 +278,18 @@ export default function UserProfileScreen() {
           <Text style={styles.headerTitle} numberOfLines={1}>
             {capitalize(user?.username || "")}
           </Text>
-          <View style={{ width: 40 }} />
+          {userId && currentUserId && userId !== currentUserId ? (
+            <TouchableOpacity
+              onPress={() => setReportSheetVisible(true)}
+              style={styles.backButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel="Report or block user"
+            >
+              <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: 40 }} />
+          )}
         </View>
 
         <FlatList
@@ -287,6 +312,18 @@ export default function UserProfileScreen() {
           showsVerticalScrollIndicator={false}
         />
       </SafeAreaView>
+      {userId ? (
+        <ReportBlockSheet
+          visible={reportSheetVisible}
+          onClose={() => setReportSheetVisible(false)}
+          targetType="user"
+          targetId={userId}
+          targetUserId={userId}
+          targetUsername={user?.username}
+          currentUserId={currentUserId}
+          onBlocked={() => router.back()}
+        />
+      ) : null}
     </LinearGradient>
   );
 }

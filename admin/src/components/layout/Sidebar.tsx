@@ -1,12 +1,14 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { colors } from "../../constants/colors";
+import { adminApi } from "../../api/admin";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: "⊞" },
   { to: "/users", label: "Users", icon: "👥" },
   { to: "/vendors", label: "Vendors", icon: "🏪" },
   { to: "/verifications", label: "Verifications", icon: "✓" },
+  { to: "/reports", label: "Reports", icon: "🚩" },
   { to: "/cities", label: "Cities", icon: "📍" },
   { to: "/vendor-types", label: "Vendor Types", icon: "🏷️" },
   { to: "/events", label: "Events", icon: "📅" },
@@ -15,6 +17,26 @@ const navItems = [
 ];
 
 export default function Sidebar() {
+  const [openReports, setOpenReports] = useState<number>(0);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const res = await adminApi.getReports({ status: "open", page: 1, limit: 1 });
+        if (active) setOpenReports(res.data.openCount || 0);
+      } catch {
+        // ignore — sidebar badge is best-effort
+      }
+    };
+    refresh();
+    const id = setInterval(refresh, 60_000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+
   return (
     <aside style={styles.sidebar}>
       <div style={styles.logo}>
@@ -35,7 +57,10 @@ export default function Sidebar() {
             })}
           >
             <span style={styles.navIcon}>{icon}</span>
-            <span>{label}</span>
+            <span style={{ flex: 1 }}>{label}</span>
+            {to === "/reports" && openReports > 0 ? (
+              <span style={styles.badge}>{openReports}</span>
+            ) : null}
           </NavLink>
         ))}
       </nav>
@@ -107,6 +132,16 @@ const styles: Record<string, React.CSSProperties> = {
   navIcon: {
     fontSize: 16,
     width: 20,
+    textAlign: "center" as const,
+  },
+  badge: {
+    fontSize: 11,
+    fontWeight: 700,
+    background: "#ef4444",
+    color: "#fff",
+    borderRadius: 10,
+    padding: "1px 8px",
+    minWidth: 20,
     textAlign: "center" as const,
   },
 };

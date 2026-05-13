@@ -17,7 +17,7 @@ const router = express.Router();
 
 // Public routes - NO authentication required
 router.get("/guides/topics", getTopics);
-router.get("/guides/all", getGuides);
+router.get("/guides/all", optionalAuth, getGuides);
 router.get("/guide/by-city", authenticate, getGuidesByCity);
 
 // Protected user routes - MUST come before /guides/:id to avoid route conflicts

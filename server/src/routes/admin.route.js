@@ -25,6 +25,9 @@ import {
   getVerifications,
   approveVerification,
   rejectVerification,
+  getReports,
+  resolveReport,
+  getReportTarget,
 } from "../controllers/admin.controller.js";
 
 const router = express.Router();
@@ -71,5 +74,10 @@ router.get("/admin/analytics/events", authenticateAdmin, getAnalyticsEvents);
 router.get("/admin/verifications", authenticateAdmin, getVerifications);
 router.patch("/admin/verifications/:id/approve", authenticateAdmin, approveVerification);
 router.patch("/admin/verifications/:id/reject", authenticateAdmin, rejectVerification);
+
+// Reports (Apple Guideline 1.2 moderation queue)
+router.get("/admin/reports", authenticateAdmin, getReports);
+router.get("/admin/reports/:id/target", authenticateAdmin, getReportTarget);
+router.patch("/admin/reports/:id", authenticateAdmin, resolveReport);
 
 export default router;

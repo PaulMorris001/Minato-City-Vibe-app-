@@ -50,7 +50,14 @@ const userSchema = mongoose.Schema({
   resetPasswordOTP: { type: String },
   resetPasswordOTPExpires: { type: Date },
   resetPasswordToken: { type: String },
-  resetPasswordTokenExpires: { type: Date }
+  resetPasswordTokenExpires: { type: Date },
+
+  // Moderation / safety (Apple Guideline 1.2)
+  blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "user", default: [] }],
+  termsAcceptedAt: { type: Date },
+  isBanned: { type: Boolean, default: false },
+  bannedAt: { type: Date },
+  tokenVersion: { type: Number, default: 0 }
 }, {
   timestamps: true
 });

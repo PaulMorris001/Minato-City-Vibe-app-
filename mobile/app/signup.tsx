@@ -33,6 +33,7 @@ export default function Signup() {
   const [passwordError, setPasswordError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   useEffect(() => {
     // Configure Google Sign-In on component mount
@@ -66,6 +67,13 @@ export default function Signup() {
       setPasswordError("Passwords don't match");
       return;
     }
+    if (!termsAccepted) {
+      Alert.alert(
+        "Agreement required",
+        "Please agree to the Terms of Service and Privacy Policy to continue."
+      );
+      return;
+    }
 
     setLoading(true);
     try {
@@ -81,6 +89,7 @@ export default function Signup() {
         username,
         email,
         password,
+        termsAccepted: true,
       });
 
       const user = res.data.user;
@@ -288,9 +297,37 @@ export default function Signup() {
               ) : null}
             </View>
 
+            <View style={styles.termsRow}>
+              <TouchableOpacity
+                onPress={() => setTermsAccepted((v) => !v)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: termsAccepted }}
+                accessibilityLabel="I agree to the Terms of Service and Privacy Policy"
+              >
+                {termsAccepted ? (
+                  <Ionicons name="checkmark" size={16} color="#fff" />
+                ) : null}
+              </TouchableOpacity>
+              <Text style={styles.termsText}>
+                I agree to the{" "}
+                <Text style={styles.termsLink} onPress={() => router.push("/terms" as any)}>
+                  Terms of Service
+                </Text>
+                {" "}and{" "}
+                <Text style={styles.termsLink} onPress={() => router.push("/privacy" as any)}>
+                  Privacy Policy
+                </Text>
+                . NightVibe has zero tolerance for objectionable content or
+                abusive users.
+              </Text>
+            </View>
+
             <PrimaryButton
               onPress={handleSignup}
               loading={loading}
+              disabled={!termsAccepted}
               style={styles.signupButton}
             >
               Sign Up
@@ -451,6 +488,37 @@ const styles = StyleSheet.create({
     fontSize: scaleFontSize(15),
   },
   link: {
+    color: "#a855f7",
+    fontWeight: "600",
+  },
+  termsRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 4,
+    marginBottom: 4,
+    gap: 10,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: "#6b7280",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  checkboxChecked: {
+    backgroundColor: "#a855f7",
+    borderColor: "#a855f7",
+  },
+  termsText: {
+    flex: 1,
+    color: "#9ca3af",
+    fontSize: scaleFontSize(13),
+    lineHeight: 18,
+  },
+  termsLink: {
     color: "#a855f7",
     fontWeight: "600",
   },

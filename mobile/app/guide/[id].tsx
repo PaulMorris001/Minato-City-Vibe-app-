@@ -19,6 +19,7 @@ import { BASE_URL } from "@/constants/constants";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
+import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 
 export default function GuideDetailPage() {
   const router = useRouter();
@@ -31,6 +32,19 @@ export default function GuideDetailPage() {
   const [hasPurchased, setHasPurchased] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
+  const [reportSheetVisible, setReportSheetVisible] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    SecureStore.getItemAsync("user").then((u) => {
+      if (u) {
+        try {
+          const parsed = JSON.parse(u);
+          setCurrentUserId(parsed.id || parsed._id);
+        } catch {}
+      }
+    });
+  }, []);
 
   useEffect(() => {
     fetchGuide();
@@ -151,9 +165,20 @@ export default function GuideDetailPage() {
         <Text style={styles.headerTitle} numberOfLines={1}>
           Guide
         </Text>
-        <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-          <Ionicons name="share-social" size={22} color="#a855f7" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+            <Ionicons name="share-social" size={22} color="#a855f7" />
+          </TouchableOpacity>
+          {!isOwner ? (
+            <TouchableOpacity
+              style={styles.shareButton}
+              onPress={() => setReportSheetVisible(true)}
+              accessibilityLabel="Report guide or block author"
+            >
+              <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
 
       <ScrollView
@@ -258,6 +283,19 @@ export default function GuideDetailPage() {
           </View>
         )}
       </ScrollView>
+
+      {guide && !isOwner ? (
+        <ReportBlockSheet
+          visible={reportSheetVisible}
+          onClose={() => setReportSheetVisible(false)}
+          targetType="guide"
+          targetId={guide._id}
+          targetUserId={guide.author?._id}
+          targetUsername={guide.author?.username || guide.authorName}
+          currentUserId={currentUserId}
+          onBlocked={() => router.back()}
+        />
+      ) : null}
     </View>
   );
 }
@@ -281,6 +319,11 @@ const styles = StyleSheet.create({
   },
   shareButton: {
     padding: 4,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
   headerTitle: {
     fontSize: 24,

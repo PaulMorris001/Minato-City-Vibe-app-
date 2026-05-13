@@ -22,6 +22,7 @@ import { BASE_URL } from "@/constants/constants";
 import { trackEvent } from "@/utils/analytics";
 import { Fonts } from "@/constants/fonts";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
+import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 
 interface User {
   _id: string;
@@ -86,6 +87,7 @@ export default function EventDetailsPage() {
   const [vendorResults, setVendorResults] = useState<EventVendor[]>([]);
   const [searchingVendors, setSearchingVendors] = useState(false);
   const [addingVendor, setAddingVendor] = useState<string | null>(null);
+  const [reportSheetVisible, setReportSheetVisible] = useState(false);
 
   const fetchEventDetails = async () => {
     try {
@@ -357,7 +359,17 @@ export default function EventDetailsPage() {
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Event Details</Text>
-          <View style={styles.backButton} />
+          {!isCreator ? (
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => setReportSheetVisible(true)}
+              accessibilityLabel="Report event or block creator"
+            >
+              <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.backButton} />
+          )}
         </View>
 
         <ScrollView
@@ -647,6 +659,19 @@ export default function EventDetailsPage() {
           </View>
         </ScrollView>
       </LinearGradient>
+
+      {event && !isCreator ? (
+        <ReportBlockSheet
+          visible={reportSheetVisible}
+          onClose={() => setReportSheetVisible(false)}
+          targetType="event"
+          targetId={event._id}
+          targetUserId={event.createdBy?._id}
+          targetUsername={event.createdBy?.username}
+          currentUserId={currentUserId}
+          onBlocked={() => router.back()}
+        />
+      ) : null}
 
       {/* Invite User Modal */}
       <Modal

@@ -8,6 +8,8 @@ import Guide from "../models/guide.model.js";
 import AnalyticsLog from "../models/analytics.model.js";
 import VerificationRequest from "../models/verification.model.js";
 import Notification from "../models/notification.model.js";
+import Report from "../models/report.model.js";
+import Message from "../models/message.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
 
 export async function adminLogin(req, res) {
@@ -516,6 +518,126 @@ export async function getAnalyticsEvents(req, res) {
 
     res.json({ logs, total, page: Number(page), limit: Number(limit) });
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// ── Reports (Apple Guideline 1.2 moderation queue) ──────────────────────────
+
+export async function getReports(req, res) {
+  try {
+    const { status, page = 1, limit = 20 } = req.query;
+    const query = {};
+    if (status && status !== "all") query.status = status;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [reports, total, openCount] = await Promise.all([
+      Report.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .populate("reporter", "username email profilePicture")
+        .populate("targetUser", "username email profilePicture isBanned")
+        .lean(),
+      Report.countDocuments(query),
+      Report.countDocuments({ status: "open" }),
+    ]);
+
+    res.json({
+      reports,
+      total,
+      openCount,
+      page: Number(page),
+      limit: Number(limit),
+    });
+  } catch (error) {
+    console.error("getReports error:", error);
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function resolveReport(req, res) {
+  try {
+    const { id } = req.params;
+    const { action } = req.body;
+
+    if (!["dismiss", "remove_content", "ban_user"].includes(action)) {
+      return res.status(400).json({ message: "Invalid action" });
+    }
+
+    const report = await Report.findById(id);
+    if (!report) return res.status(404).json({ message: "Report not found" });
+
+    let outcome = "dismissed";
+
+    if (action === "remove_content") {
+      if (report.targetType === "event") {
+        await Event.findByIdAndUpdate(report.targetId, { isActive: false });
+      } else if (report.targetType === "guide") {
+        await Guide.findByIdAndUpdate(report.targetId, { isActive: false });
+      } else if (report.targetType === "user") {
+        // For user-target reports, remove_content = soft-disable all their content
+        await Event.updateMany({ createdBy: report.targetId }, { isActive: false });
+        await Guide.updateMany({ author: report.targetId }, { isActive: false });
+      }
+      outcome = "removed_content";
+    } else if (action === "ban_user") {
+      await User.findByIdAndUpdate(report.targetUser, {
+        isBanned: true,
+        bannedAt: new Date(),
+        $inc: { tokenVersion: 1 },
+      });
+      await Event.updateMany({ createdBy: report.targetUser }, { isActive: false });
+      await Guide.updateMany({ author: report.targetUser }, { isActive: false });
+      // Resolve all other open reports against this user
+      await Report.updateMany(
+        { targetUser: report.targetUser, status: "open", _id: { $ne: report._id } },
+        {
+          status: "resolved",
+          action: "banned_user",
+          resolvedBy: req.admin?.username || "admin",
+          resolvedAt: new Date(),
+        }
+      );
+      outcome = "banned_user";
+    }
+
+    report.status = action === "dismiss" ? "dismissed" : "resolved";
+    report.action = outcome;
+    report.resolvedAt = new Date();
+    await report.save();
+
+    res.json({ message: "Report resolved", report });
+  } catch (error) {
+    console.error("resolveReport error:", error);
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function getReportTarget(req, res) {
+  try {
+    const { id } = req.params;
+    const report = await Report.findById(id).lean();
+    if (!report) return res.status(404).json({ message: "Report not found" });
+
+    let target = null;
+    if (report.targetType === "event") {
+      target = await Event.findById(report.targetId)
+        .populate("createdBy", "username email profilePicture")
+        .lean();
+    } else if (report.targetType === "guide") {
+      target = await Guide.findById(report.targetId)
+        .populate("author", "username email profilePicture")
+        .lean();
+    } else if (report.targetType === "user") {
+      target = await User.findById(report.targetId)
+        .select("-password -resetPasswordOTP -resetPasswordToken")
+        .lean();
+    }
+
+    res.json({ report, target });
+  } catch (error) {
+    console.error("getReportTarget error:", error);
     res.status(500).json({ message: error.message });
   }
 }

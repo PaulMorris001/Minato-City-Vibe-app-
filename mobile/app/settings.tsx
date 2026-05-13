@@ -387,7 +387,23 @@ export default function SettingsScreen() {
         <TouchableOpacity style={styles.preferenceItem} onPress={() => router.push("/privacy" as any)}>
           <View style={styles.preferenceLeft}>
             <Ionicons name="lock-closed-outline" size={22} color="#e5e7eb" />
-            <Text style={styles.preferenceText}>Privacy</Text>
+            <Text style={styles.preferenceText}>Privacy Policy</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.preferenceItem} onPress={() => router.push("/terms" as any)}>
+          <View style={styles.preferenceLeft}>
+            <Ionicons name="document-text-outline" size={22} color="#e5e7eb" />
+            <Text style={styles.preferenceText}>Terms of Service</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.preferenceItem} onPress={() => router.push("/blocked-users" as any)}>
+          <View style={styles.preferenceLeft}>
+            <Ionicons name="ban-outline" size={22} color="#e5e7eb" />
+            <Text style={styles.preferenceText}>Blocked Users</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#6b7280" />
         </TouchableOpacity>

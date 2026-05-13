@@ -9,13 +9,23 @@ import { uploadBase64Image, deleteImage } from "../services/image.service.js";
 import { generateOTP, sendPasswordResetOTP, sendPasswordResetSuccessEmail } from "../services/email.service.js";
 import Follow from "../models/follow.model.js";
 import Event from "../models/event.model.js";
+import { getBlockedIds } from "../utils/blockFilter.js";
+import { assertClean } from "../utils/contentFilter.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 export async function register(req, res) {
-  const { username, email, password } = req.body;
+  const { username, email, password, termsAccepted } = req.body;
 
   try {
+    if (!termsAccepted) {
+      return res.status(400).json({
+        message: "You must agree to the Terms of Service and Privacy Policy to create an account.",
+      });
+    }
+
+    assertClean([{ field: "Username", value: username }]);
+
     // Normalize email to lowercase and trim whitespace
     const normalizedEmail = email.toLowerCase().trim();
 
@@ -24,7 +34,8 @@ export async function register(req, res) {
       username,
       email: normalizedEmail,
       password: hashed,
-      isVendor: false // All users start as clients
+      isVendor: false, // All users start as clients
+      termsAcceptedAt: new Date(),
     });
     await user.save();
 
@@ -43,9 +54,10 @@ export async function register(req, res) {
       }
     });
   } catch (error) {
+    const status = error.statusCode || 400;
     res
-      .status(400)
-      .json({ message: "Error creating User", details: error.message });
+      .status(status)
+      .json({ message: error.statusCode ? error.message : "Error creating User", details: error.message });
   }
 }
 
@@ -55,6 +67,12 @@ export async function login(req, res) {
   const normalizedEmail = email.toLowerCase().trim();
   const user = await User.findOne({ email: normalizedEmail });
   if (!user) return res.status(404).json({ message: "User not found" });
+
+  if (user.isBanned) {
+    return res.status(403).json({
+      message: "This account has been suspended for violating our content policy.",
+    });
+  }
 
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) return res.status(401).json({ message: "Invalid Credentials" });
@@ -351,8 +369,11 @@ export async function searchUsers(req, res) {
       return res.status(400).json({ message: "Search query must be at least 2 characters" });
     }
 
+    const blockedIds = await getBlockedIds(req.user.id);
+
     const users = await User.find({
-      _id: { $ne: req.user.id }, // Exclude current user
+      _id: { $ne: req.user.id, $nin: blockedIds }, // Exclude current user + blocked
+      isBanned: { $ne: true },
       $or: [
         { username: { $regex: query, $options: "i" } },
         { email: { $regex: query, $options: "i" } }
@@ -397,13 +418,34 @@ export async function searchUsers(req, res) {
 export async function getUserById(req, res) {
   try {
     const user = await User.findById(req.params.userId)
-      .select("_id username email profilePicture isVendor businessName verified")
+      .select("_id username email profilePicture isVendor businessName verified isBanned blockedUsers")
       .lean();
 
-    if (!user) {
+    if (!user || user.isBanned) {
       return res.status(404).json({ message: "User not found" });
     }
 
+    // Hide users that the viewer has blocked or that have blocked the viewer
+    if (req.user?.id) {
+      const viewerId = String(req.user.id);
+      const targetId = String(user._id);
+      const viewerBlockedTarget = (user.blockedUsers || []).some(
+        (id) => String(id) === viewerId
+      );
+      if (viewerBlockedTarget) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const me = await User.findById(viewerId).select("blockedUsers").lean();
+      const targetBlockedByViewer = (me?.blockedUsers || []).some(
+        (id) => String(id) === targetId
+      );
+      if (targetBlockedByViewer) {
+        return res.status(404).json({ message: "User not found" });
+      }
+    }
+
+    delete user.blockedUsers;
+    delete user.isBanned;
     res.json({ user: { ...user, id: user._id } });
   } catch (error) {
     res.status(400).json({ message: "Error fetching user", details: error.message });
@@ -413,6 +455,13 @@ export async function getUserById(req, res) {
 // Get public events created by a user
 export async function getUserEvents(req, res) {
   try {
+    // If the requesting user has blocked (or is blocked by) this user, return empty
+    if (req.user?.id) {
+      const blockedIds = await getBlockedIds(req.user.id);
+      if (blockedIds.some((id) => String(id) === String(req.params.userId))) {
+        return res.json({ events: [] });
+      }
+    }
     const events = await Event.find({
       createdBy: req.params.userId,
       isPublic: true,
@@ -483,6 +532,11 @@ export async function googleAuth(req, res) {
     });
 
     if (user) {
+      if (user.isBanned) {
+        return res.status(403).json({
+          message: "This account has been suspended for violating our content policy.",
+        });
+      }
       // Update existing user with Google info if not already set
       if (!user.googleId) {
         user.googleId = googleId;
@@ -493,14 +547,15 @@ export async function googleAuth(req, res) {
         await user.save();
       }
     } else {
-      // Create new user
+      // Create new user — Google sign-in implies acceptance of Terms via the in-app prompt
       user = new User({
         username: name || normalizedEmail.split('@')[0],
         email: normalizedEmail,
         authProvider: 'google',
         googleId,
         profilePicture: picture || "",
-        isVendor: false
+        isVendor: false,
+        termsAcceptedAt: new Date(),
       });
       await user.save();
     }

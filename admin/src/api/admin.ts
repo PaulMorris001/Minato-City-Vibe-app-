@@ -92,4 +92,32 @@ export const adminApi = {
       "/admin/analytics/events",
       { params, ttl: 30_000 }
     ),
+
+  // Reports (Apple Guideline 1.2 moderation queue)
+  getReports: (params?: { status?: string; page?: number; limit?: number }) =>
+    client.get<{
+      reports: AdminReport[];
+      total: number;
+      openCount: number;
+      page: number;
+      limit: number;
+    }>("/admin/reports", { params }),
+  getReportTarget: (id: string) =>
+    client.get<{ report: AdminReport; target: any }>(`/admin/reports/${id}/target`),
+  resolveReport: (id: string, action: "dismiss" | "remove_content" | "ban_user") =>
+    client.patch<{ report: AdminReport }>(`/admin/reports/${id}`, { action }),
 };
+
+export interface AdminReport {
+  _id: string;
+  reporter: { _id: string; username: string; email: string; profilePicture?: string };
+  targetType: "user" | "event" | "guide";
+  targetId: string;
+  targetUser: { _id: string; username: string; email: string; profilePicture?: string; isBanned?: boolean };
+  reason: string;
+  details?: string;
+  status: "open" | "resolved" | "dismissed";
+  action?: string | null;
+  createdAt: string;
+  resolvedAt?: string;
+}
