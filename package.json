@@ -4,7 +4,8 @@
   "description": "Root package for NightVibe project",
   "scripts": {
     "mobile": "npm start --prefix mobile",
-    "server": "npm run dev --prefix server"
+    "server": "npm run dev --prefix server",
+    "admin": "npm run dev --prefix admin"
   },
   "keywords": [],
   "author": "",

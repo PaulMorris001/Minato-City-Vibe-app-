@@ -419,7 +419,10 @@ export async function approveVerification(req, res) {
     const { id } = req.params;
     const { reviewedBy = "admin" } = req.body ?? {};
 
-    const request = await VerificationRequest.findById(id).populate("user", "_id fcmToken");
+    const request = await VerificationRequest.findById(id).populate(
+      "user",
+      "_id fcmToken isVendor"
+    );
     if (!request) return res.status(404).json({ message: "Verification request not found" });
 
     request.status = "approved";
@@ -433,23 +436,26 @@ export async function approveVerification(req, res) {
     // Sync to linked Vendor doc if exists
     Vendor.findOneAndUpdate({ user: request.user._id }, { verified: true }).catch(() => {});
 
+    const isVendor = !!request.user.isVendor;
+    const notifTitle = isVendor ? "Business Verified!" : "You're Verified!";
+    const notifBody = isVendor
+      ? "Your business has been verified. You now have a verification badge on your profile."
+      : "Your identity has been verified. You now have a verification badge on your profile and faster approval on paid events.";
+
     // In-app notification
     await Notification.create({
       user: request.user._id,
       type: "verification_approved",
-      title: "Business Verified!",
-      body: "Your business has been verified. You now have a verification badge on your profile.",
+      title: notifTitle,
+      body: notifBody,
       data: {},
     });
 
     // Push notification
     if (request.user.fcmToken) {
-      sendPushNotification(
-        request.user.fcmToken,
-        "Business Verified!",
-        "Your business has been verified. You now have a verification badge on your profile.",
-        { type: "verification_approved" }
-      ).catch(() => {});
+      sendPushNotification(request.user.fcmToken, notifTitle, notifBody, {
+        type: "verification_approved",
+      }).catch(() => {});
     }
 
     res.json({ status: "approved" });
@@ -493,6 +499,148 @@ export async function rejectVerification(req, res) {
         notifBody,
         { type: "verification_rejected" }
       ).catch(() => {});
+    }
+
+    res.json({ status: "rejected" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// ── Paid Event Approval Queue ──────────────────────────────────────────────
+
+export async function getPendingPaidEvents(req, res) {
+  try {
+    const { status = "pending", page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const query = {
+      isPaid: true,
+      isPublic: true,
+      ...(status ? { approvalStatus: status } : {}),
+    };
+
+    const [events, total] = await Promise.all([
+      Event.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .populate(
+          "createdBy",
+          "username email profilePicture verified paidEventsApproved paidEventsCount stripeOnboardingComplete contactInfo emailVerifiedAt"
+        ),
+      Event.countDocuments(query),
+    ]);
+
+    // Attach fraud-report counts so admins can see which events have buyer
+    // complaints. We only count open fraud reports.
+    const eventIds = events.map((e) => e._id);
+    const fraudCounts = await Report.aggregate([
+      {
+        $match: {
+          targetType: "event",
+          targetId: { $in: eventIds },
+          reason: "fraud",
+          status: "open",
+        },
+      },
+      { $group: { _id: "$targetId", count: { $sum: 1 } } },
+    ]);
+    const fraudCountMap = Object.fromEntries(
+      fraudCounts.map((f) => [String(f._id), f.count])
+    );
+    const enriched = events.map((e) => {
+      const obj = e.toObject();
+      obj.fraudReportCount = fraudCountMap[String(e._id)] || 0;
+      return obj;
+    });
+
+    res.json({ events: enriched, total, page: Number(page), limit: Number(limit) });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function approvePaidEvent(req, res) {
+  try {
+    const { id } = req.params;
+
+    const event = await Event.findById(id).populate("createdBy", "_id fcmToken username");
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    if (!event.isPaid) {
+      return res.status(400).json({ message: "Only paid events use the approval queue" });
+    }
+
+    event.approvalStatus = "approved";
+    event.approvalReviewedAt = new Date();
+    event.approvalRejectReason = undefined;
+    await event.save();
+
+    // Promote organizer so future paid events skip the queue,
+    // and increment their lifetime approved count (drives caps).
+    await User.findByIdAndUpdate(event.createdBy._id, {
+      paidEventsApproved: true,
+      $inc: { paidEventsCount: 1 },
+    });
+
+    await Notification.create({
+      user: event.createdBy._id,
+      type: "paid_event_approved",
+      title: "Your event is approved 🎉",
+      body: `"${event.title}" is now live and accepting ticket purchases.`,
+      data: { eventId: String(event._id) },
+    });
+
+    if (event.createdBy.fcmToken) {
+      sendPushNotification(
+        event.createdBy.fcmToken,
+        "Your event is approved 🎉",
+        `"${event.title}" is now live and accepting ticket purchases.`,
+        { type: "paid_event_approved", eventId: String(event._id) }
+      ).catch(() => {});
+    }
+
+    res.json({ status: "approved" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function rejectPaidEvent(req, res) {
+  try {
+    const { id } = req.params;
+    const { reason = "" } = req.body ?? {};
+
+    const event = await Event.findById(id).populate("createdBy", "_id fcmToken username");
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    if (!event.isPaid) {
+      return res.status(400).json({ message: "Only paid events use the approval queue" });
+    }
+
+    event.approvalStatus = "rejected";
+    event.approvalReviewedAt = new Date();
+    event.approvalRejectReason = reason;
+    // Don't auto-delete — keep the record so the organizer (and admin) can see why
+    event.isActive = false;
+    await event.save();
+
+    const body = reason
+      ? `"${event.title}" wasn't approved. Reason: ${reason}`
+      : `"${event.title}" wasn't approved. Please contact support for details.`;
+
+    await Notification.create({
+      user: event.createdBy._id,
+      type: "paid_event_rejected",
+      title: "Event not approved",
+      body,
+      data: { eventId: String(event._id) },
+    });
+
+    if (event.createdBy.fcmToken) {
+      sendPushNotification(event.createdBy.fcmToken, "Event not approved", body, {
+        type: "paid_event_rejected",
+        eventId: String(event._id),
+      }).catch(() => {});
     }
 
     res.json({ status: "rejected" });

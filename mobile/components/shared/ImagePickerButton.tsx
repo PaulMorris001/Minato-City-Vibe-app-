@@ -9,6 +9,7 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
+import { Avatar } from "./Avatar";
 
 interface ImagePickerButtonProps {
   imageUri?: string;
@@ -20,6 +21,13 @@ interface ImagePickerButtonProps {
   disabled?: boolean;
   allowsEditing?: boolean;
   aspect?: [number, number];
+  /**
+   * When set (and `shape` is "circle"), the empty state renders a deterministic
+   * initials avatar derived from this name instead of the camera placeholder.
+   * Used for the Profile Picture row in Settings so a user without a photo
+   * still sees their own avatar.
+   */
+  fallbackName?: string;
 }
 
 export default function ImagePickerButton({
@@ -32,6 +40,7 @@ export default function ImagePickerButton({
   disabled = false,
   allowsEditing = false,
   aspect,
+  fallbackName,
 }: ImagePickerButtonProps) {
   const pickImage = async () => {
     if (disabled) return;
@@ -76,6 +85,13 @@ export default function ImagePickerButton({
                 shape === "circle" ? styles.circle : styles.square,
               ]}
             />
+            <View style={styles.editOverlay}>
+              <Ionicons name="camera" size={24} color="#fff" />
+            </View>
+          </>
+        ) : fallbackName && shape === "circle" ? (
+          <>
+            <Avatar name={fallbackName} size={size} />
             <View style={styles.editOverlay}>
               <Ionicons name="camera" size={24} color="#fff" />
             </View>

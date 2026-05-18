@@ -20,6 +20,7 @@ import { capitalize } from "@/libs/helpers";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import followService from "@/services/follow.service";
+import { Avatar } from "@/components/shared/Avatar";
 import chatService from "@/services/chat.service";
 import ProfileHeaderSkeleton from "@/components/skeletons/ProfileHeaderSkeleton";
 import FollowButton from "@/components/shared/FollowButton";
@@ -149,16 +150,7 @@ export default function UserProfileScreen() {
     <View>
       {/* Profile Header — horizontal layout */}
       <View style={styles.profileHeader}>
-        {user?.profilePicture ? (
-          <Image source={{ uri: user.profilePicture }} style={styles.avatar} />
-        ) : (
-          <LinearGradient
-            colors={["#a855f7", "#7c3aed"]}
-            style={styles.avatarPlaceholder}
-          >
-            <Ionicons name="person" size={36} color="#fff" />
-          </LinearGradient>
-        )}
+        <Avatar uri={user?.profilePicture} name={user?.username} size={80} />
         <View style={styles.profileInfo}>
           <View style={styles.usernameRow}>
             <Text style={styles.username} numberOfLines={1}>

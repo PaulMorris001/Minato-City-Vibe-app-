@@ -87,7 +87,6 @@ module.exports = {
     [
       "@stripe/stripe-react-native",
       {
-        merchantIdentifier: "merchant.com.nightvibe.minato",
         enableGooglePay: true,
       },
     ],

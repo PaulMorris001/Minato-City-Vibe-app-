@@ -2,7 +2,7 @@ import admin from "firebase-admin";
 import { createRequire } from "module";
 
 // Lazy-init so the app doesn't crash if credentials are missing
-function getFirebaseApp() {
+export function getFirebaseApp() {
   if (admin.apps.length > 0) return admin.apps[0];
 
   // Load service account from env var (JSON string) or a local file

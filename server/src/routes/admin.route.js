@@ -28,6 +28,9 @@ import {
   getReports,
   resolveReport,
   getReportTarget,
+  getPendingPaidEvents,
+  approvePaidEvent,
+  rejectPaidEvent,
 } from "../controllers/admin.controller.js";
 
 const router = express.Router();
@@ -74,6 +77,11 @@ router.get("/admin/analytics/events", authenticateAdmin, getAnalyticsEvents);
 router.get("/admin/verifications", authenticateAdmin, getVerifications);
 router.patch("/admin/verifications/:id/approve", authenticateAdmin, approveVerification);
 router.patch("/admin/verifications/:id/reject", authenticateAdmin, rejectVerification);
+
+// Paid event approval queue (trust system)
+router.get("/admin/paid-events", authenticateAdmin, getPendingPaidEvents);
+router.patch("/admin/paid-events/:id/approve", authenticateAdmin, approvePaidEvent);
+router.patch("/admin/paid-events/:id/reject", authenticateAdmin, rejectPaidEvent);
 
 // Reports (Apple Guideline 1.2 moderation queue)
 router.get("/admin/reports", authenticateAdmin, getReports);

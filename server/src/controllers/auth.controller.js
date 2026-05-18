@@ -6,7 +6,12 @@ import config from "../config/env.js";
 import User from "../models/user.model.js";
 import { Vendor } from "../models/vendor.model.js";
 import { uploadBase64Image, deleteImage } from "../services/image.service.js";
-import { generateOTP, sendPasswordResetOTP, sendPasswordResetSuccessEmail } from "../services/email.service.js";
+import {
+  generateOTP,
+  sendPasswordResetOTP,
+  sendPasswordResetSuccessEmail,
+  sendSignupVerificationOTP,
+} from "../services/email.service.js";
 import Follow from "../models/follow.model.js";
 import Event from "../models/event.model.js";
 import { getBlockedIds } from "../utils/blockFilter.js";
@@ -30,28 +35,46 @@ export async function register(req, res) {
     const normalizedEmail = email.toLowerCase().trim();
 
     const hashed = await bcrypt.hash(password, 10);
+
+    // Generate a 6-digit OTP that the user must enter on the next screen.
+    // Stored on the user doc with a 10-minute expiry; cleared when verified.
+    const otp = generateOTP();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+
     const user = new User({
       username,
       email: normalizedEmail,
       password: hashed,
       isVendor: false, // All users start as clients
       termsAcceptedAt: new Date(),
+      signupOTP: otp,
+      signupOTPExpires: otpExpires,
     });
     await user.save();
+
+    // Fire-and-log; we don't fail the signup if email is misconfigured —
+    // the user can resend from the OTP screen.
+    try {
+      await sendSignupVerificationOTP(normalizedEmail, otp, username);
+    } catch (mailErr) {
+      console.error("Failed to send signup OTP email:", mailErr?.message ?? mailErr);
+    }
 
     const token = jwt.sign({ id: user._id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
     });
 
     res.status(201).json({
-      message: "User Created Successfully",
+      message: "User Created. Please verify your email.",
       token,
+      requiresEmailVerification: true,
       user: {
         id: user._id,
         username: user.username,
         email: user.email,
-        isVendor: user.isVendor
-      }
+        isVendor: user.isVendor,
+        emailVerifiedAt: null,
+      },
     });
   } catch (error) {
     const status = error.statusCode || 400;
@@ -290,7 +313,9 @@ export async function updateVendorProfile(req, res) {
 // Get current user profile
 export async function getProfile(req, res) {
   try {
-    const user = await User.findById(req.user.id).select("-password");
+    const user = await User.findById(req.user.id).select(
+      "-password -resetPasswordOTP -resetPasswordOTPExpires -resetPasswordToken -resetPasswordTokenExpires -signupOTP -signupOTPExpires"
+    );
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -580,6 +605,86 @@ export async function googleAuth(req, res) {
   } catch (error) {
     console.error("Google auth error:", error);
     res.status(400).json({ message: "Google authentication failed", details: error.message });
+  }
+}
+
+// ─── Signup Email Verification ───────────────────────────────────────────────
+
+/**
+ * Verify the signup OTP sent at registration. On success, sets
+ * `emailVerifiedAt` and clears the OTP fields. Caller is authenticated
+ * (we already issued them a JWT at signup).
+ */
+export async function verifySignupEmail(req, res) {
+  try {
+    const { otp } = req.body;
+    if (!otp || otp.length !== 6) {
+      return res.status(400).json({ message: "A 6-digit code is required." });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (user.emailVerifiedAt) {
+      return res.status(200).json({
+        message: "Email is already verified.",
+        emailVerifiedAt: user.emailVerifiedAt,
+      });
+    }
+    if (!user.signupOTP) {
+      return res.status(400).json({
+        message: "No verification code on file. Tap 'Resend code' to get a new one.",
+      });
+    }
+    if (new Date() > user.signupOTPExpires) {
+      user.signupOTP = undefined;
+      user.signupOTPExpires = undefined;
+      await user.save();
+      return res.status(410).json({
+        message: "This code has expired. Tap 'Resend code' to get a new one.",
+      });
+    }
+    if (user.signupOTP !== otp) {
+      return res.status(400).json({ message: "Incorrect code. Try again." });
+    }
+
+    user.emailVerifiedAt = new Date();
+    user.signupOTP = undefined;
+    user.signupOTPExpires = undefined;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Email verified.",
+      emailVerifiedAt: user.emailVerifiedAt,
+    });
+  } catch (error) {
+    console.error("verifySignupEmail error:", error);
+    res.status(500).json({ message: "Failed to verify code", details: error.message });
+  }
+}
+
+/**
+ * Regenerate the signup OTP and email it again. Rate-limited implicitly by
+ * the 10-minute expiry overwrite; mobile UI should add a cooldown.
+ */
+export async function resendSignupOTP(req, res) {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (user.emailVerifiedAt) {
+      return res.status(400).json({ message: "Email is already verified." });
+    }
+
+    const otp = generateOTP();
+    user.signupOTP = otp;
+    user.signupOTPExpires = new Date(Date.now() + 10 * 60 * 1000);
+    await user.save();
+
+    await sendSignupVerificationOTP(user.email, otp, user.username);
+    res.json({ success: true, message: "A new code has been sent to your email." });
+  } catch (error) {
+    console.error("resendSignupOTP error:", error);
+    res.status(500).json({ message: "Failed to send code", details: error.message });
   }
 }
 

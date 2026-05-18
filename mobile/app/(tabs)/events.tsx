@@ -30,6 +30,7 @@ import socketService from "@/services/socket.service";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 import { createEventShareLink } from "@/utils/shareLinks";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
+import { Avatar } from "@/components/shared/Avatar";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { trackEvent as trackAnalyticsEvent } from "@/utils/analytics";
 import { fetchCities } from "@/libs/api";
@@ -1220,16 +1221,7 @@ export default function EventsPage() {
                     style={styles.userSearchItem}
                     onPress={() => handleInviteUser(item)}
                   >
-                    {item.profilePicture ? (
-                      <Image
-                        source={{ uri: item.profilePicture }}
-                        style={styles.userSearchAvatar}
-                      />
-                    ) : (
-                      <View style={styles.userSearchAvatarPlaceholder}>
-                        <Ionicons name="person" size={24} color="#a855f7" />
-                      </View>
-                    )}
+                    <Avatar uri={item.profilePicture} name={item.username || item.businessName} size={48} />
                     <View style={styles.userSearchInfo}>
                       <Text style={styles.userSearchName}>{item.username}</Text>
                       <Text style={styles.userSearchEmail}>

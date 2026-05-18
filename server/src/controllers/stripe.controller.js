@@ -132,6 +132,28 @@ export const createTicketPaymentIntent = async (req, res) => {
       return res.status(400).json({ message: "This event does not require payment" });
     }
 
+    // Trust gate: organizers can't sell tickets until their event is approved
+    if (event.approvalStatus !== "approved") {
+      return res.status(403).json({
+        message:
+          event.approvalStatus === "pending"
+            ? "This event is awaiting organizer approval and is not yet on sale."
+            : "Ticket sales are not available for this event.",
+      });
+    }
+
+    const seller = event.createdBy;
+    if (!seller) return res.status(400).json({ message: "Event organizer not found" });
+    if (!seller.stripeAccountId || !seller.stripeOnboardingComplete) {
+      // The createEvent gate should prevent this from ever being reachable,
+      // but if an organizer disconnects Stripe after listing, we don't want
+      // to expose that to the buyer. Show a generic, on-brand message.
+      return res.status(409).json({
+        message: "Tickets aren't on sale yet — check back soon.",
+        code: "ticketing_not_ready",
+      });
+    }
+
     // Check if user already has a ticket
     const existingTicket = await Ticket.findOne({ event: eventId, user: userId, isValid: true });
     if (existingTicket) {
@@ -146,11 +168,12 @@ export const createTicketPaymentIntent = async (req, res) => {
 
     const amountCents = Math.round(event.ticketPrice * 100);
     const feeCents = Math.round(amountCents * (PLATFORM_FEE_PERCENT / 100));
+    const sellerNetCents = amountCents - feeCents;
 
-    const seller = event.createdBy;
-    if (!seller) return res.status(400).json({ message: "Event organizer not found" });
-
-    const paymentIntentParams = {
+    // Delayed-payout model: charge to the platform account (NO transfer_data /
+    // application_fee_amount). The payout job creates a Transfer to the seller's
+    // Connect account `payoutDelayHours` after the event date.
+    const paymentIntent = await stripe.paymentIntents.create({
       amount: amountCents,
       currency: "usd",
       metadata: {
@@ -158,16 +181,13 @@ export const createTicketPaymentIntent = async (req, res) => {
         eventId: eventId.toString(),
         buyerId: userId.toString(),
         sellerId: seller._id.toString(),
+        platformFeeCents: feeCents.toString(),
+        sellerNetCents: sellerNetCents.toString(),
       },
-    };
-
-    // If seller has completed Stripe Connect onboarding, route funds to them
-    if (seller?.stripeAccountId && seller?.stripeOnboardingComplete) {
-      paymentIntentParams.application_fee_amount = feeCents;
-      paymentIntentParams.transfer_data = { destination: seller.stripeAccountId };
-    }
-
-    const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
+      // transfer_group lets us look up all charges tied to this event when
+      // releasing the payout.
+      transfer_group: `event_${eventId}`,
+    });
 
     res.status(200).json({ clientSecret: paymentIntent.client_secret });
   } catch (error) {
@@ -317,11 +337,16 @@ export const confirmTicketPurchase = async (req, res) => {
     const event = await Event.findById(eventId);
     if (!event) return res.status(404).json({ message: "Event not found" });
 
+    const platformFeeCents = Number(paymentIntent.metadata?.platformFeeCents || 0);
+    const sellerNetCents = Number(paymentIntent.metadata?.sellerNetCents || 0);
+
     const ticket = await Ticket.create({
       event: eventId,
       user: userId,
       ticketPrice: event.ticketPrice,
       stripePaymentIntentId: paymentIntentId,
+      platformFeeCents,
+      sellerNetCents,
     });
 
     const populated = await Ticket.findById(ticket._id)
@@ -342,6 +367,187 @@ export const confirmTicketPurchase = async (req, res) => {
   } catch (error) {
     console.error("Confirm ticket purchase error:", error);
     res.status(500).json({ message: "Failed to confirm ticket" });
+  }
+};
+
+// ─── Refunds ─────────────────────────────────────────────────────────────────
+
+/**
+ * Issue a Stripe refund for a ticket and mark the ticket as refunded.
+ * Internal helper — used by buyer / organizer / admin refund endpoints.
+ */
+async function refundTicket(ticket, { reason } = {}) {
+  if (ticket.refunded) return { ok: true, alreadyRefunded: true };
+  if (ticket.transferred) {
+    return {
+      ok: false,
+      message:
+        "Payout for this ticket has already been released to the organizer. Contact support to coordinate a refund.",
+    };
+  }
+  if (!ticket.stripePaymentIntentId) {
+    return { ok: false, message: "No payment record found for this ticket." };
+  }
+
+  const refund = await stripe.refunds.create({
+    payment_intent: ticket.stripePaymentIntentId,
+    metadata: {
+      ticketId: ticket._id.toString(),
+      eventId: ticket.event.toString(),
+      reason: reason || "requested_by_customer",
+    },
+  });
+
+  ticket.refunded = true;
+  ticket.refundedAt = new Date();
+  ticket.stripeRefundId = refund.id;
+  ticket.isValid = false;
+  await ticket.save();
+
+  return { ok: true, refund };
+}
+
+/**
+ * Buyer-initiated self-refund.
+ * Allowed if BOTH:
+ *   - purchase < `buyerRefundWindowHours` old
+ *   - event is > `buyerRefundCutoffHours` away
+ */
+export const refundOwnTicket = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const userId = req.user.id;
+
+    const ticket = await Ticket.findById(ticketId).populate("event");
+    if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+    if (ticket.user.toString() !== userId) {
+      return res.status(403).json({ message: "Not your ticket" });
+    }
+    if (ticket.refunded || !ticket.isValid) {
+      return res.status(400).json({ message: "Ticket is already refunded or invalid" });
+    }
+
+    const now = new Date();
+    const purchasedAt = ticket.purchaseDate || ticket.createdAt;
+    const hoursSincePurchase = (now - new Date(purchasedAt)) / 36e5;
+    const hoursUntilEvent = (new Date(ticket.event.date) - now) / 36e5;
+
+    if (hoursSincePurchase > config.trust.buyerRefundWindowHours) {
+      return res.status(400).json({
+        message: `Self-refund is only available within ${config.trust.buyerRefundWindowHours} hours of purchase. Contact the organizer for help.`,
+      });
+    }
+    if (hoursUntilEvent < config.trust.buyerRefundCutoffHours) {
+      return res.status(400).json({
+        message: `Self-refund closes ${config.trust.buyerRefundCutoffHours} hours before the event. Contact the organizer for help.`,
+      });
+    }
+
+    const result = await refundTicket(ticket, { reason: "buyer_self_refund" });
+    if (!result.ok) return res.status(400).json({ message: result.message });
+
+    // Notify the organizer
+    const buyer = await User.findById(userId).select("username");
+    const creator = await User.findById(ticket.event.createdBy).select("fcmToken");
+    if (creator?.fcmToken) {
+      await sendPushNotification(
+        creator.fcmToken,
+        "Ticket refunded",
+        `${buyer.username} refunded their ticket to "${ticket.event.title}".`,
+        { type: "ticket_refunded", eventId: String(ticket.event._id) }
+      ).catch(() => {});
+    }
+
+    res.status(200).json({ message: "Ticket refunded", ticket });
+  } catch (error) {
+    console.error("refundOwnTicket error:", error);
+    res.status(500).json({ message: "Failed to refund ticket" });
+  }
+};
+
+/**
+ * Organizer cancels their own event — refunds all valid, non-transferred
+ * tickets and marks the event cancelled. Must be called before the payout
+ * job releases funds (i.e., within the 48h hold window).
+ */
+export const cancelEventByOrganizer = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { reason = "" } = req.body ?? {};
+    const userId = req.user.id;
+
+    const event = await Event.findById(eventId);
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    if (event.createdBy.toString() !== userId) {
+      return res.status(403).json({ message: "Only the organizer can cancel this event" });
+    }
+    if (event.cancelledAt) {
+      return res.status(400).json({ message: "Event is already cancelled" });
+    }
+    if (event.payoutStatus === "released") {
+      return res.status(400).json({
+        message:
+          "Payout for this event has already been released. Contact support to coordinate refunds.",
+      });
+    }
+
+    const tickets = await Ticket.find({
+      event: eventId,
+      isValid: true,
+      refunded: { $ne: true },
+      transferred: { $ne: true },
+    });
+
+    const results = { refunded: 0, failed: 0 };
+    for (const t of tickets) {
+      try {
+        const r = await refundTicket(t, { reason: "event_cancelled" });
+        if (r.ok) results.refunded += 1;
+        else results.failed += 1;
+      } catch (err) {
+        console.error(`Refund failed for ticket ${t._id}:`, err);
+        results.failed += 1;
+      }
+    }
+
+    event.cancelledAt = new Date();
+    event.cancelledBy = userId;
+    event.cancellationReason = reason;
+    event.isActive = false;
+    event.payoutStatus = "released"; // nothing left to release
+    await event.save();
+
+    res.status(200).json({
+      message: `Event cancelled. ${results.refunded} ticket(s) refunded.`,
+      ...results,
+    });
+  } catch (error) {
+    console.error("cancelEventByOrganizer error:", error);
+    res.status(500).json({ message: "Failed to cancel event" });
+  }
+};
+
+/**
+ * Admin override — refund a single ticket regardless of windows.
+ */
+export const adminRefundTicket = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const { reason = "admin_override" } = req.body ?? {};
+
+    const ticket = await Ticket.findById(ticketId);
+    if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+    if (ticket.refunded) {
+      return res.status(400).json({ message: "Ticket is already refunded" });
+    }
+
+    const result = await refundTicket(ticket, { reason });
+    if (!result.ok) return res.status(400).json({ message: result.message });
+
+    res.status(200).json({ message: "Ticket refunded", ticket });
+  } catch (error) {
+    console.error("adminRefundTicket error:", error);
+    res.status(500).json({ message: "Failed to refund ticket" });
   }
 };
 
@@ -378,6 +584,8 @@ export const stripeWebhook = async (req, res) => {
               user: buyerId,
               ticketPrice: evt.ticketPrice,
               stripePaymentIntentId: paymentIntent.id,
+              platformFeeCents: Number(paymentIntent.metadata?.platformFeeCents || 0),
+              sellerNetCents: Number(paymentIntent.metadata?.sellerNetCents || 0),
             });
           }
         }

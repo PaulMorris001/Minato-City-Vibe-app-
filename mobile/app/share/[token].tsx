@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
+import { Avatar } from "@/components/shared/Avatar";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
 interface Event {
@@ -195,13 +196,7 @@ export default function ShareEventScreen() {
 
           {/* Organiser */}
           <View style={styles.organiserCard}>
-            {event.createdBy.profilePicture ? (
-              <Image source={{ uri: event.createdBy.profilePicture }} style={styles.avatar} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Ionicons name="person" size={20} color="#a855f7" />
-              </View>
-            )}
+            <Avatar uri={event.createdBy.profilePicture} name={event.createdBy.username} size={40} />
             <View>
               <Text style={styles.organiserLabel}>Organised by</Text>
               <Text style={styles.organiserName}>{event.createdBy.username}</Text>

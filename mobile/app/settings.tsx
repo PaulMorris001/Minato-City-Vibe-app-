@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
@@ -30,6 +30,7 @@ export default function SettingsScreen() {
     username: "",
     email: "",
     isVendor: false,
+    emailVerifiedAt: null as string | null,
   });
   const [verificationStatus, setVerificationStatus] = useState<"none" | "pending" | "approved" | "rejected">("none");
   const [verificationNotes, setVerificationNotes] = useState("");
@@ -39,6 +40,14 @@ export default function SettingsScreen() {
   useEffect(() => {
     fetchProfile();
   }, []);
+
+  // Re-fetch when the screen regains focus so returning from /verify-email
+  // (or any other settings sub-flow) reflects the new state immediately.
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile();
+    }, [])
+  );
 
   const fetchProfile = async () => {
     setLoading(true);
@@ -58,6 +67,7 @@ export default function SettingsScreen() {
         username: userData.username || "",
         email: userData.email || "",
         isVendor: userData.isVendor || false,
+        emailVerifiedAt: userData.emailVerifiedAt || null,
       });
       setProfilePicture(userData.profilePicture || "");
 
@@ -197,6 +207,7 @@ export default function SettingsScreen() {
           label="Profile Photo"
           size={140}
           shape="circle"
+          fallbackName={user.username}
         />
 
         <TouchableOpacity
@@ -310,13 +321,46 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Business Verification — vendors only */}
-      {user.isVendor && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Business Verification</Text>
-          <Text style={styles.sectionDescription}>
-            Get a verification badge on your profile by submitting your driver's license.
-          </Text>
+      {/* Email Verification status */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Email Verification</Text>
+        <Text style={styles.sectionDescription}>
+          Verifying your email is required to sell tickets on NightVibe.
+        </Text>
+        {user.emailVerifiedAt ? (
+          <View style={styles.verifStatusRow}>
+            <Ionicons name="checkmark-circle" size={22} color="#22c55e" />
+            <Text style={[styles.verifStatusText, { color: "#22c55e" }]}>
+              Verified ({user.email})
+            </Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.verifStatusRow}>
+              <Ionicons name="alert-circle" size={22} color="#f59e0b" />
+              <Text style={[styles.verifStatusText, { color: "#f59e0b" }]}>
+                Not verified
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.saveButton}
+              onPress={() => router.push("/verify-email" as any)}
+            >
+              <Ionicons name="mail-outline" size={20} color="#fff" />
+              <Text style={styles.saveButtonText}>Verify Email Now</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+
+      {/* Identity Verification — open to all users */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Identity Verification</Text>
+        <Text style={styles.sectionDescription}>
+          {user.isVendor
+            ? "Submit a government-issued ID to get a verification badge on your profile. Verified vendors and hosts get priority approval for paid events."
+            : "Submit a government-issued ID to get a verification badge and become a trusted host. Verified hosts get faster approval for paid events."}
+        </Text>
 
           {verificationStatus === "approved" && (
             <View style={styles.verifStatusRow}>
@@ -349,7 +393,7 @@ export default function SettingsScreen() {
               <ImagePickerButton
                 imageUri={licenseImage}
                 onImageSelected={setLicenseImage}
-                label="Driver's License"
+                label="Government-issued ID"
                 size={120}
                 shape="square"
               />
@@ -370,7 +414,6 @@ export default function SettingsScreen() {
             </>
           )}
         </View>
-      )}
 
       {/* Additional Settings */}
       <View style={styles.section}>

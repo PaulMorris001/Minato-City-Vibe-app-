@@ -26,7 +26,21 @@ const ticketSchema = mongoose.Schema({
   ticketCode: { type: String, unique: true, sparse: true },
 
   // Stripe payment tracking
-  stripePaymentIntentId: { type: String }
+  stripePaymentIntentId: { type: String },
+
+  // Platform-charge / delayed-payout accounting (cents).
+  // Set when the ticket is created so the payout job knows what to transfer.
+  platformFeeCents: { type: Number, default: 0 },
+  sellerNetCents: { type: Number, default: 0 },
+
+  // Set true once the payout job successfully transfers the seller's share.
+  transferred: { type: Boolean, default: false },
+  transferId: { type: String },
+
+  // Refund tracking
+  refunded: { type: Boolean, default: false },
+  refundedAt: { type: Date },
+  stripeRefundId: { type: String },
 }, {
   timestamps: true
 });

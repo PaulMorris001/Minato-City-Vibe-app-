@@ -15,6 +15,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { Fonts } from "@/constants/fonts";
+import { Avatar } from "@/components/shared/Avatar";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import {
   getBlockedUsers,
@@ -97,13 +98,7 @@ export default function BlockedUsersScreen() {
           contentContainerStyle={styles.list}
           renderItem={({ item }) => (
             <View style={styles.row}>
-              {item.profilePicture ? (
-                <Image source={{ uri: item.profilePicture }} style={styles.avatar} />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Ionicons name="person" size={20} color="#fff" />
-                </View>
-              )}
+              <Avatar uri={item.profilePicture} name={item.username} size={40} />
               <Text style={styles.username}>@{item.username}</Text>
               <TouchableOpacity
                 style={styles.unblockButton}

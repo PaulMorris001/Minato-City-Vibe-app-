@@ -12,7 +12,9 @@ import {
   googleAuth,
   forgotPassword,
   verifyOTP,
-  resetPassword
+  resetPassword,
+  verifySignupEmail,
+  resendSignupOTP,
 } from '../controllers/auth.controller.js'
 import { authenticate } from '../middleware/auth.middleware.js';
 
@@ -27,6 +29,10 @@ router.post("/google-auth", googleAuth);
 router.post("/auth/forgot-password", forgotPassword);
 router.post("/auth/verify-otp", verifyOTP);
 router.post("/auth/reset-password", resetPassword);
+
+// Signup email verification (user is already authenticated; we issued a token on register)
+router.post("/auth/verify-signup-email", authenticate, verifySignupEmail);
+router.post("/auth/resend-signup-otp", authenticate, resendSignupOTP);
 
 // Protected routes (require authentication)
 router.get("/profile", authenticate, getProfile);

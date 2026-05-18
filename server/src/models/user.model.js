@@ -40,6 +40,18 @@ const userSchema = mongoose.Schema({
   stripeAccountId: { type: String },
   stripeOnboardingComplete: { type: Boolean, default: false },
 
+  // Paid-event organizer trust: false until an admin approves their first paid event.
+  // After approval, subsequent paid events skip the approval queue.
+  paidEventsApproved: { type: Boolean, default: false },
+  // Lifetime count of approved paid events. Drives the "new organizer" caps —
+  // until this passes a threshold, ticket price and quantity are capped.
+  paidEventsCount: { type: Number, default: 0 },
+
+  // Email verification (OTP at signup). Required to create paid events.
+  emailVerifiedAt: { type: Date },
+  signupOTP: { type: String },
+  signupOTPExpires: { type: Date },
+
   // Favorited events
   favorites: [{ type: mongoose.Schema.Types.ObjectId, ref: "event" }],
 

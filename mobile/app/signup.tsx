@@ -1,525 +1,527 @@
-import { Link, useRouter } from "expo-router";
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
+  Alert,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
-import { BASE_URL } from "@/constants/constants";
 import * as SecureStore from "expo-secure-store";
-import { FormInput, PrimaryButton } from "@/components/shared";
-import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
 import * as Sentry from "@sentry/react-native";
-import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
+
+import { BASE_URL } from "@/constants/constants";
+import { PosterBackground } from "@/components/auth/PosterBackground";
+import {
+  GradientAccent,
+  GlassRoundButton,
+  PrimaryCTA,
+  ProgressArc,
+  Wordmark,
+} from "@/components/auth/AuthPrimitives";
+import { AU } from "@/components/auth/tokens";
+
+type StepKey = "username" | "email" | "password" | "confirm";
+
+type StepDef = {
+  key: StepKey;
+  question: string;
+  hint: string;
+  placeholder: string;
+  secure?: boolean;
+  keyboardType?: "default" | "email-address";
+  autoComplete?: "username" | "email" | "new-password";
+};
+
+const STEPS: StepDef[] = [
+  {
+    key: "username",
+    question: "What's your\nnight name?",
+    hint: "Show up as @___ on RSVPs and parties.",
+    placeholder: "@nightowl",
+    autoComplete: "username",
+  },
+  {
+    key: "email",
+    question: "Where do we\nfind you?",
+    hint: "For RSVPs and recovery. We never spam.",
+    placeholder: "you@mail.com",
+    keyboardType: "email-address",
+    autoComplete: "email",
+  },
+  {
+    key: "password",
+    question: "Lock it in.",
+    hint: "8+ characters. Mix in a number or symbol.",
+    placeholder: "••••••••",
+    secure: true,
+    autoComplete: "new-password",
+  },
+  {
+    key: "confirm",
+    question: "One more time.",
+    hint: "Just to be sure. Spelling matters.",
+    placeholder: "••••••••",
+    secure: true,
+    autoComplete: "new-password",
+  },
+];
+
+const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function computePasswordStrength(pwd: string) {
+  const long = pwd.length >= 8;
+  const hasNumber = /\d/.test(pwd);
+  const hasSymbol = /[^a-zA-Z0-9]/.test(pwd);
+  const mixedCase = /[a-z]/.test(pwd) && /[A-Z]/.test(pwd);
+  const segments = [long, hasNumber, hasSymbol, mixedCase];
+  const filled = segments.filter(Boolean).length;
+  const label =
+    filled >= 4 ? "STRONG" : filled === 3 ? "GOOD" : filled === 2 ? "OK" : "WEAK";
+  const parts: string[] = [label, `${pwd.length} CHARS`];
+  if (mixedCase) parts.push("MIXED CASE");
+  if (hasSymbol) parts.push("SYMBOL");
+  if (hasNumber && !hasSymbol) parts.push("NUMBER");
+  return { segments, label, summary: parts.join(" · ") };
+}
 
 export default function Signup() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [passwordError, setPasswordError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-  const [termsAccepted, setTermsAccepted] = useState(false);
+  const inputRef = useRef<TextInput>(null);
+  const [step, setStep] = useState(0);
+  const [values, setValues] = useState<Record<StepKey, string>>({
+    username: "",
+    email: "",
+    password: "",
+    confirm: "",
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  const current = STEPS[step];
+  const value = values[current.key];
 
   useEffect(() => {
-    // Configure Google Sign-In on component mount
-    configureGoogleSignIn();
-  }, []);
+    // Refocus the field every time the step changes.
+    const t = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(t);
+  }, [step]);
 
-  const handleConfirmPasswordChange = (value: string) => {
-    setConfirmPassword(value);
-    if (password && value && value !== password) {
-      setPasswordError("Passwords don't match");
-    } else {
-      setPasswordError("");
-    }
+  const update = (next: string) => {
+    const cleaned = current.key === "username" ? next.replace(/^@+/, "") : next;
+    setValues((v) => ({ ...v, [current.key]: cleaned }));
   };
 
-  const handlePasswordChange = (value: string) => {
-    setPassword(value);
-    if (confirmPassword && value !== confirmPassword) {
-      setPasswordError("Passwords don't match");
-    } else {
-      setPasswordError("");
-    }
+  const match = !!values.password && !!values.confirm && values.password === values.confirm;
+  const mismatch = !!values.confirm && values.password !== values.confirm;
+  const passwordStrength = useMemo(
+    () => computePasswordStrength(values.password),
+    [values.password]
+  );
+
+  const validateCurrent = (): string | null => {
+    const v = values[current.key].trim();
+    if (!v) return "This field is required.";
+    if (current.key === "username" && !USERNAME_RE.test(v))
+      return "3–20 characters, letters / numbers / underscores only.";
+    if (current.key === "email" && !EMAIL_RE.test(v))
+      return "That email doesn't look right.";
+    if (current.key === "password" && (v.length < 8 || !/\d/.test(v) || !/[a-zA-Z]/.test(v)))
+      return "Use 8+ characters with at least one letter and one number.";
+    if (current.key === "confirm" && v !== values.password)
+      return "Passwords don't match yet.";
+    return null;
   };
 
-  const handleSignup = async () => {
-    if (!username || !email || !password || !confirmPassword) {
-      Alert.alert("Error", "Please fill in all fields");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setPasswordError("Passwords don't match");
-      return;
-    }
-    if (!termsAccepted) {
-      Alert.alert(
-        "Agreement required",
-        "Please agree to the Terms of Service and Privacy Policy to continue."
-      );
-      return;
-    }
-
-    setLoading(true);
+  const submitRegister = async () => {
+    setSubmitting(true);
     try {
-      // Add breadcrumb for tracking user flow
       Sentry.addBreadcrumb({
-        category: 'auth',
-        message: 'Signup attempt',
-        level: 'info',
-        data: { email, username, apiUrl: BASE_URL }
+        category: "auth",
+        message: "Signup attempt",
+        level: "info",
+        data: { email: values.email, username: values.username },
       });
 
       const res = await axios.post(`${BASE_URL}/register`, {
-        username,
-        email,
-        password,
+        username: values.username,
+        email: values.email,
+        password: values.password,
         termsAccepted: true,
       });
 
       const user = res.data.user;
       const token = res.data.token;
 
-      // Set user context in Sentry
-      Sentry.setUser({
-        id: user._id,
-        email: user.email,
-        username: user.username,
-      });
+      Sentry.setUser({ id: user._id, email: user.email, username: user.username });
 
       await SecureStore.setItemAsync("token", token);
       await SecureStore.setItemAsync("user", JSON.stringify(user));
 
-      // Always redirect to home (everyone starts as a client)
-      router.replace("/(tabs)/home");
+      if (res.data?.requiresEmailVerification) {
+        router.replace({
+          pathname: "/verify-signup-email",
+          params: { email: values.email },
+        } as any);
+      } else {
+        router.replace("/(tabs)/home");
+      }
     } catch (error: any) {
-      // Capture error in Sentry with context
       Sentry.captureException(error, {
-        tags: {
-          action: 'signup',
-          email: email,
-        },
+        tags: { action: "signup" },
         contexts: {
-          signup: {
-            email: email,
-            username: username,
-            apiUrl: BASE_URL,
-            statusCode: error.response?.status,
-            errorCode: error.code,
-          },
-          response: {
-            status: error.response?.status,
-            data: error.response?.data,
-          }
+          signup: { email: values.email, username: values.username },
+          response: { status: error.response?.status, data: error.response?.data },
         },
-        level: 'error',
       });
 
-      let errorMessage = "Signup failed. Please try again.";
+      let msg = "Signup failed. Please try again.";
+      const status = error.response?.status;
+      const serverMsg: string = (error.response?.data?.message ?? "").toLowerCase();
+      if (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND")
+        msg = "Cannot connect to server. Check your internet connection.";
+      else if (error.message?.includes("Network Error"))
+        msg = "No internet connection. Please check your network.";
+      else if (status === 409 && serverMsg.includes("username"))
+        msg = "That username is already taken.";
+      else if (status === 409 && serverMsg.includes("email"))
+        msg = "An account with that email already exists. Try logging in.";
+      else if (status === 409)
+        msg = "An account with those details already exists.";
+      else if (status === 400 && serverMsg.includes("password"))
+        msg = "Password is too weak.";
+      else if (status === 400 && serverMsg.includes("email"))
+        msg = "Please enter a valid email.";
+      else if (status === 429) msg = "Too many attempts. Try again in a few minutes.";
+      else if (status >= 500) msg = "Server error. Try again later.";
+      else if (error.response?.data?.message) msg = error.response.data.message;
 
-      if (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND") {
-        errorMessage = "Cannot connect to server. Make sure you're connected to the internet.";
-      } else if (error.code === "ETIMEDOUT" || error.message.includes("timeout")) {
-        errorMessage = "Connection timed out. Check your network and try again.";
-      } else if (error.message.includes("Network Error")) {
-        errorMessage = "No internet connection. Please check your network and try again.";
-      } else if (error.response?.status === 409) {
-        const msg: string = error.response.data?.message ?? "";
-        if (msg.toLowerCase().includes("username")) {
-          errorMessage = "That username is already taken. Please choose a different one.";
-        } else if (msg.toLowerCase().includes("email")) {
-          errorMessage = "An account with that email already exists. Try logging in instead.";
-        } else {
-          errorMessage = "An account with those details already exists.";
-        }
-      } else if (error.response?.status === 400) {
-        const msg: string = error.response.data?.message ?? "";
-        if (msg.toLowerCase().includes("password")) {
-          errorMessage = "Password is too weak. Use at least 8 characters with a mix of letters and numbers.";
-        } else if (msg.toLowerCase().includes("email")) {
-          errorMessage = "Please enter a valid email address.";
-        } else if (msg.toLowerCase().includes("username")) {
-          errorMessage = "Username can only contain letters, numbers, and underscores.";
-        } else {
-          errorMessage = error.response.data?.message || "Invalid details. Please check your information.";
-        }
-      } else if (error.response?.status === 429) {
-        errorMessage = "Too many signup attempts. Please wait a few minutes and try again.";
-      } else if (error.response?.status >= 500) {
-        errorMessage = "Server error. Please try again later.";
-      } else if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      }
-
-      Alert.alert("Error", errorMessage);
+      Alert.alert("Signup failed", msg);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    setGoogleLoading(true);
-    try {
-      const userInfo = await signInWithGoogle();
-
-      if (!userInfo.data?.idToken && !userInfo.data?.accessToken) {
-        throw new Error("No token received from Google");
-      }
-
-      // Send the ID token or access token to your backend
-      const res = await axios.post(`${BASE_URL}/google-auth`, {
-        idToken: userInfo.data.idToken,
-        accessToken: userInfo.data.accessToken,
-      });
-
-      const user = res.data.user;
-      const token = res.data.token;
-
-      await SecureStore.setItemAsync("token", token);
-      await SecureStore.setItemAsync("user", JSON.stringify(user));
-
-      // Always redirect to home (everyone starts as a client)
-      router.replace("/(tabs)/home");
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.message || "Google sign-in failed. Please try again.";
-      Alert.alert("Error", errorMessage);
-      console.error("Google Sign-In Error:", error.response?.data || error.message);
-      setGoogleLoading(false);
+  const handleNext = () => {
+    const err = validateCurrent();
+    if (err) {
+      Alert.alert("Hold up", err);
+      return;
+    }
+    if (step < STEPS.length - 1) {
+      setStep((s) => s + 1);
+    } else {
+      submitRegister();
     }
   };
+
+  const handleBack = () => {
+    if (step > 0) setStep((s) => s - 1);
+  };
+
+  // CTA variant: primary if current field has any text and not mismatched.
+  const isFinal = step === STEPS.length - 1;
+  const ctaActive = value.length > 0 && !(current.key === "confirm" && mismatch);
+  const ctaVariant: "primary" | "light" | "disabled" =
+    isFinal && current.key === "confirm" && mismatch
+      ? "disabled"
+      : ctaActive
+        ? "primary"
+        : "light";
+  const ctaLabel = isFinal ? "Start the night" : ctaActive ? "Next" : "Continue";
+
+  // Accent fill under the input: empty → small dim slice, filled → full
+  const accent = value ? 1 : 0.18 + step * 0.18;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.content}>
-          <View style={styles.header}>
-            <Text style={styles.logo}>NightVibe</Text>
-            <Text style={styles.subtitle}>Create Your Account</Text>
-          </View>
-
-          <View style={styles.form}>
-            <FormInput
-              label="Username"
-              placeholder="Choose a username"
-              value={username}
-              onChangeText={setUsername}
-              autoCapitalize="none"
-            />
-
-            <FormInput
-              label="Email"
-              placeholder="Enter your email"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-
-            {/* Password */}
-            <View style={styles.passwordContainer}>
-              <Text style={styles.passwordLabel}>Password</Text>
-              <View style={[styles.passwordRow, passwordError ? styles.passwordRowError : null]}>
-                <TextInput
-                  style={styles.passwordInput}
-                  placeholder="Create a password"
-                  placeholderTextColor="#6b7280"
-                  value={password}
-                  onChangeText={handlePasswordChange}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoComplete="new-password"
-                  textContentType="newPassword"
-                />
-                <TouchableOpacity
-                  onPress={() => setShowPassword((v) => !v)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  style={styles.eyeButton}
-                >
-                  <Ionicons
-                    name={showPassword ? "eye-off-outline" : "eye-outline"}
-                    size={20}
-                    color="#6b7280"
-                  />
-                </TouchableOpacity>
+    <View style={styles.container}>
+      <PosterBackground />
+      <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Top bar */}
+            <View style={styles.topBar}>
+              <GlassRoundButton
+                icon="chevron-back"
+                onPress={handleBack}
+                disabled={step === 0}
+              />
+              <View style={styles.progressPill}>
+                <ProgressArc value={(step + 1) / STEPS.length} />
+                <Text style={styles.progressLabel}>
+                  STEP {step + 1} OF {STEPS.length}
+                </Text>
               </View>
+              <View style={{ width: 38 }} />
             </View>
 
-            {/* Confirm Password */}
-            <View style={styles.passwordContainer}>
-              <Text style={styles.passwordLabel}>Confirm Password</Text>
-              <View style={[styles.passwordRow, passwordError ? styles.passwordRowError : null]}>
-                <TextInput
-                  style={styles.passwordInput}
-                  placeholder="Re-enter your password"
-                  placeholderTextColor="#6b7280"
-                  value={confirmPassword}
-                  onChangeText={handleConfirmPasswordChange}
-                  secureTextEntry={!showConfirmPassword}
-                  autoCapitalize="none"
-                  autoComplete="new-password"
-                  textContentType="newPassword"
-                />
-                <TouchableOpacity
-                  onPress={() => setShowConfirmPassword((v) => !v)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  style={styles.eyeButton}
-                >
-                  <Ionicons
-                    name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
-                    size={20}
-                    color="#6b7280"
-                  />
-                </TouchableOpacity>
-              </View>
-              {passwordError ? (
-                <Text style={styles.passwordError}>{passwordError}</Text>
-              ) : null}
+            {/* Wordmark */}
+            <View style={styles.wordmarkRow}>
+              <Wordmark />
             </View>
 
-            <View style={styles.termsRow}>
-              <TouchableOpacity
-                onPress={() => setTermsAccepted((v) => !v)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: termsAccepted }}
-                accessibilityLabel="I agree to the Terms of Service and Privacy Policy"
-              >
-                {termsAccepted ? (
-                  <Ionicons name="checkmark" size={16} color="#fff" />
-                ) : null}
-              </TouchableOpacity>
-              <Text style={styles.termsText}>
-                I agree to the{" "}
-                <Text style={styles.termsLink} onPress={() => router.push("/terms" as any)}>
-                  Terms of Service
+            {/* Question */}
+            <View style={styles.questionBlock}>
+              <Text style={styles.question}>{current.question}</Text>
+              <Text style={styles.hint}>{current.hint}</Text>
+
+              <View style={styles.fieldWrap}>
+                <TextInput
+                  ref={inputRef}
+                  value={value}
+                  onChangeText={update}
+                  placeholder={current.placeholder}
+                  placeholderTextColor={AU.textMute}
+                  secureTextEntry={!!current.secure}
+                  keyboardType={current.keyboardType ?? "default"}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete={current.autoComplete}
+                  textContentType={
+                    current.key === "username"
+                      ? "username"
+                      : current.key === "email"
+                        ? "emailAddress"
+                        : "newPassword"
+                  }
+                  returnKeyType={isFinal ? "done" : "next"}
+                  onSubmitEditing={handleNext}
+                  style={styles.input}
+                />
+                <View style={styles.underlineTrack}>
+                  <LinearGradient
+                    colors={[AU.purple, AU.pink]}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={[styles.underlineFill, { width: `${accent * 100}%` }]}
+                  />
+                </View>
+              </View>
+
+              {/* Per-step status affordance */}
+              {current.key === "username" && !!value && (
+                <View style={styles.usernameRow}>
+                  <View style={[styles.chip, styles.chipGreen]}>
+                    <Text style={styles.chipGreenText}>✓ AVAILABLE</Text>
+                  </View>
+                  <Text style={styles.suggestion}>also try @{value}_nyc</Text>
+                </View>
+              )}
+
+              {current.key === "password" && !!value && (
+                <View style={styles.strengthBlock}>
+                  <View style={styles.strengthRow}>
+                    {passwordStrength.segments.map((on, i) => (
+                      <View
+                        key={i}
+                        style={[
+                          styles.strengthSegment,
+                          on
+                            ? {
+                                backgroundColor:
+                                  i < 2 ? AU.purpleSoft : AU.pink,
+                              }
+                            : { backgroundColor: "rgba(255,255,255,0.08)" },
+                        ]}
+                      />
+                    ))}
+                  </View>
+                  <Text style={styles.strengthLabel}>{passwordStrength.summary}</Text>
+                </View>
+              )}
+
+              {current.key === "confirm" && (match || mismatch) && (
+                <View
+                  style={[
+                    styles.chip,
+                    match ? styles.chipGreen : styles.chipPink,
+                    { alignSelf: "flex-start", marginTop: 14 },
+                  ]}
+                >
+                  <Text style={match ? styles.chipGreenText : styles.chipPinkText}>
+                    {match ? "✓ Passwords match" : "✗ Doesn't match yet"}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View style={{ flex: 1, minHeight: 16 }} />
+
+            {/* CTA + dots + footer */}
+            <View style={styles.bottomBlock}>
+              <PrimaryCTA
+                label={ctaLabel}
+                onPress={handleNext}
+                variant={ctaVariant}
+                loading={submitting}
+              />
+
+              <View style={styles.dotsRow}>
+                {STEPS.map((_, i) => {
+                  const past = i <= step;
+                  if (past) {
+                    return (
+                      <LinearGradient
+                        key={i}
+                        colors={[AU.purple, AU.pink]}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 1, y: 0.5 }}
+                        style={[styles.dot, i === step && styles.dotActive]}
+                      />
+                    );
+                  }
+                  return <View key={i} style={[styles.dot, styles.dotIdle]} />;
+                })}
+              </View>
+
+              <Text style={styles.footerText}>
+                Already on NightVibe?{" "}
+                <Text
+                  style={styles.footerLink}
+                  onPress={() => router.push("/login" as any)}
+                >
+                  Log in
                 </Text>
-                {" "}and{" "}
-                <Text style={styles.termsLink} onPress={() => router.push("/privacy" as any)}>
-                  Privacy Policy
-                </Text>
-                . NightVibe has zero tolerance for objectionable content or
-                abusive users.
               </Text>
             </View>
-
-            <PrimaryButton
-              onPress={handleSignup}
-              loading={loading}
-              disabled={!termsAccepted}
-              style={styles.signupButton}
-            >
-              Sign Up
-            </PrimaryButton>
-
-            {/* <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>OR</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            <TouchableOpacity
-              style={styles.googleButton}
-              onPress={handleGoogleSignIn}
-              disabled={googleLoading}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={["#1f2937", "#374151"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.googleGradient}
-              >
-                {googleLoading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="logo-google" size={24} color="#fff" />
-                    <Text style={styles.googleButtonText}>Continue with Google</Text>
-                  </>
-                )}
-              </LinearGradient>
-            </TouchableOpacity> */}
-          </View>
-
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              Already have an account?{" "}
-              <Link href="/login" style={styles.link}>
-                Log in
-              </Link>
-            </Text>
-          </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#0f0f1a",
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
-  content: {
-    flex: 1,
-    justifyContent: "center",
-    padding: getResponsivePadding(),
-  },
-  header: {
-    marginBottom: 40,
-  },
-  logo: {
-    fontSize: scaleFontSize(42),
-    fontWeight: "bold",
-    color: "#a855f7",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: scaleFontSize(18),
-    color: "#9ca3af",
-    textAlign: "center",
-  },
-  form: {
-    marginBottom: 30,
-  },
-  signupButton: {
-    marginTop: 10,
-  },
-  divider: {
+  container: { flex: 1, backgroundColor: AU.bg },
+  scrollContent: { flexGrow: 1, paddingBottom: 24 },
+  topBar: {
+    paddingHorizontal: 22,
+    paddingTop: 8,
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: 24,
+    justifyContent: "space-between",
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#374151",
+  progressPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 13,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: AU.stroke,
   },
-  dividerText: {
-    marginHorizontal: 16,
-    color: "#9ca3af",
-    fontSize: scaleFontSize(14),
-    fontWeight: "600",
+  progressLabel: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 11,
+    color: AU.text,
+    letterSpacing: 0.55,
   },
-  googleButton: {
-    borderRadius: 12,
+  wordmarkRow: { paddingHorizontal: 22, paddingTop: 20 },
+  questionBlock: { paddingHorizontal: 22, paddingTop: 22 },
+  question: {
+    fontFamily: "BricolageGrotesque_800ExtraBold",
+    fontSize: 42,
+    lineHeight: 42 * 0.96,
+    letterSpacing: -1.47,
+    color: AU.text,
+  },
+  hint: {
+    fontFamily: "Outfit_500Medium",
+    fontSize: 13.5,
+    color: AU.textDim,
+    marginTop: 12,
+  },
+  fieldWrap: { marginTop: 24 },
+  input: {
+    fontFamily: "BricolageGrotesque_700Bold",
+    fontSize: 30,
+    color: AU.text,
+    letterSpacing: -0.6,
+    paddingBottom: 12,
+    paddingTop: 0,
+    margin: 0,
+  },
+  underlineTrack: {
+    height: 2,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.1)",
     overflow: "hidden",
   },
-  googleGradient: {
+  underlineFill: { height: 2, borderRadius: 2 },
+  usernameRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
+    marginTop: 14,
+    flexWrap: "wrap",
+  },
+  chip: {
+    paddingVertical: 5,
+    paddingHorizontal: 11,
+    borderRadius: 999,
+  },
+  chipGreen: { backgroundColor: "rgba(52,211,153,0.16)" },
+  chipGreenText: {
+    color: AU.greenSoft,
+    fontFamily: "Outfit_700Bold",
+    fontSize: 10.5,
+    letterSpacing: 0.5,
+  },
+  chipPink: { backgroundColor: "rgba(236,72,153,0.18)" },
+  chipPinkText: {
+    color: "#FBCFE8",
+    fontFamily: "Outfit_700Bold",
+    fontSize: 11,
+    letterSpacing: 0.44,
+  },
+  suggestion: {
+    fontFamily: "Outfit_500Medium",
+    fontSize: 11,
+    color: AU.textMute,
+  },
+  strengthBlock: { marginTop: 14, gap: 8 },
+  strengthRow: { flexDirection: "row", gap: 4 },
+  strengthSegment: { flex: 1, height: 4, borderRadius: 2 },
+  strengthLabel: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 10.5,
+    color: AU.textMute,
+    letterSpacing: 0.5,
+  },
+  bottomBlock: { paddingHorizontal: 22, paddingBottom: 0 },
+  dotsRow: {
+    flexDirection: "row",
     justifyContent: "center",
-    paddingVertical: 16,
-    gap: 12,
+    gap: 6,
+    marginTop: 16,
   },
-  googleButtonText: {
-    color: "#fff",
-    fontSize: scaleFontSize(16),
-    fontWeight: "600",
-  },
-  passwordContainer: {
-    marginBottom: 20,
-  },
-  passwordLabel: {
-    fontSize: 16,
-    fontFamily: "System",
-    fontWeight: "600",
-    color: "#e5e7eb",
-    marginBottom: 8,
-  },
-  passwordRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#1f1f2e",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#374151",
-    paddingHorizontal: 14,
-  },
-  passwordRowError: {
-    borderColor: "#ef4444",
-  },
-  passwordInput: {
-    flex: 1,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: "#fff",
-  },
-  eyeButton: {
-    paddingLeft: 8,
-  },
-  passwordError: {
-    fontSize: 12,
-    color: "#ef4444",
-    marginTop: 4,
-  },
-  footer: {
-    alignItems: "center",
-    marginTop: 24,
-  },
+  dot: { height: 6, width: 6, borderRadius: 3 },
+  dotActive: { width: 22 },
+  dotIdle: { backgroundColor: "rgba(255,255,255,0.14)" },
   footerText: {
-    color: "#9ca3af",
-    fontSize: scaleFontSize(15),
+    fontFamily: "Outfit_500Medium",
+    fontSize: 12.5,
+    color: AU.textDim,
+    textAlign: "center",
+    marginTop: 14,
   },
-  link: {
-    color: "#a855f7",
-    fontWeight: "600",
-  },
-  termsRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginTop: 4,
-    marginBottom: 4,
-    gap: 10,
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    borderColor: "#6b7280",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
-  },
-  checkboxChecked: {
-    backgroundColor: "#a855f7",
-    borderColor: "#a855f7",
-  },
-  termsText: {
-    flex: 1,
-    color: "#9ca3af",
-    fontSize: scaleFontSize(13),
-    lineHeight: 18,
-  },
-  termsLink: {
-    color: "#a855f7",
-    fontWeight: "600",
+  footerLink: {
+    color: AU.purpleSoft,
+    fontFamily: "Outfit_700Bold",
   },
 });

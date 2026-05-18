@@ -24,6 +24,7 @@ import { BASE_URL } from "@/constants/constants";
 import { useAccount } from "@/contexts/AccountContext";
 import { useUnread } from "@/contexts/UnreadContext";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Avatar } from "@/components/shared/Avatar";
 
 export default function TabsLayout() {
   const { activeAccount } = useAccount();
@@ -144,19 +145,7 @@ export default function TabsLayout() {
       </TouchableOpacity>
 
       <View style={styles.profileHeader}>
-        {user.profilePicture ? (
-          <Image
-            source={{ uri: user.profilePicture }}
-            style={styles.avatarImage}
-          />
-        ) : (
-          <LinearGradient
-            colors={["#a855f7", "#7c3aed"]}
-            style={styles.avatarGradient}
-          >
-            <Ionicons name="person" size={40} color="#fff" />
-          </LinearGradient>
-        )}
+        <Avatar uri={user.profilePicture} name={user.username} size={80} />
         <Text style={[styles.usernameText, isGlassAvailable && styles.glassText]}>
           {capitalize(user.username)}
         </Text>
@@ -353,19 +342,7 @@ export default function TabsLayout() {
               style={styles.profileButton}
               activeOpacity={0.7}
             >
-              {user.profilePicture ? (
-                <Image
-                  source={{ uri: user.profilePicture }}
-                  style={styles.profileImage}
-                />
-              ) : (
-                <LinearGradient
-                  colors={["#a855f7", "#7c3aed"]}
-                  style={styles.profileGradient}
-                >
-                  <Ionicons name="person" size={20} color="#fff" />
-                </LinearGradient>
-              )}
+              <Avatar uri={user.profilePicture} name={user.username} size={36} />
             </TouchableOpacity>
           </View>
         </View>

@@ -5,7 +5,15 @@ import Guide from "../models/guide.model.js";
 import User from "../models/user.model.js";
 
 const VALID_TYPES = ["user", "event", "guide"];
-const VALID_REASONS = ["spam", "harassment", "hate", "sexual", "violence", "other"];
+const VALID_REASONS = [
+  "spam",
+  "harassment",
+  "hate",
+  "sexual",
+  "violence",
+  "fraud",
+  "other",
+];
 
 export const createReport = async (req, res) => {
   try {

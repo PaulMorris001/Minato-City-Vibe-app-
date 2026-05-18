@@ -38,6 +38,7 @@ const REASONS: { value: ReportReason; label: string; description: string }[] = [
   { value: "hate", label: "Hate speech", description: "Attacks based on identity" },
   { value: "sexual", label: "Sexual content", description: "Explicit or sexually suggestive material" },
   { value: "violence", label: "Violence or dangerous content", description: "Graphic violence or illegal activity" },
+  { value: "fraud", label: "Fraud or scam", description: "Event isn't real, organizer didn't show up, or money was taken without delivery" },
   { value: "other", label: "Something else", description: "Tell us what's wrong" },
 ];
 

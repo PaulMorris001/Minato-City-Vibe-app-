@@ -10,7 +10,11 @@ import {
   confirmGuidePurchase,
   confirmTicketPurchase,
   stripeWebhook,
+  refundOwnTicket,
+  cancelEventByOrganizer,
+  adminRefundTicket,
 } from "../controllers/stripe.controller.js";
+import { authenticateAdmin } from "../middleware/admin.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
@@ -34,5 +38,10 @@ router.post("/stripe/payment-intent/guide/:guideId", authenticate, createGuidePa
 // Purchase confirmation — called immediately after payment sheet succeeds
 router.post("/stripe/confirm/ticket/:eventId", authenticate, confirmTicketPurchase);
 router.post("/stripe/confirm/guide/:guideId", authenticate, confirmGuidePurchase);
+
+// Refunds + cancellation
+router.post("/tickets/:ticketId/refund", authenticate, refundOwnTicket);
+router.post("/events/:eventId/cancel", authenticate, cancelEventByOrganizer);
+router.post("/admin/tickets/:ticketId/refund", authenticateAdmin, adminRefundTicket);
 
 export default router;

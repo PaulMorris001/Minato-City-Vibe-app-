@@ -23,6 +23,7 @@ import { Fonts } from "@/constants/fonts";
 import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "@/components/chat/MessageBubble";
 import ChatInput from "@/components/chat/ChatInput";
+import { Avatar } from "@/components/shared/Avatar";
 import chatService, { Message, Chat } from "@/services/chat.service";
 import socketService from "@/services/socket.service";
 import * as SecureStore from "expo-secure-store";
@@ -446,23 +447,7 @@ export default function ChatScreen() {
             </TouchableOpacity>
 
             <View style={styles.headerCenter}>
-              {getChatAvatar() ? (
-                <Image
-                  source={{ uri: getChatAvatar()! }}
-                  style={styles.headerAvatar}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  transition={200}
-                />
-              ) : (
-                <View style={styles.headerAvatarPlaceholder}>
-                  <Ionicons
-                    name={chat?.type === "group" ? "people" : "person"}
-                    size={20}
-                    color="#a855f7"
-                  />
-                </View>
-              )}
+              <Avatar uri={getChatAvatar()} name={getChatName()} size={40} />
               <View style={styles.headerTextContainer}>
                 <Text style={styles.headerTitle}>
                   {capitalize(getChatName())}
@@ -628,13 +613,7 @@ export default function ChatScreen() {
               </Text>
               {chat?.participants.map((p) => (
                 <View key={p._id} style={styles.participantRow}>
-                  {p.profilePicture ? (
-                    <Image source={{ uri: p.profilePicture }} style={styles.participantAvatar} contentFit="cover" cachePolicy="memory-disk" transition={200} />
-                  ) : (
-                    <View style={styles.participantAvatarPlaceholder}>
-                      <Ionicons name="person" size={16} color="#a855f7" />
-                    </View>
-                  )}
+                  <Avatar uri={p.profilePicture} name={p.username} size={32} />
                   <Text style={styles.participantName}>{p.username}</Text>
                   {chat.admins?.some((a) => a._id === p._id) && (
                     <View style={styles.adminBadge}>

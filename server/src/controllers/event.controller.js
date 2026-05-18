@@ -4,6 +4,7 @@ import User from "../models/user.model.js";
 import Ticket from "../models/ticket.model.js";
 import { Vendor } from "../models/vendor.model.js";
 import Chat from "../models/chat.model.js";
+import Follow from "../models/follow.model.js";
 import Notification from "../models/notification.model.js";
 import ChatService from "../services/chat.service.js";
 import { uploadBase64Image, deleteImage } from "../services/image.service.js";
@@ -12,11 +13,23 @@ import { setCache, getCache, invalidateCache, invalidateCachePattern } from "../
 import { areMutualFollows } from "../utils/followCheck.js";
 import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean } from "../utils/contentFilter.js";
+import config from "../config/env.js";
 
 // Create a new event
 export const createEvent = async (req, res) => {
   try {
-    const { title, date, location, image, description, isPublic, isPaid, ticketPrice, maxGuests } = req.body;
+    const {
+      title,
+      date,
+      location,
+      image,
+      description,
+      isPublic,
+      isPaid,
+      ticketPrice,
+      maxGuests,
+      venueProofImage,
+    } = req.body;
     const userId = req.user.id;
 
     if (!title || !date || !location) {
@@ -37,6 +50,55 @@ export const createEvent = async (req, res) => {
       if (!maxGuests || maxGuests <= 0) {
         return res.status(400).json({ message: "Max guests must be specified for paid events" });
       }
+      if (!venueProofImage) {
+        return res.status(400).json({
+          message: "A photo of your venue booking (confirmation, contract, or reservation) is required for paid events.",
+        });
+      }
+
+      // Trust gates for sellers: must have verified their email AND submitted ID
+      // AND completed Stripe Connect onboarding (so ticket revenue has a payout
+      // destination). Without the Stripe gate, the failure surfaces to the
+      // *buyer* at checkout time — which is the wrong layer to fail on.
+      const organizer = await User.findById(userId).select(
+        "verified paidEventsApproved paidEventsCount emailVerifiedAt stripeAccountId stripeOnboardingComplete"
+      );
+      if (!organizer?.emailVerifiedAt) {
+        return res.status(403).json({
+          message:
+            "Verify your email before selling tickets. Check your inbox for the code we sent at signup, or request a new one from Settings.",
+        });
+      }
+      if (!organizer?.verified) {
+        return res.status(403).json({
+          message:
+            "Identity verification is required before you can sell tickets. Submit your ID in Settings → Identity Verification.",
+        });
+      }
+      if (!organizer?.stripeAccountId || !organizer?.stripeOnboardingComplete) {
+        return res.status(403).json({
+          message:
+            "Connect your payout account before selling tickets. Open Settings → Payouts to finish Stripe onboarding.",
+          code: "payout_setup_required",
+        });
+      }
+
+      // New-organizer caps — until the user has had `newOrganizerThreshold`
+      // approved paid events, ticket price and guest count are capped.
+      const isNewOrganizer =
+        (organizer.paidEventsCount || 0) < config.trust.newOrganizerThreshold;
+      if (isNewOrganizer) {
+        if (ticketPrice > config.trust.newOrganizerMaxTicketPriceUsd) {
+          return res.status(400).json({
+            message: `New organizers can charge up to $${config.trust.newOrganizerMaxTicketPriceUsd} per ticket. This cap is removed after ${config.trust.newOrganizerThreshold} successful paid events.`,
+          });
+        }
+        if (maxGuests > config.trust.newOrganizerMaxGuests) {
+          return res.status(400).json({
+            message: `New organizers can host up to ${config.trust.newOrganizerMaxGuests} ticketed guests per event. This cap is removed after ${config.trust.newOrganizerThreshold} successful paid events.`,
+          });
+        }
+      }
     }
 
     // Handle event image upload
@@ -56,6 +118,38 @@ export const createEvent = async (req, res) => {
       }
     }
 
+    // Paid-event approval gate (Model C): every organizer's first paid event
+    // still goes through the admin queue, even if they're identity-verified.
+    // The verification gate above ensures only verified users can submit;
+    // this gate ensures the actual event content is reviewed once before
+    // any tickets sell.
+    let approvalStatus = "approved";
+    if (isPublic && isPaid) {
+      const organizer = await User.findById(userId).select("paidEventsApproved");
+      if (!organizer?.paidEventsApproved) {
+        approvalStatus = "pending";
+      }
+    }
+
+    // Upload venue proof image for paid events
+    let venueProofUrl = "";
+    if (isPublic && isPaid && venueProofImage) {
+      if (venueProofImage.startsWith("data:image")) {
+        try {
+          const result = await uploadBase64Image(venueProofImage, "venue-proofs");
+          venueProofUrl = result.url;
+        } catch (uploadError) {
+          console.error("Error uploading venue proof:", uploadError);
+          return res.status(400).json({
+            message: "Error uploading venue proof image",
+            details: uploadError.message,
+          });
+        }
+      } else {
+        venueProofUrl = venueProofImage;
+      }
+    }
+
     const event = new Event({
       title,
       date: new Date(date),
@@ -66,7 +160,10 @@ export const createEvent = async (req, res) => {
       isPublic: isPublic || false,
       isPaid: isPublic && isPaid ? isPaid : false,
       ticketPrice: isPublic && isPaid ? ticketPrice : 0,
-      maxGuests: isPublic && isPaid ? maxGuests : 0
+      maxGuests: isPublic && isPaid ? maxGuests : 0,
+      venueProofImage: venueProofUrl,
+      approvalStatus,
+      payoutStatus: isPublic && isPaid ? "pending" : "none",
     });
 
     await event.save();
@@ -164,11 +261,12 @@ export const getEventById = async (req, res) => {
     if (cached) return res.status(200).json(cached);
 
     const event = await Event.findById(eventId)
-      .populate('createdBy', 'username email profilePicture')
+      .populate('createdBy', 'username email profilePicture verified stripeAccountId stripeOnboardingComplete')
       .populate('invitedUsers', 'username email profilePicture')
       .populate('pendingInvites', 'username email profilePicture')
-      .populate('rsvpUsers', '_id')
-      .populate('groupChatId', '_id name groupImage')
+      .populate('joinRequests', 'username email profilePicture')
+      .populate('rsvpUsers', 'username profilePicture')
+      .populate('groupChatId', '_id name groupImage unreadCount')
       .populate('vendors', 'name images rating verified vendorType city');
 
     if (!event) {
@@ -178,12 +276,20 @@ export const getEventById = async (req, res) => {
     const isCreator = event.createdBy._id.toString() === userId;
     const isInvited = event.invitedUsers.some(user => user._id.toString() === userId);
     const isPending = event.pendingInvites.some(user => user._id.toString() === userId);
-    const isFreePublicEvent = event.isPublic && !event.isPaid;
+    const hasRequested = (event.joinRequests || []).some(user => user._id.toString() === userId);
     const userTicket = await Ticket.findOne({ event: eventId, user: userId, isValid: true });
     const hasTicket = !!userTicket;
 
-    // Pending invitees can view the event so they can decide whether to accept
-    const hasAccess = isCreator || isInvited || isPending || hasTicket || isFreePublicEvent;
+    // Public events are browsable to everyone so buyers can read the details
+    // before purchasing. Paid events still in the approval queue (or rejected)
+    // are hidden from anyone except the creator.
+    const isBrowsablePublic =
+      event.isPublic &&
+      event.isActive &&
+      (!event.isPaid || event.approvalStatus === "approved");
+
+    const hasAccess =
+      isCreator || isInvited || isPending || hasTicket || isBrowsablePublic;
 
     if (!hasAccess) {
       return res.status(403).json({ message: "You don't have access to this event" });
@@ -193,11 +299,72 @@ export const getEventById = async (req, res) => {
     eventObj.userRsvp = event.rsvpUsers.some(u => u._id.toString() === userId);
     eventObj.rsvpCount = event.rsvpUsers.length;
 
+    // Surface ticket info for paid events so the client can render the right CTA
+    if (event.isPaid) {
+      const ticketsSold = await Ticket.countDocuments({ event: eventId, isValid: true });
+      eventObj.ticketsSold = ticketsSold;
+      eventObj.ticketsRemaining = Math.max(event.maxGuests - ticketsSold, 0);
+      eventObj.userHasPurchased = hasTicket;
+    }
+
     // Tell the client what this user's relationship to the event is
     if (isCreator) eventObj.userStatus = 'creator';
     else if (isInvited) eventObj.userStatus = 'accepted';
     else if (isPending) eventObj.userStatus = 'pending';
+    else if (hasRequested) eventObj.userStatus = 'requested';
     else eventObj.userStatus = 'none';
+
+    // Derived: mutuals on the guest list. Powers the "FRIENDS · N going" stat
+    // and the "N friends" span on the attendees card.
+    const rsvpIdStrings = event.rsvpUsers.map(u => u._id.toString());
+    if (rsvpIdStrings.length === 0) {
+      eventObj.friendsGoing = 0;
+    } else {
+      const [followingDocs, followerDocs] = await Promise.all([
+        Follow.find({ follower: userId, following: { $in: rsvpIdStrings } }).select('following').lean(),
+        Follow.find({ following: userId, follower: { $in: rsvpIdStrings } }).select('follower').lean(),
+      ]);
+      const iFollow = new Set(followingDocs.map(d => d.following.toString()));
+      const followsMe = new Set(followerDocs.map(d => d.follower.toString()));
+      eventObj.friendsGoing = rsvpIdStrings.filter(id => iFollow.has(id) && followsMe.has(id)).length;
+    }
+
+    // Derived: this user's unread count for the event's group chat.
+    if (eventObj.groupChatId && eventObj.groupChatId.unreadCount) {
+      const raw = eventObj.groupChatId.unreadCount;
+      // `toObject()` returns the Map as a plain object keyed by user id
+      eventObj.groupChatUnread = (raw && typeof raw === 'object') ? (raw[userId] || 0) : 0;
+      // Don't leak everyone else's unread counts
+      delete eventObj.groupChatId.unreadCount;
+    } else {
+      eventObj.groupChatUnread = 0;
+    }
+
+    // Derived: lifetime events hosted by the organizer (drives "@handle · N events hosted").
+    eventObj.createdBy.hostedEventsCount = await Event.countDocuments({
+      createdBy: event.createdBy._id,
+      isActive: true,
+    });
+
+    // Derived: is this paid event actually purchasable right now? Folds the
+    // approval gate AND the organizer's Stripe Connect status into one flag so
+    // the client can show a graceful "tickets not on sale yet" state instead
+    // of letting the user tap "Buy" and bounce off a Stripe error.
+    if (event.isPaid) {
+      const seller = event.createdBy;
+      eventObj.ticketingReady =
+        event.approvalStatus === "approved" &&
+        !!seller?.stripeAccountId &&
+        !!seller?.stripeOnboardingComplete;
+    } else {
+      eventObj.ticketingReady = true;
+    }
+
+    // Never leak the organizer's Stripe IDs to the client.
+    if (eventObj.createdBy) {
+      delete eventObj.createdBy.stripeAccountId;
+      delete eventObj.createdBy.stripeOnboardingComplete;
+    }
 
     const response = { event: eventObj };
     setCache(cacheKey, response, 180); // 3 min TTL
@@ -424,6 +591,55 @@ export const inviteUserByUsername = async (req, res) => {
   }
 };
 
+// Request to join an invite-only event. Anyone with the link can ask; the
+// organizer accepts/declines from their invitee management UI (or from a
+// notification action). Distinct from `inviteUserByUsername` (organizer-led).
+export const requestToJoinEvent = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user.id;
+
+    const event = await Event.findById(eventId);
+    if (!event) return res.status(404).json({ message: "Event not found" });
+
+    if (event.createdBy.toString() === userId) {
+      return res.status(400).json({ message: "You're the organizer of this event" });
+    }
+    if (event.invitedUsers.some(id => id.toString() === userId)) {
+      return res.status(400).json({ message: "You're already attending" });
+    }
+    if (event.pendingInvites.some(id => id.toString() === userId)) {
+      return res.status(400).json({ message: "You already have an invite waiting — respond to it" });
+    }
+    if ((event.joinRequests || []).some(id => id.toString() === userId)) {
+      return res.status(200).json({ message: "Request already sent" });
+    }
+
+    event.joinRequests = event.joinRequests || [];
+    event.joinRequests.push(userId);
+    await event.save();
+    invalidateCachePattern(`event_detail_${eventId}_`);
+
+    try {
+      const requester = await User.findById(userId).select('username');
+      await Notification.create({
+        user: event.createdBy,
+        type: 'event_join_request',
+        title: 'Request to join',
+        body: `${requester?.username || 'Someone'} wants to join "${event.title}"`,
+        data: { eventId: event._id.toString(), userId },
+      });
+    } catch (notifError) {
+      console.error("Error sending join-request notification:", notifError);
+    }
+
+    res.status(200).json({ message: "Request sent" });
+  } catch (error) {
+    console.error("Request to join error:", error);
+    res.status(500).json({ message: "Error requesting to join", error: error.message });
+  }
+};
+
 // Respond to an event invite (accept or decline)
 export const respondToInvite = async (req, res) => {
   try {
@@ -612,6 +828,11 @@ export const getPublicEvents = async (req, res) => {
       isPublic: true,
       isActive: true,
       date: { $gte: new Date() },
+      // Hide paid events still in approval queue (or rejected) from the public feed
+      $or: [
+        { isPaid: { $ne: true } },
+        { isPaid: true, approvalStatus: "approved" },
+      ],
       ...(blockedIds.length > 0 ? { createdBy: { $nin: blockedIds } } : {}),
     };
 
@@ -840,12 +1061,21 @@ export const getEventHighlights = async (req, res) => {
     const now = new Date();
     const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
+    const publicFilter = {
+      isPublic: true,
+      isActive: true,
+      $or: [
+        { isPaid: { $ne: true } },
+        { isPaid: true, approvalStatus: "approved" },
+      ],
+    };
+
     const [trendingRaw, upcoming] = await Promise.all([
-      Event.find({ isPublic: true, isActive: true, date: { $gte: now } })
+      Event.find({ ...publicFilter, date: { $gte: now } })
         .populate('createdBy', 'username email profilePicture')
         .sort({ date: 1 })
         .limit(20),
-      Event.find({ isPublic: true, isActive: true, date: { $gte: now, $lte: sevenDaysFromNow } })
+      Event.find({ ...publicFilter, date: { $gte: now, $lte: sevenDaysFromNow } })
         .populate('createdBy', 'username email profilePicture')
         .sort({ date: 1 })
         .limit(5),

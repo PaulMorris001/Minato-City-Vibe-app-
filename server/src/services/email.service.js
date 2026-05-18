@@ -246,6 +246,62 @@ The NightVibe Team
 };
 
 /**
+ * Send a 6-digit OTP for verifying an email address at signup.
+ * Same look as the password-reset OTP for brand consistency.
+ */
+export const sendSignupVerificationOTP = async (email, otp, username) => {
+  try {
+    const transporter = createTransporter();
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || '"NightVibe" <noreply@nightvibe.com>',
+      to: email,
+      subject: "Verify your email - NightVibe",
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, sans-serif; line-height: 1.6; color: #333; background: #f4f4f4; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 20px auto; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: white; padding: 30px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; font-weight: 700; }
+            .content { padding: 40px 30px; }
+            .otp-container { background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%); border-radius: 8px; padding: 25px; text-align: center; margin: 30px 0; }
+            .otp-label { font-size: 14px; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+            .otp-code { font-size: 36px; font-weight: 800; color: #a855f7; letter-spacing: 8px; }
+            .hint { font-size: 13px; color: #6b7280; margin-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header"><h1>🌙 NightVibe</h1></div>
+            <div class="content">
+              <p>Hi ${username || "there"},</p>
+              <p>Welcome to NightVibe! Confirm your email to finish setting up your account.</p>
+              <div class="otp-container">
+                <div class="otp-label">Your verification code</div>
+                <div class="otp-code">${otp}</div>
+              </div>
+              <p class="hint">This code expires in 10 minutes. If you didn't sign up, you can safely ignore this email.</p>
+              <p>— The NightVibe Team</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `Hi ${username || "there"},\n\nWelcome to NightVibe. Your verification code is ${otp}. It expires in 10 minutes.\n\n— The NightVibe Team`,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("❌ Error sending signup OTP email:", error);
+    throw new Error("Failed to send verification email");
+  }
+};
+
+/**
  * Send password reset success notification
  */
 export const sendPasswordResetSuccessEmail = async (email, username) => {

@@ -14,6 +14,7 @@ export type ReportReason =
   | "hate"
   | "sexual"
   | "violence"
+  | "fraud"
   | "other";
 
 export interface BlockedUser {

@@ -1,10 +1,10 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
-import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import type { Chat } from "@/services/chat.service";
 import { capitalize } from "@/libs/helpers";
+import { Avatar } from "@/components/shared/Avatar";
 
 interface ChatListItemProps {
   chat: Chat;
@@ -89,13 +89,7 @@ export default function ChatListItem({
       activeOpacity={0.7}
     >
       <View style={styles.avatarContainer}>
-        {chatInfo.image ? (
-          <Image source={{ uri: chatInfo.image }} style={styles.avatar} cachePolicy="memory-disk" transition={200} />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Ionicons name={chatInfo.icon} size={24} color="#9ca3af" />
-          </View>
-        )}
+        <Avatar uri={chatInfo.image} name={chatInfo.name} size={56} />
         {chat.type === "group" && (
           <View style={styles.groupBadge}>
             <Ionicons name="people" size={12} color="#fff" />

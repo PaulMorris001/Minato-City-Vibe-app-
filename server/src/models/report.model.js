@@ -12,7 +12,16 @@ const reportSchema = mongoose.Schema(
     targetUser: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true },
     reason: {
       type: String,
-      enum: ["spam", "harassment", "hate", "sexual", "violence", "blocked", "other"],
+      enum: [
+        "spam",
+        "harassment",
+        "hate",
+        "sexual",
+        "violence",
+        "blocked",
+        "fraud", // ticket / paid-event scams — "event isn't real", "no-show", etc.
+        "other",
+      ],
       required: true,
     },
     details: { type: String, default: "" },

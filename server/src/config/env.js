@@ -67,6 +67,36 @@ export const config = {
     },
   },
 
+  // Trust / safety system — caps and policy windows for paid events
+  trust: {
+    // Until an organizer has had this many approved paid events, they're
+    // considered "new" and subject to per-event caps below.
+    newOrganizerThreshold: parseInt(process.env.NEW_ORGANIZER_THRESHOLD || "3", 10),
+    // Caps applied to a new organizer's paid events
+    newOrganizerMaxTicketPriceUsd: parseFloat(
+      process.env.NEW_ORGANIZER_MAX_TICKET_PRICE_USD || "50"
+    ),
+    newOrganizerMaxGuests: parseInt(
+      process.env.NEW_ORGANIZER_MAX_GUESTS || "50",
+      10
+    ),
+    // Buyer self-refund window (hours since purchase) AND must be at least
+    // this many hours before the event date.
+    buyerRefundWindowHours: parseInt(
+      process.env.BUYER_REFUND_WINDOW_HOURS || "24",
+      10
+    ),
+    buyerRefundCutoffHours: parseInt(
+      process.env.BUYER_REFUND_CUTOFF_HOURS || "24",
+      10
+    ),
+    // Fraud-report threshold that surfaces an event as "flagged" in admin
+    fraudReportFlagThreshold: parseInt(
+      process.env.FRAUD_REPORT_FLAG_THRESHOLD || "2",
+      10
+    ),
+  },
+
   // Stripe Configuration
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY || "",

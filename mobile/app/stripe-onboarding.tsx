@@ -6,14 +6,18 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Linking,
   ScrollView,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
+import * as WebBrowser from "expo-web-browser";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
+
+// Custom-scheme prefix the server redirects to after Stripe onboarding.
+// Must match `scheme` in app.config.js AND the APP_URL env var on the server.
+const RETURN_URL = "mobile://stripe-onboarding";
 
 type AccountStatus = {
   connected: boolean;
@@ -84,7 +88,23 @@ export default function StripeOnboardingScreen() {
         return;
       }
 
-      await Linking.openURL(linkData.url);
+      // Open Stripe in an auth-session browser. `openAuthSessionAsync` watches
+      // for the redirect to RETURN_URL and closes the in-app browser the
+      // moment it sees it — far more reliable than handing the Stripe URL to
+      // `Linking.openURL` and hoping the OS routes a custom-scheme 302 back
+      // into the app. Works on dev clients + production builds; does not work
+      // in Expo Go (custom schemes aren't honored there).
+      const result = await WebBrowser.openAuthSessionAsync(linkData.url, RETURN_URL);
+
+      // Whether the user finished, cancelled, or dismissed, re-check status —
+      // a partial onboarding may have flipped some capability flags.
+      await fetchStatus();
+
+      if (result.type === "success") {
+        // The URL will look like mobile://stripe-onboarding?success=true or ?refresh=true.
+        // No-op here; the second useEffect picks up the params and the
+        // status fetch above already reflects the new state.
+      }
     } catch {
       Alert.alert("Error", "Something went wrong. Please try again.");
     } finally {

@@ -7,3 +7,5 @@ export { default as GradientCard } from "./GradientCard";
 export { default as StatusBadge } from "./StatusBadge";
 export { default as LoadingScreen } from "./LoadingScreen";
 export { default as ImagePickerButton } from "./ImagePickerButton";
+export { Avatar } from "./Avatar";
+export type { AvatarProps } from "./Avatar";

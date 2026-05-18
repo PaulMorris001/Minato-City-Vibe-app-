@@ -60,6 +60,7 @@ export default function CreateEventModal({
     maxGuests: "",
   });
   const [eventImage, setEventImage] = useState("");
+  const [venueProofImage, setVenueProofImage] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showCityPicker, setShowCityPicker] = useState(false);
@@ -172,6 +173,13 @@ export default function CreateEventModal({
         Alert.alert("Validation Error", "Please enter maximum number of guests");
         return;
       }
+      if (!venueProofImage) {
+        Alert.alert(
+          "Venue proof required",
+          "Upload a photo of your venue booking — confirmation email, signed contract, or reservation screenshot."
+        );
+        return;
+      }
     }
 
     setLoading(true);
@@ -183,6 +191,7 @@ export default function CreateEventModal({
       }
 
       let eventImageUrl = "";
+      let venueProofUrl = "";
 
       // Upload event image to Cloudinary if selected
       if (eventImage && eventImage.startsWith("file://")) {
@@ -199,6 +208,23 @@ export default function CreateEventModal({
         eventImageUrl = eventImage;
       }
 
+      // Upload venue proof for paid events
+      if (formData.isPublic && formData.isPaid && venueProofImage) {
+        if (venueProofImage.startsWith("file://")) {
+          try {
+            const result = await uploadImage(venueProofImage, "venue-proofs", token);
+            venueProofUrl = result.url;
+          } catch (uploadError) {
+            console.error("Error uploading venue proof:", uploadError);
+            Alert.alert("Upload Error", "Failed to upload venue proof image");
+            setLoading(false);
+            return;
+          }
+        } else {
+          venueProofUrl = venueProofImage;
+        }
+      }
+
       // Create event
       const eventData = {
         title: formData.title.trim(),
@@ -210,6 +236,7 @@ export default function CreateEventModal({
         isPaid: formData.isPaid,
         ticketPrice: formData.isPaid ? parseFloat(formData.ticketPrice) : 0,
         maxGuests: formData.isPaid ? parseInt(formData.maxGuests) : 0,
+        venueProofImage: venueProofUrl,
       };
 
       await axios.post(`${BASE_URL}/events`, eventData, {
@@ -230,6 +257,7 @@ export default function CreateEventModal({
         maxGuests: "",
       });
       setEventImage("");
+      setVenueProofImage("");
 
       // Callback and close
       if (onEventCreated) onEventCreated();
@@ -518,6 +546,27 @@ export default function CreateEventModal({
                         keyboardType="number-pad"
                         value={formData.maxGuests}
                         onChangeText={(value) => handleInputChange("maxGuests", value)}
+                      />
+
+                      <Text style={styles.label}>Venue Proof *</Text>
+                      <Text
+                        style={{
+                          color: "rgba(244,238,255,0.55)",
+                          fontSize: 12,
+                          marginBottom: 8,
+                          lineHeight: 16,
+                        }}
+                      >
+                        Upload a photo of your venue booking — confirmation email,
+                        signed contract, or reservation screenshot. Admins review
+                        this before your event goes on sale.
+                      </Text>
+                      <ImagePickerButton
+                        imageUri={venueProofImage}
+                        onImageSelected={setVenueProofImage}
+                        label="Booking / Contract"
+                        size={120}
+                        shape="square"
                       />
                     </>
                   )}

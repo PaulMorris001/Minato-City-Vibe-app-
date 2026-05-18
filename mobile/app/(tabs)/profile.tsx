@@ -1,31 +1,31 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
+  Animated,
+  Easing,
   FlatList,
   RefreshControl,
-  Alert,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { Image } from "expo-image";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { Fonts } from "@/constants/fonts";
+import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
-import { BASE_URL } from "@/constants/constants";
-import { scaleFontSize } from "@/utils/responsive";
-import { capitalize } from "@/libs/helpers";
-import ProfileHeaderSkeleton from "@/components/skeletons/ProfileHeaderSkeleton";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
-import followService from "@/services/follow.service";
+
+import { Avatar } from "@/components/shared/Avatar";
+import { AU } from "@/components/auth/tokens";
+import { BASE_URL } from "@/constants/constants";
+import { Fonts } from "@/constants/fonts";
+import { heroEmojiFor } from "@/utils/eventDetails";
 
 interface UserProfile {
   _id: string;
   username: string;
-  email: string;
   profilePicture?: string;
   isVendor?: boolean;
   verified?: boolean;
@@ -39,38 +39,38 @@ interface UserEvent {
   date: string;
   location: string;
   image?: string;
-  userStatus: string;
-  invitedUsers: any[];
+  userStatus: "creator" | "accepted" | "pending" | "none";
+  invitedUsers: unknown[];
 }
+
+type TabKey = "hosted" | "attended";
 
 export default function ProfileScreen() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [events, setEvents] = useState<UserEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [tab, setTab] = useState<TabKey>("hosted");
 
   const fetchProfile = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
       if (!token) return;
-
       const res = await axios.get(`${BASE_URL}/profile`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-
-      const userData = res.data.user;
+      const u = res.data.user;
       setUser({
-        _id: userData._id,
-        username: userData.username,
-        email: userData.email,
-        profilePicture: userData.profilePicture || "",
-        isVendor: userData.isVendor,
-        verified: userData.verified || false,
-        followersCount: userData.followersCount || 0,
-        followingCount: userData.followingCount || 0,
+        _id: u._id,
+        username: u.username,
+        profilePicture: u.profilePicture || "",
+        isVendor: u.isVendor,
+        verified: u.verified || false,
+        followersCount: u.followersCount || 0,
+        followingCount: u.followingCount || 0,
       });
-    } catch (error) {
-      console.error("Error fetching profile:", error);
+    } catch (err) {
+      console.error("Error fetching profile:", err);
     }
   };
 
@@ -78,19 +78,15 @@ export default function ProfileScreen() {
     try {
       const token = await SecureStore.getItemAsync("token");
       if (!token) return;
-
       const res = await axios.get(`${BASE_URL}/events`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-
-      // Show events that the user created or accepted
-      const allEvents = res.data.events || [];
-      const filtered = allEvents.filter(
-        (e: any) => e.userStatus === "creator" || e.userStatus === "accepted"
+      const all: UserEvent[] = res.data.events || [];
+      setEvents(
+        all.filter((e) => e.userStatus === "creator" || e.userStatus === "accepted")
       );
-      setEvents(filtered);
-    } catch (error) {
-      console.error("Error fetching events:", error);
+    } catch (err) {
+      console.error("Error fetching events:", err);
     }
   };
 
@@ -116,420 +112,612 @@ export default function ProfileScreen() {
     loadData(true);
   }, []);
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  };
-
-  const renderEventItem = ({ item }: { item: UserEvent }) => (
-    <TouchableOpacity
-      style={styles.eventCard}
-      onPress={() =>
-        router.push({ pathname: "/event/[id]", params: { id: item._id } })
-      }
-      activeOpacity={0.7}
-    >
-      {item.image ? (
-        <Image source={{ uri: item.image }} style={styles.eventImage} />
-      ) : (
-        <LinearGradient
-          colors={["#a855f7", "#7c3aed"]}
-          style={styles.eventImagePlaceholder}
-        >
-          <Ionicons name="calendar" size={24} color="#fff" />
-        </LinearGradient>
-      )}
-      <View style={styles.eventInfo}>
-        <Text style={styles.eventTitle} numberOfLines={1}>
-          {item.title}
-        </Text>
-        <Text style={styles.eventDate}>{formatDate(item.date)}</Text>
-        <Text style={styles.eventLocation} numberOfLines={1}>
-          {item.location}
-        </Text>
-      </View>
-      <View style={styles.eventBadge}>
-        <Text style={styles.eventBadgeText}>
-          {item.userStatus === "creator" ? "Created" : "Attended"}
-        </Text>
-      </View>
-    </TouchableOpacity>
+  const hosted = useMemo(
+    () => events.filter((e) => e.userStatus === "creator"),
+    [events]
   );
-
-  const renderHeader = () => (
-    <View>
-      {/* Profile Header — horizontal layout */}
-      <View style={styles.profileHeader}>
-        {user?.profilePicture ? (
-          <Image source={{ uri: user.profilePicture }} style={styles.avatar} />
-        ) : (
-          <LinearGradient
-            colors={["#a855f7", "#7c3aed"]}
-            style={styles.avatarPlaceholder}
-          >
-            <Ionicons name="person" size={36} color="#fff" />
-          </LinearGradient>
-        )}
-        <View style={styles.profileInfo}>
-          <View style={styles.usernameRow}>
-            <Text style={styles.username} numberOfLines={1}>
-              {capitalize(user?.username || "")}
-            </Text>
-            {user?.verified && (
-              <Ionicons name="checkmark-circle" size={18} color="#3b82f6" />
-            )}
-            {user?.isVendor && (
-              <View style={styles.vendorBadge}>
-                <Ionicons name="briefcase" size={10} color="#fff" />
-                <Text style={styles.vendorBadgeText}>Vendor</Text>
-              </View>
-            )}
-          </View>
-          <Text style={styles.email} numberOfLines={1}>{user?.email}</Text>
-          {/* Stats inline */}
-          <View style={styles.statsRow}>
-            <TouchableOpacity
-              onPress={() =>
-                router.push({ pathname: "/followers", params: { userId: user?._id } } as any)
-              }
-              activeOpacity={0.7}
-            >
-              <Text style={styles.statNumber}>{user?.followersCount || 0}</Text>
-              <Text style={styles.statLabel}>Followers</Text>
-            </TouchableOpacity>
-            <View style={styles.statDivider} />
-            <TouchableOpacity
-              onPress={() =>
-                router.push({ pathname: "/following", params: { userId: user?._id } } as any)
-              }
-              activeOpacity={0.7}
-            >
-              <Text style={styles.statNumber}>{user?.followingCount || 0}</Text>
-              <Text style={styles.statLabel}>Following</Text>
-            </TouchableOpacity>
-            <View style={styles.statDivider} />
-            <View>
-              <Text style={styles.statNumber}>{events.length}</Text>
-              <Text style={styles.statLabel}>Events</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-
-
-
-      {/* Search Users */}
-      <TouchableOpacity
-        style={styles.searchBar}
-        onPress={() => router.push("/search-users" as any)}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="search" size={20} color="#6b7280" />
-        <Text style={styles.searchPlaceholder}>Search for users to follow...</Text>
-      </TouchableOpacity>
-
-      {/* Events Section Header */}
-      <Text style={styles.sectionTitle}>My Events</Text>
-    </View>
+  const attended = useMemo(
+    () => events.filter((e) => e.userStatus === "accepted"),
+    [events]
   );
-
-  const renderEmptyEvents = () => (
-    <View style={styles.emptyContainer}>
-      <Ionicons name="calendar-outline" size={48} color="#6b7280" />
-      <Text style={styles.emptyText}>No events yet</Text>
-      <Text style={styles.emptySubtext}>
-        Create or join events to see them here
-      </Text>
-    </View>
-  );
-
-  if (loading) {
-    return (
-      <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
-        <ProfileHeaderSkeleton eventCount={3} />
-      </LinearGradient>
-    );
-  }
+  const visibleEvents = tab === "hosted" ? hosted : attended;
 
   return (
-    <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Profile</Text>
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.headerButton}
-              onPress={() => router.push("/messages" as any)}
-            >
-              <Ionicons name="chatbubbles-outline" size={22} color="#a855f7" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerButton}
-              onPress={() => router.push("/settings")}
-            >
-              <Ionicons name="settings-outline" size={22} color="#a855f7" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
+    <View style={styles.container}>
+      <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
         <FlatList
-          data={events}
-          renderItem={renderEventItem}
+          data={visibleEvents}
+          renderItem={({ item }) => <EventRow event={item} />}
           keyExtractor={(item) => item._id}
-          ListHeaderComponent={renderHeader}
-          ListEmptyComponent={renderEmptyEvents}
+          ListHeaderComponent={
+            <Header
+              user={user}
+              eventsTotal={events.length}
+              tab={tab}
+              setTab={setTab}
+              loading={loading}
+            />
+          }
+          ListEmptyComponent={
+            loading ? null : <EmptyState tab={tab} />
+          }
           contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#a855f7"
-              colors={["#a855f7"]}
+              tintColor={AU.purple}
+              colors={[AU.purple]}
             />
           }
           showsVerticalScrollIndicator={false}
         />
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
 }
 
+// ─── Header ─────────────────────────────────────────────────────────────────
+function Header({
+  user,
+  eventsTotal,
+  tab,
+  setTab,
+  loading,
+}: {
+  user: UserProfile | null;
+  eventsTotal: number;
+  tab: TabKey;
+  setTab: (t: TabKey) => void;
+  loading: boolean;
+}) {
+  return (
+    <View>
+      {/* Top row */}
+      <View style={styles.topRow}>
+        <Text style={styles.kicker}>PROFILE</Text>
+        <TouchableOpacity
+          onPress={() => router.push("/settings")}
+          activeOpacity={0.7}
+          style={styles.settingsBtn}
+          accessibilityLabel="Settings"
+        >
+          <Ionicons name="settings-outline" size={16} color={AU.text} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Hero (avatar + name) */}
+      <View style={styles.heroBlock}>
+        <View style={styles.heroRow}>
+          <Avatar
+            uri={user?.profilePicture}
+            name={user?.username}
+            size={68}
+          />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={styles.nameRow}>
+              <Text style={styles.name} numberOfLines={1}>
+                {user?.username || (loading ? "" : "—")}
+              </Text>
+              {user?.verified && (
+                <LinearGradient
+                  colors={[AU.purple, AU.pink]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.verifiedBadge}
+                >
+                  <Text style={styles.verifiedGlyph}>✦</Text>
+                </LinearGradient>
+              )}
+            </View>
+            <Text style={styles.handle} numberOfLines={1}>
+              @{(user?.username || "").toLowerCase()}
+              {user?.isVendor && (
+                <Text style={styles.handleVendor}> · Vendor</Text>
+              )}
+            </Text>
+          </View>
+        </View>
+
+        {/* Stats row */}
+        <View style={styles.statsRow}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() =>
+              user &&
+              router.push({
+                pathname: "/followers",
+                params: { userId: user._id },
+              } as any)
+            }
+            style={styles.stat}
+          >
+            <Text style={styles.statValue}>{user?.followersCount ?? 0}</Text>
+            <Text style={styles.statLabel}>Followers</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() =>
+              user &&
+              router.push({
+                pathname: "/following",
+                params: { userId: user._id },
+              } as any)
+            }
+            style={styles.stat}
+          >
+            <Text style={styles.statValue}>{user?.followingCount ?? 0}</Text>
+            <Text style={styles.statLabel}>Following</Text>
+          </TouchableOpacity>
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>{eventsTotal}</Text>
+            <Text style={styles.statLabel}>Events</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Search */}
+      <View style={styles.searchWrap}>
+        <TouchableOpacity
+          style={styles.searchField}
+          onPress={() => router.push("/search-users" as any)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="search" size={14} color={AU.textMute} />
+          <Text style={styles.searchPlaceholder}>Search users…</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Events section header + tabs */}
+      <View style={styles.eventsHeader}>
+        <Text style={styles.sectionTitle}>Events</Text>
+        <TabsRow tab={tab} setTab={setTab} />
+      </View>
+    </View>
+  );
+}
+
+// ─── Tabs ───────────────────────────────────────────────────────────────────
+function TabsRow({
+  tab,
+  setTab,
+}: {
+  tab: TabKey;
+  setTab: (t: TabKey) => void;
+}) {
+  // Underline x-position is interpolated between the two tab anchors.
+  const anim = React.useRef(new Animated.Value(tab === "hosted" ? 0 : 1)).current;
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: tab === "hosted" ? 0 : 1,
+      duration: 200,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: false,
+    }).start();
+  }, [tab, anim]);
+
+  // Tab widths roughly match the text run; gap from layout is 14.
+  const HOSTED_W = 46;
+  const ATTENDED_W = 60;
+  const GAP = 14;
+  const translateX = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, HOSTED_W + GAP],
+  });
+  const width = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [HOSTED_W, ATTENDED_W],
+  });
+
+  return (
+    <View style={styles.tabsRow}>
+      <TouchableOpacity onPress={() => setTab("hosted")} activeOpacity={0.7}>
+        <Text
+          style={[
+            styles.tabLabel,
+            tab === "hosted" ? styles.tabLabelActive : styles.tabLabelInactive,
+            { width: HOSTED_W },
+          ]}
+        >
+          Hosted
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => setTab("attended")} activeOpacity={0.7}>
+        <Text
+          style={[
+            styles.tabLabel,
+            tab === "attended" ? styles.tabLabelActive : styles.tabLabelInactive,
+            { width: ATTENDED_W },
+          ]}
+        >
+          Attended
+        </Text>
+      </TouchableOpacity>
+      <Animated.View style={[styles.tabUnderlineWrap, { transform: [{ translateX }], width }]}>
+        <LinearGradient
+          colors={[AU.purple, AU.pink]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={styles.tabUnderline}
+        />
+      </Animated.View>
+    </View>
+  );
+}
+
+// ─── Event row ──────────────────────────────────────────────────────────────
+function EventRow({ event }: { event: UserEvent }) {
+  const created = event.userStatus === "creator";
+  const date = useMemo(() => {
+    const d = new Date(event.date);
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }, [event.date]);
+  const emoji = useMemo(() => heroEmojiFor(event.title), [event.title]);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={() =>
+        router.push({ pathname: "/event/[id]", params: { id: event._id } })
+      }
+      style={styles.eventRow}
+    >
+      <View style={styles.thumbWrap}>
+        {event.image ? (
+          <Image source={{ uri: event.image }} style={StyleSheet.absoluteFill} contentFit="cover" />
+        ) : (
+          <LinearGradient
+            colors={["#22D3EE", "#7C3AED", "#EC4899"]}
+            locations={[0, 0.5, 1]}
+            start={{ x: 0.2, y: 0 }}
+            end={{ x: 0.8, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        )}
+        <Text style={styles.thumbEmoji}>{emoji}</Text>
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.eventTitle} numberOfLines={1}>
+          {event.title}
+        </Text>
+        <View style={styles.subRow}>
+          <Text style={styles.subText} numberOfLines={1}>
+            {date}
+          </Text>
+          <View style={styles.subDot} />
+          <Text style={styles.subText} numberOfLines={1}>
+            {event.location}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.roleIndicator}>
+        <View
+          style={[
+            styles.roleDot,
+            created ? styles.roleDotCreated : styles.roleDotAttended,
+          ]}
+        />
+        <Text
+          style={[
+            styles.roleLabel,
+            { color: created ? AU.purpleSoft : AU.textMute },
+          ]}
+        >
+          {created ? "CREATED" : "ATTENDED"}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Empty states ───────────────────────────────────────────────────────────
+function EmptyState({ tab }: { tab: TabKey }) {
+  if (tab === "hosted") {
+    return (
+      <View style={styles.empty}>
+        <Text style={styles.emptyTitle}>You haven't hosted yet</Text>
+        <TouchableOpacity
+          onPress={() => router.push("/(tabs)/events" as any)}
+          activeOpacity={0.85}
+          style={styles.ctaPrimaryWrap}
+        >
+          <LinearGradient
+            colors={[AU.purple, AU.purpleDeep, AU.pink]}
+            locations={[0, 0.5, 1]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <Text style={styles.ctaPrimaryText}>Create event</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+  return (
+    <View style={styles.empty}>
+      <Text style={styles.emptyTitle}>Nothing yet — pick a night.</Text>
+      <TouchableOpacity
+        onPress={() => router.push("/(tabs)/events" as any)}
+        activeOpacity={0.85}
+        style={styles.ctaSecondary}
+      >
+        <Text style={styles.ctaSecondaryText}>Browse events</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ─── Styles ─────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  header: {
+  container: { flex: 1, backgroundColor: AU.bg },
+  listContent: { paddingBottom: 40, flexGrow: 1 },
+
+  // Top row
+  topRow: {
+    paddingTop: 8,
+    paddingHorizontal: 18,
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
   },
-  headerTitle: {
-    fontSize: scaleFontSize(24),
-    fontFamily: Fonts.bold,
-    color: "#fff",
-  },
-  headerActions: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  headerButton: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#374151",
-    borderRadius: 20,
-  },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-    flexGrow: 1,
-  },
-  profileHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 20,
-    gap: 16,
-  },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 2,
-    borderColor: "#a855f7",
-    flexShrink: 0,
-  },
-  avatarPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#a855f7",
-    flexShrink: 0,
-  },
-  profileInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  usernameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    flexWrap: "wrap",
-  },
-  username: {
-    fontSize: 20,
-    fontFamily: Fonts.bold,
-    color: "#fff",
-  },
-  email: {
+  kicker: {
+    fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: AU.textDim,
+    letterSpacing: 2.34,
   },
-  vendorBadge: {
+  settingsBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: AU.stroke,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // Hero
+  heroBlock: {
+    paddingTop: 20,
+    paddingHorizontal: 22,
+    position: "relative",
+  },
+  heroRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
-    backgroundColor: "#a855f7",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    gap: 14,
+    zIndex: 1,
+  },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  name: {
+    flex: 1,
+    fontFamily: "BricolageGrotesque_800ExtraBold",
+    fontSize: 26,
+    letterSpacing: -0.78,
+    color: AU.text,
+    lineHeight: 26 * 1.05,
+  },
+  verifiedBadge: {
+    width: 20,
+    height: 20,
     borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: AU.purple,
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
-  vendorBadgeText: {
-    fontSize: 10,
-    fontFamily: Fonts.semiBold,
-    color: "#fff",
+  verifiedGlyph: { color: "#fff", fontSize: 11, lineHeight: 11 },
+  handle: {
+    color: AU.textDim,
+    fontFamily: Fonts.medium,
+    fontSize: 12.5,
+    marginTop: 3,
   },
+  handleVendor: { color: AU.purpleSoft, fontFamily: Fonts.bold },
+
+  // Stats row
   statsRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginTop: 6,
+    alignItems: "baseline",
+    gap: 22,
+    marginTop: 18,
   },
-  statDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: "#4b5563",
-  },
-  statNumber: {
-    fontSize: 16,
-    fontFamily: Fonts.bold,
-    color: "#fff",
+  stat: { flexDirection: "row", alignItems: "baseline", gap: 6 },
+  statValue: {
+    fontFamily: "BricolageGrotesque_800ExtraBold",
+    fontSize: 20,
+    letterSpacing: -0.4,
+    color: AU.text,
+    lineHeight: 20,
   },
   statLabel: {
-    fontSize: 11,
-    fontFamily: Fonts.regular,
-    color: "#9ca3af",
-    marginTop: 1,
+    fontFamily: Fonts.medium,
+    fontSize: 11.5,
+    color: AU.textDim,
   },
-  actionRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 16,
-  },
-  actionButton: {
-    flex: 1,
+
+  // Search
+  searchWrap: { paddingTop: 20, paddingHorizontal: 22 },
+  searchField: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.2)",
-  },
-  actionButtonText: {
-    fontSize: 14,
-    fontFamily: Fonts.semiBold,
-    color: "#a855f7",
-  },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#374151",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 24,
     gap: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: AU.stroke,
   },
   searchPlaceholder: {
-    fontSize: 15,
-    fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: AU.textMute,
+    fontFamily: Fonts.medium,
+    fontSize: 13,
+  },
+
+  // Events header + tabs
+  eventsHeader: {
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 14,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
   },
   sectionTitle: {
-    fontSize: 18,
-    fontFamily: Fonts.bold,
-    color: "#fff",
-    marginBottom: 12,
+    fontFamily: "BricolageGrotesque_800ExtraBold",
+    fontSize: 20,
+    letterSpacing: -0.4,
+    color: AU.text,
   },
-  eventCard: {
+  tabsRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 14,
+    position: "relative",
+    paddingBottom: 4,
+  },
+  tabLabel: {
+    fontFamily: Fonts.bold,
+    fontSize: 12,
+    paddingBottom: 4,
+  },
+  tabLabelActive: { color: AU.text },
+  tabLabelInactive: { color: AU.textMute },
+  tabUnderlineWrap: {
+    position: "absolute",
+    left: 0,
+    bottom: 0,
+    height: 2,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  tabUnderline: { ...StyleSheet.absoluteFillObject, borderRadius: 2 },
+
+  // Event row
+  eventRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(55, 65, 81, 0.5)",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: "rgba(26,16,48,0.7)",
+    borderWidth: 1,
+    borderColor: AU.stroke,
+    marginHorizontal: 22,
   },
-  eventImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
+  thumbWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 10,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: AU.strokeHi,
+    backgroundColor: AU.surface,
   },
-  eventImagePlaceholder: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  eventInfo: {
-    flex: 1,
-    marginLeft: 12,
+  thumbEmoji: {
+    position: "absolute",
+    right: -6,
+    bottom: -10,
+    fontSize: 38,
+    opacity: 0.45,
+    transform: [{ rotate: "-8deg" }],
+    color: "#fff",
   },
   eventTitle: {
-    fontSize: 15,
-    fontFamily: Fonts.semiBold,
-    color: "#fff",
+    fontFamily: "BricolageGrotesque_700Bold",
+    fontSize: 14.5,
+    letterSpacing: -0.145,
+    color: AU.text,
   },
-  eventDate: {
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: "#9ca3af",
-    marginTop: 2,
-  },
-  eventLocation: {
-    fontSize: 12,
-    fontFamily: Fonts.regular,
-    color: "#6b7280",
-    marginTop: 2,
-  },
-  eventBadge: {
-    backgroundColor: "rgba(168, 85, 247, 0.15)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  eventBadgeText: {
-    fontSize: 11,
-    fontFamily: Fonts.semiBold,
-    color: "#a855f7",
-  },
-  emptyContainer: {
+  subRow: {
+    marginTop: 3,
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 40,
+    gap: 6,
   },
-  emptyText: {
-    fontSize: 16,
-    fontFamily: Fonts.semiBold,
-    color: "#fff",
-    marginTop: 12,
+  subText: {
+    fontFamily: Fonts.medium,
+    fontSize: 11.5,
+    color: AU.textDim,
   },
-  emptySubtext: {
+  subDot: {
+    width: 2.5,
+    height: 2.5,
+    borderRadius: 1.25,
+    backgroundColor: AU.textMute,
+  },
+  roleIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  roleDot: { width: 6, height: 6, borderRadius: 3 },
+  roleDotCreated: {
+    backgroundColor: AU.purple,
+    shadowColor: AU.purple,
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+  },
+  roleDotAttended: { backgroundColor: "rgba(255,255,255,0.35)" },
+  roleLabel: {
+    fontFamily: Fonts.bold,
+    fontSize: 10.5,
+    letterSpacing: 0.5,
+  },
+
+  // Empty states
+  empty: {
+    paddingTop: 24,
+    paddingBottom: 32,
+    paddingHorizontal: 22,
+    alignItems: "center",
+    gap: 14,
+  },
+  emptyTitle: {
+    fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 14,
-    fontFamily: Fonts.regular,
-    color: "#6b7280",
-    marginTop: 4,
+    color: AU.textDim,
+  },
+  ctaPrimaryWrap: {
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    borderRadius: 999,
+    overflow: "hidden",
+    shadowColor: AU.purple,
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
+  ctaPrimaryText: {
+    color: "#fff",
+    fontFamily: "BricolageGrotesque_800ExtraBold",
+    fontSize: 14,
+  },
+  ctaSecondary: {
+    paddingVertical: 11,
+    paddingHorizontal: 22,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: AU.strokeHi,
+  },
+  ctaSecondaryText: {
+    color: AU.text,
+    fontFamily: Fonts.bold,
+    fontSize: 13,
   },
 });

@@ -7,6 +7,7 @@ import {
   updateEvent,
   deleteEvent,
   inviteUserByUsername,
+  requestToJoinEvent,
   respondToInvite,
   joinEventByShareLink,
   joinFreePublicEvent,
@@ -67,6 +68,9 @@ router.post("/events/:eventId/invite", authenticate, inviteUserByUsername);
 
 // Respond to an invite (accept or decline)
 router.post("/events/:eventId/respond-invite", authenticate, respondToInvite);
+
+// Request to join an invite-only event (user-initiated)
+router.post("/events/:eventId/request-join", authenticate, requestToJoinEvent);
 
 // Join event via share link
 router.post("/events/share/:shareToken/join", authenticate, joinEventByShareLink);

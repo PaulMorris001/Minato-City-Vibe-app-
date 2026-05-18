@@ -19,6 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { router } from "expo-router";
 import ChatListItem from "@/components/chat/ChatListItem";
+import { Avatar } from "@/components/shared/Avatar";
 import chatService, { Chat } from "@/services/chat.service";
 import followService, { FollowUser } from "@/services/follow.service";
 import * as SecureStore from "expo-secure-store";
@@ -366,16 +367,7 @@ export default function MessagesScreen() {
                   style={styles.userItem}
                   onPress={() => handleUserSelect(item)}
                 >
-                  {item.profilePicture ? (
-                    <Image
-                      source={{ uri: item.profilePicture }}
-                      style={styles.userAvatar}
-                    />
-                  ) : (
-                    <View style={styles.userAvatarPlaceholder}>
-                      <Ionicons name="person" size={24} color="#a855f7" />
-                    </View>
-                  )}
+                  <Avatar uri={item.profilePicture} name={item.username} size={48} />
                   <View style={styles.userInfo}>
                     <Text style={styles.userName}>
                       {capitalize(item.username)}

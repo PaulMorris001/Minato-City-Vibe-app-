@@ -17,6 +17,7 @@ import { scaleFontSize } from "@/utils/responsive";
 import { capitalize } from "@/libs/helpers";
 import followService, { FollowUser } from "@/services/follow.service";
 import FollowButton from "@/components/shared/FollowButton";
+import { Avatar } from "@/components/shared/Avatar";
 import UserListItemSkeleton from "@/components/skeletons/UserListItemSkeleton";
 
 export default function FollowersScreen() {
@@ -74,13 +75,7 @@ export default function FollowersScreen() {
       }
       activeOpacity={0.7}
     >
-      {item.profilePicture ? (
-        <Image source={{ uri: item.profilePicture }} style={styles.userAvatar} />
-      ) : (
-        <View style={styles.userAvatarPlaceholder}>
-          <Ionicons name="person" size={24} color="#a855f7" />
-        </View>
-      )}
+      <Avatar uri={item.profilePicture} name={item.username} size={48} />
       <View style={styles.userInfo}>
         <Text style={styles.userName}>{capitalize(item.username)}</Text>
         {item.isVendor && item.businessName && (

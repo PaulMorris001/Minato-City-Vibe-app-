@@ -84,6 +84,17 @@ export const adminApi = {
   rejectVerification: (id: string, reviewNotes: string) =>
     client.patch<{ status: string }>(`/admin/verifications/${id}/reject`, { reviewNotes }),
 
+  // Paid Event Approval Queue (trust system)
+  getPaidEvents: (params?: { status?: string; page?: number; limit?: number }) =>
+    client.get<{ events: any[]; total: number; page: number; limit: number }>(
+      "/admin/paid-events",
+      { params }
+    ),
+  approvePaidEvent: (id: string) =>
+    client.patch<{ status: string }>(`/admin/paid-events/${id}/approve`, {}),
+  rejectPaidEvent: (id: string, reason: string) =>
+    client.patch<{ status: string }>(`/admin/paid-events/${id}/reject`, { reason }),
+
   // Analytics (shorter TTL — data changes frequently)
   getAnalyticsSummary: () =>
     cachedGet<AnalyticsSummary>("/admin/analytics/summary", { ttl: 30_000 }),

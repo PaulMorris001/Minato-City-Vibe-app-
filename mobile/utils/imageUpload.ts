@@ -15,6 +15,60 @@ export interface ImageUploadResult {
 }
 
 /**
+ * Map a file extension to a real MIME type. `image/jpg` (which some clients
+ * emit) is not a registered type — the canonical form is `image/jpeg`. iOS
+ * defaults to HEIC, so we map that explicitly too.
+ */
+function mimeFromExtension(filename: string): string {
+  const match = /\.([a-zA-Z0-9]+)$/.exec(filename);
+  const ext = (match?.[1] ?? "").toLowerCase();
+  switch (ext) {
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "heic":
+      return "image/heic";
+    case "heif":
+      return "image/heif";
+    default:
+      return "image/jpeg";
+  }
+}
+
+/**
+ * Pull a JSON `message` out of a Response, or fall back to a synthesized one
+ * when the server returned HTML (Express default error page) or empty body.
+ * Without this, `response.json()` throws `Unexpected character: <` and the
+ * caller sees an opaque parse error instead of the actual upload failure.
+ */
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const text = await response.text();
+    if (!text) return fallback;
+    if (text.trim().startsWith("{")) {
+      try {
+        const data = JSON.parse(text);
+        return data.message || fallback;
+      } catch {
+        return fallback;
+      }
+    }
+    // HTML or plain text — don't surface the markup, just hint at the cause.
+    if (response.status === 413) return "That image is too large. Pick something under 10 MB.";
+    if (response.status === 415) return "Unsupported image format. Try JPEG, PNG, or HEIC.";
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * Pick an image from the device library
  */
 export async function pickImage(): Promise<string | null> {
@@ -101,33 +155,27 @@ export async function uploadImage(
 ): Promise<ImageUploadResult> {
   const formData = new FormData();
 
-  // Extract filename from URI
   const filename = imageUri.split('/').pop() || 'image.jpg';
+  const type = mimeFromExtension(filename);
 
-  // Determine file type
-  const match = /\.(\w+)$/.exec(filename);
-  const type = match ? `image/${match[1]}` : 'image/jpeg';
-
-  // Append image to form data
   formData.append('image', {
     uri: imageUri,
     name: filename,
     type,
   } as any);
-
   formData.append('folder', folder);
 
   const response = await fetch(`${BASE_URL}/upload/image`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
     },
     body: formData,
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'Failed to upload image');
+    const msg = await readErrorMessage(response, 'Failed to upload image');
+    throw new Error(msg);
   }
 
   const data = await response.json();
@@ -149,8 +197,7 @@ export async function uploadMultipleImages(
 
   imageUris.forEach((uri, index) => {
     const filename = uri.split('/').pop() || `image-${index}.jpg`;
-    const match = /\.(\w+)$/.exec(filename);
-    const type = match ? `image/${match[1]}` : 'image/jpeg';
+    const type = mimeFromExtension(filename);
 
     formData.append('images', {
       uri,
@@ -164,14 +211,14 @@ export async function uploadMultipleImages(
   const response = await fetch(`${BASE_URL}/upload/images`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
     },
     body: formData,
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'Failed to upload images');
+    const msg = await readErrorMessage(response, 'Failed to upload images');
+    throw new Error(msg);
   }
 
   const data = await response.json();
@@ -195,7 +242,7 @@ export async function uploadBase64Image(
   const response = await fetch(`${BASE_URL}/upload/base64`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -205,8 +252,8 @@ export async function uploadBase64Image(
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'Failed to upload image');
+    const msg = await readErrorMessage(response, 'Failed to upload image');
+    throw new Error(msg);
   }
 
   const data = await response.json();
