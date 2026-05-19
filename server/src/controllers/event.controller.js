@@ -381,14 +381,15 @@ export const getEventByShareToken = async (req, res) => {
   try {
     const { shareToken } = req.params;
 
-    // 1) try shareToken
-    let event = await Event.findOne({ shareToken, isActive: true })
+    // 1) try shareToken — look up without isActive so we can distinguish
+    //    "doesn't exist" from "soft-deleted" in the response.
+    let event = await Event.findOne({ shareToken })
       .populate('createdBy', 'username email profilePicture')
       .populate('invitedUsers', 'username email profilePicture');
 
     // 2) fall back to _id if the param looks like an ObjectId
     if (!event && mongoose.isValidObjectId(shareToken)) {
-      event = await Event.findOne({ _id: shareToken, isActive: true })
+      event = await Event.findOne({ _id: shareToken })
         .populate('createdBy', 'username email profilePicture')
         .populate('invitedUsers', 'username email profilePicture');
       // Auto-heal: if this event has no shareToken yet, set it so subsequent
@@ -401,6 +402,10 @@ export const getEventByShareToken = async (req, res) => {
 
     if (!event) {
       return res.status(404).json({ message: "Event not found" });
+    }
+
+    if (event.isActive === false) {
+      return res.status(410).json({ message: "This event is no longer available" });
     }
 
     res.status(200).json({ event });
@@ -666,6 +671,11 @@ export const respondToInvite = async (req, res) => {
     if (status === "accepted") {
       // Add to confirmed attendees
       event.invitedUsers.push(userId);
+      // Treat the acceptance as an RSVP so the event's going / capacity /
+      // friends-going stats reflect it without a separate tap.
+      if (!event.rsvpUsers.some(id => id.toString() === userId)) {
+        event.rsvpUsers.push(userId);
+      }
 
       // Add to event group chat (create if doesn't exist yet)
       try {
@@ -676,7 +686,8 @@ export const respondToInvite = async (req, res) => {
             event.title,
             [event.createdBy.toString(), userId],
             event.createdBy.toString(),
-            event.image || ""
+            event.image || "",
+            event._id
           );
           event.groupChatId = groupChat._id;
         } else {
@@ -738,13 +749,17 @@ export const joinEventByShareLink = async (req, res) => {
     const { shareToken } = req.params;
     const userId = req.user.id;
 
-    let event = await Event.findOne({ shareToken, isActive: true });
+    let event = await Event.findOne({ shareToken });
     if (!event && mongoose.isValidObjectId(shareToken)) {
-      event = await Event.findOne({ _id: shareToken, isActive: true });
+      event = await Event.findOne({ _id: shareToken });
     }
 
     if (!event) {
       return res.status(404).json({ message: "Event not found" });
+    }
+
+    if (event.isActive === false) {
+      return res.status(410).json({ message: "This event is no longer available" });
     }
 
     // Check if user is already invited or is the creator
@@ -757,7 +772,14 @@ export const joinEventByShareLink = async (req, res) => {
     }
 
     event.invitedUsers.push(userId);
+    if (!event.rsvpUsers.some(id => id.toString() === userId)) {
+      event.rsvpUsers.push(userId);
+    }
     await event.save();
+
+    invalidateCachePattern(`event_detail_${event._id}_`);
+    invalidateCachePattern('public_events_');
+    invalidateCachePattern('event_highlights_');
 
     const updatedEvent = await Event.findById(event._id)
       .populate('createdBy', 'username email profilePicture')
@@ -802,8 +824,16 @@ export const joinFreePublicEvent = async (req, res) => {
     }
 
     event.invitedUsers.push(userId);
+    // Mark them as going so the event's going-count / capacity / friends-going
+    // stats pick them up without a separate RSVP step.
+    if (!event.rsvpUsers.some(id => id.toString() === userId)) {
+      event.rsvpUsers.push(userId);
+    }
     await event.save();
 
+    invalidateCachePattern(`event_detail_${eventId}_`);
+    invalidateCachePattern('public_events_');
+    invalidateCachePattern('event_highlights_');
     res.status(200).json({ message: "Successfully joined the event" });
   } catch (error) {
     console.error("Join free event error:", error);
@@ -932,11 +962,29 @@ export const purchaseTicket = async (req, res) => {
 
     await ticket.save();
 
+    // A paid ticket holder is a confirmed attendee — surface them in the
+    // event's rsvp/invited lists so going-count, capacity % and friends-going
+    // all reflect reality without the buyer having to tap "RSVP" separately.
+    let listsChanged = false;
+    if (!event.rsvpUsers.some(id => id.toString() === userId)) {
+      event.rsvpUsers.push(userId);
+      listsChanged = true;
+    }
+    if (!event.invitedUsers.some(id => id.toString() === userId)) {
+      event.invitedUsers.push(userId);
+      listsChanged = true;
+    }
+    if (listsChanged) {
+      await event.save();
+    }
+
     const populatedTicket = await Ticket.findById(ticket._id)
       .populate('event', 'title date location image')
       .populate('user', 'username email profilePicture');
 
-    invalidateCache(`event_detail_${eventId}_${userId}`);
+    invalidateCachePattern(`event_detail_${eventId}_`);
+    invalidateCachePattern('public_events_');
+    invalidateCachePattern('event_highlights_');
     res.status(201).json({
       message: "Ticket purchased successfully",
       ticket: populatedTicket

@@ -6,7 +6,6 @@ import {
   ScrollView,
   RefreshControl,
   Alert,
-  Dimensions,
   TouchableOpacity,
   ActivityIndicator,
 } from "react-native";
@@ -16,12 +15,18 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
-import { Fonts } from "@/constants/fonts";
 import TicketCard from "@/components/TicketCard";
 import TicketCardSkeleton from "@/components/skeletons/TicketCardSkeleton";
 import chatService from "@/services/chat.service";
 
-const { width: screenWidth } = Dimensions.get("window");
+const TK_BG = "#0B0613";
+const TK_SURFACE = "rgba(26,16,48,0.7)";
+const TK_STROKE = "rgba(255,255,255,0.08)";
+const TK_STROKE_HI = "rgba(255,255,255,0.14)";
+const TK_TEXT = "#F4EEFF";
+const TK_TEXT_DIM = "rgba(244,238,255,0.62)";
+const TK_TEXT_MUTE = "rgba(244,238,255,0.38)";
+const TK_PURPLE_SOFT = "#C084FC";
 
 interface Ticket {
   _id: string;
@@ -54,10 +59,10 @@ interface ClientBooking {
 }
 
 const BOOKING_STATUS_COLORS: Record<string, string> = {
-  pending: "#f59e0b",
-  confirmed: "#22c55e",
-  rejected: "#ef4444",
-  cancelled: "#6b7280",
+  pending: "#FCD34D",
+  confirmed: "#6EE7B7",
+  rejected: "#FCA5A5",
+  cancelled: "#9CA3AF",
 };
 
 export default function TicketsScreen() {
@@ -146,234 +151,350 @@ export default function TicketsScreen() {
     fetchBookings();
   };
 
+  const renderTab = (id: "tickets" | "bookings", label: string, count: number) => {
+    const on = activeTab === id;
+    return (
+      <TouchableOpacity
+        key={id}
+        onPress={() => setActiveTab(id)}
+        activeOpacity={0.8}
+        style={styles.tab}
+      >
+        <Text style={[styles.tabLabel, on ? styles.tabLabelActive : styles.tabLabelInactive]}>
+          {label}
+        </Text>
+        <View style={[styles.countPill, on ? styles.countPillActive : styles.countPillInactive]}>
+          <Text style={[styles.countText, on ? styles.countTextActive : styles.countTextInactive]}>
+            {count}
+          </Text>
+        </View>
+        {on && (
+          <LinearGradient
+            colors={["#A855F7", "#EC4899"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.tabUnderline}
+          />
+        )}
+      </TouchableOpacity>
+    );
+  };
+
   return (
-    <LinearGradient colors={["#0f0f1a", "#1a1a2e"]} style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
+    <View style={styles.container}>
+      <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={18} color={TK_TEXT} />
           </TouchableOpacity>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>My Tickets</Text>
             <Text style={styles.headerSubtitle}>Tickets & service bookings</Text>
           </View>
         </View>
 
+        {/* Tabs */}
         <View style={styles.tabRow}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === "tickets" && styles.tabActive]}
-            onPress={() => setActiveTab("tickets")}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.tabText, activeTab === "tickets" && styles.tabTextActive]}>
-              Event Tickets
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === "bookings" && styles.tabActive]}
-            onPress={() => setActiveTab("bookings")}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.tabText, activeTab === "bookings" && styles.tabTextActive]}>
-              Service Bookings
-            </Text>
-          </TouchableOpacity>
+          {renderTab("tickets", "Event Tickets", tickets.length)}
+          {renderTab("bookings", "Service Bookings", bookings.length)}
         </View>
 
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#a855f7" />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#A855F7" />
           }
         >
           {activeTab === "tickets" ? (
             loading ? (
               <TicketCardSkeleton count={3} />
             ) : tickets.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="ticket-outline" size={64} color="#6b7280" />
-                <Text style={styles.emptyStateTitle}>No tickets yet</Text>
-                <Text style={styles.emptyStateText}>
-                  Purchase tickets for public events to see them here
-                </Text>
-              </View>
+              <EmptyState
+                emoji="🎟️"
+                title="No tickets yet"
+                subtitle={
+                  bookings.length > 0
+                    ? "Switch to Service Bookings to see your bookings."
+                    : "When you book or buy a ticket, it'll show up here."
+                }
+              />
             ) : (
-              tickets.map((ticket) => (
-                <TicketCard key={ticket._id} ticket={ticket} />
-              ))
+              <View style={styles.ticketList}>
+                {tickets.map((ticket) => (
+                  <TicketCard key={ticket._id} ticket={ticket} />
+                ))}
+              </View>
             )
           ) : bookingsLoading ? (
             <TicketCardSkeleton count={3} />
           ) : bookings.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="briefcase-outline" size={64} color="#6b7280" />
-              <Text style={styles.emptyStateTitle}>No bookings yet</Text>
-              <Text style={styles.emptyStateText}>
-                Book a vendor service to see your bookings here
-              </Text>
-            </View>
+            <EmptyState
+              emoji="🧰"
+              title="No bookings yet"
+              subtitle={
+                tickets.length > 0
+                  ? "Switch to Event Tickets to see your tickets."
+                  : "Book a vendor service to see your bookings here."
+              }
+            />
           ) : (
-            bookings.map((booking) => (
-              <View key={booking._id} style={styles.bookingCard}>
-                <View style={styles.bookingHeader}>
-                  <Text style={styles.bookingServiceName} numberOfLines={1}>
-                    {booking.service?.name || "Unknown Service"}
-                  </Text>
-                  <View style={[styles.bookingStatusBadge, { backgroundColor: `${BOOKING_STATUS_COLORS[booking.status]}20` }]}>
-                    <Text style={[styles.bookingStatusText, { color: BOOKING_STATUS_COLORS[booking.status] }]}>
-                      {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+            <View style={styles.ticketList}>
+              {bookings.map((booking) => (
+                <View key={booking._id} style={styles.bookingCard}>
+                  <View style={styles.bookingHeader}>
+                    <Text style={styles.bookingServiceName} numberOfLines={1}>
+                      {booking.service?.name || "Unknown Service"}
                     </Text>
+                    <View
+                      style={[
+                        styles.bookingStatusBadge,
+                        { backgroundColor: `${BOOKING_STATUS_COLORS[booking.status]}20` },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.bookingStatusText,
+                          { color: BOOKING_STATUS_COLORS[booking.status] },
+                        ]}
+                      >
+                        {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-                {booking.service?.category && (
-                  <Text style={styles.bookingCategory}>{booking.service.category}</Text>
-                )}
-                <View style={styles.bookingRow}>
-                  <Ionicons name="person-outline" size={14} color="#9ca3af" />
-                  <Text style={styles.bookingDetail}>{booking.vendor?.username || "Vendor"}</Text>
-                </View>
-                <View style={styles.bookingRow}>
-                  <Ionicons name="calendar-outline" size={14} color="#9ca3af" />
-                  <Text style={styles.bookingDetail}>
-                    {new Date(booking.preferredDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                  </Text>
-                </View>
-                {booking.priceSnapshot && (
+                  {booking.service?.category && (
+                    <Text style={styles.bookingCategory}>{booking.service.category}</Text>
+                  )}
                   <View style={styles.bookingRow}>
-                    <Ionicons name="cash-outline" size={14} color="#9ca3af" />
+                    <Ionicons name="person-outline" size={14} color={TK_TEXT_MUTE} />
+                    <Text style={styles.bookingDetail}>{booking.vendor?.username || "Vendor"}</Text>
+                  </View>
+                  <View style={styles.bookingRow}>
+                    <Ionicons name="calendar-outline" size={14} color={TK_TEXT_MUTE} />
                     <Text style={styles.bookingDetail}>
-                      {booking.priceSnapshot.currency} {booking.priceSnapshot.amount.toLocaleString()}
+                      {new Date(booking.preferredDate).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
                     </Text>
                   </View>
-                )}
-                {booking.status === "confirmed" && (
-                  <TouchableOpacity
-                    style={styles.chatVendorButton}
-                    onPress={() => handleChatWithVendor(booking.vendor._id, booking._id)}
-                    disabled={chattingWith === booking._id}
-                    activeOpacity={0.8}
-                  >
-                    {chattingWith === booking._id ? (
-                      <ActivityIndicator size="small" color="#a855f7" />
-                    ) : (
-                      <>
-                        <Ionicons name="chatbubbles-outline" size={16} color="#a855f7" />
-                        <Text style={styles.chatVendorButtonText}>Chat with Vendor</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))
+                  {booking.priceSnapshot && (
+                    <View style={styles.bookingRow}>
+                      <Ionicons name="cash-outline" size={14} color={TK_TEXT_MUTE} />
+                      <Text style={styles.bookingDetail}>
+                        {booking.priceSnapshot.currency} {booking.priceSnapshot.amount.toLocaleString()}
+                      </Text>
+                    </View>
+                  )}
+                  {booking.status === "confirmed" && (
+                    <TouchableOpacity
+                      style={styles.chatVendorButton}
+                      onPress={() => handleChatWithVendor(booking.vendor._id, booking._id)}
+                      disabled={chattingWith === booking._id}
+                      activeOpacity={0.8}
+                    >
+                      {chattingWith === booking._id ? (
+                        <ActivityIndicator size="small" color={TK_PURPLE_SOFT} />
+                      ) : (
+                        <>
+                          <Ionicons name="chatbubbles-outline" size={16} color={TK_PURPLE_SOFT} />
+                          <Text style={styles.chatVendorButtonText}>Chat with Vendor</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </View>
           )}
         </ScrollView>
       </SafeAreaView>
-    </LinearGradient>
+    </View>
+  );
+}
+
+function EmptyState({ emoji, title, subtitle }: { emoji: string; title: string; subtitle: string }) {
+  const router = useRouter();
+  return (
+    <View style={styles.emptyState}>
+      <Text style={styles.emptyEmoji}>{emoji}</Text>
+      <Text style={styles.emptyStateTitle}>{title}</Text>
+      <Text style={styles.emptyStateText}>{subtitle}</Text>
+      <TouchableOpacity activeOpacity={0.85} onPress={() => router.push("/(tabs)/home" as any)}>
+        <LinearGradient
+          colors={["#A855F7", "#7C3AED", "#EC4899"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.emptyCta}
+        >
+          <Text style={styles.emptyCtaText}>Browse events</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: TK_BG,
   },
   safeArea: {
     flex: 1,
   },
+
+  // Header
   header: {
-    paddingTop: 10,
-    paddingBottom: 20,
-    paddingHorizontal: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    paddingTop: 8,
+    paddingHorizontal: 22,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 14,
   },
   backButton: {
-    padding: 4,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: TK_STROKE,
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerTitle: {
-    fontSize: screenWidth > 400 ? 32 : 28,
-    fontFamily: Fonts.bold,
-    color: "#fff",
-    marginBottom: 4,
+    fontFamily: "BricolageGrotesque_800ExtraBold",
+    fontSize: 28,
+    color: TK_TEXT,
+    letterSpacing: -1,
+    lineHeight: 30,
   },
   headerSubtitle: {
-    fontSize: screenWidth > 400 ? 14 : 13,
-    fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    fontFamily: "Outfit_500Medium",
+    fontSize: 12,
+    color: TK_TEXT_DIM,
+    marginTop: 4,
   },
+
+  // Tabs
+  tabRow: {
+    flexDirection: "row",
+    paddingHorizontal: 22,
+    paddingTop: 16,
+    gap: 22,
+    borderBottomWidth: 1,
+    borderBottomColor: TK_STROKE,
+    marginBottom: 16,
+  },
+  tab: {
+    position: "relative",
+    paddingBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  tabLabel: {
+    fontFamily: "BricolageGrotesque_700Bold",
+    fontSize: 14,
+    letterSpacing: -0.14,
+  },
+  tabLabelActive: {
+    color: TK_TEXT,
+  },
+  tabLabelInactive: {
+    color: TK_TEXT_MUTE,
+  },
+  countPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    borderRadius: 999,
+    minWidth: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  countPillActive: {
+    backgroundColor: "rgba(168,85,247,0.18)",
+  },
+  countPillInactive: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  countText: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 10,
+  },
+  countTextActive: {
+    color: TK_PURPLE_SOFT,
+  },
+  countTextInactive: {
+    color: TK_TEXT_MUTE,
+  },
+  tabUnderline: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 2,
+    borderRadius: 2,
+  },
+
+  // Lists
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
+    paddingHorizontal: 22,
+    paddingBottom: 24,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 80,
+  ticketList: {
+    gap: 14,
   },
-  loadingText: {
-    fontSize: 16,
-    fontFamily: Fonts.medium,
-    color: "#9ca3af",
-    marginTop: 16,
-  },
+
+  // Empty
   emptyState: {
-    flex: 1,
-    justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 80,
+    justifyContent: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  emptyEmoji: {
+    fontSize: 80,
+    opacity: 0.3,
+    marginBottom: 16,
   },
   emptyStateTitle: {
+    fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 20,
-    fontFamily: Fonts.bold,
-    color: "#fff",
-    marginTop: 16,
+    color: TK_TEXT,
     marginBottom: 8,
   },
   emptyStateText: {
-    fontSize: 14,
-    fontFamily: Fonts.regular,
-    color: "#9ca3af",
-    textAlign: "center",
-    paddingHorizontal: 40,
-  },
-  tabRow: {
-    flexDirection: "row",
-    marginHorizontal: 16,
-    marginBottom: 8,
-    backgroundColor: "#1f1f2e",
-    borderRadius: 12,
-    padding: 4,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 9,
-    alignItems: "center",
-  },
-  tabActive: {
-    backgroundColor: "#a855f7",
-  },
-  tabText: {
+    fontFamily: "Outfit_500Medium",
     fontSize: 13,
-    fontFamily: Fonts.semiBold,
-    color: "#6b7280",
+    color: TK_TEXT_DIM,
+    textAlign: "center",
+    marginBottom: 20,
   },
-  tabTextActive: {
+  emptyCta: {
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 999,
+  },
+  emptyCtaText: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 14,
     color: "#fff",
+    letterSpacing: 0.2,
   },
+
+  // Booking card
   bookingCard: {
-    backgroundColor: "#1f1f2e",
-    borderRadius: 16,
+    backgroundColor: TK_SURFACE,
+    borderRadius: 20,
     padding: 16,
-    marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: TK_STROKE,
   },
   bookingHeader: {
     flexDirection: "row",
@@ -383,25 +504,27 @@ const styles = StyleSheet.create({
   },
   bookingServiceName: {
     flex: 1,
+    fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 16,
-    fontFamily: Fonts.bold,
-    color: "#fff",
+    color: TK_TEXT,
     marginRight: 8,
+    letterSpacing: -0.2,
   },
   bookingStatusBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 20,
+    borderRadius: 999,
   },
   bookingStatusText: {
-    fontSize: 12,
-    fontFamily: Fonts.semiBold,
+    fontFamily: "Outfit_700Bold",
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
   bookingCategory: {
+    fontFamily: "Outfit_500Medium",
     fontSize: 12,
-    fontFamily: Fonts.regular,
-    color: "#6b7280",
-    marginBottom: 8,
+    color: TK_TEXT_MUTE,
+    marginBottom: 10,
   },
   bookingRow: {
     flexDirection: "row",
@@ -410,9 +533,9 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   bookingDetail: {
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    fontFamily: "Outfit_500Medium",
+    fontSize: 12.5,
+    color: TK_TEXT_DIM,
   },
   chatVendorButton: {
     flexDirection: "row",
@@ -421,14 +544,15 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 12,
     paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    borderRadius: 12,
+    backgroundColor: "rgba(168,85,247,0.12)",
     borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.3)",
+    borderColor: "rgba(168,85,247,0.28)",
   },
   chatVendorButtonText: {
-    fontSize: 14,
-    fontFamily: Fonts.semiBold,
-    color: "#a855f7",
+    fontFamily: "Outfit_700Bold",
+    fontSize: 13,
+    color: TK_PURPLE_SOFT,
+    letterSpacing: 0.1,
   },
 });

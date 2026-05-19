@@ -7,9 +7,11 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
@@ -103,6 +105,7 @@ export default function Signup() {
     confirm: "",
   });
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const current = STEPS[step];
   const value = values[current.key];
@@ -110,6 +113,7 @@ export default function Signup() {
   useEffect(() => {
     // Refocus the field every time the step changes.
     const t = setTimeout(() => inputRef.current?.focus(), 50);
+    setShowPassword(false);
     return () => clearTimeout(t);
   }, [step]);
 
@@ -279,28 +283,45 @@ export default function Signup() {
               <Text style={styles.hint}>{current.hint}</Text>
 
               <View style={styles.fieldWrap}>
-                <TextInput
-                  ref={inputRef}
-                  value={value}
-                  onChangeText={update}
-                  placeholder={current.placeholder}
-                  placeholderTextColor={AU.textMute}
-                  secureTextEntry={!!current.secure}
-                  keyboardType={current.keyboardType ?? "default"}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete={current.autoComplete}
-                  textContentType={
-                    current.key === "username"
-                      ? "username"
-                      : current.key === "email"
-                        ? "emailAddress"
-                        : "newPassword"
-                  }
-                  returnKeyType={isFinal ? "done" : "next"}
-                  onSubmitEditing={handleNext}
-                  style={styles.input}
-                />
+                <View style={styles.inputRow}>
+                  <TextInput
+                    ref={inputRef}
+                    value={value}
+                    onChangeText={update}
+                    placeholder={current.placeholder}
+                    placeholderTextColor={AU.textMute}
+                    secureTextEntry={!!current.secure && !showPassword}
+                    keyboardType={current.keyboardType ?? "default"}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete={current.autoComplete}
+                    textContentType={
+                      current.key === "username"
+                        ? "username"
+                        : current.key === "email"
+                          ? "emailAddress"
+                          : "newPassword"
+                    }
+                    returnKeyType={isFinal ? "done" : "next"}
+                    onSubmitEditing={handleNext}
+                    style={[styles.input, !!current.secure && styles.inputWithEye]}
+                  />
+                  {!!current.secure && (
+                    <TouchableOpacity
+                      onPress={() => setShowPassword((v) => !v)}
+                      activeOpacity={0.7}
+                      hitSlop={10}
+                      style={styles.eyeBtn}
+                      accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                    >
+                      <Ionicons
+                        name={showPassword ? "eye-off-outline" : "eye-outline"}
+                        size={22}
+                        color={AU.textMute}
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
                 <View style={styles.underlineTrack}>
                   <LinearGradient
                     colors={[AU.purple, AU.pink]}
@@ -447,7 +468,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   fieldWrap: { marginTop: 24 },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+  },
   input: {
+    flex: 1,
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 30,
     color: AU.text,
@@ -455,6 +481,13 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingTop: 0,
     margin: 0,
+  },
+  inputWithEye: {
+    paddingRight: 8,
+  },
+  eyeBtn: {
+    paddingBottom: 12,
+    paddingLeft: 8,
   },
   underlineTrack: {
     height: 2,

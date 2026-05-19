@@ -38,6 +38,7 @@ export default function Login() {
   const { setActiveAccount } = useAccount();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [showRolePicker, setShowRolePicker] = useState(false);
@@ -211,23 +212,31 @@ export default function Login() {
                 <View style={styles.field}>
                   <View style={styles.fieldLabelRow}>
                     <Text style={styles.fieldLabel}>PASSWORD</Text>
+                  </View>
+                  <View style={styles.passwordRow}>
+                    <TextInput
+                      value={password}
+                      onChangeText={setPassword}
+                      placeholder="••••••••"
+                      placeholderTextColor={AU.textMute}
+                      secureTextEntry={!showPassword}
+                      autoCapitalize="none"
+                      autoComplete="password"
+                      style={[styles.fieldInput, { flex: 1 }]}
+                    />
                     <TouchableOpacity
-                      onPress={() => router.push("/forgot-password")}
+                      onPress={() => setShowPassword((v) => !v)}
                       activeOpacity={0.7}
+                      hitSlop={8}
+                      accessibilityLabel={showPassword ? "Hide password" : "Show password"}
                     >
-                      <Text style={styles.forgotLink}>Forgot?</Text>
+                      <Ionicons
+                        name={showPassword ? "eye-off-outline" : "eye-outline"}
+                        size={18}
+                        color={AU.textMute}
+                      />
                     </TouchableOpacity>
                   </View>
-                  <TextInput
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder="••••••••"
-                    placeholderTextColor={AU.textMute}
-                    secureTextEntry
-                    autoCapitalize="none"
-                    autoComplete="password"
-                    style={styles.fieldInput}
-                  />
                 </View>
 
                 <PrimaryCTA
@@ -238,6 +247,15 @@ export default function Login() {
                   height={52}
                   style={{ borderRadius: 14, marginTop: 4 }}
                 />
+
+                <TouchableOpacity
+                  onPress={() => router.push("/forgot-password")}
+                  activeOpacity={0.7}
+                  style={styles.forgotRow}
+                  hitSlop={8}
+                >
+                  <Text style={styles.forgotLink}>Forgot password?</Text>
+                </TouchableOpacity>
 
                 {/* OR divider */}
                 <View style={styles.divider}>
@@ -420,8 +438,13 @@ const styles = StyleSheet.create({
   },
   forgotLink: {
     fontFamily: "Outfit_700Bold",
-    fontSize: 11,
+    fontSize: 12,
     color: AU.purpleSoft,
+  },
+  forgotRow: {
+    alignSelf: "center",
+    paddingVertical: 8,
+    marginTop: 2,
   },
   fieldInput: {
     fontFamily: "Outfit_500Medium",
@@ -429,6 +452,11 @@ const styles = StyleSheet.create({
     color: AU.text,
     marginTop: 4,
     paddingVertical: 0,
+  },
+  passwordRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   divider: {
     flexDirection: "row",

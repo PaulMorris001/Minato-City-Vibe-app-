@@ -5,6 +5,7 @@ import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
 import Ticket from "../models/ticket.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
+import { invalidateCachePattern } from "../utils/cache.js";
 
 const PLATFORM_FEE_PERCENT = config.stripe.platformFeePercent; // e.g. 10
 
@@ -349,6 +350,27 @@ export const confirmTicketPurchase = async (req, res) => {
       sellerNetCents,
     });
 
+    // Surface the buyer as a confirmed attendee so the event's going-count,
+    // capacity % and friends-going stats reflect reality immediately.
+    let listsChanged = false;
+    if (!event.rsvpUsers.some((id) => id.toString() === userId)) {
+      event.rsvpUsers.push(userId);
+      listsChanged = true;
+    }
+    if (!event.invitedUsers.some((id) => id.toString() === userId)) {
+      event.invitedUsers.push(userId);
+      listsChanged = true;
+    }
+    if (listsChanged) {
+      await event.save();
+    }
+
+    // Blow away the event detail cache for every viewer so ticketsRemaining /
+    // ticketsSold reflect the just-confirmed purchase on the next read.
+    invalidateCachePattern(`event_detail_${eventId}_`);
+    invalidateCachePattern("public_events_");
+    invalidateCachePattern("event_highlights_");
+
     const populated = await Ticket.findById(ticket._id)
       .populate("event", "title date location image")
       .populate("user", "username email profilePicture");
@@ -587,6 +609,23 @@ export const stripeWebhook = async (req, res) => {
               platformFeeCents: Number(paymentIntent.metadata?.platformFeeCents || 0),
               sellerNetCents: Number(paymentIntent.metadata?.sellerNetCents || 0),
             });
+
+            let listsChanged = false;
+            if (!evt.rsvpUsers.some((id) => id.toString() === buyerId)) {
+              evt.rsvpUsers.push(buyerId);
+              listsChanged = true;
+            }
+            if (!evt.invitedUsers.some((id) => id.toString() === buyerId)) {
+              evt.invitedUsers.push(buyerId);
+              listsChanged = true;
+            }
+            if (listsChanged) {
+              await evt.save();
+            }
+
+            invalidateCachePattern(`event_detail_${eventId}_`);
+            invalidateCachePattern("public_events_");
+            invalidateCachePattern("event_highlights_");
           }
         }
       }

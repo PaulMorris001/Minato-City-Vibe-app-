@@ -9,7 +9,10 @@ import {
   markMessagesAsRead,
   deleteMessage,
   searchChatsAndMessages,
-  updateGroupChat
+  updateGroupChat,
+  toggleMessageReaction,
+  setChatPinned,
+  setChatMuted
 } from "../controllers/chat.controller.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 
@@ -48,5 +51,14 @@ router.put("/chats/:chatId/read", authenticate, markMessagesAsRead);
 
 // Delete message for user
 router.delete("/messages/:messageId", authenticate, deleteMessage);
+
+// Toggle reaction on a message
+router.post("/messages/:messageId/reactions", authenticate, toggleMessageReaction);
+
+// Pin / unpin chat
+router.put("/chats/:chatId/pin", authenticate, setChatPinned);
+
+// Mute / unmute chat
+router.put("/chats/:chatId/mute", authenticate, setChatMuted);
 
 export default router;

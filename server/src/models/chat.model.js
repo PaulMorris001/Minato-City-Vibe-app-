@@ -60,6 +60,18 @@ const chatSchema = mongoose.Schema({
     default: {}
   },
 
+  // Users who have pinned this chat to the top of their inbox
+  pinnedBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "user"
+  }],
+
+  // For event-linked group chats, the event this chat belongs to
+  event: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "event"
+  },
+
   // For direct chats, track if blocked
   blockedBy: [{
     type: mongoose.Schema.Types.ObjectId,

@@ -1,12 +1,12 @@
 import React, { useState, useRef } from "react";
-import {
-  View,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-} from "react-native";
+import { View, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Fonts } from "@/constants/fonts";
+import { LinearGradient } from "expo-linear-gradient";
+
+const CH_TEXT = "#F4EEFF";
+const CH_TEXT_MUTE = "rgba(244,238,255,0.42)";
+const CH_PURPLE_SOFT = "#C084FC";
+const CH_STROKE = "rgba(255,255,255,0.08)";
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -20,7 +20,7 @@ export default function ChatInput({
   onSend,
   onImagePick,
   onTypingChange,
-  placeholder = "Type a message...",
+  placeholder = "Type a message…",
   disabled = false,
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
@@ -29,15 +29,12 @@ export default function ChatInput({
 
   const handleTextChange = (text: string) => {
     setMessage(text);
-
     if (!onTypingChange) return;
-
     if (text.length > 0) {
       if (!isTypingRef.current) {
         isTypingRef.current = true;
         onTypingChange(true);
       }
-      // Reset stop-typing timer
       if (typingTimer.current) clearTimeout(typingTimer.current);
       typingTimer.current = setTimeout(() => {
         isTypingRef.current = false;
@@ -54,7 +51,6 @@ export default function ChatInput({
 
   const handleSend = () => {
     if (message.trim() && !disabled) {
-      // Stop typing when message is sent
       if (typingTimer.current) clearTimeout(typingTimer.current);
       if (isTypingRef.current) {
         isTypingRef.current = false;
@@ -66,97 +62,109 @@ export default function ChatInput({
   };
 
   return (
+    <View style={styles.outer}>
       <View style={styles.container}>
-        {onImagePick && (
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={onImagePick}
-            disabled={disabled}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="image-outline" size={24} color="#a855f7" />
-          </TouchableOpacity>
-        )}
-
-        <View style={styles.inputContainer}>
+        <View style={styles.inputPill}>
           <TextInput
             style={styles.input}
             value={message}
             onChangeText={handleTextChange}
             placeholder={placeholder}
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={CH_TEXT_MUTE}
             multiline
             maxLength={1000}
             editable={!disabled}
           />
+          {onImagePick && (
+            <TouchableOpacity
+              style={styles.paperclipBtn}
+              onPress={onImagePick}
+              disabled={disabled}
+              activeOpacity={0.7}
+              hitSlop={6}
+            >
+              <Ionicons name="attach" size={20} color={CH_PURPLE_SOFT} />
+            </TouchableOpacity>
+          )}
         </View>
 
         <TouchableOpacity
-          style={[
-            styles.sendButton,
-            message.trim() && !disabled
-              ? styles.sendButtonActive
-              : styles.sendButtonInactive,
-          ]}
           onPress={handleSend}
           disabled={!message.trim() || disabled}
-          activeOpacity={0.7}
+          activeOpacity={0.85}
+          style={styles.sendWrap}
         >
-          <Ionicons
-            name="send"
-            size={20}
-            color={message.trim() && !disabled ? "#fff" : "#6b7280"}
-          />
+          <LinearGradient
+            colors={
+              message.trim() && !disabled
+                ? ["#A855F7", "#7C3AED"]
+                : ["rgba(168,85,247,0.35)", "rgba(124,58,237,0.35)"]
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.sendButton}
+          >
+            <Ionicons name="paper-plane" size={16} color="#fff" />
+          </LinearGradient>
         </TouchableOpacity>
       </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  outer: {
+    backgroundColor: "#0B0613",
+  },
   container: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: "#1f1f2e",
-    borderTopWidth: 1,
-    borderTopColor: "#374151",
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
     alignItems: "center",
-    marginRight: 8,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === "ios" ? 8 : 14,
+    gap: 8,
   },
-  inputContainer: {
+  inputPill: {
     flex: 1,
-    backgroundColor: "#374151",
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
     minHeight: 40,
     maxHeight: 120,
-    justifyContent: "center",
+    borderRadius: 20,
+    paddingLeft: 14,
+    paddingRight: 6,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: CH_STROKE,
+    flexDirection: "row",
+    alignItems: "center",
   },
   input: {
-    fontSize: 15,
-    fontFamily: Fonts.regular,
-    color: "#fff",
-    maxHeight: 120,
+    flex: 1,
+    fontFamily: "Outfit_500Medium",
+    fontSize: 13.5,
+    color: CH_TEXT,
+    paddingVertical: Platform.OS === "ios" ? 10 : 6,
+    maxHeight: 100,
+  },
+  paperclipBtn: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sendWrap: {
+    width: 40,
+    height: 40,
   },
   sendButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
+    borderRadius: 12,
     alignItems: "center",
-    marginLeft: 8,
-  },
-  sendButtonActive: {
-    backgroundColor: "#a855f7",
-  },
-  sendButtonInactive: {
-    backgroundColor: "#374151",
+    justifyContent: "center",
+    shadowColor: "#A855F7",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 6,
   },
 });

@@ -69,11 +69,16 @@ export default function ShareEventScreen() {
   const fetchEvent = async () => {
     try {
       const response = await fetch(`${BASE_URL}/events/share/${token}`);
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (response.ok) {
         setEvent(data.event);
       } else {
-        Alert.alert("Not Found", "This event link is invalid or has expired.", [
+        const title = response.status === 410 ? "Unavailable" : "Not Found";
+        const fallback =
+          response.status === 410
+            ? "This event is no longer available."
+            : "We couldn't find this event. The link may be incorrect.";
+        Alert.alert(title, data?.message || fallback, [
           { text: "OK", onPress: () => router.replace("/(tabs)/home") },
         ]);
       }

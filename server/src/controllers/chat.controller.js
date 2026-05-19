@@ -103,6 +103,7 @@ export const getChatById = async (req, res) => {
     const chat = await Chat.findById(chatId)
       .populate('participants', 'username email profilePicture')
       .populate('admins', 'username email profilePicture')
+      .populate('event', 'title date location image createdBy')
       .populate({
         path: 'lastMessage',
         populate: { path: 'sender', select: 'username profilePicture' }
@@ -239,6 +240,56 @@ export const updateGroupChat = async (req, res) => {
   } catch (error) {
     console.error("Update group chat error:", error);
     res.status(500).json({ message: "Error updating group chat", error: error.message });
+  }
+};
+
+// Toggle a reaction on a message
+export const toggleMessageReaction = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { messageId } = req.params;
+    const { emoji } = req.body;
+
+    const message = await ChatService.toggleMessageReaction(messageId, userId, emoji);
+    res.status(200).json({ message: "Reaction toggled", data: message });
+  } catch (error) {
+    console.error("Toggle reaction error:", error);
+    const status = error.statusCode || 500;
+    res.status(status).json({ message: error.message || "Error toggling reaction" });
+  }
+};
+
+// Pin / unpin a chat
+export const setChatPinned = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { chatId } = req.params;
+    const { pinned } = req.body;
+
+    const chat = await ChatService.setChatPinned(chatId, userId, !!pinned);
+    invalidateCache(`user_chats_${userId}`);
+    res.status(200).json({ message: "Chat pin updated", chat });
+  } catch (error) {
+    console.error("Pin chat error:", error);
+    const status = error.statusCode || 500;
+    res.status(status).json({ message: error.message || "Error updating pin" });
+  }
+};
+
+// Mute / unmute a chat
+export const setChatMuted = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { chatId } = req.params;
+    const { muted } = req.body;
+
+    const chat = await ChatService.setChatMuted(chatId, userId, !!muted);
+    invalidateCache(`user_chats_${userId}`);
+    res.status(200).json({ message: "Chat mute updated", chat });
+  } catch (error) {
+    console.error("Mute chat error:", error);
+    const status = error.statusCode || 500;
+    res.status(status).json({ message: error.message || "Error updating mute" });
   }
 };
 

@@ -1,34 +1,120 @@
-import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import React, { useState, useMemo } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Pressable,
+  Modal,
+  Alert,
+} from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
-import { Fonts } from "@/constants/fonts";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import type { Message } from "@/services/chat.service";
+import type { Message, MessageReaction } from "@/services/chat.service";
+import chatService from "@/services/chat.service";
+import { Avatar } from "@/components/shared/Avatar";
+
+const CH_TEXT = "#F4EEFF";
+const CH_TEXT_DIM = "rgba(244,238,255,0.62)";
+const CH_TEXT_MUTE = "rgba(244,238,255,0.42)";
+const CH_STROKE = "rgba(255,255,255,0.08)";
+const CH_STROKE_HI = "rgba(255,255,255,0.14)";
+const CH_BUBBLE_IN = "rgba(255,255,255,0.07)";
+const CH_PURPLE_SOFT = "#C084FC";
+const CH_BG = "#0B0613";
+
+const QUICK_REACTIONS = ["❤️", "✨", "🔥", "👍", "😂"];
+
+const SENDER_PALETTE = [
+  "#A855F7",
+  "#7C3AED",
+  "#EC4899",
+  "#F59E0B",
+  "#22D3EE",
+  "#10B981",
+  "#F472B6",
+  "#FB7185",
+];
+
+function senderColor(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  return SENDER_PALETTE[Math.abs(h) % SENDER_PALETTE.length];
+}
 
 interface MessageBubbleProps {
   message: Message;
   isOwnMessage: boolean;
+  isGroup?: boolean;
+  /** True only on the first message in a contiguous run from the same sender (incoming groups). */
   showSender?: boolean;
-  onLongPress?: () => void;
+  currentUserId?: string;
   onImagePress?: (imageUrl: string) => void;
+  onReactionsChanged?: (messageId: string, reactions: MessageReaction[]) => void;
+}
+
+function formatTime(dateString: string) {
+  const date = new Date(dateString);
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function reactionUserId(r: MessageReaction): string {
+  return typeof r.user === "string" ? r.user : r.user?._id;
 }
 
 export default function MessageBubble({
   message,
   isOwnMessage,
+  isGroup = false,
   showSender = false,
-  onLongPress,
+  currentUserId,
   onImagePress,
+  onReactionsChanged,
 }: MessageBubbleProps) {
   const router = useRouter();
+  const [pickerVisible, setPickerVisible] = useState(false);
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  // System messages render as centered pill
+  if (message.type === "system") {
+    return (
+      <View style={styles.systemContainer}>
+        <View style={styles.systemBubble}>
+          <Text style={styles.systemText}>{message.content}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  const reactions = message.reactions || [];
+
+  // Group reactions by emoji
+  const groupedReactions = useMemo(() => {
+    const map: Record<string, { emoji: string; count: number; mine: boolean }> = {};
+    for (const r of reactions) {
+      const uid = reactionUserId(r);
+      if (!map[r.emoji]) map[r.emoji] = { emoji: r.emoji, count: 0, mine: false };
+      map[r.emoji].count += 1;
+      if (uid && uid === currentUserId) map[r.emoji].mine = true;
+    }
+    return Object.values(map);
+  }, [reactions, currentUserId]);
+
+  const senderName = message.sender?.username || "";
+  const senderInitial = senderName.charAt(0).toUpperCase() || "?";
+  const senderTint = senderColor(message.sender?._id || senderName);
+
+  const handleLongPress = () => setPickerVisible(true);
+
+  const handleToggleReaction = async (emoji: string) => {
+    setPickerVisible(false);
+    try {
+      const updated = await chatService.toggleReaction(message._id, emoji);
+      onReactionsChanged?.(message._id, updated.reactions || []);
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Couldn't react");
+    }
   };
 
   const handleEventPress = () => {
@@ -37,52 +123,17 @@ export default function MessageBubble({
     }
   };
 
-  const renderContent = () => {
+  // Build the bubble body
+  const renderBubbleBody = () => {
     switch (message.type) {
-      case "text":
-        return (
-          <View>
-            {message.replyTo && (
-              <View style={styles.replyContainer}>
-                <View style={styles.replyBar} />
-                <View style={styles.replyContent}>
-                  <Text style={styles.replyUsername}>
-                    {message.replyTo.sender.username}
-                  </Text>
-                  <Text style={styles.replyText} numberOfLines={2}>
-                    {message.replyTo.content}
-                  </Text>
-                </View>
-              </View>
-            )}
-            <Text
-              style={[
-                styles.messageText,
-                isOwnMessage ? styles.ownMessageText : styles.otherMessageText,
-              ]}
-            >
-              {message.content}
-            </Text>
-            {message.isEdited && (
-              <Text
-                style={[
-                  styles.editedText,
-                  isOwnMessage ? styles.ownEditedText : styles.otherEditedText,
-                ]}
-              >
-                edited
-              </Text>
-            )}
-          </View>
-        );
-
       case "image":
         return (
           <View>
             {message.imageUrl && (
               <TouchableOpacity
-                activeOpacity={0.85}
+                activeOpacity={0.9}
                 onPress={() => onImagePress?.(message.imageUrl!)}
+                onLongPress={handleLongPress}
               >
                 <Image
                   source={{ uri: message.imageUrl }}
@@ -93,35 +144,36 @@ export default function MessageBubble({
                 />
               </TouchableOpacity>
             )}
-            {message.content && (
-              <Text
+            {!!message.content && (
+              <View
                 style={[
-                  styles.messageText,
-                  isOwnMessage
-                    ? styles.ownMessageText
-                    : styles.otherMessageText,
-                  { marginTop: 8 },
+                  styles.imageCaptionStrip,
+                  isOwnMessage ? null : styles.imageCaptionStripIncoming,
                 ]}
               >
-                {message.content}
-              </Text>
+                <Text
+                  style={[
+                    styles.captionText,
+                    isOwnMessage ? styles.ownText : styles.otherText,
+                  ]}
+                >
+                  {message.content}
+                </Text>
+              </View>
             )}
           </View>
         );
 
-      case "event":
+      case "event": {
         const eventData = message.event;
         const eventDate = eventData?.date ? new Date(eventData.date) : null;
         return (
           <TouchableOpacity
-            style={[
-              styles.eventContainer,
-              isOwnMessage ? styles.ownEventContainer : styles.otherEventContainer,
-            ]}
+            style={styles.eventContainer}
             onPress={handleEventPress}
-            activeOpacity={0.7}
+            onLongPress={handleLongPress}
+            activeOpacity={0.85}
           >
-            {/* Event Image or Icon */}
             {eventData?.image ? (
               <Image
                 source={{ uri: eventData.image }}
@@ -131,58 +183,37 @@ export default function MessageBubble({
                 transition={200}
               />
             ) : (
-              <View style={[
-                styles.eventIconContainer,
-                isOwnMessage ? styles.ownEventIcon : styles.otherEventIcon,
-              ]}>
-                <Ionicons name="calendar" size={28} color="#a855f7" />
-              </View>
+              <LinearGradient
+                colors={["#A855F7", "#7C3AED", "#EC4899"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.eventImage}
+              />
             )}
 
-            {/* Event Details */}
             <View style={styles.eventDetails}>
               <View style={styles.eventHeader}>
-                <Ionicons
-                  name="calendar-outline"
-                  size={14}
-                  color={isOwnMessage ? "rgba(255,255,255,0.8)" : "#a855f7"}
-                />
-                <Text style={[
-                  styles.eventLabel,
-                  isOwnMessage ? styles.ownEventLabel : styles.otherEventLabel,
-                ]}>
-                  EVENT INVITATION
-                </Text>
+                <Ionicons name="calendar" size={11} color={CH_PURPLE_SOFT} />
+                <Text style={styles.eventKicker}>EVENT INVITATION</Text>
               </View>
 
-              <Text
-                style={[
-                  styles.eventTitle,
-                  isOwnMessage ? styles.ownMessageText : styles.otherMessageText,
-                ]}
-                numberOfLines={2}
-              >
+              <Text style={styles.eventTitle} numberOfLines={2}>
                 {eventData?.title || message.content}
               </Text>
 
               {eventDate && (
                 <View style={styles.eventMetaRow}>
-                  <Ionicons
-                    name="time-outline"
-                    size={14}
-                    color={isOwnMessage ? "rgba(255,255,255,0.7)" : "#9ca3af"}
-                  />
-                  <Text style={[
-                    styles.eventMeta,
-                    isOwnMessage ? styles.ownEventMeta : styles.otherEventMeta,
-                  ]}>
+                  <Ionicons name="time-outline" size={12} color={CH_PURPLE_SOFT} />
+                  <Text style={styles.eventMeta}>
                     {eventDate.toLocaleDateString(undefined, {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                    })} at {eventDate.toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    })}{" "}
+                    ·{" "}
+                    {eventDate.toLocaleTimeString([], {
+                      hour: "numeric",
+                      minute: "2-digit",
                     })}
                   </Text>
                 </View>
@@ -190,243 +221,351 @@ export default function MessageBubble({
 
               {eventData?.location && (
                 <View style={styles.eventMetaRow}>
-                  <Ionicons
-                    name="location-outline"
-                    size={14}
-                    color={isOwnMessage ? "rgba(255,255,255,0.7)" : "#9ca3af"}
-                  />
-                  <Text style={[
-                    styles.eventMeta,
-                    isOwnMessage ? styles.ownEventMeta : styles.otherEventMeta,
-                  ]} numberOfLines={1}>
+                  <Ionicons name="location-outline" size={12} color={CH_PURPLE_SOFT} />
+                  <Text style={styles.eventMeta} numberOfLines={1}>
                     {eventData.location}
                   </Text>
                 </View>
               )}
 
-              <View style={[
-                styles.viewEventButton,
-                isOwnMessage ? styles.ownViewButton : styles.otherViewButton,
-              ]}>
-                <Text style={[
-                  styles.viewEventText,
-                  isOwnMessage ? styles.ownViewText : styles.otherViewText,
-                ]}>
-                  View Event
-                </Text>
-                <Ionicons
-                  name="arrow-forward"
-                  size={14}
-                  color={isOwnMessage ? "#fff" : "#a855f7"}
-                />
-              </View>
+              <LinearGradient
+                colors={["#A855F7", "#7C3AED", "#EC4899"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.eventCta}
+              >
+                <Text style={styles.eventCtaText}>View Event</Text>
+                <Ionicons name="arrow-forward" size={14} color="#fff" />
+              </LinearGradient>
             </View>
           </TouchableOpacity>
         );
+      }
 
-      case "system":
-        return (
-          <Text style={styles.systemText}>{message.content}</Text>
-        );
-
+      case "text":
       default:
-        return null;
+        return (
+          <View>
+            {message.replyTo && (
+              <View style={styles.replyContainer}>
+                <View style={styles.replyBar} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.replyUsername}>
+                    {message.replyTo.sender.username}
+                  </Text>
+                  <Text style={styles.replyText} numberOfLines={2}>
+                    {message.replyTo.content}
+                  </Text>
+                </View>
+              </View>
+            )}
+            <Text style={[styles.messageText, isOwnMessage ? styles.ownText : styles.otherText]}>
+              {message.content}
+            </Text>
+            {message.isEdited && (
+              <Text style={[styles.editedText, isOwnMessage ? styles.ownText : styles.otherText]}>
+                edited
+              </Text>
+            )}
+          </View>
+        );
     }
   };
 
-  if (message.type === "system") {
+  // Bubble container — gradient for outgoing text/text-like; image bubble = thumbnail only;
+  // event bubble = the event card (no surrounding bubble).
+  const renderBubble = () => {
+    if (message.type === "event") {
+      // Event card stands alone — no surrounding bubble
+      return renderBubbleBody();
+    }
+    if (message.type === "image") {
+      // Image stands alone with rounded outer container
+      return <View style={styles.imageBubbleOuter}>{renderBubbleBody()}</View>;
+    }
+
+    // Text bubble
+    if (isOwnMessage) {
+      return (
+        <Pressable onLongPress={handleLongPress}>
+          <LinearGradient
+            colors={["#A855F7", "#7C3AED", "#EC4899"]}
+            locations={[0, 0.6, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.bubble, styles.ownBubble]}
+          >
+            {renderBubbleBody()}
+          </LinearGradient>
+        </Pressable>
+      );
+    }
     return (
-      <View style={styles.systemContainer}>
-        <View style={styles.systemBubble}>{renderContent()}</View>
-      </View>
+      <Pressable onLongPress={handleLongPress} style={[styles.bubble, styles.otherBubble]}>
+        {renderBubbleBody()}
+      </Pressable>
     );
-  }
+  };
+
+  const rowAlign = isOwnMessage ? styles.rowEnd : styles.rowStart;
+  const showAvatarSlot = !isOwnMessage && isGroup;
 
   return (
     <View
       style={[
-        styles.container,
-        isOwnMessage ? styles.ownContainer : styles.otherContainer,
+        styles.row,
+        rowAlign,
+        { marginBottom: groupedReactions.length > 0 ? 14 : 4 },
       ]}
     >
-      {!isOwnMessage && showSender && (
-        <Text style={styles.senderName}>{message.sender.username}</Text>
+      {showAvatarSlot && (
+        <View style={styles.avatarSlot}>
+          {showSender && (
+            <Avatar
+              uri={message.sender.profilePicture}
+              name={senderName}
+              size={26}
+              bgColor={senderTint}
+            />
+          )}
+        </View>
       )}
 
-      <TouchableOpacity
-        style={[
-          styles.bubble,
-          isOwnMessage ? styles.ownBubble : styles.otherBubble,
-        ]}
-        onLongPress={onLongPress}
-        activeOpacity={0.7}
-      >
-        {renderContent()}
+      <View style={styles.bubbleColumn}>
+        {isGroup && !isOwnMessage && showSender && (
+          <Text style={[styles.senderLabel, { color: senderTint }]}>{senderName}</Text>
+        )}
 
-        <View style={styles.footer}>
-          <Text
-            style={[
-              styles.timeText,
-              isOwnMessage ? styles.ownTimeText : styles.otherTimeText,
-            ]}
-          >
-            {formatTime(message.createdAt)}
-          </Text>
+        <View style={{ position: "relative" }}>
+          {renderBubble()}
 
+          {/* Reactions chip */}
+          {groupedReactions.length > 0 && (
+            <View
+              style={[
+                styles.reactionsChip,
+                isOwnMessage ? { right: 6 } : { left: 6 },
+              ]}
+            >
+              {groupedReactions.map((r) => (
+                <TouchableOpacity
+                  key={r.emoji}
+                  onPress={() => handleToggleReaction(r.emoji)}
+                  activeOpacity={0.7}
+                  style={styles.reactionItem}
+                >
+                  <Text style={styles.reactionEmoji}>{r.emoji}</Text>
+                  {r.count > 1 && (
+                    <Text style={[styles.reactionCount, r.mine && { color: CH_PURPLE_SOFT }]}>
+                      {r.count}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Time + status */}
+        <View
+          style={[
+            styles.timeRow,
+            isOwnMessage ? styles.timeRowEnd : styles.timeRowStart,
+          ]}
+        >
+          <Text style={styles.timeText}>{formatTime(message.createdAt)}</Text>
           {isOwnMessage && (
             <View style={{ marginLeft: 4, justifyContent: "center" }}>
               {message.status === "sending" ? (
-                <Ionicons name="time-outline" size={14} color="#9ca3af" />
+                <Ionicons name="time-outline" size={12} color={CH_TEXT_MUTE} />
               ) : message.status === "failed" ? (
-                <Ionicons name="alert-circle" size={15} color="#ef4444" />
-              ) : (
+                <Ionicons name="alert-circle" size={13} color="#ef4444" />
+              ) : message.status === "read" || message.status === "delivered" ? (
                 <Ionicons
-                  name={
-                    message.status === "read" || message.status === "delivered"
-                      ? "checkmark-done"
-                      : "checkmark"
-                  }
-                  size={16}
-                  color={message.status === "read" ? "#a855f7" : "#9ca3af"}
+                  name="checkmark-done"
+                  size={13}
+                  color={message.status === "read" ? CH_PURPLE_SOFT : CH_TEXT_MUTE}
                 />
+              ) : (
+                <Ionicons name="checkmark" size={13} color={CH_TEXT_MUTE} />
               )}
             </View>
           )}
         </View>
-      </TouchableOpacity>
+      </View>
+
+      {/* Quick reaction picker */}
+      <Modal
+        visible={pickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPickerVisible(false)}
+      >
+        <Pressable style={styles.pickerOverlay} onPress={() => setPickerVisible(false)}>
+          <View style={styles.pickerPill}>
+            {QUICK_REACTIONS.map((e) => (
+              <TouchableOpacity
+                key={e}
+                style={styles.pickerEmoji}
+                onPress={() => handleToggleReaction(e)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.pickerEmojiText}>{e}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    marginVertical: 4,
-    marginHorizontal: 16,
-    maxWidth: "80%",
-  },
-  ownContainer: {
-    alignSelf: "flex-end",
-  },
-  otherContainer: {
-    alignSelf: "flex-start",
-  },
-  bubble: {
-    borderRadius: 16,
-    padding: 12,
-    minWidth: 60,
-  },
-  ownBubble: {
-    backgroundColor: "#a855f7",
-    borderBottomRightRadius: 4,
-  },
-  otherBubble: {
-    backgroundColor: "#374151",
-    borderBottomLeftRadius: 4,
-  },
-  senderName: {
-    fontSize: 12,
-    fontFamily: Fonts.semiBold,
-    color: "#9ca3af",
-    marginBottom: 4,
-    marginLeft: 12,
-  },
-  messageText: {
-    fontSize: 15,
-    fontFamily: Fonts.regular,
-    lineHeight: 20,
-  },
-  ownMessageText: {
-    color: "#fff",
-  },
-  otherMessageText: {
-    color: "#e5e7eb",
-  },
-  footer: {
+  row: {
     flexDirection: "row",
-    alignItems: "center",
-    marginTop: 4,
+    alignItems: "flex-end",
+    paddingHorizontal: 14,
+    gap: 8,
+  },
+  rowStart: {
+    justifyContent: "flex-start",
+  },
+  rowEnd: {
     justifyContent: "flex-end",
   },
-  timeText: {
-    fontSize: 11,
-    fontFamily: Fonts.regular,
+  avatarSlot: {
+    width: 26,
+    height: 26,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  ownTimeText: {
-    color: "rgba(255, 255, 255, 0.7)",
+  bubbleColumn: {
+    maxWidth: "78%",
   },
-  otherTimeText: {
-    color: "#9ca3af",
+  senderLabel: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 10.5,
+    marginBottom: 4,
+    marginLeft: 4,
+  },
+
+  bubble: {
+    paddingVertical: 10,
+    paddingHorizontal: 13,
+  },
+  ownBubble: {
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 4,
+    shadowColor: "#A855F7",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  otherBubble: {
+    backgroundColor: CH_BUBBLE_IN,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderBottomRightRadius: 18,
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: CH_STROKE,
+  },
+
+  messageText: {
+    fontFamily: "Outfit_500Medium",
+    fontSize: 13.5,
+    lineHeight: 19,
+  },
+  ownText: {
+    color: "#fff",
+  },
+  otherText: {
+    color: CH_TEXT,
+  },
+  captionText: {
+    fontFamily: "Outfit_500Medium",
+    fontSize: 12.5,
+    lineHeight: 17,
   },
   editedText: {
-    fontSize: 11,
-    fontFamily: Fonts.regular,
+    fontFamily: "Outfit_500Medium",
+    fontSize: 10.5,
     fontStyle: "italic",
     marginTop: 2,
+    opacity: 0.7,
   },
-  ownEditedText: {
-    color: "rgba(255, 255, 255, 0.7)",
-  },
-  otherEditedText: {
-    color: "#9ca3af",
+
+  // Image
+  imageBubbleOuter: {
+    borderRadius: 18,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: CH_STROKE,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 15,
+    elevation: 6,
   },
   messageImage: {
-    width: 200,
-    height: 200,
-    borderRadius: 12,
+    width: 220,
+    height: 160,
   },
+  imageCaptionStrip: {
+    backgroundColor: "rgba(168,85,247,0.85)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  imageCaptionStripIncoming: {
+    backgroundColor: "rgba(26,16,48,0.85)",
+  },
+
+  // Replies
   replyContainer: {
     flexDirection: "row",
     marginBottom: 8,
-    backgroundColor: "rgba(0, 0, 0, 0.2)",
-    borderRadius: 8,
+    backgroundColor: "rgba(0,0,0,0.18)",
+    borderRadius: 10,
     padding: 8,
+    gap: 8,
   },
   replyBar: {
     width: 3,
-    backgroundColor: "#a855f7",
+    backgroundColor: CH_PURPLE_SOFT,
     borderRadius: 2,
-    marginRight: 8,
-  },
-  replyContent: {
-    flex: 1,
   },
   replyUsername: {
-    fontSize: 12,
-    fontFamily: Fonts.semiBold,
-    color: "#a855f7",
+    fontFamily: "Outfit_700Bold",
+    fontSize: 11.5,
+    color: CH_PURPLE_SOFT,
     marginBottom: 2,
   },
   replyText: {
+    fontFamily: "Outfit_500Medium",
     fontSize: 12,
-    fontFamily: Fonts.regular,
-    color: "rgba(255, 255, 255, 0.7)",
+    color: "rgba(255,255,255,0.7)",
   },
+
+  // Event card (in-bubble)
   eventContainer: {
-    borderRadius: 12,
+    width: 244,
+    borderRadius: 16,
     overflow: "hidden",
-    minWidth: 220,
-  },
-  ownEventContainer: {
-    backgroundColor: "rgba(0, 0, 0, 0.15)",
-  },
-  otherEventContainer: {
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: "rgba(26,16,48,0.95)",
+    borderWidth: 1,
+    borderColor: CH_STROKE_HI,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.5,
+    shadowRadius: 30,
+    elevation: 8,
   },
   eventImage: {
     width: "100%",
-    height: 120,
-  },
-  eventIconContainer: {
-    width: "100%",
-    height: 80,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  ownEventIcon: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-  },
-  otherEventIcon: {
-    backgroundColor: "rgba(168, 85, 247, 0.15)",
+    height: 124,
   },
   eventDetails: {
     padding: 12,
@@ -434,24 +573,21 @@ const styles = StyleSheet.create({
   eventHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 5,
     marginBottom: 6,
   },
-  eventLabel: {
-    fontSize: 10,
-    fontFamily: Fonts.bold,
-    letterSpacing: 0.5,
-  },
-  ownEventLabel: {
-    color: "rgba(255, 255, 255, 0.8)",
-  },
-  otherEventLabel: {
-    color: "#a855f7",
+  eventKicker: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 9.5,
+    color: CH_PURPLE_SOFT,
+    letterSpacing: 1.2,
   },
   eventTitle: {
-    fontSize: 15,
-    fontFamily: Fonts.semiBold,
-    lineHeight: 20,
+    fontFamily: "BricolageGrotesque_800ExtraBold",
+    fontSize: 16,
+    color: CH_TEXT,
+    letterSpacing: -0.3,
+    lineHeight: 19,
     marginBottom: 8,
   },
   eventMetaRow: {
@@ -461,56 +597,131 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   eventMeta: {
-    fontSize: 12,
-    fontFamily: Fonts.regular,
+    fontFamily: "Outfit_500Medium",
+    fontSize: 11,
+    color: CH_TEXT_DIM,
     flex: 1,
   },
-  ownEventMeta: {
-    color: "rgba(255, 255, 255, 0.7)",
-  },
-  otherEventMeta: {
-    color: "#9ca3af",
-  },
-  viewEventButton: {
+  eventCta: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: 999,
     marginTop: 10,
   },
-  ownViewButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-  },
-  otherViewButton: {
-    backgroundColor: "rgba(168, 85, 247, 0.2)",
-  },
-  viewEventText: {
-    fontSize: 13,
-    fontFamily: Fonts.semiBold,
-  },
-  ownViewText: {
+  eventCtaText: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 12,
     color: "#fff",
+    letterSpacing: 0.2,
   },
-  otherViewText: {
-    color: "#a855f7",
+
+  // Reactions
+  reactionsChip: {
+    position: "absolute",
+    bottom: -10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: "rgba(11,6,19,0.95)",
+    borderWidth: 1,
+    borderColor: CH_STROKE_HI,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 5,
   },
+  reactionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+  reactionEmoji: {
+    fontSize: 12,
+  },
+  reactionCount: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 10,
+    color: CH_TEXT_DIM,
+  },
+
+  // Time + status
+  timeRow: {
+    marginTop: 3,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  timeRowEnd: {
+    justifyContent: "flex-end",
+  },
+  timeRowStart: {
+    justifyContent: "flex-start",
+    marginLeft: 4,
+  },
+  timeText: {
+    fontFamily: "Outfit_500Medium",
+    fontSize: 10,
+    color: CH_TEXT_MUTE,
+  },
+
+  // System
   systemContainer: {
     alignItems: "center",
     marginVertical: 8,
   },
   systemBubble: {
-    backgroundColor: "rgba(55, 65, 81, 0.5)",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: CH_STROKE,
   },
   systemText: {
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    fontFamily: "Outfit_500Medium",
+    fontSize: 11.5,
+    color: CH_TEXT_DIM,
     textAlign: "center",
   },
+
+  // Reaction picker
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pickerPill: {
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "rgba(26,16,48,0.98)",
+    borderWidth: 1,
+    borderColor: CH_STROKE_HI,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+  },
+  pickerEmoji: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pickerEmojiText: {
+    fontSize: 26,
+  },
 });
+
+export { CH_TEXT, CH_TEXT_DIM, CH_TEXT_MUTE, CH_STROKE, CH_STROKE_HI, CH_BUBBLE_IN, CH_PURPLE_SOFT, CH_BG };

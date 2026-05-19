@@ -13,24 +13,32 @@ import {
   TextInput,
   ScrollView,
   Pressable,
+  Switch,
 } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
-import { Fonts } from "@/constants/fonts";
 import * as ImagePicker from "expo-image-picker";
 import MessageBubble from "@/components/chat/MessageBubble";
 import ChatInput from "@/components/chat/ChatInput";
 import { Avatar } from "@/components/shared/Avatar";
-import chatService, { Message, Chat } from "@/services/chat.service";
+import chatService, { Message, Chat, MessageReaction } from "@/services/chat.service";
 import socketService from "@/services/socket.service";
 import * as SecureStore from "expo-secure-store";
 import { capitalize } from "@/libs/helpers";
 import { uploadImage } from "@/utils/imageUpload";
 import { trackEvent } from "@/utils/analytics";
-import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
+
+const CH_BG = "#0B0613";
+const CH_TEXT = "#F4EEFF";
+const CH_TEXT_DIM = "rgba(244,238,255,0.62)";
+const CH_TEXT_MUTE = "rgba(244,238,255,0.42)";
+const CH_STROKE = "rgba(255,255,255,0.08)";
+const CH_STROKE_HI = "rgba(255,255,255,0.14)";
+const CH_PURPLE = "#A855F7";
+const CH_PURPLE_SOFT = "#C084FC";
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -63,27 +71,17 @@ export default function ChatScreen() {
   const loadChatAndMessages = useCallback(async () => {
     try {
       setLoading(true);
-
-      // Load chat details
-      const chat = await chatService.getChatById(id);
-      setChat(chat);
-
-      // Load messages (backend already returns them in chronological order)
+      const c = await chatService.getChatById(id);
+      setChat(c);
       const messagesData = await chatService.getChatMessages(id);
       setMessages(messagesData.messages);
-
-      // Track chat opened
-      trackEvent("chat_opened", { chatId: id, chatType: chat.type });
-
-      // Mark messages as read
+      trackEvent("chat_opened", { chatId: id, chatType: c.type });
       await chatService.markMessagesAsRead(id);
-
-      // Emit socket event to notify others
       if (currentUserId) {
         socketService.markMessagesAsRead(id, currentUserId);
       }
     } catch (error: any) {
-      console.error("❌ Error loading chat:", error);
+      console.error("Error loading chat:", error);
       Alert.alert("Error", "Failed to load chat");
     } finally {
       setLoading(false);
@@ -105,8 +103,6 @@ export default function ChatScreen() {
         if (message.chat === id) {
           setMessages((prev) => {
             if (prev.some((m) => m._id === message._id)) return prev;
-            // Own message arriving via socket: replace the pending temp bubble
-            // instead of appending, so spinner never coexists with the sent tick
             if (message.sender._id === currentUserId) {
               const tempIdx = prev.findIndex((m) => m._id.startsWith("temp_"));
               if (tempIdx !== -1) {
@@ -117,8 +113,6 @@ export default function ChatScreen() {
             }
             return [...prev, message];
           });
-
-          // Auto-mark as read if message is from someone else
           if (message.sender._id !== currentUserId && currentUserId) {
             chatService.markMessagesAsRead(id);
             socketService.markMessagesAsRead(id, currentUserId);
@@ -138,6 +132,12 @@ export default function ChatScreen() {
             return next;
           });
         }
+      },
+      onMessageReaction: ({ chatId, messageId, reactions }) => {
+        if (chatId !== id) return;
+        setMessages((prev) =>
+          prev.map((m) => (m._id === messageId ? { ...m, reactions } : m))
+        );
       },
     });
 
@@ -162,10 +162,7 @@ export default function ChatScreen() {
 
   const handleSendMessage = async (content: string) => {
     if (!content.trim() || sending) return;
-
     const tempId = `temp_${Date.now()}`;
-
-    // Build sender from participants so the bubble renders correctly right away
     const senderProfile = chat?.participants.find((p) => p._id === currentUserId)
       ?? { _id: currentUserId, username: "", email: "" };
 
@@ -182,7 +179,6 @@ export default function ChatScreen() {
       updatedAt: new Date().toISOString(),
     };
 
-    // Push the bubble instantly before the API call
     setMessages((prev) => [...prev, tempMessage]);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
 
@@ -192,9 +188,6 @@ export default function ChatScreen() {
         type: "text",
         content: content.trim(),
       });
-
-      // Replace temp bubble with the real server message.
-      // If the socket beat us and already added the real message, just remove the temp.
       setMessages((prev) => {
         if (prev.some((m) => m._id === newMessage._id)) {
           return prev.filter((m) => m._id !== tempId);
@@ -220,38 +213,25 @@ export default function ChatScreen() {
         allowsEditing: false,
         quality: 0.7,
       });
-
       if (!result.canceled && result.assets[0]) {
         setSending(true);
         const localUri = result.assets[0].uri;
-
-        // Upload image to Cloudinary
         const token = await SecureStore.getItemAsync("token");
         if (!token) {
           Alert.alert("Error", "Authentication token not found");
           setSending(false);
           return;
         }
-
         try {
-          const uploadResult = await uploadImage(
-            localUri,
-            "chat_images",
-            token
-          );
-
-          // Send message with Cloudinary URL
+          const uploadResult = await uploadImage(localUri, "chat_images", token);
           const newImageMessage = await chatService.sendMessage(id, {
             type: "image",
             imageUrl: uploadResult.url,
           });
-
-          // Add immediately so the sender sees it without waiting for socket
           setMessages((prev) => {
             if (prev.some((m) => m._id === newImageMessage._id)) return prev;
             return [...prev, newImageMessage];
           });
-
           setTimeout(() => {
             flatListRef.current?.scrollToEnd({ animated: true });
           }, 100);
@@ -268,8 +248,14 @@ export default function ChatScreen() {
     }
   };
 
-  const openGroupSettings = () => {
-    if (!chat || chat.type !== "group") return;
+  const handleReactionsChanged = (messageId: string, reactions: MessageReaction[]) => {
+    setMessages((prev) =>
+      prev.map((m) => (m._id === messageId ? { ...m, reactions } : m))
+    );
+  };
+
+  const openSettings = () => {
+    if (!chat) return;
     setEditGroupName(chat.name || "");
     setEditGroupImage(chat.groupImage || null);
     setSettingsVisible(true);
@@ -286,7 +272,7 @@ export default function ChatScreen() {
       if (!result.canceled && result.assets[0]) {
         setEditGroupImage(result.assets[0].uri);
       }
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Failed to pick image");
     }
   };
@@ -297,23 +283,18 @@ export default function ChatScreen() {
     try {
       const token = await SecureStore.getItemAsync("token");
       const updates: { name?: string; groupImage?: string } = {};
-
       if (editGroupName.trim() && editGroupName.trim() !== chat.name) {
         updates.name = editGroupName.trim();
       }
-
-      // If a new local image was picked, upload it first
       if (editGroupImage && editGroupImage !== chat.groupImage) {
         if (!token) throw new Error("No auth token");
         const uploadResult = await uploadImage(editGroupImage, "group_images", token);
         updates.groupImage = uploadResult.url;
       }
-
       if (Object.keys(updates).length === 0) {
         setSettingsVisible(false);
         return;
       }
-
       const updatedChat = await chatService.updateGroupChat(chat._id, updates);
       setChat(updatedChat);
       setSettingsVisible(false);
@@ -324,30 +305,39 @@ export default function ChatScreen() {
     }
   };
 
+  const togglePinned = async () => {
+    if (!chat) return;
+    const isPinned = (chat.pinnedBy || []).some((p) => p === currentUserId);
+    try {
+      const updated = await chatService.setChatPinned(chat._id, !isPinned);
+      setChat({ ...chat, pinnedBy: updated.pinnedBy || [] });
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Failed to toggle pin");
+    }
+  };
+
+  const toggleMuted = async () => {
+    if (!chat) return;
+    const isMuted = !!(chat.isMuted as any)?.[currentUserId];
+    try {
+      const updated = await chatService.setChatMuted(chat._id, !isMuted);
+      setChat({ ...chat, isMuted: updated.isMuted });
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Failed to toggle mute");
+    }
+  };
+
   const getChatName = () => {
     if (!chat) return "";
-
-    if (chat.type === "group") {
-      return chat.name || "Group Chat";
-    }
-
-    // For direct chats, show the other participant's name
-    const otherParticipant = chat.participants.find(
-      (p) => p._id !== currentUserId
-    );
+    if (chat.type === "group") return chat.name || "Group Chat";
+    const otherParticipant = chat.participants.find((p) => p._id !== currentUserId);
     return otherParticipant?.username || "User";
   };
 
   const getChatAvatar = () => {
     if (!chat) return null;
-
-    if (chat.type === "group") {
-      return chat.groupImage || null;
-    }
-
-    const otherParticipant = chat.participants.find(
-      (p) => p._id !== currentUserId
-    );
+    if (chat.type === "group") return chat.groupImage || null;
+    const otherParticipant = chat.participants.find((p) => p._id !== currentUserId);
     return otherParticipant?.profilePicture || null;
   };
 
@@ -356,13 +346,11 @@ export default function ChatScreen() {
   const buildMessageSections = (msgs: Message[]): MessageSection[] => {
     const sections: MessageSection[] = [];
     let lastDateLabel = "";
-
     msgs.forEach((msg) => {
       const msgDate = new Date(msg.createdAt);
       const today = new Date();
       const yesterday = new Date();
       yesterday.setDate(today.getDate() - 1);
-
       let label: string;
       if (msgDate.toDateString() === today.toDateString()) {
         label = "Today";
@@ -375,62 +363,83 @@ export default function ChatScreen() {
           day: "numeric",
         });
       }
-
       if (label !== lastDateLabel) {
         lastDateLabel = label;
         sections.push({ type: "date", label, _id: `date-${msg._id}` });
       }
       sections.push(msg);
     });
-
     return sections;
   };
 
   const messageSections = buildMessageSections(messages);
+  const isGroup = chat?.type === "group";
 
   const renderMessage = ({ item, index }: { item: MessageSection; index: number }) => {
     if ("type" in item && item.type === "date") {
       return (
         <View style={styles.dateSeparatorContainer}>
+          <View style={styles.dateSeparatorLine} />
           <View style={styles.dateSeparatorPill}>
-            <Text style={styles.dateSeparatorText}>{item.label}</Text>
+            <Text style={styles.dateSeparatorText}>
+              {String(item.label).toUpperCase()}
+            </Text>
           </View>
+          <View style={styles.dateSeparatorLine} />
         </View>
       );
     }
-
     const msg = item as Message;
     const isOwnMessage = msg.sender._id === currentUserId;
-    // Find previous non-date item
     let prevMsg: Message | null = null;
     for (let i = index - 1; i >= 0; i--) {
       const prev = messageSections[i];
       if (!("type" in prev)) { prevMsg = prev as Message; break; }
     }
-    const showAvatar = !prevMsg || prevMsg.sender._id !== msg.sender._id;
+    const showSender = !prevMsg || prevMsg.sender._id !== msg.sender._id;
 
     return (
       <MessageBubble
         message={msg}
         isOwnMessage={isOwnMessage}
-        showSender={showAvatar}
+        isGroup={!!isGroup}
+        showSender={showSender}
+        currentUserId={currentUserId}
         onImagePress={(url) => setSelectedImage(url)}
+        onReactionsChanged={handleReactionsChanged}
       />
     );
   };
 
+  // Compute typing indicator label
+  const typingLabel = (() => {
+    if (typingUsers.size === 0) return null;
+    const names = Array.from(typingUsers)
+      .map((uid) => chat?.participants.find((p) => p._id === uid)?.username)
+      .filter(Boolean) as string[];
+    if (names.length === 0) return null;
+    if (names.length === 1) return `${names[0]} is typing…`;
+    if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`;
+    return `${names.length} people are typing…`;
+  })();
+
+  const isPinned = !!(chat?.pinnedBy || []).some((p) => p === currentUserId);
+  const isMuted = !!(chat && (chat.isMuted as any)?.[currentUserId]);
+  const eventRef = chat?.event;
+
   if (loading) {
     return (
-      <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
+      <View style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#a855f7" />
+          <ActivityIndicator size="large" color={CH_PURPLE} />
+          <Text style={styles.loadingText}>Loading messages…</Text>
         </View>
-      </LinearGradient>
+      </View>
     );
   }
 
   return (
-    <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
+    <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
         <KeyboardAvoidingView
           style={styles.keyboardView}
@@ -440,37 +449,88 @@ export default function ChatScreen() {
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity
-              style={styles.backButton}
+              style={styles.iconBtn}
               onPress={() => router.back()}
+              activeOpacity={0.7}
             >
-              <Ionicons name="arrow-back" size={24} color="#fff" />
+              <Ionicons name="chevron-back" size={18} color={CH_TEXT} />
             </TouchableOpacity>
 
-            <View style={styles.headerCenter}>
-              <Avatar uri={getChatAvatar()} name={getChatName()} size={40} />
-              <View style={styles.headerTextContainer}>
-                <Text style={styles.headerTitle}>
-                  {capitalize(getChatName())}
+            <Avatar uri={getChatAvatar()} name={getChatName()} size={38} />
+
+            <View style={styles.headerText}>
+              <Text style={styles.headerTitle} numberOfLines={1}>
+                {capitalize(getChatName())}
+              </Text>
+              {isGroup && (
+                <Text style={styles.headerSubtitle}>
+                  {chat?.participants.length ?? 0} participants
                 </Text>
-                {chat?.type === "group" && (
-                  <Text style={styles.headerSubtitle}>
-                    {chat.participants.length} participants
-                  </Text>
-                )}
-              </View>
+              )}
             </View>
 
-            {chat?.type === "group" && (
-              <TouchableOpacity
-                style={styles.moreButton}
-                onPress={openGroupSettings}
-              >
-                <Ionicons name="settings-outline" size={22} color="#fff" />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={openSettings}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="settings-outline" size={18} color={CH_TEXT} />
+            </TouchableOpacity>
           </View>
 
-          {/* Messages List */}
+          {/* Event banner — only when this is an event-linked group */}
+          {isGroup && eventRef && (
+            <TouchableOpacity
+              style={styles.eventBannerWrap}
+              activeOpacity={0.85}
+              onPress={() => router.push(`/event/${eventRef._id}` as any)}
+            >
+              <LinearGradient
+                colors={["rgba(168,85,247,0.18)", "rgba(236,72,153,0.12)"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.eventBanner}
+              >
+                <View style={styles.eventBannerThumb}>
+                  {eventRef.image ? (
+                    <Image
+                      source={{ uri: eventRef.image }}
+                      style={StyleSheet.absoluteFillObject}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <LinearGradient
+                      colors={["#A855F7", "#7C3AED", "#EC4899"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={StyleSheet.absoluteFillObject}
+                    />
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.eventBannerKicker}>EVENT CHAT</Text>
+                  <Text style={styles.eventBannerTitle} numberOfLines={1}>
+                    {eventRef.title}
+                    {eventRef.date && (
+                      <>
+                        {"  ·  "}
+                        {new Date(eventRef.date).toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </>
+                    )}
+                  </Text>
+                </View>
+                <View style={styles.eventBannerCta}>
+                  <Text style={styles.eventBannerCtaText}>View →</Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+
+          {/* Messages */}
           <FlatList
             ref={flatListRef}
             data={messageSections}
@@ -483,30 +543,21 @@ export default function ChatScreen() {
             }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <Ionicons name="chatbubble-outline" size={64} color="#6b7280" />
-                <Text style={styles.emptyText}>No messages yet</Text>
-                <Text style={styles.emptySubtext}>Start the conversation!</Text>
+                <Text style={styles.emptyEmoji}>👋</Text>
+                <Text style={styles.emptyText}>Say hi</Text>
+                <Text style={styles.emptySubtext}>Start the conversation</Text>
               </View>
             }
           />
 
-          {/* Typing indicator */}
-          {typingUsers.size > 0 && (() => {
-            const typingNames = Array.from(typingUsers)
-              .map((uid) => chat?.participants.find((p) => p._id === uid)?.username)
-              .filter(Boolean);
-            const label =
-              typingNames.length === 1
-                ? `${typingNames[0]} is typing...`
-                : `${typingNames.length} people are typing...`;
-            return (
-              <View style={styles.typingContainer}>
-                <Text style={styles.typingText}>{label}</Text>
-              </View>
-            );
-          })()}
+          {/* Typing indicator (text strip) */}
+          {typingLabel && (
+            <View style={styles.typingContainer}>
+              <Text style={styles.typingText}>{typingLabel}</Text>
+            </View>
+          )}
 
-          {/* Input */}
+          {/* Composer */}
           <ChatInput
             onSend={handleSendMessage}
             onImagePick={handleImagePick}
@@ -516,7 +567,7 @@ export default function ChatScreen() {
         </KeyboardAvoidingView>
       </SafeAreaView>
 
-      {/* Full-screen Image Viewer */}
+      {/* Full-screen image viewer */}
       <Modal
         visible={!!selectedImage}
         animationType="fade"
@@ -540,12 +591,12 @@ export default function ChatScreen() {
             onPress={() => setSelectedImage(null)}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <Ionicons name="arrow-back" size={24} color="#fff" />
+            <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
         </Pressable>
       </Modal>
 
-      {/* Group Settings Modal */}
+      {/* Chat Settings Modal */}
       <Modal
         visible={settingsVisible}
         animationType="slide"
@@ -559,80 +610,121 @@ export default function ChatScreen() {
             onPress={() => setSettingsVisible(false)}
           />
           <View style={styles.settingsSheet}>
-            {/* Modal header */}
             <View style={styles.settingsHeader}>
-              <Text style={styles.settingsTitle}>Group Settings</Text>
+              <Text style={styles.settingsTitle}>
+                {isGroup ? "Group Settings" : "Chat Settings"}
+              </Text>
               <TouchableOpacity onPress={() => setSettingsVisible(false)}>
-                <Ionicons name="close" size={24} color="#fff" />
+                <Ionicons name="close" size={22} color={CH_TEXT} />
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.settingsBody}>
-              {/* Group image picker */}
-              <TouchableOpacity style={styles.groupImagePicker} onPress={pickGroupImage}>
-                {editGroupImage ? (
-                  <Image source={{ uri: editGroupImage }} style={styles.groupImagePreview} contentFit="cover" />
-                ) : (
-                  <View style={styles.groupImagePlaceholder}>
-                    <Ionicons name="people" size={36} color="#6b7280" />
-                  </View>
-                )}
-                <View style={styles.groupImageOverlay}>
-                  <Ionicons name="camera" size={18} color="#fff" />
-                  <Text style={styles.groupImageOverlayText}>Change Photo</Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Group name input */}
-              <Text style={styles.settingsLabel}>Group Name</Text>
-              <TextInput
-                style={styles.settingsInput}
-                value={editGroupName}
-                onChangeText={setEditGroupName}
-                placeholder="Enter group name"
-                placeholderTextColor="#6b7280"
-                maxLength={50}
-              />
-
-              {/* Save button */}
-              <TouchableOpacity
-                style={[styles.saveButton, savingGroup && styles.saveButtonDisabled]}
-                onPress={saveGroupSettings}
-                disabled={savingGroup}
-              >
-                {savingGroup ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.saveButtonText}>Save Changes</Text>
-                )}
-              </TouchableOpacity>
-
-              {/* Participants */}
-              <Text style={[styles.settingsLabel, { marginTop: 24 }]}>
-                Members ({chat?.participants.length ?? 0})
-              </Text>
-              {chat?.participants.map((p) => (
-                <View key={p._id} style={styles.participantRow}>
-                  <Avatar uri={p.profilePicture} name={p.username} size={32} />
-                  <Text style={styles.participantName}>{p.username}</Text>
-                  {chat.admins?.some((a) => a._id === p._id) && (
-                    <View style={styles.adminBadge}>
-                      <Text style={styles.adminBadgeText}>Admin</Text>
+              {isGroup && (
+                <>
+                  <TouchableOpacity style={styles.groupImagePicker} onPress={pickGroupImage}>
+                    {editGroupImage ? (
+                      <Image source={{ uri: editGroupImage }} style={styles.groupImagePreview} contentFit="cover" />
+                    ) : (
+                      <View style={styles.groupImagePlaceholder}>
+                        <Ionicons name="people" size={36} color={CH_TEXT_MUTE} />
+                      </View>
+                    )}
+                    <View style={styles.groupImageOverlay}>
+                      <Ionicons name="camera" size={14} color="#fff" />
+                      <Text style={styles.groupImageOverlayText}>Change Photo</Text>
                     </View>
-                  )}
+                  </TouchableOpacity>
+
+                  <Text style={styles.settingsLabel}>Group Name</Text>
+                  <TextInput
+                    style={styles.settingsInput}
+                    value={editGroupName}
+                    onChangeText={setEditGroupName}
+                    placeholder="Enter group name"
+                    placeholderTextColor={CH_TEXT_MUTE}
+                    maxLength={50}
+                  />
+
+                  <TouchableOpacity
+                    style={[styles.saveButton, savingGroup && styles.saveButtonDisabled]}
+                    onPress={saveGroupSettings}
+                    disabled={savingGroup}
+                  >
+                    {savingGroup ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.saveButtonText}>Save Changes</Text>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {/* Pin / Mute toggles — available for all chats */}
+              <Text style={[styles.settingsLabel, { marginTop: isGroup ? 24 : 4 }]}>
+                Preferences
+              </Text>
+
+              <View style={styles.toggleRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.toggleLabel}>Pin to top</Text>
+                  <Text style={styles.toggleHint}>
+                    Pinned chats stay at the top of your inbox (max 3).
+                  </Text>
                 </View>
-              ))}
+                <Switch
+                  value={isPinned}
+                  onValueChange={togglePinned}
+                  trackColor={{ false: "rgba(255,255,255,0.1)", true: CH_PURPLE }}
+                  thumbColor="#fff"
+                />
+              </View>
+
+              <View style={styles.toggleRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.toggleLabel}>Mute notifications</Text>
+                  <Text style={styles.toggleHint}>
+                    Don't get push alerts for this chat.
+                  </Text>
+                </View>
+                <Switch
+                  value={isMuted}
+                  onValueChange={toggleMuted}
+                  trackColor={{ false: "rgba(255,255,255,0.1)", true: CH_PURPLE }}
+                  thumbColor="#fff"
+                />
+              </View>
+
+              {isGroup && (
+                <>
+                  <Text style={[styles.settingsLabel, { marginTop: 24 }]}>
+                    Members ({chat?.participants.length ?? 0})
+                  </Text>
+                  {chat?.participants.map((p) => (
+                    <View key={p._id} style={styles.participantRow}>
+                      <Avatar uri={p.profilePicture} name={p.username} size={32} />
+                      <Text style={styles.participantName}>{p.username}</Text>
+                      {chat.admins?.some((a) => a._id === p._id) && (
+                        <View style={styles.adminBadge}>
+                          <Text style={styles.adminBadgeText}>Admin</Text>
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                </>
+              )}
             </ScrollView>
           </View>
         </View>
       </Modal>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: CH_BG,
   },
   safeArea: {
     flex: 1,
@@ -644,66 +736,105 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    gap: 12,
   },
+  loadingText: {
+    fontFamily: "Outfit_500Medium",
+    fontSize: 13,
+    color: CH_TEXT_DIM,
+  },
+
+  // Header
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 12,
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: CH_STROKE,
+    gap: 10,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerCenter: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    marginLeft: 8,
-  },
-  headerAvatar: {
+  iconBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#374151",
-  },
-  headerAvatarPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#374151",
-    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: CH_STROKE,
     alignItems: "center",
+    justifyContent: "center",
   },
-  headerTextContainer: {
-    marginLeft: 12,
+  headerText: {
     flex: 1,
+    minWidth: 0,
   },
   headerTitle: {
-    fontSize: 16,
-    fontFamily: Fonts.semiBold,
-    color: "#fff",
+    fontFamily: "BricolageGrotesque_700Bold",
+    fontSize: 15,
+    color: CH_TEXT,
+    letterSpacing: -0.15,
   },
   headerSubtitle: {
-    fontSize: 12,
-    fontFamily: Fonts.regular,
-    color: "#6b7280",
+    fontFamily: "Outfit_500Medium",
+    fontSize: 11,
+    color: CH_TEXT_DIM,
     marginTop: 2,
   },
-  moreButton: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
+
+  // Event banner
+  eventBannerWrap: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
   },
+  eventBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(192,132,252,0.3)",
+  },
+  eventBannerThumb: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: "rgba(0,0,0,0.3)",
+  },
+  eventBannerKicker: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 9.5,
+    color: CH_PURPLE_SOFT,
+    letterSpacing: 1.2,
+  },
+  eventBannerTitle: {
+    fontFamily: "BricolageGrotesque_700Bold",
+    fontSize: 13,
+    color: CH_TEXT,
+    letterSpacing: -0.15,
+    marginTop: 2,
+  },
+  eventBannerCta: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1,
+    borderColor: CH_STROKE_HI,
+  },
+  eventBannerCtaText: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 10.5,
+    color: CH_TEXT,
+  },
+
+  // Messages
   messagesList: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 12,
+    paddingBottom: 8,
     flexGrow: 1,
   },
   emptyContainer: {
@@ -712,47 +843,64 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 60,
   },
+  emptyEmoji: {
+    fontSize: 64,
+    opacity: 0.5,
+    marginBottom: 12,
+  },
   emptyText: {
-    fontSize: 18,
-    fontFamily: Fonts.semiBold,
-    color: "#fff",
-    marginTop: 16,
+    fontFamily: "BricolageGrotesque_800ExtraBold",
+    fontSize: 20,
+    color: CH_TEXT,
   },
   emptySubtext: {
-    fontSize: 14,
-    fontFamily: Fonts.regular,
-    color: "#6b7280",
-    marginTop: 8,
+    fontFamily: "Outfit_500Medium",
+    fontSize: 13,
+    color: CH_TEXT_DIM,
+    marginTop: 6,
   },
+
   // Date separator
   dateSeparatorContainer: {
+    flexDirection: "row",
     alignItems: "center",
-    marginVertical: 12,
+    marginVertical: 14,
+    paddingHorizontal: 14,
+    gap: 10,
+  },
+  dateSeparatorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.1)",
   },
   dateSeparatorPill: {
-    backgroundColor: "rgba(55, 65, 81, 0.7)",
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: CH_STROKE,
   },
   dateSeparatorText: {
-    fontSize: 12,
-    fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    fontFamily: "Outfit_700Bold",
+    fontSize: 10,
+    color: CH_TEXT_DIM,
+    letterSpacing: 0.6,
   },
-  // Typing indicator
+
+  // Typing
   typingContainer: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 22,
     paddingVertical: 4,
-    backgroundColor: "transparent",
   },
   typingText: {
+    fontFamily: "Outfit_600SemiBold",
     fontSize: 12,
-    fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: CH_PURPLE_SOFT,
     fontStyle: "italic",
   },
-  // Full-screen image viewer
+
+  // Image viewer
   imageViewerOverlay: {
     flex: 1,
     backgroundColor: "#000",
@@ -760,15 +908,16 @@ const styles = StyleSheet.create({
   imageViewerClose: {
     position: "absolute",
     left: 12,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center",
     alignItems: "center",
     zIndex: 20,
   },
-  // Group Settings Modal
+
+  // Settings modal
   settingsOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.7)",
@@ -776,10 +925,12 @@ const styles = StyleSheet.create({
   },
   settingsBackdrop: { flex: 1 },
   settingsSheet: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: "#15101F",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: "85%",
+    borderWidth: 1,
+    borderColor: CH_STROKE,
   },
   settingsHeader: {
     flexDirection: "row",
@@ -787,12 +938,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: CH_STROKE,
   },
   settingsTitle: {
-    fontSize: scaleFontSize(18),
-    fontFamily: Fonts.bold,
-    color: "#fff",
+    fontFamily: "BricolageGrotesque_800ExtraBold",
+    fontSize: 20,
+    color: CH_TEXT,
+    letterSpacing: -0.5,
   },
   settingsBody: {
     padding: 20,
@@ -807,64 +959,85 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: "#374151",
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
   groupImagePlaceholder: {
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: "#374151",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: CH_STROKE,
     justifyContent: "center",
     alignItems: "center",
   },
   groupImageOverlay: {
     position: "absolute",
-    bottom: 0,
-    right: 0,
-    backgroundColor: "#a855f7",
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    bottom: -4,
+    right: -4,
+    backgroundColor: CH_PURPLE,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
   },
   groupImageOverlayText: {
-    fontSize: scaleFontSize(11),
-    fontFamily: Fonts.semiBold,
+    fontFamily: "Outfit_700Bold",
+    fontSize: 11,
     color: "#fff",
   },
   settingsLabel: {
-    fontSize: scaleFontSize(13),
-    fontFamily: Fonts.semiBold,
-    color: "#9ca3af",
+    fontFamily: "Outfit_700Bold",
+    fontSize: 11,
+    color: CH_TEXT_DIM,
     marginBottom: 8,
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
   settingsInput: {
-    backgroundColor: "#374151",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: scaleFontSize(15),
-    fontFamily: Fonts.regular,
-    color: "#fff",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontFamily: "Outfit_500Medium",
+    fontSize: 14,
+    color: CH_TEXT,
     borderWidth: 1,
-    borderColor: "#4b5563",
+    borderColor: CH_STROKE,
     marginBottom: 16,
   },
   saveButton: {
-    backgroundColor: "#a855f7",
-    borderRadius: 12,
-    paddingVertical: 14,
+    backgroundColor: CH_PURPLE,
+    borderRadius: 14,
+    paddingVertical: 13,
     alignItems: "center",
   },
   saveButtonDisabled: { opacity: 0.6 },
   saveButtonText: {
-    fontSize: scaleFontSize(15),
-    fontFamily: Fonts.bold,
+    fontFamily: "Outfit_700Bold",
+    fontSize: 14,
     color: "#fff",
+  },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: CH_STROKE,
+  },
+  toggleLabel: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 14,
+    color: CH_TEXT,
+  },
+  toggleHint: {
+    fontFamily: "Outfit_500Medium",
+    fontSize: 11.5,
+    color: CH_TEXT_DIM,
+    marginTop: 2,
   },
   participantRow: {
     flexDirection: "row",
@@ -872,34 +1045,26 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
-  },
-  participantAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#374151" },
-  participantAvatarPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#374151",
-    justifyContent: "center",
-    alignItems: "center",
+    borderBottomColor: CH_STROKE,
   },
   participantName: {
     flex: 1,
-    fontSize: scaleFontSize(15),
-    fontFamily: Fonts.regular,
-    color: "#fff",
+    fontFamily: "Outfit_500Medium",
+    fontSize: 14,
+    color: CH_TEXT,
   },
   adminBadge: {
     backgroundColor: "rgba(168,85,247,0.15)",
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#a855f7",
+    borderColor: CH_PURPLE,
   },
   adminBadgeText: {
-    fontSize: scaleFontSize(11),
-    fontFamily: Fonts.semiBold,
-    color: "#a855f7",
+    fontFamily: "Outfit_700Bold",
+    fontSize: 10,
+    color: CH_PURPLE_SOFT,
+    letterSpacing: 0.4,
   },
 });

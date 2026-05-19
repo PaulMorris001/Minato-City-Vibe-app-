@@ -79,9 +79,6 @@ export default function VerifySignupEmail() {
   const digits = Array.from({ length: LEN }, (_, i) => code[i] ?? "");
   const focusIdx = complete ? LEN - 1 : code.length;
 
-  const setDigits = (chars: string[]) => {
-    setCode(chars.join("").slice(0, LEN));
-  };
   const tapDigit = (d: number) => {
     if (code.length >= LEN) return;
     setCode((c) => (c + String(d)).slice(0, LEN));
@@ -89,7 +86,6 @@ export default function VerifySignupEmail() {
   const tapBackspace = () => {
     setCode((c) => c.slice(0, -1));
   };
-  const autofill = () => setDigits(["8", "4", "2", "9", "1", "7"]);
 
   const authHeaders = async () => {
     const token = await SecureStore.getItemAsync("token");
@@ -282,13 +278,7 @@ export default function VerifySignupEmail() {
                   <Text style={styles.padBtnText}>{n}</Text>
                 </TouchableOpacity>
               ))}
-              <TouchableOpacity
-                onPress={autofill}
-                activeOpacity={0.6}
-                style={styles.padBtn}
-              >
-                <Text style={styles.padAuto}>AUTO</Text>
-              </TouchableOpacity>
+              <View style={[styles.padBtn, styles.padBtnEmpty]} />
               <TouchableOpacity
                 onPress={() => tapDigit(0)}
                 activeOpacity={0.6}
@@ -497,11 +487,9 @@ const styles = StyleSheet.create({
     color: AU.text,
     letterSpacing: -0.44,
   },
-  padAuto: {
-    fontFamily: "Outfit_700Bold",
-    fontSize: 11,
-    color: AU.purpleSoft,
-    letterSpacing: 0.66,
+  padBtnEmpty: {
+    backgroundColor: "transparent",
+    borderColor: "transparent",
   },
   ctaBlock: { paddingHorizontal: 22, paddingTop: 8 },
   tosRow: {

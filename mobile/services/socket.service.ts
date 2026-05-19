@@ -9,6 +9,9 @@ import { config } from "@/constants/constants";
 interface SocketEvents {
   onNewMessage?: (message: any) => void;
   onMessageRead?: (data: any) => void;
+  onMessageReaction?: (data: { chatId: string; messageId: string; reactions: any[] }) => void;
+  onChatPinned?: (data: { chatId: string; pinned: boolean }) => void;
+  onChatMuted?: (data: { chatId: string; muted: boolean }) => void;
   onTypingStart?: (data: any) => void;
   onTypingStop?: (data: any) => void;
   onUserOnline?: (userId: string) => void;
@@ -104,6 +107,18 @@ class SocketService {
 
       this.socket.on("group:updated", (data) => {
         this.notify("onGroupUpdated", data);
+      });
+
+      this.socket.on("message:reaction", (data) => {
+        this.notify("onMessageReaction", data);
+      });
+
+      this.socket.on("chat:pinned", (data) => {
+        this.notify("onChatPinned", data);
+      });
+
+      this.socket.on("chat:muted", (data) => {
+        this.notify("onChatMuted", data);
       });
 
       this.socket.on("event:invite", (data) => {

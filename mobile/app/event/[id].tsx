@@ -684,7 +684,6 @@ export default function EventDetailsPage() {
             <View style={styles.topChromeRow}>
               <GlassRoundIcon icon="chevron-back" onPress={() => router.back()} />
               <View style={styles.topChromeRight}>
-                <GlassRoundIcon icon="share-outline" onPress={handleShareEvent} />
                 <GlassRoundIcon
                   icon="ellipsis-horizontal"
                   onPress={() => setActionSheetVisible(true)}
@@ -1145,7 +1144,10 @@ export default function EventDetailsPage() {
               label="Share event"
               onPress={() => {
                 setActionSheetVisible(false);
-                handleShareEvent();
+                // Wait for the action sheet modal to finish dismissing before
+                // presenting the system Share dialog — iOS won't present a new
+                // modal while another is still transitioning out.
+                setTimeout(() => handleShareEvent(), 350);
               }}
             />
             <SheetAction

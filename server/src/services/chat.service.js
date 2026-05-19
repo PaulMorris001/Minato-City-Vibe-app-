@@ -56,7 +56,7 @@ class ChatService {
   /**
    * Create a group chat
    */
-  async createGroupChat(name, participantIds, adminId, groupImage = "") {
+  async createGroupChat(name, participantIds, adminId, groupImage = "", eventId = null) {
     // Ensure admin is in participants
     if (!participantIds.includes(adminId)) {
       participantIds.push(adminId);
@@ -81,12 +81,16 @@ class ChatService {
       groupImage,
       unreadCount,
       isArchived,
-      isMuted
+      isMuted,
+      ...(eventId ? { event: eventId } : {})
     });
 
     await chat.save();
     await chat.populate('participants', 'username email profilePicture');
     await chat.populate('admins', 'username email profilePicture');
+    if (eventId) {
+      await chat.populate('event', 'title date location image createdBy');
+    }
 
     return chat;
   }
@@ -101,6 +105,7 @@ class ChatService {
     })
       .populate('participants', 'username email profilePicture')
       .populate('admins', 'username email profilePicture')
+      .populate('event', 'title date location image createdBy')
       .populate({
         path: 'lastMessage',
         populate: { path: 'sender', select: 'username profilePicture' }
@@ -230,7 +235,8 @@ class ChatService {
       .limit(limit)
       .populate('sender', 'username email profilePicture')
       .populate('replyTo')
-      .populate('event');
+      .populate('event')
+      .populate('reactions.user', 'username profilePicture');
 
     const total = await Message.countDocuments({
       chat: chatId,
@@ -307,6 +313,137 @@ class ChatService {
     }
 
     return { success: true };
+  }
+
+  /**
+   * Toggle a reaction on a message (add if absent, remove if same user+emoji present)
+   * Server-enforced: each user can have at most one reaction per message; sending a
+   * different emoji replaces the previous one.
+   */
+  async toggleMessageReaction(messageId, userId, emoji) {
+    if (!emoji || typeof emoji !== "string") {
+      const err = new Error("Emoji is required");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const message = await Message.findById(messageId);
+    if (!message) {
+      const err = new Error("Message not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    // Verify user is participant of the chat
+    const chat = await Chat.findById(message.chat);
+    if (!chat || !chat.participants.some(p => p.toString() === userId.toString())) {
+      const err = new Error("You don't have access to this chat");
+      err.statusCode = 403;
+      throw err;
+    }
+
+    const userIdStr = userId.toString();
+    const existing = message.reactions.find(r => r.user.toString() === userIdStr);
+
+    if (existing && existing.emoji === emoji) {
+      // Same user + same emoji → toggle off
+      message.reactions = message.reactions.filter(r => r.user.toString() !== userIdStr);
+    } else if (existing) {
+      // Different emoji from same user → replace
+      existing.emoji = emoji;
+      existing.createdAt = new Date();
+    } else {
+      message.reactions.push({ user: userId, emoji });
+    }
+
+    await message.save();
+    await message.populate('reactions.user', 'username profilePicture');
+
+    const io = getSocketInstance();
+    if (io) {
+      io.to(`chat:${message.chat.toString()}`).emit("message:reaction", {
+        chatId: message.chat.toString(),
+        messageId: message._id.toString(),
+        reactions: message.reactions
+      });
+    }
+
+    return message;
+  }
+
+  /**
+   * Pin / unpin a chat for a user. Limit: 3 pinned per user.
+   */
+  async setChatPinned(chatId, userId, pinned) {
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      const err = new Error("Chat not found");
+      err.statusCode = 404;
+      throw err;
+    }
+    if (!chat.participants.some(p => p.toString() === userId.toString())) {
+      const err = new Error("You don't have access to this chat");
+      err.statusCode = 403;
+      throw err;
+    }
+
+    const userIdStr = userId.toString();
+    const isPinned = chat.pinnedBy.some(p => p.toString() === userIdStr);
+
+    if (pinned && !isPinned) {
+      // Enforce limit
+      const pinnedCount = await Chat.countDocuments({ pinnedBy: userId });
+      if (pinnedCount >= 3) {
+        const err = new Error("You can pin at most 3 chats");
+        err.statusCode = 400;
+        throw err;
+      }
+      chat.pinnedBy.push(userId);
+    } else if (!pinned && isPinned) {
+      chat.pinnedBy = chat.pinnedBy.filter(p => p.toString() !== userIdStr);
+    }
+
+    await chat.save();
+
+    const io = getSocketInstance();
+    if (io) {
+      io.to(`user:${userIdStr}`).emit("chat:pinned", {
+        chatId: chat._id.toString(),
+        pinned: chat.pinnedBy.some(p => p.toString() === userIdStr)
+      });
+    }
+
+    return chat;
+  }
+
+  /**
+   * Mute / unmute a chat for a user.
+   */
+  async setChatMuted(chatId, userId, muted) {
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      const err = new Error("Chat not found");
+      err.statusCode = 404;
+      throw err;
+    }
+    if (!chat.participants.some(p => p.toString() === userId.toString())) {
+      const err = new Error("You don't have access to this chat");
+      err.statusCode = 403;
+      throw err;
+    }
+
+    chat.isMuted.set(userId.toString(), !!muted);
+    await chat.save();
+
+    const io = getSocketInstance();
+    if (io) {
+      io.to(`user:${userId.toString()}`).emit("chat:muted", {
+        chatId: chat._id.toString(),
+        muted: !!muted
+      });
+    }
+
+    return chat;
   }
 
   /**

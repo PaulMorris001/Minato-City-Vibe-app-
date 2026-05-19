@@ -6,24 +6,29 @@ interface Props {
   count?: number;
 }
 
-function ChatListItem() {
+function ChatListSkeletonRow() {
   return (
     <View style={styles.row}>
-      <Skeleton width={50} height={50} borderRadius={25} />
+      <Skeleton width={48} height={48} borderRadius={24} />
       <View style={styles.textGroup}>
-        <Skeleton width="50%" height={13} borderRadius={6} style={styles.line} />
-        <Skeleton width="72%" height={11} borderRadius={6} />
+        <Skeleton width={120} height={14} borderRadius={6} />
+        <View style={{ height: 6 }} />
+        <Skeleton width={180} height={11} borderRadius={6} />
       </View>
-      <Skeleton width={38} height={11} borderRadius={6} />
+      <View style={styles.right}>
+        <Skeleton width={32} height={10} borderRadius={6} />
+        <View style={{ height: 8 }} />
+        <Skeleton width={20} height={20} borderRadius={10} />
+      </View>
     </View>
   );
 }
 
-export default function ChatListItemSkeleton({ count = 5 }: Props) {
+export default function ChatListItemSkeleton({ count = 6 }: Props) {
   return (
     <View style={styles.container}>
       {Array.from({ length: count }).map((_, i) => (
-        <ChatListItem key={i} />
+        <ChatListSkeletonRow key={i} />
       ))}
     </View>
   );
@@ -31,22 +36,19 @@ export default function ChatListItemSkeleton({ count = 5 }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    gap: 2,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
     gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.05)",
   },
   textGroup: {
     flex: 1,
-    gap: 7,
   },
-  line: {
-    marginBottom: 1,
+  right: {
+    alignItems: "flex-end",
   },
 });

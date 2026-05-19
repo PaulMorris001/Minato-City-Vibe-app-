@@ -6,6 +6,15 @@ import { BASE_URL } from "@/constants/constants";
  * Handles all API calls related to chat functionality
  */
 
+export interface ChatEventRef {
+  _id: string;
+  title: string;
+  date?: string;
+  location?: string;
+  image?: string;
+  createdBy?: string | User;
+}
+
 export interface Chat {
   _id: string;
   type: "direct" | "group";
@@ -17,8 +26,16 @@ export interface Chat {
   unreadCount: Map<string, number>;
   isArchived: Map<string, boolean>;
   isMuted: Map<string, boolean>;
+  pinnedBy?: string[];
+  event?: ChatEventRef;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface MessageReaction {
+  user: string | { _id: string; username?: string; profilePicture?: string };
+  emoji: string;
+  createdAt?: string;
 }
 
 export interface User {
@@ -42,6 +59,7 @@ export interface Message {
   isDeleted: boolean;
   isEdited: boolean;
   editedAt?: string;
+  reactions?: MessageReaction[];
   createdAt: string;
   updatedAt: string;
 }
@@ -275,6 +293,59 @@ class ChatService {
       console.error("Update group chat error:", error);
       throw error;
     }
+  }
+
+  /**
+   * Toggle a reaction on a message
+   */
+  async toggleReaction(messageId: string, emoji: string): Promise<Message> {
+    const headers = await this.getAuthHeader();
+    const response = await fetch(`${BASE_URL}/messages/${messageId}/reactions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ emoji }),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to toggle reaction");
+    }
+    const data = await response.json();
+    return data.data as Message;
+  }
+
+  /**
+   * Pin / unpin a chat
+   */
+  async setChatPinned(chatId: string, pinned: boolean): Promise<Chat> {
+    const headers = await this.getAuthHeader();
+    const response = await fetch(`${BASE_URL}/chats/${chatId}/pin`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ pinned }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.message || "Failed to update pin");
+    }
+    const data = await response.json();
+    return data.chat as Chat;
+  }
+
+  /**
+   * Mute / unmute a chat
+   */
+  async setChatMuted(chatId: string, muted: boolean): Promise<Chat> {
+    const headers = await this.getAuthHeader();
+    const response = await fetch(`${BASE_URL}/chats/${chatId}/mute`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ muted }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.message || "Failed to update mute");
+    }
+    const data = await response.json();
+    return data.chat as Chat;
   }
 
   /**
