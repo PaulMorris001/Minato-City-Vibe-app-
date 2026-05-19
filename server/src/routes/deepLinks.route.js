@@ -1,9 +1,63 @@
 import express from 'express';
+import mongoose from 'mongoose';
+import Event from '../models/event.model.js';
+import Guide from '../models/guide.model.js';
 
 const router = express.Router();
 
 const PLAY_STORE = 'https://play.google.com/store/apps/details?id=com.nightvibe.mobile';
 const APP_STORE = 'https://apps.apple.com/app/nightvibe/id0000000000'; // Replace with real App Store ID
+const SITE_BASE = 'https://night-vibe.onrender.com';
+const BRAND_TAGLINE = 'NightVibe — every night out, in one app.';
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function escapeHtml(value) {
+  if (value == null) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Cloudinary URLs (e.g. https://res.cloudinary.com/xyz/image/upload/v123/abc.jpg)
+// can be rewritten with transformation params to produce a tightly-cropped
+// 1200x630 preview — the canonical aspect for WhatsApp, iMessage, Facebook,
+// LinkedIn and X large-image cards.
+function toSocialPreviewImage(url) {
+  if (!url || typeof url !== 'string') return null;
+  if (!url.includes('res.cloudinary.com') || !url.includes('/upload/')) return url;
+  if (url.includes('/upload/w_1200,')) return url;
+  return url.replace('/upload/', '/upload/w_1200,h_630,c_fill,g_auto,q_auto,f_jpg/');
+}
+
+function formatEventWhen(dateValue) {
+  if (!dateValue) return '';
+  const d = new Date(dateValue);
+  if (Number.isNaN(d.getTime())) return '';
+  const datePart = d.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const timePart = d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return `${datePart} · ${timePart}`;
+}
+
+function truncate(value, max = 180) {
+  if (!value) return '';
+  const s = String(value).trim();
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1).trimEnd() + '…';
+}
+
+// ─── App-link verification files ─────────────────────────────────────────────
 
 // Android App Links verification
 router.get('/.well-known/assetlinks.json', (req, res) => {
@@ -23,7 +77,6 @@ router.get('/.well-known/assetlinks.json', (req, res) => {
 });
 
 // iOS Universal Links verification
-// Replace APPLE_TEAM_ID with your 10-character Apple Developer Team ID (found at developer.apple.com)
 router.get('/.well-known/apple-app-site-association', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.json({
@@ -39,21 +92,72 @@ router.get('/.well-known/apple-app-site-association', (req, res) => {
   });
 });
 
-const landingPage = ({ title, subtitle, description, link, image }) => `<!DOCTYPE html>
+// ─── Landing page template ──────────────────────────────────────────────────
+//
+// The landing page exists for two audiences:
+//   1. Link-preview scrapers (WhatsApp, iMessage, Facebook, X, Slack, etc.) —
+//      they fetch raw HTML, never run JS. They read the OG / Twitter meta tags
+//      in <head> and render the preview card from those.
+//   2. Humans who land here in a browser because Universal Links / App Links
+//      didn't fire (long-pressed in WhatsApp, opened on desktop, app not
+//      installed). They see a polished card with the event details and a
+//      one-tap deep link into the app.
+//
+// JS-based auto-redirect to the `mobile://` scheme runs after a tiny delay so
+// link previewers (which often follow redirects to confirm the canonical URL)
+// don't end up at an `app store` page when they expected an HTML page.
+function buildLandingPage({
+  title,
+  description,
+  imageUrl,
+  canonicalUrl,
+  appDeepLink,
+  body,
+}) {
+  const t = escapeHtml(title || 'NightVibe');
+  const d = escapeHtml(description || BRAND_TAGLINE);
+  const ogImage = escapeHtml(imageUrl || `${SITE_BASE}/og-default.png`);
+  const url = escapeHtml(canonicalUrl);
+  const deepLinkEsc = escapeHtml(appDeepLink);
+
+  // The body block is already escaped/composed by the caller.
+  const bodyHtml = body || '';
+
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${title} – NightVibe</title>
-  <meta property="og:title" content="${title}" />
-  <meta property="og:description" content="${description}" />
-  ${image ? `<meta property="og:image" content="${image}" />` : ''}
+  <title>${t} – NightVibe</title>
+  <meta name="description" content="${d}" />
+  <link rel="canonical" href="${url}" />
+
+  <!-- Open Graph (WhatsApp, iMessage, Facebook, LinkedIn, Slack, Discord) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="NightVibe" />
+  <meta property="og:title" content="${t}" />
+  <meta property="og:description" content="${d}" />
+  <meta property="og:url" content="${url}" />
+  <meta property="og:image" content="${ogImage}" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="${t}" />
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="${t}" />
+  <meta name="twitter:description" content="${d}" />
+  <meta name="twitter:image" content="${ogImage}" />
+
+  <!-- Smart App Banner (iOS Safari) -->
+  <meta name="apple-itunes-app" content="app-id=0000000000, app-argument=${deepLinkEsc}" />
+
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0d0d1a;
-      color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
+      background: radial-gradient(circle at top, #1a1030 0%, #0b0613 60%);
+      color: #f4eeff;
       min-height: 100vh;
       display: flex;
       align-items: center;
@@ -61,96 +165,280 @@ const landingPage = ({ title, subtitle, description, link, image }) => `<!DOCTYP
       padding: 24px;
     }
     .card {
-      background: #1f1f2e;
-      border: 1px solid #374151;
-      border-radius: 20px;
-      padding: 40px 32px;
-      max-width: 400px;
+      background: rgba(26,16,48,0.85);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 24px;
+      padding: 28px 26px 26px;
+      max-width: 420px;
       width: 100%;
-      text-align: center;
+      box-shadow: 0 24px 60px -20px rgba(124,58,237,0.5);
+      overflow: hidden;
     }
     .logo {
-      font-size: 28px;
-      font-weight: 800;
-      background: linear-gradient(135deg, #a855f7, #7c3aed);
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #a855f7, #ec4899);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
-      margin-bottom: 24px;
+      margin-bottom: 18px;
     }
-    .subtitle { color: #9ca3af; font-size: 13px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
-    h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
-    .desc { color: #9ca3af; font-size: 14px; line-height: 1.6; margin-bottom: 32px; }
+    .cover {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border-radius: 16px;
+      overflow: hidden;
+      margin-bottom: 18px;
+      background: linear-gradient(135deg, #a855f7, #7c3aed, #ec4899);
+      background-size: cover;
+      background-position: center;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .kicker {
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #c084fc;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+    .meta {
+      font-size: 14px;
+      color: rgba(244,238,255,0.7);
+      line-height: 1.5;
+      margin-bottom: 22px;
+    }
+    .meta-row { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+    .meta-row svg { flex-shrink: 0; opacity: 0.8; }
     .open-btn {
       display: block;
-      background: linear-gradient(135deg, #a855f7, #7c3aed);
+      background: linear-gradient(135deg, #a855f7, #7c3aed, #ec4899);
       color: #fff;
       text-decoration: none;
-      border-radius: 12px;
-      padding: 16px;
-      font-size: 16px;
+      border-radius: 14px;
+      padding: 15px;
+      font-size: 15px;
       font-weight: 700;
+      text-align: center;
       margin-bottom: 12px;
+      box-shadow: 0 10px 24px rgba(168,85,247,0.4);
     }
-    .store-row { display: flex; gap: 10px; margin-top: 4px; }
+    .store-row { display: flex; gap: 10px; }
     .store-btn {
       flex: 1;
       display: block;
-      background: #111827;
-      border: 1px solid #374151;
-      color: #e5e7eb;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #f4eeff;
       text-decoration: none;
-      border-radius: 10px;
+      border-radius: 12px;
       padding: 12px 8px;
       font-size: 13px;
       font-weight: 600;
+      text-align: center;
+    }
+    .store-btn:hover { background: rgba(255,255,255,0.10); }
+    .footer-note {
+      font-size: 11px;
+      color: rgba(244,238,255,0.42);
+      text-align: center;
+      margin-top: 14px;
     }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="logo">NightVibe</div>
-    <p class="subtitle">${subtitle}</p>
-    <h1>${title}</h1>
-    <p class="desc">${description}</p>
-    <a class="open-btn" href="${link}">Open in NightVibe</a>
+    ${bodyHtml}
+    <a class="open-btn" href="${deepLinkEsc}">Open in the app</a>
     <div class="store-row">
       <a class="store-btn" href="${APP_STORE}">App Store</a>
       <a class="store-btn" href="${PLAY_STORE}">Google Play</a>
     </div>
+    <div class="footer-note">If the app is installed, it'll open automatically.</div>
   </div>
   <script>
-    // Try to open the app immediately; if it fails the user sees the buttons above
-    window.location.href = "${link}";
+    // Try to open the app after a beat. Delay lets bots/scrapers and humans
+    // see the page; on real devices with the app installed, iOS/Android will
+    // typically have already short-circuited to Universal Links / App Links
+    // before reaching this script.
+    setTimeout(function () {
+      try { window.location.replace(${JSON.stringify(appDeepLink)}); } catch (e) {}
+    }, 300);
   </script>
 </body>
 </html>`;
+}
 
-// Event landing page
+// ─── Event landing page ──────────────────────────────────────────────────────
+
 router.get('/event/:token', async (req, res) => {
   const { token } = req.params;
-  const deepLink = `mobile://share/${token}`;
-  res.setHeader('Content-Type', 'text/html');
-  res.send(landingPage({
-    title: 'Event Invite',
-    subtitle: 'You\'ve been invited',
-    description: 'Open NightVibe to view this event and RSVP.',
-    link: deepLink,
-    image: null,
-  }));
+  const appDeepLink = `mobile://share/${token}`;
+  const canonicalUrl = `${SITE_BASE}/event/${token}`;
+
+  // Look the event up so link previews can render with title, date, venue,
+  // and the event's cover image. Fall back to a generic invite card on miss.
+  let event = null;
+  try {
+    event = await Event.findOne({ shareToken: token })
+      .populate('createdBy', 'username')
+      .lean();
+    if (!event && mongoose.isValidObjectId(token)) {
+      event = await Event.findOne({ _id: token })
+        .populate('createdBy', 'username')
+        .lean();
+    }
+  } catch (err) {
+    console.error('Event lookup for share landing failed:', err);
+  }
+
+  // Filter out events that shouldn't be publicly previewed — soft-deleted ones,
+  // and pending/rejected paid events. Private events can still be previewed
+  // because the share link itself is the access-grant mechanism.
+  const isPreviewable =
+    event &&
+    event.isActive !== false &&
+    (!event.isPaid || event.approvalStatus === 'approved');
+
+  if (!isPreviewable) {
+    const body = `
+      <div class="kicker">Event Invite</div>
+      <h1>You've been invited.</h1>
+      <p class="meta">Open NightVibe to view this event and RSVP.</p>
+    `;
+    return res
+      .setHeader('Content-Type', 'text/html')
+      .send(buildLandingPage({
+        title: 'Event Invite — NightVibe',
+        description: BRAND_TAGLINE,
+        imageUrl: null,
+        canonicalUrl,
+        appDeepLink,
+        body,
+      }));
+  }
+
+  const when = formatEventWhen(event.date);
+  const venue = event.location || '';
+  const host = event.createdBy?.username ? `Hosted by ${event.createdBy.username}` : '';
+  const priceLine = event.isPaid && event.ticketPrice
+    ? `From $${event.ticketPrice}`
+    : (!event.isPaid && event.isPublic ? 'Free entry' : '');
+
+  // Description used for previewers — kept tight so WhatsApp / iMessage show
+  // the most useful info first within their truncation window.
+  const descBits = [when, venue, host, priceLine].filter(Boolean);
+  const description = truncate(
+    descBits.join(' · ') ||
+      event.description ||
+      'Tap to view this event and RSVP on NightVibe.',
+    180
+  );
+
+  const previewImage = toSocialPreviewImage(event.image);
+
+  const body = `
+    ${event.image
+      ? `<div class="cover" style="background-image: url('${escapeHtml(event.image)}');"></div>`
+      : `<div class="cover"></div>`}
+    <div class="kicker">${event.isPaid ? 'Get tickets' : 'You\'re invited'}</div>
+    <h1>${escapeHtml(event.title || 'NightVibe Event')}</h1>
+    <div class="meta">
+      ${when ? `<div class="meta-row">📅 ${escapeHtml(when)}</div>` : ''}
+      ${venue ? `<div class="meta-row">📍 ${escapeHtml(venue)}</div>` : ''}
+      ${host ? `<div class="meta-row">🎤 ${escapeHtml(host)}</div>` : ''}
+      ${priceLine ? `<div class="meta-row">🎟️ ${escapeHtml(priceLine)}</div>` : ''}
+    </div>
+  `;
+
+  res
+    .setHeader('Content-Type', 'text/html')
+    .setHeader('Cache-Control', 'public, max-age=300')
+    .send(buildLandingPage({
+      title: event.title || 'NightVibe Event',
+      description,
+      imageUrl: previewImage,
+      canonicalUrl,
+      appDeepLink,
+      body,
+    }));
 });
 
-// Guide landing page
+// ─── Guide landing page ──────────────────────────────────────────────────────
+
 router.get('/guide/:id', async (req, res) => {
   const { id } = req.params;
-  const deepLink = `mobile://guide/${id}`;
-  res.setHeader('Content-Type', 'text/html');
-  res.send(landingPage({
-    title: 'City Guide',
-    subtitle: 'NightVibe Guide',
-    description: 'Open NightVibe to view this city guide.',
-    link: deepLink,
-    image: null,
-  }));
+  const appDeepLink = `mobile://guide/${id}`;
+  const canonicalUrl = `${SITE_BASE}/guide/${id}`;
+
+  let guide = null;
+  try {
+    if (mongoose.isValidObjectId(id)) {
+      guide = await Guide.findById(id).lean();
+    }
+  } catch (err) {
+    console.error('Guide lookup for share landing failed:', err);
+  }
+
+  if (!guide || guide.isActive === false || guide.isDraft) {
+    return res
+      .setHeader('Content-Type', 'text/html')
+      .send(buildLandingPage({
+        title: 'City Guide — NightVibe',
+        description: BRAND_TAGLINE,
+        imageUrl: null,
+        canonicalUrl,
+        appDeepLink,
+        body: `
+          <div class="kicker">City Guide</div>
+          <h1>Discover the city.</h1>
+          <p class="meta">Open NightVibe to read this guide.</p>
+        `,
+      }));
+  }
+
+  const cityLine = guide.city
+    ? `${guide.city}${guide.cityState ? ', ' + guide.cityState : ''}`
+    : '';
+  const author = guide.authorName ? `By ${guide.authorName}` : '';
+  const priceLine = guide.price > 0 ? `$${guide.price}` : 'Free';
+
+  const descBits = [cityLine, guide.topic, author, priceLine].filter(Boolean);
+  const description = truncate(
+    descBits.join(' · ') || guide.description || 'A city guide on NightVibe.',
+    180
+  );
+
+  const body = `
+    <div class="cover"></div>
+    <div class="kicker">City Guide${guide.topic ? ` · ${escapeHtml(guide.topic)}` : ''}</div>
+    <h1>${escapeHtml(guide.title || 'NightVibe Guide')}</h1>
+    <div class="meta">
+      ${cityLine ? `<div class="meta-row">📍 ${escapeHtml(cityLine)}</div>` : ''}
+      ${author ? `<div class="meta-row">✍️ ${escapeHtml(author)}</div>` : ''}
+      <div class="meta-row">🎟️ ${escapeHtml(priceLine)}</div>
+    </div>
+  `;
+
+  res
+    .setHeader('Content-Type', 'text/html')
+    .setHeader('Cache-Control', 'public, max-age=300')
+    .send(buildLandingPage({
+      title: guide.title || 'NightVibe Guide',
+      description,
+      imageUrl: null,
+      canonicalUrl,
+      appDeepLink,
+      body,
+    }));
 });
 
 export default router;
