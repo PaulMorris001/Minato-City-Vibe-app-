@@ -186,12 +186,24 @@ export default Sentry.wrap(function RootLayout() {
   const routeDeepLink = useCallback((url: string | null) => {
     if (!url) return;
     try {
-      const { pathname } = new URL(url);
-      const parts = pathname.split('/').filter(Boolean);
-      if (parts[0] === 'event' && parts[1]) {
-        router.push(`/share/${parts[1]}` as any);
-      } else if (parts[0] === 'guide' && parts[1]) {
-        router.push(`/guide/${parts[1]}` as any);
+      const parsed = new URL(url);
+      const isAppScheme = parsed.protocol === 'mobile:';
+      // For custom schemes the URL parser puts the first segment into `host`
+      // (e.g. `mobile://share/TOKEN` → host=`share`, pathname=`/TOKEN`).
+      // For https Universal Links the segment is in the pathname instead.
+      const segments = isAppScheme
+        ? [parsed.host, ...parsed.pathname.split('/').filter(Boolean)]
+        : parsed.pathname.split('/').filter(Boolean);
+
+      const [kind, token] = segments;
+      if (!token) return;
+
+      // Accept both the Universal Link shape (`/event/TOKEN`) and the web
+      // landing page's redirect (`mobile://share/TOKEN`) for events.
+      if (kind === 'event' || kind === 'share') {
+        router.push(`/share/${token}` as any);
+      } else if (kind === 'guide') {
+        router.push(`/guide/${token}` as any);
       }
     } catch {}
   }, []);

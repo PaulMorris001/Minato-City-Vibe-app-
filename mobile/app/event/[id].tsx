@@ -512,10 +512,11 @@ export default function EventDetailsPage() {
     if (!event) return;
     try {
       const link = createEventShareLink(event.shareToken || event._id);
+      // Put the URL in `message` only — iOS share targets paste both `message`
+      // and `url` when both are provided, which doubles the link.
       await Share.share({
         message: `Check out this event on NightVibe: ${event.title}\n${link}`,
         title: event.title,
-        url: link,
       });
     } catch (err) {
       console.error("Share event error:", err);

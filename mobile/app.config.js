@@ -8,6 +8,17 @@ module.exports = {
   scheme: "mobile",
   userInterfaceStyle: "automatic",
   newArchEnabled: true,
+  // OTA updates via EAS Update. Bump `version` above whenever you do a fresh
+  // native build (new module, permission, plugin change). All OTA updates are
+  // pinned to a runtime that matches the binary's app version — old binaries
+  // will not pick up an update built for a newer version.
+  runtimeVersion: { policy: "appVersion" },
+  updates: {
+    url: "https://u.expo.dev/a1e5c06d-26a5-4e05-89d9-3b9acf9a3ea4",
+    // Wait up to 5s on launch for an update; otherwise the cached bundle
+    // ships and the new one applies on the *next* open.
+    fallbackToCacheTimeout: 5000,
+  },
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.nightvibe.minato",
