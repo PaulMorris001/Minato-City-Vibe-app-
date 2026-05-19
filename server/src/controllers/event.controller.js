@@ -419,7 +419,7 @@ export const getEventByShareToken = async (req, res) => {
 export const updateEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { title, date, location, image, description } = req.body;
+    const { title, date, location, image, description, isPublic } = req.body;
     const userId = req.user.id;
 
     const event = await Event.findById(eventId);
@@ -431,6 +431,18 @@ export const updateEvent = async (req, res) => {
     // Only the creator can update the event
     if (event.createdBy.toString() !== userId) {
       return res.status(403).json({ message: "You don't have permission to update this event" });
+    }
+
+    // Visibility is locked once an event is created. Flipping private ↔ public
+    // after the fact would either (a) leak a private guest list to strangers,
+    // or (b) silently strand paid ticket-holders who can no longer see the
+    // event in browse. Either direction requires a different product flow
+    // (re-issue invites, refund tickets) — refuse and tell the client why.
+    if (isPublic !== undefined && Boolean(isPublic) !== Boolean(event.isPublic)) {
+      const reason = event.isPublic
+        ? "This event is already public and can't be made private — guests who joined or bought tickets would lose access. Delete and recreate the event if you need it to be private."
+        : "A private event can't be made public after it's been created. Create a new public event if you'd like to open it up to everyone.";
+      return res.status(400).json({ message: reason });
     }
 
     assertClean([
@@ -677,35 +689,40 @@ export const respondToInvite = async (req, res) => {
         event.rsvpUsers.push(userId);
       }
 
-      // Add to event group chat (create if doesn't exist yet)
-      try {
-        const user = await User.findById(userId).select('username');
-        if (!event.groupChatId) {
-          // Create group chat with creator + this user
-          const groupChat = await ChatService.createGroupChat(
-            event.title,
-            [event.createdBy.toString(), userId],
-            event.createdBy.toString(),
-            event.image || "",
-            event._id
-          );
-          event.groupChatId = groupChat._id;
-        } else {
-          const groupChat = await Chat.findById(event.groupChatId);
-          if (groupChat && !groupChat.participants.some(p => p.toString() === userId)) {
-            groupChat.participants.push(userId);
-            groupChat.unreadCount.set(userId, 0);
-            groupChat.isArchived.set(userId, false);
-            groupChat.isMuted.set(userId, false);
-            await groupChat.save();
-            await ChatService.sendMessage(event.groupChatId, userId, {
-              type: 'system',
-              content: `${user?.username || 'Someone'} joined the group`
-            });
+      // Auto-create / extend the event group chat — only for private events.
+      // Public events can be very large (a 10k-person group chat is unusable
+      // and would melt the push-notification fanout), so we skip it entirely
+      // and rely on the event detail screen as the canonical surface.
+      if (!event.isPublic) {
+        try {
+          const user = await User.findById(userId).select('username');
+          if (!event.groupChatId) {
+            // Create group chat with creator + this user
+            const groupChat = await ChatService.createGroupChat(
+              event.title,
+              [event.createdBy.toString(), userId],
+              event.createdBy.toString(),
+              event.image || "",
+              event._id
+            );
+            event.groupChatId = groupChat._id;
+          } else {
+            const groupChat = await Chat.findById(event.groupChatId);
+            if (groupChat && !groupChat.participants.some(p => p.toString() === userId)) {
+              groupChat.participants.push(userId);
+              groupChat.unreadCount.set(userId, 0);
+              groupChat.isArchived.set(userId, false);
+              groupChat.isMuted.set(userId, false);
+              await groupChat.save();
+              await ChatService.sendMessage(event.groupChatId, userId, {
+                type: 'system',
+                content: `${user?.username || 'Someone'} joined the group`
+              });
+            }
           }
+        } catch (chatErr) {
+          console.error("Group chat error on invite accept:", chatErr);
         }
-      } catch (chatErr) {
-        console.error("Group chat error on invite accept:", chatErr);
       }
 
       // Notify the event creator

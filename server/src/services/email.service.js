@@ -26,6 +26,26 @@ const createTransporter = () => {
     });
   }
 
+  if (emailService === 'zoho') {
+    // Zoho Mail SMTP (global region — use smtp.zoho.eu / smtp.zoho.in if your
+    // mailbox is hosted in the EU or India region). Requires an Application-
+    // Specific Password generated from Zoho's security settings — your normal
+    // mailbox password will NOT work over SMTP.
+    const host = process.env.SMTP_HOST || 'smtp.zoho.com';
+    const port = parseInt(process.env.SMTP_PORT || '465', 10);
+    const secure = port === 465; // 465 = SSL, 587 = STARTTLS
+    console.log(`✅ Using Zoho SMTP (${host}:${port}, secure=${secure})`);
+    return nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD,
+      },
+    });
+  }
+
   // Default: Use SMTP settings from environment
   console.log('⚙️ Using SMTP configuration:', {
     host: process.env.SMTP_HOST || 'smtp.ethereal.email',
@@ -58,7 +78,7 @@ export const sendPasswordResetOTP = async (email, otp, username) => {
     const transporter = createTransporter();
 
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"NightVibe" <noreply@nightvibe.com>',
+      from: process.env.EMAIL_FROM || '"NightVibe" <Support@nvibez.com>',
       to: email,
       subject: 'Password Reset - NightVibe',
       html: `
@@ -197,7 +217,7 @@ export const sendPasswordResetOTP = async (email, otp, username) => {
             <div class="footer">
               <p>
                 This is an automated message from NightVibe.<br>
-                Need help? Contact us at <a href="mailto:support@nightvibe.com">support@nightvibe.com</a>
+                Need help? Contact us at <a href="mailto:Support@nvibez.com">Support@nvibez.com</a>
               </p>
               <p style="margin-top: 10px;">
                 © ${new Date().getFullYear()} NightVibe. All rights reserved.
@@ -253,7 +273,7 @@ export const sendSignupVerificationOTP = async (email, otp, username) => {
   try {
     const transporter = createTransporter();
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"NightVibe" <noreply@nightvibe.com>',
+      from: process.env.EMAIL_FROM || '"NightVibe" <Support@nvibez.com>',
       to: email,
       subject: "Verify your email - NightVibe",
       html: `
@@ -309,7 +329,7 @@ export const sendPasswordResetSuccessEmail = async (email, username) => {
     const transporter = createTransporter();
 
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"NightVibe" <noreply@nightvibe.com>',
+      from: process.env.EMAIL_FROM || '"NightVibe" <Support@nvibez.com>',
       to: email,
       subject: 'Password Reset Successful - NightVibe',
       html: `

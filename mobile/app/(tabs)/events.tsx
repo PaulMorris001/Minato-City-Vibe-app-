@@ -470,13 +470,16 @@ export default function EventsPage() {
 
     try {
       const token = await SecureStore.getItemAsync("token");
+      // Visibility is immutable post-creation — don't send it on update so a
+      // stale toggle in local state can't trip the server's guard.
+      const { isPublic: _ignored, ...editablePayload } = editData;
       const response = await fetch(`${BASE_URL}/events/${selectedEvent._id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(editData),
+        body: JSON.stringify(editablePayload),
       });
 
       const data = await response.json();
@@ -1047,12 +1050,24 @@ export default function EventsPage() {
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Visibility</Text>
+                <Text style={styles.visibilityLockedHint}>
+                  Visibility is locked after an event is created.
+                  {editData.isPublic
+                    ? " Making a public event private would strand guests and ticket holders."
+                    : " Making a private event public would expose your guest list."}
+                  {" "}Create a new event if you need to change this.
+                </Text>
                 <TouchableOpacity
-                  style={styles.visibilityToggle}
-                  onPress={() =>
-                    setEditData({ ...editData, isPublic: !editData.isPublic })
-                  }
-                  activeOpacity={0.7}
+                  style={[styles.visibilityToggle, !editData.isPublic && styles.visibilityToggleLocked, editData.isPublic && styles.visibilityToggleDisabled]}
+                  onPress={() => {
+                    if (editData.isPublic) {
+                      Alert.alert(
+                        "Can't switch to private",
+                        "This event is already public and can't be made private — guests who joined or bought tickets would lose access. Create a new private event if you need that instead."
+                      );
+                    }
+                  }}
+                  activeOpacity={editData.isPublic ? 0.7 : 1}
                 >
                   <View style={styles.visibilityOption}>
                     <View
@@ -1064,7 +1079,9 @@ export default function EventsPage() {
                       {!editData.isPublic && <View style={styles.radioButtonInner} />}
                     </View>
                     <View style={styles.visibilityTextContainer}>
-                      <Text style={styles.visibilityLabel}>Private</Text>
+                      <Text style={[styles.visibilityLabel, editData.isPublic && styles.visibilityLabelDim]}>
+                        Private {!editData.isPublic && <Text style={styles.visibilityLockBadge}>· locked</Text>}
+                      </Text>
                       <Text style={styles.visibilityHint}>
                         Only invited users can see this event
                       </Text>
@@ -1072,11 +1089,16 @@ export default function EventsPage() {
                   </View>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.visibilityToggle}
-                  onPress={() =>
-                    setEditData({ ...editData, isPublic: !editData.isPublic })
-                  }
-                  activeOpacity={0.7}
+                  style={[styles.visibilityToggle, editData.isPublic && styles.visibilityToggleLocked, !editData.isPublic && styles.visibilityToggleDisabled]}
+                  onPress={() => {
+                    if (!editData.isPublic) {
+                      Alert.alert(
+                        "Can't switch to public",
+                        "A private event can't be made public after it's been created. Create a new public event if you'd like to open this up to everyone."
+                      );
+                    }
+                  }}
+                  activeOpacity={!editData.isPublic ? 0.7 : 1}
                 >
                   <View style={styles.visibilityOption}>
                     <View
@@ -1088,7 +1110,9 @@ export default function EventsPage() {
                       {editData.isPublic && <View style={styles.radioButtonInner} />}
                     </View>
                     <View style={styles.visibilityTextContainer}>
-                      <Text style={styles.visibilityLabel}>Public</Text>
+                      <Text style={[styles.visibilityLabel, !editData.isPublic && styles.visibilityLabelDim]}>
+                        Public {editData.isPublic && <Text style={styles.visibilityLockBadge}>· locked</Text>}
+                      </Text>
                       <Text style={styles.visibilityHint}>
                         Anyone can discover and join this event
                       </Text>
@@ -1826,6 +1850,31 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.regular,
     color: "#9ca3af",
     marginTop: 2,
+  },
+  visibilityLockedHint: {
+    fontSize: scaleFontSize(12),
+    fontFamily: Fonts.regular,
+    color: "#fbbf24",
+    backgroundColor: "rgba(251,191,36,0.08)",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 10,
+    lineHeight: 17,
+  },
+  visibilityToggleLocked: {
+    opacity: 1,
+  },
+  visibilityToggleDisabled: {
+    opacity: 0.5,
+  },
+  visibilityLabelDim: {
+    color: "#9ca3af",
+  },
+  visibilityLockBadge: {
+    fontSize: scaleFontSize(11),
+    fontFamily: Fonts.semiBold,
+    color: "#a855f7",
   },
   loadMoreBtn: {
     marginTop: 12,

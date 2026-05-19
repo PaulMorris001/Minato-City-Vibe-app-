@@ -86,7 +86,7 @@ const html = `<!DOCTYPE html>
 
     <div class="section">
       <h2>Reporting</h2>
-      <p>If you encounter any content or behavior that you believe violates this policy, please report it immediately to support@nightvibe.app. We review all reports promptly and will report confirmed CSAE content to the National Center for Missing and Exploited Children (NCMEC) and relevant law enforcement authorities.</p>
+      <p>If you encounter any content or behavior that you believe violates this policy, please report it immediately to Support@nvibez.com. We review all reports promptly and will report confirmed CSAE content to the National Center for Missing and Exploited Children (NCMEC) and relevant law enforcement authorities.</p>
     </div>
 
     <div class="section">
@@ -96,7 +96,7 @@ const html = `<!DOCTYPE html>
 
     <div class="section">
       <h2>Contact</h2>
-      <p>For questions or concerns related to child safety on our platform, contact us at support@nightvibe.app.</p>
+      <p>For questions or concerns related to child safety on our platform, contact us at Support@nvibez.com.</p>
     </div>
   </div>
 </body>

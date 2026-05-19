@@ -268,17 +268,15 @@ function buildLandingPage({
       <a class="store-btn" href="${APP_STORE}">App Store</a>
       <a class="store-btn" href="${PLAY_STORE}">Google Play</a>
     </div>
-    <div class="footer-note">If the app is installed, it'll open automatically.</div>
+    <div class="footer-note">Tap the button above to open in NightVibe.</div>
   </div>
-  <script>
-    // Try to open the app after a beat. Delay lets bots/scrapers and humans
-    // see the page; on real devices with the app installed, iOS/Android will
-    // typically have already short-circuited to Universal Links / App Links
-    // before reaching this script.
-    setTimeout(function () {
-      try { window.location.replace(${JSON.stringify(appDeepLink)}); } catch (e) {}
-    }, 300);
-  </script>
+  <!--
+    Intentionally no JS auto-redirect. iMessage / Apple Link Presentation
+    executes JS in its preview-generation WebView; a window.location call to
+    a custom-scheme URL (mobile://) fails inside that sandbox and tanks the
+    preview card entirely. Universal Links / App Links handle the auto-open
+    path on real devices; the button covers everyone else.
+  -->
 </body>
 </html>`;
 }

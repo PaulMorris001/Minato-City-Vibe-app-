@@ -91,17 +91,17 @@ const html = `<!DOCTYPE html>
 
     <div class="section">
       <h2>Data Retention</h2>
-      <p>We retain your account data for as long as your account is active. You may request deletion of your account and associated data at https://night-vibe.onrender.com/delete-account or by contacting support@nightvibe.app.</p>
+      <p>We retain your account data for as long as your account is active. You may request deletion of your account and associated data at https://night-vibe.onrender.com/delete-account or by contacting Support@nvibez.com.</p>
     </div>
 
     <div class="section">
       <h2>Your Rights</h2>
-      <p>You have the right to access, correct, or delete your personal data. To exercise these rights, contact us at support@nightvibe.app.</p>
+      <p>You have the right to access, correct, or delete your personal data. To exercise these rights, contact us at Support@nvibez.com.</p>
     </div>
 
     <div class="section">
       <h2>Contact Us</h2>
-      <p>For any privacy-related questions or concerns, reach out to:\n\nsupport@nightvibe.app</p>
+      <p>For any privacy-related questions or concerns, reach out to:\n\nSupport@nvibez.com</p>
     </div>
   </div>
 </body>
