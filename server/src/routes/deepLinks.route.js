@@ -6,7 +6,8 @@ import Guide from '../models/guide.model.js';
 const router = express.Router();
 
 const PLAY_STORE = 'https://play.google.com/store/apps/details?id=com.nightvibe.mobile';
-const APP_STORE = 'https://apps.apple.com/app/nightvibe/id0000000000'; // Replace with real App Store ID
+const APP_STORE = 'https://apps.apple.com/us/app/nightvibe-a97112/id6767689517';
+const APP_STORE_ID = '6767689517';
 const SITE_BASE = 'https://night-vibe.onrender.com';
 const BRAND_TAGLINE = 'NightVibe — every night out, in one app.';
 
@@ -156,7 +157,7 @@ function buildLandingPage({
   <meta name="twitter:image" content="${ogImage}" />
 
   <!-- Smart App Banner (iOS Safari) -->
-  <meta name="apple-itunes-app" content="app-id=0000000000, app-argument=${deepLinkEsc}" />
+  <meta name="apple-itunes-app" content="app-id=${APP_STORE_ID}, app-argument=${deepLinkEsc}" />
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }

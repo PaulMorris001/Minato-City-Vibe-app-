@@ -259,6 +259,6 @@ const styles: Record<string, React.CSSProperties> = {
   modal: { background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 12, padding: 28, width: 420, maxWidth: "90vw" },
   modalTitle: { fontSize: 18, fontWeight: 700, color: colors.text, margin: "0 0 8px" },
   modalDesc: { fontSize: 14, color: colors.textMuted, marginBottom: 12 },
-  textarea: { width: "100%", background: colors.background, border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10, color: colors.text, fontSize: 14, resize: "vertical", boxSizing: "border-box" },
+  textarea: { width: "100%", background: colors.bg, border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10, color: colors.text, fontSize: 14, resize: "vertical", boxSizing: "border-box" },
   modalActions: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 },
 };
