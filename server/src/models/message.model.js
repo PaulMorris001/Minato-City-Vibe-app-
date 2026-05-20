@@ -18,7 +18,7 @@ const messageSchema = mongoose.Schema({
   // Message content and type
   type: {
     type: String,
-    enum: ['text', 'image', 'event', 'system'],
+    enum: ['text', 'image', 'event', 'guide', 'system'],
     default: 'text'
   },
 
@@ -41,6 +41,12 @@ const messageSchema = mongoose.Schema({
   event: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "event"
+  },
+
+  // For guide sharing
+  guide: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "guide"
   },
 
   // Message status

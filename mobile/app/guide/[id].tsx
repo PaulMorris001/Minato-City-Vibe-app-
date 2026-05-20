@@ -7,7 +7,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Share,
 } from "react-native";
 import { createGuideShareLink } from "@/utils/shareLinks";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -20,6 +19,7 @@ import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
 import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
+import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
 
 export default function GuideDetailPage() {
   const router = useRouter();
@@ -33,6 +33,7 @@ export default function GuideDetailPage() {
   const [isOwner, setIsOwner] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [reportSheetVisible, setReportSheetVisible] = useState(false);
+  const [shareSheetVisible, setShareSheetVisible] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
@@ -69,31 +70,47 @@ export default function GuideDetailPage() {
         setHasPurchased(data.hasPurchased || false);
         setIsOwner(data.isOwner || false);
       } else {
-        Alert.alert("Error", data.message || "Failed to load guide");
-        router.back();
+        // If the user cold-started from a shared link, there's no back stack
+        // to pop to — fall through to home if `router.back()` would no-op.
+        const title = response.status === 404 ? "Not Found" : "Unavailable";
+        const fallback =
+          response.status === 404
+            ? "We couldn't find this guide. The link may be incorrect."
+            : "This guide is no longer available.";
+        Alert.alert(title, data.message || fallback, [
+          {
+            text: "OK",
+            onPress: () => {
+              if (router.canGoBack()) router.back();
+              else router.replace("/(tabs)/home");
+            },
+          },
+        ]);
       }
     } catch (error) {
       console.error("Failed to fetch guide:", error);
-      Alert.alert("Error", "Failed to load guide");
-      router.back();
+      Alert.alert("Error", "Failed to load guide", [
+        {
+          text: "OK",
+          onPress: () => {
+            if (router.canGoBack()) router.back();
+            else router.replace("/(tabs)/home");
+          },
+        },
+      ]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleShare = async () => {
-    if (!guide) return;
-    try {
-      const link = createGuideShareLink(id);
-      await Share.share({
-        message: `Check out this city guide: ${guide.title} by ${guide.authorName}\n\n${link}`,
+  const shareTarget: ShareTarget | null = guide
+    ? {
+        kind: "guide",
+        guideId: id,
         title: guide.title,
-        url: link,
-      });
-    } catch (error) {
-      console.error("Share guide error:", error);
-    }
-  };
+        externalUrl: createGuideShareLink(id),
+      }
+    : null;
 
   const handlePurchase = async () => {
     const token = await SecureStore.getItemAsync("token");
@@ -166,7 +183,11 @@ export default function GuideDetailPage() {
           Guide
         </Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+          <TouchableOpacity
+            style={styles.shareButton}
+            onPress={() => setShareSheetVisible(true)}
+            accessibilityLabel="Share guide"
+          >
             <Ionicons name="share-social" size={22} color="#a855f7" />
           </TouchableOpacity>
           {!isOwner ? (
@@ -296,6 +317,12 @@ export default function GuideDetailPage() {
           onBlocked={() => router.back()}
         />
       ) : null}
+
+      <ShareSheet
+        visible={shareSheetVisible}
+        onClose={() => setShareSheetVisible(false)}
+        target={shareTarget}
+      />
     </View>
   );
 }

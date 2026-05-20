@@ -123,6 +123,12 @@ export default function MessageBubble({
     }
   };
 
+  const handleGuidePress = () => {
+    if (message.guide && message.guide._id) {
+      router.push(`/guide/${message.guide._id}` as any);
+    }
+  };
+
   // Build the bubble body
   const renderBubbleBody = () => {
     switch (message.type) {
@@ -242,6 +248,86 @@ export default function MessageBubble({
         );
       }
 
+      case "guide": {
+        const guideData = message.guide;
+        const cityLine = guideData?.city
+          ? `${guideData.city}${guideData.cityState ? `, ${guideData.cityState}` : ""}`
+          : "";
+        const priceLine =
+          typeof guideData?.price === "number"
+            ? guideData.price > 0
+              ? `$${guideData.price}`
+              : "Free"
+            : null;
+        return (
+          <TouchableOpacity
+            style={styles.eventContainer}
+            onPress={handleGuidePress}
+            onLongPress={handleLongPress}
+            activeOpacity={0.85}
+          >
+            <LinearGradient
+              colors={["#7C3AED", "#A855F7", "#EC4899"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.eventImage}
+            >
+              <View style={styles.guideCoverInner}>
+                <Ionicons name="book" size={36} color="rgba(255,255,255,0.85)" />
+              </View>
+            </LinearGradient>
+
+            <View style={styles.eventDetails}>
+              <View style={styles.eventHeader}>
+                <Ionicons name="book-outline" size={11} color={CH_PURPLE_SOFT} />
+                <Text style={styles.eventKicker}>CITY GUIDE</Text>
+              </View>
+
+              <Text style={styles.eventTitle} numberOfLines={2}>
+                {guideData?.title || message.content || "Untitled guide"}
+              </Text>
+
+              {cityLine ? (
+                <View style={styles.eventMetaRow}>
+                  <Ionicons name="location-outline" size={12} color={CH_PURPLE_SOFT} />
+                  <Text style={styles.eventMeta} numberOfLines={1}>
+                    {cityLine}
+                  </Text>
+                </View>
+              ) : null}
+
+              {guideData?.authorName ? (
+                <View style={styles.eventMetaRow}>
+                  <Ionicons name="person-outline" size={12} color={CH_PURPLE_SOFT} />
+                  <Text style={styles.eventMeta} numberOfLines={1}>
+                    by {guideData.authorName}
+                  </Text>
+                </View>
+              ) : null}
+
+              {priceLine ? (
+                <View style={styles.eventMetaRow}>
+                  <Ionicons name="pricetag-outline" size={12} color={CH_PURPLE_SOFT} />
+                  <Text style={styles.eventMeta} numberOfLines={1}>
+                    {priceLine}
+                  </Text>
+                </View>
+              ) : null}
+
+              <LinearGradient
+                colors={["#A855F7", "#7C3AED", "#EC4899"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.eventCta}
+              >
+                <Text style={styles.eventCtaText}>Read Guide</Text>
+                <Ionicons name="arrow-forward" size={14} color="#fff" />
+              </LinearGradient>
+            </View>
+          </TouchableOpacity>
+        );
+      }
+
       case "text":
       default:
         return (
@@ -275,8 +361,8 @@ export default function MessageBubble({
   // Bubble container — gradient for outgoing text/text-like; image bubble = thumbnail only;
   // event bubble = the event card (no surrounding bubble).
   const renderBubble = () => {
-    if (message.type === "event") {
-      // Event card stands alone — no surrounding bubble
+    if (message.type === "event" || message.type === "guide") {
+      // Event / guide card stands alone — no surrounding bubble
       return renderBubbleBody();
     }
     if (message.type === "image") {
@@ -566,6 +652,11 @@ const styles = StyleSheet.create({
   eventImage: {
     width: "100%",
     height: 124,
+  },
+  guideCoverInner: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   eventDetails: {
     padding: 12,

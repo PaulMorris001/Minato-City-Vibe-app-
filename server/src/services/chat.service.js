@@ -119,7 +119,7 @@ class ChatService {
    * Send a message in a chat
    */
   async sendMessage(chatId, senderId, messageData) {
-    const { type, content, imageUrl, eventId, replyTo } = messageData;
+    const { type, content, imageUrl, eventId, guideId, replyTo } = messageData;
 
     // Verify chat exists and user is participant
     const chat = await Chat.findById(chatId);
@@ -154,6 +154,7 @@ class ChatService {
       content,
       imageUrl: finalImageUrl,
       event: eventId,
+      guide: guideId,
       replyTo
     });
 
@@ -177,6 +178,7 @@ class ChatService {
     await message.populate('sender', 'username email profilePicture');
     await message.populate('replyTo');
     await message.populate('event');
+    await message.populate('guide', 'title authorName city cityState topic price');
 
     // Emit message via Socket.IO to the active chat room
     emitNewMessage(chatId.toString(), message);
@@ -236,6 +238,7 @@ class ChatService {
       .populate('sender', 'username email profilePicture')
       .populate('replyTo')
       .populate('event')
+      .populate('guide', 'title authorName city cityState topic price')
       .populate('reactions.user', 'username profilePicture');
 
     const total = await Message.countDocuments({

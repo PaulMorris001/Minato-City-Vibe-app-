@@ -49,10 +49,19 @@ export interface Message {
   _id: string;
   chat: string;
   sender: User;
-  type: "text" | "image" | "event" | "system";
+  type: "text" | "image" | "event" | "guide" | "system";
   content?: string;
   imageUrl?: string;
   event?: any;
+  guide?: {
+    _id: string;
+    title: string;
+    authorName: string;
+    city?: string;
+    cityState?: string;
+    topic?: string;
+    price?: number;
+  };
   status: "sent" | "delivered" | "read" | "sending" | "failed";
   readBy?: Array<{ user: string; readAt: string }>;
   replyTo?: Message;
@@ -65,10 +74,11 @@ export interface Message {
 }
 
 export interface SendMessageData {
-  type?: "text" | "image" | "event";
+  type?: "text" | "image" | "event" | "guide";
   content?: string;
   imageUrl?: string;
   eventId?: string;
+  guideId?: string;
   replyTo?: string;
 }
 

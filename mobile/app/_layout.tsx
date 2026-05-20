@@ -232,14 +232,34 @@ export default Sentry.wrap(function RootLayout() {
       const [kind, token] = segments;
       if (!token) return;
 
+      console.log("[DeepLink] received url:", url, "→ kind:", kind, "token:", token);
+
       // Accept both the Universal Link shape (`/event/TOKEN`) and the web
       // landing page's redirect (`mobile://share/TOKEN`) for events.
+      let link: PendingDeepLink | null = null;
       if (kind === 'event' || kind === 'share') {
-        router.push(`/share/${token}` as any);
+        link = { kind: 'event', token };
       } else if (kind === 'guide') {
-        router.push(`/guide/${token}` as any);
+        link = { kind: 'guide', token };
       }
-    } catch {}
+
+      if (!link) return;
+
+      // Park the link in the pending queue AND attempt to push right now.
+      // The queue covers the cold-start race where router.push runs before
+      // index.tsx has finished routing — index.tsx will pick it up and
+      // redirect there instead of `/(tabs)/home`.
+      setPendingDeepLink(link);
+      const path = deepLinkToPath(link);
+      if (!path) return;
+      try {
+        router.push(path as any);
+      } catch (err) {
+        console.warn("[DeepLink] router.push threw, relying on pending queue:", err);
+      }
+    } catch (err) {
+      console.warn("[DeepLink] failed to parse url:", url, err);
+    }
   }, []);
 
   useEffect(() => {

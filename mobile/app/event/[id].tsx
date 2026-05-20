@@ -11,7 +11,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -31,6 +30,7 @@ import { createEventShareLink } from "@/utils/shareLinks";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
+import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
 import { GlassCard } from "@/components/event-details/GlassCard";
 import { AU } from "@/components/auth/tokens";
 import {
@@ -200,6 +200,7 @@ export default function EventDetailsPage() {
   const [purchasing, setPurchasing] = useState(false);
   const [refunding, setRefunding] = useState(false);
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
+  const [shareSheetVisible, setShareSheetVisible] = useState(false);
   const [isFollowingHost, setIsFollowingHost] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [requestingJoin, setRequestingJoin] = useState(false);
@@ -508,20 +509,14 @@ export default function EventDetailsPage() {
     }
   };
 
-  const handleShareEvent = async () => {
-    if (!event) return;
-    try {
-      const link = createEventShareLink(event.shareToken || event._id);
-      // Put the URL in `message` only — iOS share targets paste both `message`
-      // and `url` when both are provided, which doubles the link.
-      await Share.share({
-        message: `Check out this event on NightVibe: ${event.title}\n${link}`,
+  const shareTarget: ShareTarget | null = event
+    ? {
+        kind: "event",
+        eventId: event._id,
         title: event.title,
-      });
-    } catch (err) {
-      console.error("Share event error:", err);
-    }
-  };
+        externalUrl: createEventShareLink(event.shareToken || event._id),
+      }
+    : null;
 
   const handleVendorSearch = async (query: string) => {
     setVendorQuery(query);
@@ -1146,9 +1141,9 @@ export default function EventDetailsPage() {
               onPress={() => {
                 setActionSheetVisible(false);
                 // Wait for the action sheet modal to finish dismissing before
-                // presenting the system Share dialog — iOS won't present a new
-                // modal while another is still transitioning out.
-                setTimeout(() => handleShareEvent(), 350);
+                // presenting the share sheet — iOS won't present a new modal
+                // while another is still transitioning out.
+                setTimeout(() => setShareSheetVisible(true), 320);
               }}
             />
             <SheetAction
@@ -1223,6 +1218,13 @@ export default function EventDetailsPage() {
           onBlocked={() => router.back()}
         />
       ) : null}
+
+      {/* Share sheet — internal (chat) + external (OS share) */}
+      <ShareSheet
+        visible={shareSheetVisible}
+        onClose={() => setShareSheetVisible(false)}
+        target={shareTarget}
+      />
 
       {/* ─── INVITE USER MODAL (preserved) ─────────────────── */}
       <Modal
