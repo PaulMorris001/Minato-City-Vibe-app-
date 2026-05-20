@@ -29,6 +29,8 @@ const styles: Record<string, React.CSSProperties> = {
     position: "relative",
     display: "flex",
     alignItems: "center",
+    flex: "1 1 220px",
+    maxWidth: 320,
   },
   icon: {
     position: "absolute",
@@ -44,7 +46,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     color: colors.text,
     outline: "none",
-    width: 260,
+    width: "100%",
   },
   clear: {
     position: "absolute",

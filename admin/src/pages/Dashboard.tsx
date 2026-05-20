@@ -31,6 +31,7 @@ export default function Dashboard() {
         <div style={styles.cardHeader}>
           <h3 style={styles.cardTitle}>Recent Signups</h3>
         </div>
+        <div style={{ overflowX: "auto" }}>
         <table style={styles.table}>
           <thead>
             <tr>
@@ -63,6 +64,7 @@ export default function Dashboard() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -83,7 +85,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: `1px solid ${colors.border}`,
   },
   cardTitle: { fontSize: 15, fontWeight: 600, color: colors.text },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
+  table: { width: "100%", minWidth: 520, borderCollapse: "collapse", fontSize: 13 },
   th: {
     padding: "10px 16px",
     textAlign: "left",

@@ -22,6 +22,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
+    flexWrap: "wrap",
   },
   card: {
     background: colors.surface,

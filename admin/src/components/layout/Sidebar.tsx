@@ -17,7 +17,13 @@ const navItems = [
   { to: "/analytics", label: "Analytics", icon: "📊" },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  isMobile?: boolean;
+  open?: boolean;
+  onClose?: () => void;
+}
+
+export default function Sidebar({ isMobile = false, open = false, onClose }: SidebarProps) {
   const [openReports, setOpenReports] = useState<number>(0);
 
   useEffect(() => {
@@ -38,8 +44,49 @@ export default function Sidebar() {
     };
   }, []);
 
+  // Lock body scroll while the mobile drawer is open.
+  useEffect(() => {
+    if (!isMobile) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = open ? "hidden" : prev;
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isMobile, open]);
+
+  if (!isMobile) {
+    return (
+      <aside style={styles.sidebar}>
+        <SidebarContent openReports={openReports} />
+      </aside>
+    );
+  }
+
   return (
-    <aside style={styles.sidebar}>
+    <>
+      {open && <div style={styles.overlay} onClick={onClose} />}
+      <aside
+        style={{
+          ...styles.sidebar,
+          ...styles.sidebarMobile,
+          transform: open ? "translateX(0)" : "translateX(-100%)",
+        }}
+      >
+        <SidebarContent openReports={openReports} onNavigate={onClose} />
+      </aside>
+    </>
+  );
+}
+
+function SidebarContent({
+  openReports,
+  onNavigate,
+}: {
+  openReports: number;
+  onNavigate?: () => void;
+}) {
+  return (
+    <>
       <div style={styles.logo}>
         <span style={styles.logoIcon}>◈</span>
         <span style={styles.logoText}>NightVibe</span>
@@ -52,6 +99,7 @@ export default function Sidebar() {
             key={to}
             to={to}
             end={to === "/"}
+            onClick={onNavigate}
             style={({ isActive }) => ({
               ...styles.navItem,
               ...(isActive ? styles.navItemActive : {}),
@@ -65,7 +113,7 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
-    </aside>
+    </>
   );
 }
 
@@ -78,6 +126,23 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     flexShrink: 0,
+  },
+  sidebarMobile: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: 260,
+    maxWidth: "82vw",
+    zIndex: 1001,
+    transition: "transform 0.22s ease-out",
+    overflowY: "auto",
+  },
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.55)",
+    zIndex: 1000,
   },
   logo: {
     padding: "24px 20px",

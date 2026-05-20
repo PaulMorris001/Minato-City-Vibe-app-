@@ -73,6 +73,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    padding: 12,
     zIndex: 1000,
   },
   dialog: {
@@ -81,7 +82,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 12,
     width: "100%",
     maxWidth: 480,
-    maxHeight: "85vh",
+    maxHeight: "90vh",
     display: "flex",
     flexDirection: "column",
   },
