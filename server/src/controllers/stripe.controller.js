@@ -9,6 +9,21 @@ import { invalidateCachePattern } from "../utils/cache.js";
 
 const PLATFORM_FEE_PERCENT = config.stripe.platformFeePercent; // e.g. 10
 
+/**
+ * Translate a Stripe SDK error into something safe to return to the client.
+ * We pass through Stripe's `code` and `message` so the mobile app can show
+ * the real reason ("No such account...", "Your platform has not been activated
+ * for live mode", etc.) instead of a generic "Failed to ..." string.
+ */
+function stripeErrorPayload(error, fallback) {
+  const code = error?.code || error?.raw?.code;
+  const stripeMessage = error?.raw?.message || error?.message;
+  return {
+    message: stripeMessage || fallback,
+    code: code || undefined,
+  };
+}
+
 // ─── Seller Connect Onboarding ───────────────────────────────────────────────
 
 /**
@@ -40,13 +55,18 @@ export const createConnectAccount = async (req, res) => {
 
     res.status(201).json({ accountId: account.id });
   } catch (error) {
-    console.error("Create connect account error:", error);
-    res.status(500).json({ message: "Failed to create Stripe account" });
+    console.error("Create connect account error:", error?.raw || error);
+    res.status(500).json(stripeErrorPayload(error, "Failed to create Stripe account"));
   }
 };
 
 /**
- * Generate a Stripe-hosted onboarding link for the seller
+ * Generate a Stripe-hosted onboarding link for the seller.
+ *
+ * If the stored `stripeAccountId` no longer exists in the current Stripe
+ * mode (the classic "test acct saved before going live" footgun), we
+ * automatically clear it and create a fresh account so the user can
+ * proceed without us having to clean the DB by hand.
  */
 export const getAccountLink = async (req, res) => {
   try {
@@ -57,17 +77,49 @@ export const getAccountLink = async (req, res) => {
       return res.status(400).json({ message: "No Stripe account found. Create one first." });
     }
 
-    const accountLink = await stripe.accountLinks.create({
-      account: user.stripeAccountId,
-      refresh_url: `${config.stripe.serverUrl}/api/stripe/connect/refresh`,
-      return_url: `${config.stripe.serverUrl}/api/stripe/connect/return`,
-      type: "account_onboarding",
-    });
+    const buildLink = (accountId) =>
+      stripe.accountLinks.create({
+        account: accountId,
+        refresh_url: `${config.stripe.serverUrl}/api/stripe/connect/refresh`,
+        return_url: `${config.stripe.serverUrl}/api/stripe/connect/return`,
+        type: "account_onboarding",
+      });
+
+    let accountLink;
+    try {
+      accountLink = await buildLink(user.stripeAccountId);
+    } catch (err) {
+      const stripeCode = err?.code || err?.raw?.code;
+      // `resource_missing` = account ID doesn't exist in the current Stripe
+      // mode. Almost always means a test-mode ID is saved but the server is
+      // now using a live secret key (or vice versa). Recover transparently:
+      // mint a fresh account and retry once.
+      if (stripeCode === "resource_missing") {
+        console.warn(
+          `[Stripe Connect] saved accountId ${user.stripeAccountId} not found in current mode — recreating`
+        );
+        const account = await stripe.accounts.create({
+          type: "express",
+          country: "US",
+          email: user.email,
+          capabilities: {
+            card_payments: { requested: true },
+            transfers: { requested: true },
+          },
+        });
+        user.stripeAccountId = account.id;
+        user.stripeOnboardingComplete = false;
+        await user.save();
+        accountLink = await buildLink(account.id);
+      } else {
+        throw err;
+      }
+    }
 
     res.status(200).json({ url: accountLink.url });
   } catch (error) {
-    console.error("Get account link error:", error);
-    res.status(500).json({ message: "Failed to generate onboarding link" });
+    console.error("Get account link error:", error?.raw || error);
+    res.status(500).json(stripeErrorPayload(error, "Failed to generate onboarding link"));
   }
 };
 
@@ -84,7 +136,25 @@ export const getAccountStatus = async (req, res) => {
       return res.status(200).json({ connected: false, onboardingComplete: false });
     }
 
-    const account = await stripe.accounts.retrieve(user.stripeAccountId);
+    let account;
+    try {
+      account = await stripe.accounts.retrieve(user.stripeAccountId);
+    } catch (err) {
+      const stripeCode = err?.code || err?.raw?.code;
+      // Saved account ID no longer exists in current mode — wipe it and
+      // report disconnected so the UI shows the "Set Up Payouts" CTA.
+      if (stripeCode === "resource_missing") {
+        console.warn(
+          `[Stripe Connect] saved accountId ${user.stripeAccountId} not found on retrieve — clearing`
+        );
+        user.stripeAccountId = null;
+        user.stripeOnboardingComplete = false;
+        await user.save();
+        return res.status(200).json({ connected: false, onboardingComplete: false });
+      }
+      throw err;
+    }
+
     const onboardingComplete = account.details_submitted && account.charges_enabled;
 
     // Persist the status so we can use it without calling Stripe every time
@@ -100,8 +170,8 @@ export const getAccountStatus = async (req, res) => {
       payoutsEnabled: account.payouts_enabled,
     });
   } catch (error) {
-    console.error("Get account status error:", error);
-    res.status(500).json({ message: "Failed to retrieve account status" });
+    console.error("Get account status error:", error?.raw || error);
+    res.status(500).json(stripeErrorPayload(error, "Failed to retrieve account status"));
   }
 };
 

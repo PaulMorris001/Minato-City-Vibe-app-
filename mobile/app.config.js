@@ -2,7 +2,7 @@
 module.exports = {
   name: "Nightvibe",
   slug: "nightvibe",
-  version: "1.0.1",
+  version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/ios/icon.png",
   scheme: "mobile",
@@ -63,10 +63,6 @@ module.exports = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     softwareKeyboardLayoutMode: "pan",
-  },
-  web: {
-    output: "static",
-    favicon: "./assets/images/favicon.png",
   },
   plugins: [
     "@react-native-firebase/app",

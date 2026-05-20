@@ -158,17 +158,29 @@ class ChatService {
    */
   async getChatById(chatId: string): Promise<Chat> {
     try {
+      if (!chatId || typeof chatId !== "string") {
+        throw new Error(`Invalid chat id: ${JSON.stringify(chatId)}`);
+      }
       const headers = await this.getAuthHeader();
       const response = await fetch(`${BASE_URL}/chats/${chatId}`, { headers });
 
       if (!response.ok) {
-        throw new Error("Failed to fetch chat");
+        // Try to surface the server's error message so we can debug auth /
+        // permission / not-found cases from a real device.
+        let serverMessage: string | undefined;
+        try {
+          const body = await response.json();
+          serverMessage = body?.message;
+        } catch {}
+        throw new Error(
+          `Chat fetch failed (${response.status}${serverMessage ? `: ${serverMessage}` : ""})`
+        );
       }
 
       const data = await response.json();
       return data.chat;
     } catch (error) {
-      console.error("Get chat error:", error);
+      console.error("[chatService.getChatById] error:", error, "chatId=", chatId);
       throw error;
     }
   }

@@ -81,8 +81,11 @@ export default function ChatScreen() {
         socketService.markMessagesAsRead(id, currentUserId);
       }
     } catch (error: any) {
-      console.error("Error loading chat:", error);
-      Alert.alert("Error", "Failed to load chat");
+      console.error("Error loading chat:", error, "id=", id);
+      // Surface the real reason (status code / server message / id problem)
+      // so we can diagnose "Failed to open chat" reports from real devices.
+      const detail = error?.message ? `\n\n${error.message}` : "";
+      Alert.alert("Couldn't open chat", `We couldn't load this conversation.${detail}`);
     } finally {
       setLoading(false);
     }

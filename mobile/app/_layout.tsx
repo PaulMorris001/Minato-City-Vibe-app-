@@ -5,6 +5,12 @@ import messaging from "@react-native-firebase/messaging";
 import * as Notifications from "expo-notifications";
 import { registerForPushNotifications } from "@/utils/pushNotifications";
 import {
+  setPendingDeepLink,
+  deepLinkToPath,
+  looksLikeObjectId,
+  type PendingDeepLink,
+} from "@/utils/pendingDeepLink";
+import {
   useFonts,
   Outfit_300Light,
   Outfit_400Regular,
@@ -126,10 +132,49 @@ export default Sentry.wrap(function RootLayout() {
     let unsubscribeForeground: (() => void) | null = null;
     let unsubscribeBackground: (() => void) | null = null;
 
+    /**
+     * Parse a notification data payload into a structured deep link, or null
+     * if it isn't routable. Logs the raw payload either way so we have
+     * something to look at when reports come in.
+     */
+    const linkFromNotificationData = (data: unknown, source: string): PendingDeepLink | null => {
+      console.log(`[PushNotif] ${source} payload:`, JSON.stringify(data));
+      if (!data || typeof data !== "object") return null;
+      const d = data as Record<string, unknown>;
+      const type = typeof d.type === "string" ? d.type : null;
+
+      if (type === "new_message" && looksLikeObjectId(d.chatId)) {
+        return { kind: "chat", chatId: d.chatId };
+      }
+      if (type === "new_follower" && typeof d.followerId === "string" && d.followerId) {
+        return { kind: "user", userId: d.followerId };
+      }
+      console.warn("[PushNotif] payload was not routable:", type, d);
+      return null;
+    };
+
+    /**
+     * Attempt to route immediately. If the navigator isn't ready yet (cold
+     * start, before the initial route mounts) the push silently no-ops, so
+     * we ALSO park the link in the pending store — index.tsx will pick it
+     * up after the auth check resolves.
+     */
+    const route = (link: PendingDeepLink | null) => {
+      if (!link) return;
+      setPendingDeepLink(link);
+      const path = deepLinkToPath(link);
+      if (!path) return;
+      try {
+        router.push(path as any);
+      } catch (err) {
+        console.warn("[PushNotif] router.push threw, will rely on pending queue:", err);
+      }
+    };
+
     try {
       // Firebase doesn't auto-display notifications in the foreground — do it manually
       unsubscribeForeground = messaging().onMessage(async remoteMessage => {
-        console.log("[PushNotif] Foreground message:", remoteMessage.notification?.title, remoteMessage.notification?.body);
+        console.log("[PushNotif] Foreground message:", remoteMessage.notification?.title);
         await Notifications.scheduleNotificationAsync({
           content: {
             title: remoteMessage.notification?.title ?? "",
@@ -141,39 +186,28 @@ export default Sentry.wrap(function RootLayout() {
         });
       });
 
-      // Handle tap on FCM notification when app was in the background
+      // Tap while app was backgrounded
       unsubscribeBackground = messaging().onNotificationOpenedApp(remoteMessage => {
-        const data = remoteMessage.data as any;
-        if (data?.type === "new_message" && data?.chatId) {
-          router.push(`/chat/${data.chatId}` as any);
-        } else if (data?.type === "new_follower" && data?.followerId) {
-          router.push({ pathname: "/user-profile", params: { userId: data.followerId } } as any);
-        }
+        route(linkFromNotificationData(remoteMessage?.data, "onNotificationOpenedApp"));
       });
 
-      // Handle tap that cold-starts the app from a quit state
+      // Tap that cold-started the app from a quit state
       messaging().getInitialNotification().then(remoteMessage => {
         if (remoteMessage) {
-          const data = remoteMessage.data as any;
-          if (data?.type === "new_message" && data?.chatId) {
-            router.push(`/chat/${data.chatId}` as any);
-          } else if (data?.type === "new_follower" && data?.followerId) {
-            router.push({ pathname: "/user-profile", params: { userId: data.followerId } } as any);
-          }
+          route(linkFromNotificationData(remoteMessage.data, "getInitialNotification"));
         }
       });
     } catch (e) {
       console.warn("[PushNotif] Firebase messaging setup failed:", e);
     }
 
-    // Handle tap on an expo-scheduled notification (foreground case)
+    // Tap on an expo-scheduled notification (i.e. the one we displayed manually
+    // while the app was in the foreground).
     const notifSub = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response.notification.request.content.data as any;
-      if (data?.type === "new_message" && data?.chatId) {
-        router.push(`/chat/${data.chatId}` as any);
-      } else if (data?.type === "new_follower" && data?.followerId) {
-        router.push({ pathname: "/user-profile", params: { userId: data.followerId } } as any);
-      }
+      route(linkFromNotificationData(
+        response.notification.request.content.data,
+        "expoNotificationResponse"
+      ));
     });
 
     return () => {
