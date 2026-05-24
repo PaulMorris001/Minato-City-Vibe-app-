@@ -69,12 +69,17 @@ router.get('/.well-known/assetlinks.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.json([
     {
-      relation: ['delegate_permission/common.handle_all_urls'],
+      relation: [
+        'delegate_permission/common.handle_all_urls', // App Links — open https links in-app
+        'delegate_permission/common.get_login_creds', // credential sharing (Play Console prompt)
+      ],
       target: {
         namespace: 'android_app',
         package_name: 'com.nightvibe.mobile',
         sha256_cert_fingerprints: [
+          // Both the upload key and the Play app-signing key, per Play Console.
           'FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C',
+          'D2:92:C6:81:C4:62:49:CF:11:DA:96:BE:86:66:C2:5F:35:15:26:63:C4:03:B4:67:A0:8F:F5:CD:FC:14:5B:84',
         ],
       },
     },
