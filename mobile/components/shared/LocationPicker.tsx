@@ -8,8 +8,11 @@ import {
   StyleSheet,
   FlatList,
   ActivityIndicator,
+  Alert,
+  Linking,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { Fonts } from "@/constants/fonts";
 import { Colors } from "@/constants/colors";
 import {
@@ -54,6 +57,7 @@ export default function LocationPicker({
   const [openField, setOpenField] = useState<Field | null>(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
 
   useEffect(() => {
     fetchCountries().then(setCountries).catch(() => {});
@@ -109,6 +113,68 @@ export default function LocationPicker({
     emit({ city: c.name });
   };
 
+  // Detect the user's location and pre-fill the fields (uses location permission).
+  const useMyLocation = async () => {
+    if (locating) return;
+    setLocating(true);
+    try {
+      const { status, canAskAgain } =
+        await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Location access needed",
+          "Enable location so NightVibe can fill in your city automatically.",
+          canAskAgain
+            ? [{ text: "OK" }]
+            : [
+                { text: "Cancel", style: "cancel" },
+                { text: "Open Settings", onPress: () => Linking.openSettings() },
+              ]
+        );
+        return;
+      }
+
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const places = await Location.reverseGeocodeAsync({
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      });
+      const place = places?.[0];
+      if (!place) {
+        Alert.alert(
+          "Couldn't detect location",
+          "Please choose your location manually."
+        );
+        return;
+      }
+
+      const countryName = place.country || "";
+      const countryIso = place.isoCountryCode || "";
+      const stateName = place.region || "";
+      const cityName = place.city || place.subregion || place.district || "";
+
+      if (countryName) setCountry({ name: countryName, iso: countryIso });
+      setStateSel(stateName ? { name: stateName, iso: "" } : null);
+      setCity(cityName);
+      emit({
+        country: countryName,
+        countryIso,
+        state: stateName,
+        stateIso: "",
+        city: cityName,
+      });
+    } catch {
+      Alert.alert(
+        "Location error",
+        "We couldn't get your location. Please choose it manually."
+      );
+    } finally {
+      setLocating(false);
+    }
+  };
+
   const options = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list =
@@ -153,6 +219,22 @@ export default function LocationPicker({
           {label} {required && <Text style={styles.required}>*</Text>}
         </Text>
       )}
+
+      <TouchableOpacity
+        style={styles.useLocationBtn}
+        onPress={useMyLocation}
+        disabled={locating}
+        activeOpacity={0.7}
+      >
+        {locating ? (
+          <ActivityIndicator size="small" color={Colors.primary} />
+        ) : (
+          <Ionicons name="navigate" size={16} color={Colors.primary} />
+        )}
+        <Text style={styles.useLocationText}>
+          {locating ? "Detecting location…" : "Use my current location"}
+        </Text>
+      </TouchableOpacity>
 
       <Row field="country" icon="earth-outline" placeholder="Select country" text={country?.name || ""} />
       <Row
@@ -250,6 +332,23 @@ const styles = StyleSheet.create({
   },
   required: {
     color: "#ef4444",
+  },
+  useLocationBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: "rgba(168,85,247,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(168,85,247,0.3)",
+    marginBottom: 12,
+  },
+  useLocationText: {
+    fontSize: 14,
+    fontFamily: Fonts.semiBold,
+    color: Colors.primary,
   },
   row: {
     flexDirection: "row",

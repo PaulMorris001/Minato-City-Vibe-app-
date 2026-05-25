@@ -101,27 +101,8 @@ module.exports = {
       "expo-camera",
       {
         cameraPermission:
-          "NightVibe uses the camera to scan ticket QR codes and capture photos and videos.",
-        microphonePermission:
-          "NightVibe uses the microphone to record videos and voice notes.",
-        recordAudioAndroid: true,
-      },
-    ],
-    [
-      "expo-media-library",
-      {
-        photosPermission:
-          "NightVibe accesses your photos so you can share images and save tickets.",
-        savePhotosPermission:
-          "NightVibe saves images and tickets to your photo library.",
-        isAccessMediaLocationEnabled: false,
-      },
-    ],
-    [
-      "expo-audio",
-      {
-        microphonePermission:
-          "NightVibe uses the microphone to record voice notes.",
+          "NightVibe uses the camera to scan event and guide QR codes.",
+        recordAudioAndroid: false,
       },
     ],
     "expo-video",

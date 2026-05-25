@@ -520,12 +520,22 @@ export default function Home() {
       >
         {/* Greeting */}
         <View style={styles.greetingSection}>
-          <Text style={styles.greetingText}>
-            {getGreeting()}{username ? `, ${username}` : ""} {getGreetingEmoji()}
-          </Text>
-          <Text style={styles.greetingDate}>
-            {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
-          </Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.greetingText}>
+              {getGreeting()}{username ? `, ${username}` : ""} {getGreetingEmoji()}
+            </Text>
+            <Text style={styles.greetingDate}>
+              {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.scanButton}
+            onPress={() => router.push("/scan" as any)}
+            activeOpacity={0.8}
+            accessibilityLabel="Scan a QR code"
+          >
+            <Ionicons name="qr-code-outline" size={22} color={C.purple} />
+          </TouchableOpacity>
         </View>
 
         {/* Hero Card */}
@@ -859,9 +869,22 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   greetingSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 20,
+  },
+  scanButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(168,85,247,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(168,85,247,0.3)",
   },
   greetingText: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
