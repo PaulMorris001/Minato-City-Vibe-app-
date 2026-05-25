@@ -26,7 +26,9 @@
         "distribution": "internal"
       },
       "env": {
-        "SENTRY_SKIP_AUTO_RELEASE": "true"
+        "SENTRY_SKIP_AUTO_RELEASE": "true",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "80317886238-hp629limga2n8hbv9ost1msft548a9n5.apps.googleusercontent.com",
+        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51T4n9gAQi5IiU4TsAuK1pOtwYNHq7r5B1ai4CnletaEnyy8QhLjhCpiJvjs40ou5lbNkEO7wLjQAsXZ5ovGyKYeQ00gACGZRBX"
       }
     },
     "production": {
@@ -37,6 +39,10 @@
       },
       "ios": {
         "distribution": "store"
+      },
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "80317886238-hp629limga2n8hbv9ost1msft548a9n5.apps.googleusercontent.com",
+        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_live_REPLACE_WITH_YOUR_LIVE_PUBLISHABLE_KEY"
       }
     }
   },
