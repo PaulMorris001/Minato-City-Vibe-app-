@@ -1,4 +1,14 @@
 /** @type {import('expo/config').ExpoConfig} */
+// Google Sign-In (iOS): the native SDK needs the reversed-client-id URL scheme.
+// Derive it from the iOS OAuth client id so only one value has to be set.
+const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || "";
+const GOOGLE_IOS_URL_SCHEME = GOOGLE_IOS_CLIENT_ID
+  ? `com.googleusercontent.apps.${GOOGLE_IOS_CLIENT_ID.replace(
+      /\.apps\.googleusercontent\.com$/,
+      ""
+    )}`
+  : "com.googleusercontent.apps.placeholder";
+
 module.exports = {
   name: "Nightvibe",
   slug: "nightvibe",
@@ -74,6 +84,12 @@ module.exports = {
     "@react-native-firebase/messaging",
     "./plugins/withFirebaseFix",
     "expo-apple-authentication",
+    [
+      "@react-native-google-signin/google-signin",
+      {
+        iosUrlScheme: GOOGLE_IOS_URL_SCHEME,
+      },
+    ],
     "expo-router",
     [
       "expo-splash-screen",
