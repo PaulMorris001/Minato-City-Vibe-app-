@@ -915,31 +915,49 @@ export const joinFreePublicEvent = async (req, res) => {
 // Get public events for exploration
 export const getPublicEvents = async (req, res) => {
   try {
-    const { limit = 20, page = 1, city, date, sort } = req.query;
+    const { limit = 20, page = 1, city, state, country, date, sort } = req.query;
     const userId = req.user.id;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const cacheKey = `public_events_${userId}_${page}_${limit}_${city || ''}_${date || ''}`;
+    const cacheKey = `public_events_${userId}_${page}_${limit}_${city || ''}_${state || ''}_${country || ''}_${date || ''}`;
     const cached = getCache(cacheKey);
     if (cached) return res.status(200).json(cached);
 
     const blockedIds = await getBlockedIds(userId);
 
+    const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    // OR-groups are AND-combined so the paid-approval rule and the city
+    // filter don't overwrite each other.
+    const andConditions = [
+      {
+        $or: [
+          { isPaid: { $ne: true } },
+          { isPaid: true, approvalStatus: "approved" },
+        ],
+      },
+    ];
+
+    // City matches the structured field, falling back to the free-text
+    // location string for legacy events created before structured fields.
+    if (city) {
+      andConditions.push({
+        $or: [
+          { city: { $regex: new RegExp(`^${esc(city)}$`, "i") } },
+          { location: { $regex: esc(city), $options: "i" } },
+        ],
+      });
+    }
+
     const query = {
       isPublic: true,
       isActive: true,
       date: { $gte: new Date() },
-      // Hide paid events still in approval queue (or rejected) from the public feed
-      $or: [
-        { isPaid: { $ne: true } },
-        { isPaid: true, approvalStatus: "approved" },
-      ],
+      ...(state ? { state: { $regex: new RegExp(`^${esc(state)}$`, "i") } } : {}),
+      ...(country ? { country: { $regex: new RegExp(`^${esc(country)}$`, "i") } } : {}),
       ...(blockedIds.length > 0 ? { createdBy: { $nin: blockedIds } } : {}),
+      $and: andConditions,
     };
-
-    if (city) {
-      query.location = { $regex: city, $options: 'i' };
-    }
 
     if (date) {
       const startOfDay = new Date(date);

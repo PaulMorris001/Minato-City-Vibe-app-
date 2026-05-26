@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
@@ -258,7 +260,10 @@ export default function LocationPicker({
         animationType="slide"
         onRequestClose={() => setOpenField(null)}
       >
-        <View style={styles.overlay}>
+        <KeyboardAvoidingView
+          style={styles.overlay}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
           <TouchableOpacity
             style={styles.overlayTouchable}
             activeOpacity={1}
@@ -314,7 +319,7 @@ export default function LocationPicker({
               />
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

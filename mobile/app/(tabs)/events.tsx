@@ -33,8 +33,7 @@ import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCar
 import { Avatar } from "@/components/shared/Avatar";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { trackEvent as trackAnalyticsEvent } from "@/utils/analytics";
-import { fetchCities } from "@/libs/api";
-import { City, LocationSelection } from "@/libs/interfaces";
+import { LocationSelection } from "@/libs/interfaces";
 import { LocationPicker, MultiImagePicker } from "@/components/shared";
 import { formatLocation } from "@/utils/location";
 import { resolveImageUrls } from "@/utils/imageUpload";
@@ -105,8 +104,8 @@ export default function EventsPage() {
   const [discoverPage, setDiscoverPage] = useState(1);
   const [discoverHasMore, setDiscoverHasMore] = useState(true);
   const [discoverLoadingMore, setDiscoverLoadingMore] = useState(false);
-  const [selectedCity, setSelectedCity] = useState<string | null>(null);
-  const [cities, setCities] = useState<City[]>([]);
+  const [discoverLoc, setDiscoverLoc] = useState<Partial<LocationSelection> | null>(null);
+  const [discoverPickerKey, setDiscoverPickerKey] = useState(0);
   const [inviteTab, setInviteTab] = useState<"people" | "vendors">("people");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -178,7 +177,11 @@ export default function EventsPage() {
 
   const DISCOVER_LIMIT = 10;
 
-  const fetchDiscoverEvents = async (pageNum = 1, city: string | null = selectedCity, isRefresh = false) => {
+  const fetchDiscoverEvents = async (
+    pageNum = 1,
+    loc: Partial<LocationSelection> | null = discoverLoc,
+    isRefresh = false
+  ) => {
     try {
       if (pageNum === 1) setDiscoverLoading(true);
       else setDiscoverLoadingMore(true);
@@ -186,9 +189,16 @@ export default function EventsPage() {
       const token = await SecureStore.getItemAsync("token");
       if (!token) return;
 
-      const cityParam = city ? `&city=${encodeURIComponent(city)}` : "";
+      const params = new URLSearchParams({
+        page: String(pageNum),
+        limit: String(DISCOVER_LIMIT),
+      });
+      if (loc?.city) params.append("city", loc.city);
+      if (loc?.state) params.append("state", loc.state);
+      if (loc?.country) params.append("country", loc.country);
+
       const res = await fetch(
-        `${BASE_URL}/events/public/explore?page=${pageNum}&limit=${DISCOVER_LIMIT}${cityParam}`,
+        `${BASE_URL}/events/public/explore?${params.toString()}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await res.json();
@@ -230,7 +240,7 @@ export default function EventsPage() {
     if (confirmRes.ok) {
       trackAnalyticsEvent("ticket_purchased", { eventId, eventTitle });
       Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
-      fetchDiscoverEvents(1, selectedCity, true);
+      fetchDiscoverEvents(1, discoverLoc, true);
     } else {
       const d = await confirmRes.json();
       Alert.alert("Error", d.message || "Payment succeeded but ticket could not be issued.");
@@ -248,7 +258,7 @@ export default function EventsPage() {
       const data = await res.json();
       if (res.ok) {
         Alert.alert("Success!", `You've joined "${eventTitle}"`);
-        fetchDiscoverEvents(1, selectedCity, true);
+        fetchDiscoverEvents(1, discoverLoc, true);
       } else {
         Alert.alert("Error", data.message || "Failed to join event");
       }
@@ -260,10 +270,10 @@ export default function EventsPage() {
   useFocusEffect(
     useCallback(() => {
       fetchEvents(1, true);
+      // Each visit starts fresh — reset the location filter and the picker.
+      setDiscoverLoc(null);
+      setDiscoverPickerKey((k) => k + 1);
       fetchDiscoverEvents(1, null, true);
-      fetchCities()
-        .then((data) => { if (Array.isArray(data) && data.length > 0) setCities(data); })
-        .catch(() => {});
     }, [])
   );
 
@@ -282,7 +292,7 @@ export default function EventsPage() {
     if (activeTab === "private") {
       fetchEvents(1, true);
     } else {
-      fetchDiscoverEvents(1, selectedCity, true);
+      fetchDiscoverEvents(1, discoverLoc, true);
       setRefreshing(false);
     }
   };
@@ -762,29 +772,33 @@ export default function EventsPage() {
           {/* ──── DISCOVER TAB ──── */}
           {activeTab === "discover" ? (
             <>
-              {/* City filter chips */}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.cityFilterScroll}
-                contentContainerStyle={styles.cityFilterContent}
-              >
-                <TouchableOpacity
-                  style={[styles.cityChip, !selectedCity && styles.cityChipActive]}
-                  onPress={() => { setSelectedCity(null); fetchDiscoverEvents(1, null, true); }}
-                >
-                  <Text style={[styles.cityChipText, !selectedCity && styles.cityChipTextActive]}>All</Text>
-                </TouchableOpacity>
-                {cities.map((city) => (
+              {/* Location filter */}
+              <View style={styles.discoverFilterWrap}>
+                <LocationPicker
+                  key={discoverPickerKey}
+                  label="Filter by location"
+                  value={discoverLoc ?? undefined}
+                  onChange={(sel) => {
+                    const next = { country: sel.country, state: sel.state, city: sel.city };
+                    setDiscoverLoc(next);
+                    fetchDiscoverEvents(1, next, true);
+                  }}
+                />
+                {discoverLoc?.city || discoverLoc?.state || discoverLoc?.country ? (
                   <TouchableOpacity
-                    key={city._id}
-                    style={[styles.cityChip, selectedCity === city.name && styles.cityChipActive]}
-                    onPress={() => { setSelectedCity(city.name); fetchDiscoverEvents(1, city.name, true); }}
+                    style={styles.clearLocationBtn}
+                    onPress={() => {
+                      setDiscoverLoc(null);
+                      setDiscoverPickerKey((k) => k + 1);
+                      fetchDiscoverEvents(1, null, true);
+                    }}
+                    activeOpacity={0.7}
                   >
-                    <Text style={[styles.cityChipText, selectedCity === city.name && styles.cityChipTextActive]}>{city.name}</Text>
+                    <Ionicons name="close-circle" size={16} color="#9ca3af" />
+                    <Text style={styles.clearLocationText}>Show all events</Text>
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
+                ) : null}
+              </View>
 
               {discoverLoading ? (
                 <EventCardSkeleton count={5} />
@@ -1508,33 +1522,25 @@ const styles = StyleSheet.create({
   tabBtnTextActive: {
     color: "#fff",
   },
-  cityFilterScroll: {
-    marginTop: 4,
-    marginBottom: 12,
-  },
-  cityFilterContent: {
+  discoverFilterWrap: {
     paddingHorizontal: 16,
-    gap: 8,
+    paddingTop: 12,
+    marginBottom: 4,
   },
-  cityChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: "#1f1f2e",
-    borderWidth: 1,
-    borderColor: "#374151",
+  clearLocationBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    marginTop: -4,
+    marginBottom: 8,
   },
-  cityChipActive: {
-    backgroundColor: "#a855f7",
-    borderColor: "#a855f7",
-  },
-  cityChipText: {
+  clearLocationText: {
     fontSize: 13,
-    fontFamily: Fonts.semiBold,
-    color: "#6b7280",
-  },
-  cityChipTextActive: {
-    color: "#fff",
+    fontFamily: Fonts.medium,
+    color: "#9ca3af",
   },
   eventDetail: {
     flexDirection: "row",
