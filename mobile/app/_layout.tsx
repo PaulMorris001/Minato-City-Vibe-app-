@@ -285,38 +285,28 @@ export default Sentry.wrap(function RootLayout() {
     if (!url) return;
     const parsed = parseDeepLink(url);
     if (!parsed) {
-      // Unknown host/scheme/kind/segment — silently ignore. Keeps the device
-      // from no-op-routing on URLs that aren't ours (Safari bookmarks etc.).
+      // Unknown host/scheme/kind/segment — silently ignore. Keeps us from
+      // reacting to URLs that aren't ours (Safari bookmarks etc.).
       return;
     }
     console.log("[DeepLink] parsed:", url, "→", parsed.pathname, parsed.params);
 
-    // Map the parser's pathname back to the pending-queue's `kind`. The queue
-    // is the cold-start safety net: index.tsx consumes it after the auth
-    // check resolves, so even if `router.push` below runs before the navigator
-    // is ready, the link still lands on the right screen.
+    // IMPORTANT: do NOT call router.push here. expo-router auto-routes URL
+    // deep links (Universal Links + custom scheme) to the matching file route
+    // via its built-in linking config — pushing again would mount the screen
+    // twice and the second mount's failed fetch would alert over the working
+    // first one. We only park the link in the pending queue as a safety net
+    // for cold starts where index.tsx mounts (e.g. via notification taps),
+    // in case index.tsx's redirect needs to know about a URL we received
+    // around the same time.
     let link: PendingDeepLink | null = null;
     if (parsed.pathname === "/event/[id]" || parsed.pathname === "/share/[token]") {
-      // Both event and share routes go through the `event` kind, which maps
-      // to /share/[token] in deepLinkToPath. The share endpoint accepts both
-      // a shareToken and an _id, so this preserves back-compat for older
-      // universal-link tokens.
       const token = parsed.params.id ?? parsed.params.token;
       if (token) link = { kind: "event", token };
     } else if (parsed.pathname === "/guide/[id]") {
       if (parsed.params.id) link = { kind: "guide", token: parsed.params.id };
     }
-
-    if (!link) return;
-
-    setPendingDeepLink(link);
-    const path = deepLinkToPath(link);
-    if (!path) return;
-    try {
-      router.push(path as any);
-    } catch (err) {
-      console.warn("[DeepLink] router.push threw, relying on pending queue:", err);
-    }
+    if (link) setPendingDeepLink(link);
   }, []);
 
   useEffect(() => {

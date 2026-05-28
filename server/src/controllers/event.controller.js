@@ -285,14 +285,27 @@ export const getEventById = async (req, res) => {
     const cached = getCache(cacheKey);
     if (cached) return res.status(200).json(cached);
 
-    const event = await Event.findById(eventId)
-      .populate('createdBy', 'username email profilePicture verified stripeAccountId stripeOnboardingComplete')
-      .populate('invitedUsers', 'username email profilePicture')
-      .populate('pendingInvites', 'username email profilePicture')
-      .populate('joinRequests', 'username email profilePicture')
-      .populate('rsvpUsers', 'username profilePicture')
-      .populate('groupChatId', '_id name groupImage unreadCount')
-      .populate('vendors', 'name images rating verified vendorType city');
+    // Accept either an ObjectId (`_id`) or a shareToken so deep links like
+    // `https://night-vibe.onrender.com/event/<shareToken>` (which expo-router
+    // auto-routes to `/event/[id]`) resolve correctly without bouncing the
+    // user through a 404 alert.
+    const POPULATIONS = [
+      ['createdBy', 'username email profilePicture verified stripeAccountId stripeOnboardingComplete'],
+      ['invitedUsers', 'username email profilePicture'],
+      ['pendingInvites', 'username email profilePicture'],
+      ['joinRequests', 'username email profilePicture'],
+      ['rsvpUsers', 'username profilePicture'],
+      ['groupChatId', '_id name groupImage unreadCount'],
+      ['vendors', 'name images rating verified vendorType city'],
+    ];
+    const populateAll = (q) => POPULATIONS.reduce((acc, [p, f]) => acc.populate(p, f), q);
+
+    let event = mongoose.isValidObjectId(eventId)
+      ? await populateAll(Event.findById(eventId))
+      : null;
+    if (!event) {
+      event = await populateAll(Event.findOne({ shareToken: eventId }));
+    }
 
     if (!event) {
       return res.status(404).json({ message: "Event not found" });
