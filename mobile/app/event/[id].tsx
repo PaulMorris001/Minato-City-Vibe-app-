@@ -249,6 +249,16 @@ export default function EventDetailsPage() {
       const res = await fetch(`${BASE_URL}/events/${id}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
+      // 404 here means the param isn't a valid event _id. It's likely a
+      // shareToken — happens when expo-router auto-routes a Universal Link
+      // like `/event/<shareToken>` to this screen while the app is already
+      // open (cold-start instead goes through index.tsx → `/share/<token>`).
+      // Bounce to /share/[token] which fetches via the share endpoint and
+      // handles both shareTokens and _ids.
+      if (res.status === 404) {
+        router.replace(`/share/${id}` as any);
+        return;
+      }
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setEvent(data.event);
@@ -260,13 +270,10 @@ export default function EventDetailsPage() {
         // get lost if the user backs out of /login).
         setNeedsLogin(true);
       } else {
-        // 404 / 410 / unknown — friendly fallback that handles cold-start
+        // 410 / 500 / unknown — friendly fallback that handles cold-start
         // (no back-stack) by replacing to home instead of `router.back()`.
-        const title = res.status === 404 ? "Not found" : "Unavailable";
-        const fallback =
-          res.status === 404
-            ? "We couldn't find this event. The link may be incorrect."
-            : data?.message || "Failed to fetch event details";
+        const title = "Unavailable";
+        const fallback = data?.message || "Failed to fetch event details";
         Alert.alert(title, fallback, [
           {
             text: "OK",
@@ -826,7 +833,13 @@ export default function EventDetailsPage() {
             pointerEvents="box-none"
           >
             <View style={styles.topChromeRow}>
-              <GlassRoundIcon icon="chevron-back" onPress={() => router.back()} />
+              <GlassRoundIcon
+                icon="chevron-back"
+                onPress={() => {
+                  if (router.canGoBack()) router.back();
+                  else router.replace("/(tabs)/home" as any);
+                }}
+              />
               <View style={styles.topChromeRight}>
                 <GlassRoundIcon
                   icon="ellipsis-horizontal"

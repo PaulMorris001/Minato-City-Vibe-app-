@@ -215,7 +215,12 @@ export default function GuideDetailPage() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => {
+            // Warm-start deep links have no back stack — fall through to
+            // home so the user isn't stranded on the guide screen.
+            if (router.canGoBack()) router.back();
+            else router.replace("/(tabs)/home");
+          }}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
