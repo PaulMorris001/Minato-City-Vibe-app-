@@ -11,6 +11,7 @@ import {
   looksLikeObjectId,
   type PendingDeepLink,
 } from "@/utils/pendingDeepLink";
+import { parseDeepLink } from "@/utils/deepLinkParser";
 import {
   useFonts,
   Outfit_300Light,
@@ -102,6 +103,21 @@ SplashScreen.setOptions({
 setupGlobalErrorHandler();
 setupConsoleOverride();
 
+// Push notification `type` values that should deep-link to the event details
+// screen. The payload carries an `eventId`. Add new types here as they ship.
+const EVENT_PUSH_TYPES = new Set([
+  "event",
+  "event_reminder",
+  "ticket_sold",
+  "ticket_refunded",
+  "paid_event_approved",
+  "paid_event_rejected",
+]);
+
+// Push notification `type` values that should deep-link to a guide. Payload
+// carries `guideId`.
+const GUIDE_PUSH_TYPES = new Set(["guide", "guide_sold"]);
+
 export default Sentry.wrap(function RootLayout() {
   const [fontsLoaded] = useFonts({
     Outfit_300Light,
@@ -179,6 +195,24 @@ export default Sentry.wrap(function RootLayout() {
       if (type === "new_follower" && typeof d.followerId === "string" && d.followerId) {
         return { kind: "user", userId: d.followerId };
       }
+      // Event-related pushes — server sends these with `eventId` in the payload.
+      // Routes through the `event` queue kind so the cold-start path lands on
+      // /share/[token] (which accepts both shareToken and _id).
+      if (
+        EVENT_PUSH_TYPES.has(type ?? "") &&
+        typeof d.eventId === "string" &&
+        d.eventId
+      ) {
+        return { kind: "event", token: d.eventId };
+      }
+      // Guide-related pushes.
+      if (
+        GUIDE_PUSH_TYPES.has(type ?? "") &&
+        typeof d.guideId === "string" &&
+        d.guideId
+      ) {
+        return { kind: "guide", token: d.guideId };
+      }
       console.warn("[PushNotif] payload was not routable:", type, d);
       return null;
     };
@@ -249,46 +283,39 @@ export default Sentry.wrap(function RootLayout() {
 
   const routeDeepLink = useCallback((url: string | null) => {
     if (!url) return;
+    const parsed = parseDeepLink(url);
+    if (!parsed) {
+      // Unknown host/scheme/kind/segment — silently ignore. Keeps the device
+      // from no-op-routing on URLs that aren't ours (Safari bookmarks etc.).
+      return;
+    }
+    console.log("[DeepLink] parsed:", url, "→", parsed.pathname, parsed.params);
+
+    // Map the parser's pathname back to the pending-queue's `kind`. The queue
+    // is the cold-start safety net: index.tsx consumes it after the auth
+    // check resolves, so even if `router.push` below runs before the navigator
+    // is ready, the link still lands on the right screen.
+    let link: PendingDeepLink | null = null;
+    if (parsed.pathname === "/event/[id]" || parsed.pathname === "/share/[token]") {
+      // Both event and share routes go through the `event` kind, which maps
+      // to /share/[token] in deepLinkToPath. The share endpoint accepts both
+      // a shareToken and an _id, so this preserves back-compat for older
+      // universal-link tokens.
+      const token = parsed.params.id ?? parsed.params.token;
+      if (token) link = { kind: "event", token };
+    } else if (parsed.pathname === "/guide/[id]") {
+      if (parsed.params.id) link = { kind: "guide", token: parsed.params.id };
+    }
+
+    if (!link) return;
+
+    setPendingDeepLink(link);
+    const path = deepLinkToPath(link);
+    if (!path) return;
     try {
-      const parsed = new URL(url);
-      const isAppScheme = parsed.protocol === 'mobile:';
-      // For custom schemes the URL parser puts the first segment into `host`
-      // (e.g. `mobile://share/TOKEN` → host=`share`, pathname=`/TOKEN`).
-      // For https Universal Links the segment is in the pathname instead.
-      const segments = isAppScheme
-        ? [parsed.host, ...parsed.pathname.split('/').filter(Boolean)]
-        : parsed.pathname.split('/').filter(Boolean);
-
-      const [kind, token] = segments;
-      if (!token) return;
-
-      console.log("[DeepLink] received url:", url, "→ kind:", kind, "token:", token);
-
-      // Accept both the Universal Link shape (`/event/TOKEN`) and the web
-      // landing page's redirect (`mobile://share/TOKEN`) for events.
-      let link: PendingDeepLink | null = null;
-      if (kind === 'event' || kind === 'share') {
-        link = { kind: 'event', token };
-      } else if (kind === 'guide') {
-        link = { kind: 'guide', token };
-      }
-
-      if (!link) return;
-
-      // Park the link in the pending queue AND attempt to push right now.
-      // The queue covers the cold-start race where router.push runs before
-      // index.tsx has finished routing — index.tsx will pick it up and
-      // redirect there instead of `/(tabs)/home`.
-      setPendingDeepLink(link);
-      const path = deepLinkToPath(link);
-      if (!path) return;
-      try {
-        router.push(path as any);
-      } catch (err) {
-        console.warn("[DeepLink] router.push threw, relying on pending queue:", err);
-      }
+      router.push(path as any);
     } catch (err) {
-      console.warn("[DeepLink] failed to parse url:", url, err);
+      console.warn("[DeepLink] router.push threw, relying on pending queue:", err);
     }
   }, []);
 

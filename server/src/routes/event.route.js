@@ -20,7 +20,7 @@ import {
   addVendorToEvent,
   removeVendorFromEvent,
 } from "../controllers/event.controller.js";
-import { authenticate } from "../middleware/auth.middleware.js";
+import { authenticate, optionalAuth } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
@@ -48,8 +48,10 @@ router.post("/events/:eventId/purchase", authenticate, purchaseTicket);
 // Get ticket sales for an event (organizer only)
 router.get("/events/:eventId/tickets", authenticate, getEventTicketSales);
 
-// Get a specific event by ID
-router.get("/events/:eventId", authenticate, getEventById);
+// Get a specific event by ID. optionalAuth so deep links work for logged-out
+// viewers — the controller returns 401 for non-public events and strips
+// private fields for anon viewers.
+router.get("/events/:eventId", optionalAuth, getEventById);
 
 // Get event by share token (public access for sharing)
 router.get("/events/share/:shareToken", getEventByShareToken);

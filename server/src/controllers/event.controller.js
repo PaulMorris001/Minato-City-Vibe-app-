@@ -269,13 +269,19 @@ export const getUserEvents = async (req, res) => {
   }
 };
 
-// Get a single event by ID
+// Get a single event by ID. Uses optionalAuth so deep links work for logged-out
+// viewers — when there's no user we return public-safe fields only, and 401
+// for events that aren't browsably public so the client can prompt login.
 export const getEventById = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user?.id ?? null;
 
-    const cacheKey = `event_detail_${eventId}_${userId}`;
+    // Anon reads share a separate cache namespace so they never poison the
+    // authenticated user's view (and vice versa).
+    const cacheKey = userId
+      ? `event_detail_${eventId}_${userId}`
+      : `event_detail_${eventId}_anon`;
     const cached = getCache(cacheKey);
     if (cached) return res.status(200).json(cached);
 
@@ -292,13 +298,6 @@ export const getEventById = async (req, res) => {
       return res.status(404).json({ message: "Event not found" });
     }
 
-    const isCreator = event.createdBy._id.toString() === userId;
-    const isInvited = event.invitedUsers.some(user => user._id.toString() === userId);
-    const isPending = event.pendingInvites.some(user => user._id.toString() === userId);
-    const hasRequested = (event.joinRequests || []).some(user => user._id.toString() === userId);
-    const userTicket = await Ticket.findOne({ event: eventId, user: userId, isValid: true });
-    const hasTicket = !!userTicket;
-
     // Public events are browsable to everyone so buyers can read the details
     // before purchasing. Paid events still in the approval queue (or rejected)
     // are hidden from anyone except the creator.
@@ -307,24 +306,44 @@ export const getEventById = async (req, res) => {
       event.isActive &&
       (!event.isPaid || event.approvalStatus === "approved");
 
-    const hasAccess =
-      isCreator || isInvited || isPending || hasTicket || isBrowsablePublic;
+    // User-relationship flags (all false for anon viewers).
+    const isCreator = !!userId && event.createdBy._id.toString() === userId;
+    const isInvited = !!userId && event.invitedUsers.some(u => u._id.toString() === userId);
+    const isPending = !!userId && event.pendingInvites.some(u => u._id.toString() === userId);
+    const hasRequested = !!userId && (event.joinRequests || []).some(u => u._id.toString() === userId);
+    const userTicket = userId
+      ? await Ticket.findOne({ event: eventId, user: userId, isValid: true })
+      : null;
+    const hasTicket = !!userTicket;
 
-    if (!hasAccess) {
-      return res.status(403).json({ message: "You don't have access to this event" });
+    if (!userId) {
+      // Anon viewers can only see browsable-public events; otherwise prompt login.
+      if (!isBrowsablePublic) {
+        return res.status(401).json({ message: "Log in to view this event" });
+      }
+    } else {
+      const hasAccess =
+        isCreator || isInvited || isPending || hasTicket || isBrowsablePublic;
+      if (!hasAccess) {
+        return res.status(403).json({ message: "You don't have access to this event" });
+      }
     }
 
     // Track unique non-creator viewers for the organizer's "N seen" metric.
-    const alreadyViewed = (event.viewedBy || []).some((id) => id.toString() === userId);
-    if (!isCreator && !alreadyViewed) {
-      await Event.updateOne({ _id: eventId }, { $addToSet: { viewedBy: userId } });
+    // Only logged-in viewers count toward the metric (we don't write for anon).
+    let seenCount = (event.viewedBy || []).length;
+    if (userId && !isCreator) {
+      const alreadyViewed = (event.viewedBy || []).some((id) => id.toString() === userId);
+      if (!alreadyViewed) {
+        await Event.updateOne({ _id: eventId }, { $addToSet: { viewedBy: userId } });
+        seenCount += 1;
+      }
     }
-    const seenCount = (event.viewedBy || []).length + (!isCreator && !alreadyViewed ? 1 : 0);
 
     const eventObj = event.toObject();
     eventObj.seenCount = seenCount;
     delete eventObj.viewedBy; // don't leak the viewer list
-    eventObj.userRsvp = event.rsvpUsers.some(u => u._id.toString() === userId);
+    eventObj.userRsvp = !!userId && event.rsvpUsers.some(u => u._id.toString() === userId);
     eventObj.rsvpCount = event.rsvpUsers.length;
 
     // Surface ticket info for paid events so the client can render the right CTA
@@ -343,9 +362,9 @@ export const getEventById = async (req, res) => {
     else eventObj.userStatus = 'none';
 
     // Derived: mutuals on the guest list. Powers the "FRIENDS · N going" stat
-    // and the "N friends" span on the attendees card.
+    // and the "N friends" span on the attendees card. Anon viewers see 0.
     const rsvpIdStrings = event.rsvpUsers.map(u => u._id.toString());
-    if (rsvpIdStrings.length === 0) {
+    if (!userId || rsvpIdStrings.length === 0) {
       eventObj.friendsGoing = 0;
     } else {
       const [followingDocs, followerDocs] = await Promise.all([
@@ -357,12 +376,12 @@ export const getEventById = async (req, res) => {
       eventObj.friendsGoing = rsvpIdStrings.filter(id => iFollow.has(id) && followsMe.has(id)).length;
     }
 
-    // Derived: this user's unread count for the event's group chat.
+    // Derived: this user's unread count for the event's group chat. Always
+    // delete the raw unread map so we never leak everyone else's counts.
     if (eventObj.groupChatId && eventObj.groupChatId.unreadCount) {
       const raw = eventObj.groupChatId.unreadCount;
-      // `toObject()` returns the Map as a plain object keyed by user id
-      eventObj.groupChatUnread = (raw && typeof raw === 'object') ? (raw[userId] || 0) : 0;
-      // Don't leak everyone else's unread counts
+      eventObj.groupChatUnread =
+        userId && raw && typeof raw === 'object' ? (raw[userId] || 0) : 0;
       delete eventObj.groupChatId.unreadCount;
     } else {
       eventObj.groupChatUnread = 0;
@@ -392,6 +411,13 @@ export const getEventById = async (req, res) => {
     if (eventObj.createdBy) {
       delete eventObj.createdBy.stripeAccountId;
       delete eventObj.createdBy.stripeOnboardingComplete;
+    }
+
+    // For anon viewers, strip lists that could leak who's been invited.
+    if (!userId) {
+      delete eventObj.invitedUsers;
+      delete eventObj.pendingInvites;
+      delete eventObj.joinRequests;
     }
 
     const response = { event: eventObj };

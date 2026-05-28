@@ -65,6 +65,15 @@ module.exports = {
         data: [{ scheme: "https", host: "night-vibe.onrender.com", pathPrefix: "/guide" }],
         category: ["BROWSABLE", "DEFAULT"],
       },
+      // Custom-scheme handler so the web preview's "Open in app" button
+      // (mobile://event/<id>, mobile://guide/<id>, mobile://share/<token>)
+      // can launch the app on Android. iOS is already covered by the
+      // top-level `scheme: "mobile"`.
+      {
+        action: "VIEW",
+        data: [{ scheme: "mobile" }],
+        category: ["BROWSABLE", "DEFAULT"],
+      },
     ],
     // In EAS Build, GOOGLE_SERVICES_JSON is the path to the secret file.
     // Locally, fall back to the file in the project root.

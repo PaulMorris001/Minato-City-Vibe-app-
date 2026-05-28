@@ -35,7 +35,7 @@ router.get("/guides/saved", authenticate, getSavedGuides);
 
 // Protected guide CRU(D) operations
 router.post("/guides", authenticate, createGuide);
-router.get("/guides/:id", authenticate, getGuideById);
+router.get("/guides/:id", optionalAuth, getGuideById);
 router.put("/guides/:id", authenticate, updateGuide);
 router.delete("/guides/:id", authenticate, deleteGuide);
 router.post("/guides/:id/purchase", authenticate, purchaseGuide);

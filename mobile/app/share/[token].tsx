@@ -42,7 +42,15 @@ interface Event {
 
 export default function ShareEventScreen() {
   const router = useRouter();
-  const { token } = useLocalSearchParams<{ token: string }>();
+  // Sanitize: useLocalSearchParams can hand back `string | string[]` for
+  // malformed deep links — narrow to a single string we can rely on.
+  const rawParams = useLocalSearchParams();
+  const token =
+    typeof rawParams.token === "string"
+      ? rawParams.token
+      : Array.isArray(rawParams.token)
+        ? rawParams.token[0]
+        : undefined;
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
@@ -50,6 +58,15 @@ export default function ShareEventScreen() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
+    if (!token) {
+      setLoading(false);
+      Alert.alert(
+        "Invalid link",
+        "This share link doesn't look right.",
+        [{ text: "OK", onPress: () => router.replace("/(tabs)/home") }]
+      );
+      return;
+    }
     loadUser();
     fetchEvent();
   }, [token]);

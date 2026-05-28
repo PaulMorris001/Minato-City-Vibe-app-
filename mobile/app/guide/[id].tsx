@@ -27,7 +27,15 @@ import { Avatar } from "@/components/shared/Avatar";
 
 export default function GuideDetailPage() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // Sanitize: useLocalSearchParams can hand back `string | string[]` for
+  // malformed deep links — narrow to a single string we can rely on.
+  const rawParams = useLocalSearchParams();
+  const id =
+    typeof rawParams.id === "string"
+      ? rawParams.id
+      : Array.isArray(rawParams.id)
+        ? rawParams.id[0]
+        : undefined;
   const formatPrice = useFormatPrice();
   const { payForGuide } = useStripePayment();
 
@@ -58,6 +66,15 @@ export default function GuideDetailPage() {
   }, [id]);
 
   const fetchGuide = async () => {
+    if (!id) {
+      setLoading(false);
+      Alert.alert(
+        "Invalid link",
+        "This guide link doesn't look right.",
+        [{ text: "OK", onPress: () => router.replace("/(tabs)/home") }]
+      );
+      return;
+    }
     try {
       setLoading(true);
       const token = await SecureStore.getItemAsync("token");
@@ -111,7 +128,7 @@ export default function GuideDetailPage() {
   };
 
   const handleToggleSave = async () => {
-    if (savingToggle) return;
+    if (savingToggle || !id) return;
     setSavingToggle(true);
     const next = !isSaved;
     setIsSaved(next); // optimistic
@@ -125,7 +142,7 @@ export default function GuideDetailPage() {
     }
   };
 
-  const shareTarget: ShareTarget | null = guide
+  const shareTarget: ShareTarget | null = guide && id
     ? {
         kind: "guide",
         guideId: id,
@@ -135,6 +152,7 @@ export default function GuideDetailPage() {
     : null;
 
   const handlePurchase = async () => {
+    if (!id) return;
     const token = await SecureStore.getItemAsync("token");
     if (!token) {
       router.push("/login");

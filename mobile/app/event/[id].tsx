@@ -191,9 +191,23 @@ function GlassRoundIcon({
 
 export default function EventDetailsPage() {
   const router = useRouter();
-  const { id } = useLocalSearchParams();
+  // `useLocalSearchParams` can hand back `string | string[]` if a deep link
+  // produces a malformed param. Narrow it once so the rest of the screen
+  // can rely on a clean string (or fall through to the invalid-link panel).
+  const rawParams = useLocalSearchParams();
+  const id =
+    typeof rawParams.id === "string"
+      ? rawParams.id
+      : Array.isArray(rawParams.id)
+        ? rawParams.id[0]
+        : undefined;
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // True when the server returned 401/403 — render the "Log in to view" panel
+  // instead of the event UI. Lets cold-start deep links work for logged-out
+  // users on browsably-public events, and gates private ones behind login.
+  const [needsLogin, setNeedsLogin] = useState(false);
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [isInviteModalVisible, setIsInviteModalVisible] = useState(false);
@@ -222,27 +236,58 @@ export default function EventDetailsPage() {
   const authToken = () => SecureStore.getItemAsync("token");
 
   const fetchEventDetails = async () => {
+    if (!id) {
+      setLoading(false);
+      return;
+    }
     try {
-      const token = await authToken();
-      if (!token) {
-        router.replace("/login");
-        return;
-      }
+      const token = await SecureStore.getItemAsync("token");
+      // Always attempt the fetch — `/api/events/:id` uses optionalAuth, so
+      // public events resolve without a token and private ones come back 401
+      // (which we surface as a "log in to view" panel below). Never preempt
+      // a deep link with `router.replace('/login')` here.
       const res = await fetch(`${BASE_URL}/events/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setEvent(data.event);
+        setNeedsLogin(false);
         trackEvent("event_viewed", { eventId: data.event._id, isPublic: data.event.isPublic });
+      } else if (res.status === 401 || res.status === 403) {
+        // Not-public event the viewer can't see → prompt login (we render a
+        // dedicated panel instead of redirecting, so the deep link doesn't
+        // get lost if the user backs out of /login).
+        setNeedsLogin(true);
       } else {
-        Alert.alert("Error", data.message || "Failed to fetch event details");
-        router.back();
+        // 404 / 410 / unknown — friendly fallback that handles cold-start
+        // (no back-stack) by replacing to home instead of `router.back()`.
+        const title = res.status === 404 ? "Not found" : "Unavailable";
+        const fallback =
+          res.status === 404
+            ? "We couldn't find this event. The link may be incorrect."
+            : data?.message || "Failed to fetch event details";
+        Alert.alert(title, fallback, [
+          {
+            text: "OK",
+            onPress: () => {
+              if (router.canGoBack()) router.back();
+              else router.replace("/(tabs)/home");
+            },
+          },
+        ]);
       }
     } catch (err) {
       console.error("Fetch event details error:", err);
-      Alert.alert("Error", "Failed to load event details");
-      router.back();
+      Alert.alert("Error", "Failed to load event details", [
+        {
+          text: "OK",
+          onPress: () => {
+            if (router.canGoBack()) router.back();
+            else router.replace("/(tabs)/home");
+          },
+        },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -250,19 +295,33 @@ export default function EventDetailsPage() {
 
   const loadCurrentUser = async () => {
     try {
-      const userJson = await SecureStore.getItemAsync("user");
+      const [userJson, token] = await Promise.all([
+        SecureStore.getItemAsync("user"),
+        SecureStore.getItemAsync("token"),
+      ]);
       if (userJson) {
         const u = JSON.parse(userJson);
         setCurrentUserId(u.id || u._id || "");
       }
+      setIsAuthenticated(!!userJson && !!token);
     } catch (err) {
       console.error("Error loading user:", err);
     }
   };
 
   useEffect(() => {
-    loadCurrentUser();
-    fetchEventDetails();
+    if (!id) {
+      setLoading(false);
+      return;
+    }
+    (async () => {
+      // Load the user FIRST so isAuthenticated/currentUserId are set before
+      // fetch resolves — otherwise the response handler races the auth
+      // state and we'd flicker through "Log in to view" for split-second
+      // even when the user is signed in.
+      await loadCurrentUser();
+      await fetchEventDetails();
+    })();
   }, [id]);
 
   // Load follow state for the host as soon as we know who we're looking at
@@ -322,8 +381,29 @@ export default function EventDetailsPage() {
   }, [userSearchQuery, event]);
 
   // ─── Handlers (preserved from previous version) ───────────────────────────
+
+  /**
+   * Gate interactive actions behind auth. Returns true when the user is
+   * signed in; otherwise shows a "log in" alert and returns false so the
+   * caller can early-return. Used by every handler that hits an
+   * authenticate-required endpoint.
+   */
+  const requireAuth = (intent: string): boolean => {
+    if (isAuthenticated) return true;
+    Alert.alert(
+      "Log in to continue",
+      `You need to log in to ${intent}.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Log In", onPress: () => router.push("/login" as any) },
+      ]
+    );
+    return false;
+  };
+
   const handleInviteUser = async (user: SearchedUser) => {
     if (!event) return;
+    if (!requireAuth("invite people to this event")) return;
     try {
       const token = await authToken();
       const res = await fetch(`${BASE_URL}/events/${event._id}/invite`, {
@@ -348,6 +428,7 @@ export default function EventDetailsPage() {
 
   const handleRsvp = async (status: "going" | "not_going") => {
     if (!event) return;
+    if (!requireAuth("RSVP to this event")) return;
     setRsvpLoading(true);
     try {
       const token = await authToken();
@@ -374,6 +455,7 @@ export default function EventDetailsPage() {
 
   const handleRespondInvite = async (status: "accepted" | "declined") => {
     if (!event) return;
+    if (!requireAuth("respond to this invite")) return;
     setInviteResponding(true);
     try {
       const token = await authToken();
@@ -401,6 +483,7 @@ export default function EventDetailsPage() {
 
   const handleRequestToJoin = async () => {
     if (!event) return;
+    if (!requireAuth("request to join this event")) return;
     setRequestingJoin(true);
     try {
       const token = await authToken();
@@ -425,6 +508,7 @@ export default function EventDetailsPage() {
   const handleFollowToggle = async () => {
     const hostId = event?.createdBy?._id;
     if (!hostId) return;
+    if (!requireAuth("follow the host")) return;
     setFollowBusy(true);
     try {
       const token = await authToken();
@@ -444,6 +528,7 @@ export default function EventDetailsPage() {
 
   const handleRefundOwnTicket = async () => {
     if (!event) return;
+    if (!requireAuth("refund your ticket")) return;
     Alert.alert(
       "Refund ticket?",
       "Your ticket will be cancelled and your money returned to the card you used. This usually takes 5–10 business days.",
@@ -492,6 +577,7 @@ export default function EventDetailsPage() {
 
   const handlePurchaseTicket = async () => {
     if (!event) return;
+    if (!requireAuth("purchase a ticket")) return;
     setPurchasing(true);
     try {
       const result = await payForTicket(event._id);
@@ -553,6 +639,7 @@ export default function EventDetailsPage() {
 
   const handleAddVendor = async (vendorId: string) => {
     if (!event) return;
+    if (!requireAuth("add a vendor")) return;
     setAddingVendor(vendorId);
     try {
       const token = await authToken();
@@ -579,6 +666,7 @@ export default function EventDetailsPage() {
 
   const handleRemoveVendor = async (vendorId: string) => {
     if (!event) return;
+    if (!requireAuth("remove a vendor")) return;
     Alert.alert("Remove Vendor", "Remove this vendor from the event?", [
       { text: "Cancel", style: "cancel" },
       {
@@ -608,10 +696,58 @@ export default function EventDetailsPage() {
     [event?.location]
   );
 
+  if (!id) {
+    // Deep link arrived without a usable id (malformed array param etc.)
+    return (
+      <View style={styles.container}>
+        <SafeAreaView style={styles.stateScreen} edges={["top"]}>
+          <Ionicons name="alert-circle-outline" size={56} color={AU.textMute} />
+          <Text style={styles.stateTitle}>Invalid event link</Text>
+          <Text style={styles.stateText}>
+            The link you opened doesn't look like a valid event. Try opening it again or browse events.
+          </Text>
+          <TouchableOpacity
+            style={styles.statePrimaryBtn}
+            onPress={() => router.replace("/(tabs)/home")}
+          >
+            <Text style={styles.statePrimaryBtnText}>Back to home</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </View>
+    );
+  }
   if (loading) {
     return (
       <View style={styles.container}>
         <EventCardSkeleton count={1} />
+      </View>
+    );
+  }
+  if (needsLogin) {
+    return (
+      <View style={styles.container}>
+        <SafeAreaView style={styles.stateScreen} edges={["top"]}>
+          <Ionicons name="lock-closed-outline" size={56} color={AU.purpleSoft} />
+          <Text style={styles.stateTitle}>Log in to view this event</Text>
+          <Text style={styles.stateText}>
+            This event isn't public. Sign in to see the details and RSVP.
+          </Text>
+          <TouchableOpacity
+            style={styles.statePrimaryBtn}
+            onPress={() => router.push("/login" as any)}
+          >
+            <Text style={styles.statePrimaryBtnText}>Log In</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.stateSecondaryBtn}
+            onPress={() => {
+              if (router.canGoBack()) router.back();
+              else router.replace("/(tabs)/home");
+            }}
+          >
+            <Text style={styles.stateSecondaryBtnText}>Not now</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
       </View>
     );
   }
@@ -2424,5 +2560,49 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
     paddingVertical: 32,
+  },
+  // Full-screen state panels (invalid link / log-in-to-view).
+  stateScreen: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  stateTitle: {
+    color: AU.text,
+    fontFamily: Fonts.bold,
+    fontSize: 20,
+    textAlign: "center",
+    marginTop: 8,
+  },
+  stateText: {
+    color: AU.textDim,
+    fontFamily: Fonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  statePrimaryBtn: {
+    backgroundColor: AU.purple,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  statePrimaryBtnText: {
+    color: "#fff",
+    fontFamily: Fonts.semiBold,
+    fontSize: 15,
+  },
+  stateSecondaryBtn: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+  },
+  stateSecondaryBtnText: {
+    color: AU.textDim,
+    fontFamily: Fonts.medium,
+    fontSize: 14,
   },
 });
