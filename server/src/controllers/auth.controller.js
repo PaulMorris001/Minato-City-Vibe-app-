@@ -739,22 +739,26 @@ export async function googleAuth(req, res) {
 // us a 100% OTA-shippable replacement: the app opens this URL in a system
 // browser via `WebBrowser.openAuthSessionAsync`, the user signs in with
 // Google, Google redirects to /auth/google/web/callback on us, we
-// find-or-create the user, then 302 the browser to a small HTML landing
-// page at `/auth/google/complete?token=…&user=…` — `openAuthSessionAsync`
-// sees that URL match its returnUrl prefix and closes the in-app browser,
-// handing the URL back to the app.
+// find-or-create the user, then bounce the browser to
+// `mobile://auth/google?token=…&user=…`. The app's WebBrowser session sees
+// that URL match its returnUrl prefix and closes the in-app browser, handing
+// the URL back to the app.
 //
-// Why an HTTPS return URL instead of `mobile://auth/google`:
-//   - On Android the `mobile://` scheme has a registered intent filter, so the
-//     OS routes any such URL to the app's main activity at the same time as
-//     WebBrowser is trying to consume it. That second delivery hits
-//     expo-router's deep-link handler, which doesn't know /auth/google and
-//     renders the "Unmatched Route" screen.
-//   - On iOS the Universal Link list is limited to /event/* and /guide/*
-//     (see /.well-known/apple-app-site-association), and our intent-filter
-//     list on Android only auto-verifies /event and /guide — so HTTPS URLs
-//     under /auth/* land in the system browser, NOT the app. WebBrowser still
-//     catches them via its returnUrl prefix match.
+// Why a `mobile://` scheme and not an HTTPS URL:
+//   - On iOS ASWebAuthenticationSession can detect ANY URL prefix match, so
+//     either works. We use mobile:// for symmetry with Android.
+//   - On Android `openAuthSessionAsync` detects the callback via the OS's
+//     Linking/intent system. The scheme MUST be registered as an intent
+//     filter on the app or Chrome Custom Tabs never delivers the URL back —
+//     it just sits on whatever HTML it last rendered. `mobile://` is filtered
+//     in app.config.js; any HTTPS path NOT in the auto-verified list
+//     (/event/*, /guide/*) is not.
+//
+// The Android intent delivery has one side effect: the URL is also handed
+// to expo-router. Without an `app/auth/google.tsx` route the user would see
+// the "Unmatched Route" screen. That stub route exists and renders a
+// <Redirect href="/" /> so the user is bounced through index.tsx (which
+// reads the freshly stored token and forwards to home).
 //
 // Requirements (must be set BEFORE this works):
 //   1. Render env vars: GOOGLE_CLIENT_ID (already set) AND GOOGLE_CLIENT_SECRET
@@ -763,11 +767,6 @@ export async function googleAuth(req, res) {
 //      URIs → add: https://night-vibe.onrender.com/api/auth/google/web/callback
 
 const GOOGLE_WEB_REDIRECT_PATH = "/api/auth/google/web/callback";
-// Where the in-app browser ends up after we finish auth. WebBrowser matches
-// this prefix and closes. The path must NOT appear in the Universal Links
-// list (apple-app-site-association) or the Android intent filters, so neither
-// OS hijacks it into the app.
-const APP_RETURN_PATH = "/auth/google/complete";
 
 function getServerBase() {
   return (process.env.SERVER_URL || "https://night-vibe.onrender.com").replace(
@@ -778,10 +777,6 @@ function getServerBase() {
 
 function getGoogleWebRedirectUri() {
   return `${getServerBase()}${GOOGLE_WEB_REDIRECT_PATH}`;
-}
-
-function getAppReturnUrl() {
-  return `${getServerBase()}${APP_RETURN_PATH}`;
 }
 
 function buildGoogleWebClient() {
@@ -795,6 +790,39 @@ function buildGoogleWebClient() {
     process.env.GOOGLE_CLIENT_SECRET,
     getGoogleWebRedirectUri()
   );
+}
+
+// Build a `mobile://auth/google?…` URL with arbitrary query params, then
+// wrap it in a tiny HTML page that drives the browser there. Custom-scheme
+// 302 redirects are unreliable across browsers (Chrome sometimes refuses,
+// Safari shows a permission prompt), so meta-refresh + JS + a visible link
+// covers every case. The page never paints for more than a frame in the
+// happy path — openAuthSessionAsync dismisses as soon as it sees the URL.
+function buildAppReturnHtml(params, message = "Returning to Nightvibe…") {
+  const qs = Object.entries(params)
+    .filter(([, v]) => v != null && v !== "")
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+    .join("&");
+  const url = `mobile://auth/google${qs ? `?${qs}` : ""}`;
+  const safe = url.replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  return `<!DOCTYPE html>
+<html><head>
+  <meta charset="utf-8" />
+  <meta http-equiv="refresh" content="0;url=${safe}" />
+  <title>Nightvibe</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; background:#0f0a1f;
+           color:#eee; display:flex; align-items:center; justify-content:center;
+           height:100vh; margin:0; }
+    a { color:#a855f7; text-decoration:none; }
+  </style>
+</head><body>
+  <div>
+    <p>${message}</p>
+    <p><a href="${safe}">Tap here if Nightvibe doesn't reopen automatically.</a></p>
+  </div>
+  <script>setTimeout(function(){ window.location.replace("${safe}"); }, 50);</script>
+</body></html>`;
 }
 
 // Short, single-use state token kept in-memory. Stops a third-party site from
@@ -848,23 +876,14 @@ export async function googleWebStart(req, res) {
     res.redirect(302, authUrl);
   } catch (err) {
     console.error(`[google-web-start ${reqId}] ✗ ${err.message}`);
-    // Bounce to our /auth/google/complete landing page with the error in the
-    // query so the WebBrowser session can pick it up.
-    res.redirect(
-      302,
-      buildAppReturnUrl({ error: err.message || "start_failed" })
+    // Surface the failure to the app via the same bounce channel.
+    res.status(500).send(
+      buildAppReturnHtml(
+        { error: err.message || "start_failed" },
+        "Sign-in is not configured. Returning…"
+      )
     );
   }
-}
-
-// Build a return URL the in-app browser navigates to so WebBrowser's
-// returnUrl prefix match fires and closes the session.
-function buildAppReturnUrl(params) {
-  const qs = Object.entries(params)
-    .filter(([, v]) => v != null && v !== "")
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
-    .join("&");
-  return `${getAppReturnUrl()}${qs ? `?${qs}` : ""}`;
 }
 
 /**
@@ -872,8 +891,9 @@ function buildAppReturnUrl(params) {
  *
  * Google redirects here after the user grants consent. We exchange the code
  * for tokens, verify the id_token, find-or-create the user, mint our JWT, and
- * 302 the browser to `${SERVER_URL}/auth/google/complete?token=…&user=…`.
- * The app's WebBrowser session captures that URL and resolves.
+ * serve a tiny HTML page that bounces the browser to
+ * `mobile://auth/google?token=…&user=…`. The app's WebBrowser session
+ * captures that URL and resolves.
  */
 export async function googleWebCallback(req, res) {
   const reqId = `gwc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -889,17 +909,28 @@ export async function googleWebCallback(req, res) {
   // Google returned an error (e.g. user denied) — bounce back with it.
   if (googleError) {
     console.warn(`[google-web-callback ${reqId}] google returned error=${googleError}`);
-    return res.redirect(
-      302,
-      buildAppReturnUrl({ error: String(googleError) })
-    );
+    return res
+      .status(200)
+      .send(
+        buildAppReturnHtml(
+          { error: String(googleError) },
+          "Sign-in was cancelled. Returning…"
+        )
+      );
   }
 
   if (!code || !state || !consumeWebState(String(state))) {
     console.warn(
       `[google-web-callback ${reqId}] ✗ invalid request (missing code/state or unknown state)`
     );
-    return res.redirect(302, buildAppReturnUrl({ error: "invalid_state" }));
+    return res
+      .status(400)
+      .send(
+        buildAppReturnHtml(
+          { error: "invalid_state" },
+          "Sign-in expired. Returning…"
+        )
+      );
   }
 
   try {
@@ -937,10 +968,14 @@ export async function googleWebCallback(req, res) {
     if (user) {
       if (user.isBanned) {
         console.warn(`[google-web-callback ${reqId}] ✗ user is banned id=${user._id}`);
-        return res.redirect(
-          302,
-          buildAppReturnUrl({ error: "account_suspended" })
-        );
+        return res
+          .status(200)
+          .send(
+            buildAppReturnHtml(
+              { error: "account_suspended" },
+              "Account suspended. Returning…"
+            )
+          );
       }
       if (!user.googleId) {
         user.googleId = googleId;
@@ -982,60 +1017,26 @@ export async function googleWebCallback(req, res) {
       `[google-web-callback ${reqId}] ◀ success in ${Date.now() - startedAt}ms ` +
         `id=${user._id} isVendor=${user.isVendor}`
     );
-    res.redirect(
-      302,
-      buildAppReturnUrl({ token, user: JSON.stringify(userPayload) })
-    );
+    res
+      .status(200)
+      .send(
+        buildAppReturnHtml({ token, user: JSON.stringify(userPayload) })
+      );
   } catch (err) {
     console.error(
       `[google-web-callback ${reqId}] ✗ FAILED in ${Date.now() - startedAt}ms ` +
         `name=${err.name} message=${err.message}`
     );
     if (err.stack) console.error(`[google-web-callback ${reqId}] stack: ${err.stack}`);
-    res.redirect(
-      302,
-      buildAppReturnUrl({ error: err.message || "auth_failed" })
-    );
+    res
+      .status(200)
+      .send(
+        buildAppReturnHtml(
+          { error: err.message || "auth_failed" },
+          "Sign-in failed. Returning…"
+        )
+      );
   }
-}
-
-/**
- * GET /auth/google/complete
- *
- * The in-app browser lands here at the end of the OAuth dance with the JWT
- * and user payload in the query string. WebBrowser.openAuthSessionAsync sees
- * the URL match its returnUrl prefix and closes the browser before this HTML
- * even paints — but we serve a minimal page just in case the browser is slow
- * to dismiss (and so the URL doesn't 404 if anyone hits it directly).
- *
- * This path must NOT be in the Universal Links / App Links manifest, or the
- * OS will route it to the app and we'll be back where we started (unmatched
- * route on Android).
- */
-export function googleWebComplete(req, res) {
-  res
-    .status(200)
-    .setHeader("Content-Type", "text/html; charset=utf-8")
-    .send(`<!DOCTYPE html>
-<html><head>
-  <meta charset="utf-8" />
-  <title>Nightvibe</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body { font-family: -apple-system, system-ui, sans-serif; background:#0f0a1f;
-           color:#eee; display:flex; align-items:center; justify-content:center;
-           height:100vh; margin:0; text-align:center; }
-    .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
-           background:#a855f7; margin:0 3px; animation: pulse 1.2s infinite ease-in-out; }
-    .dot:nth-child(2){ animation-delay:.2s } .dot:nth-child(3){ animation-delay:.4s }
-    @keyframes pulse { 0%,80%,100% { opacity:.25 } 40% { opacity:1 } }
-  </style>
-</head><body>
-  <div>
-    <p>Returning to Nightvibe</p>
-    <p><span class="dot"></span><span class="dot"></span><span class="dot"></span></p>
-  </div>
-</body></html>`);
 }
 
 // Apple's public keys for verifying Sign in with Apple identity tokens.

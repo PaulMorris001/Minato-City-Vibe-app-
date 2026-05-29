@@ -2,21 +2,8 @@ import express from 'express';
 import mongoose from 'mongoose';
 import Event from '../models/event.model.js';
 import Guide from '../models/guide.model.js';
-import { googleWebComplete } from '../controllers/auth.controller.js';
 
 const router = express.Router();
-
-// ─── OAuth landing page ──────────────────────────────────────────────────────
-//
-// Lives outside /api/ on purpose: this is the URL the in-app browser ends up
-// on after the Google OAuth dance finishes. WebBrowser.openAuthSessionAsync
-// matches the prefix and closes the browser before the page even paints.
-// Crucially the path is NOT under /event/* or /guide/*, so neither iOS
-// Universal Links (apple-app-site-association below) nor the Android intent
-// filters in app.config.js will route it into the app — which is exactly
-// what we want, otherwise expo-router would render "Unmatched Route" while
-// WebBrowser is also trying to consume the URL.
-router.get('/auth/google/complete', googleWebComplete);
 
 const PLAY_STORE = 'https://play.google.com/store/apps/details?id=com.nightvibe.mobile';
 const APP_STORE = 'https://apps.apple.com/us/app/nightvibe-a97112/id6767689517';

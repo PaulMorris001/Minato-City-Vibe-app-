@@ -32,11 +32,6 @@ router.get("/auth/google/web/start", googleWebStart);
 router.get("/auth/google/web/callback", googleWebCallback);
 router.post("/apple-auth", appleAuth);
 
-// NOTE: the OAuth flow ends at `${SERVER_URL}/auth/google/complete?token=…` —
-// that route is registered in deepLinks.route.js (outside /api/) so the URL
-// path stays short and sits next to the existing /event/* and /guide/*
-// landing pages.
-
 // Password reset routes
 router.post("/auth/forgot-password", forgotPassword);
 router.post("/auth/verify-otp", verifyOTP);

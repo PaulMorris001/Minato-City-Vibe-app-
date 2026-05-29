@@ -194,16 +194,22 @@ function parseCallbackQuery(url: string): Record<string, string> {
   return out;
 }
 
-// Where the server bounces the in-app browser to at the end of OAuth. Must
-// match the `APP_RETURN_PATH` in the server controller AND the path served
-// by `googleWebComplete` (deepLinks.route.js). MUST stay an HTTPS URL on a
-// path that is NOT registered as a Universal Link (iOS) or App Link (Android)
-// — otherwise the OS routes it to the app, expo-router tries to handle it,
-// and the user sees an "Unmatched Route" screen while WebBrowser is also
-// trying to consume the URL. /auth/google/complete is safe today; if you
-// ever add Universal Link paths under /auth, revisit this.
-const SERVER_BASE_FOR_RETURN = BASE_URL.replace(/\/api\/?$/, "");
-const RETURN_URL = `${SERVER_BASE_FOR_RETURN}/auth/google/complete`;
+// Where the server bounces the in-app browser to at the end of OAuth.
+//
+// Why a custom scheme and not HTTPS:
+//   - On iOS ASWebAuthenticationSession can detect any URL prefix match, so
+//     either would work.
+//   - On Android `openAuthSessionAsync` relies on the OS's Linking/intent
+//     system to receive the callback. An HTTPS URL that isn't auto-verified
+//     as an Android App Link just stays in Chrome Custom Tabs forever — the
+//     browser never closes. The `mobile://` scheme IS in the app's intent
+//     filter (app.config.js), so Android routes the URL back into the app
+//     and WebBrowser's listener fires.
+//
+// Side effect: on Android the OS also hands the URL to expo-router. We catch
+// it with a redirect stub at `app/auth/google.tsx` so it doesn't render the
+// "Unmatched Route" screen.
+const RETURN_URL = "mobile://auth/google";
 
 export const signInWithGoogleWeb = async (): Promise<GoogleWebSignInResult> => {
   const startedAt = Date.now();

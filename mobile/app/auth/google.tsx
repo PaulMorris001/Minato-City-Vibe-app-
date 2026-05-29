@@ -1,39 +1,34 @@
 import React from "react";
-import { View, ActivityIndicator } from "react-native";
+import { Redirect } from "expo-router";
 
 /**
  * Stub route for the OAuth callback URL `mobile://auth/google?token=…&user=…`.
  *
- * On Android, when our server redirects the browser to that custom-scheme URL,
- * the OS dispatches it through TWO listeners in parallel:
+ * On Android, when our server bounces the in-app browser to that
+ * custom-scheme URL, the OS dispatches it through TWO listeners in parallel:
  *   1. `WebBrowser.openAuthSessionAsync` (in `signInWithGoogleWeb`) — captures
- *      the URL, parses token+user out of the query string, and resolves so
+ *      the URL, parses token + user out of the query string, and resolves so
  *      `SocialAuthButtons.handleGoogleSignIn` can call `finishAuth` →
- *      `router.replace("/(tabs)/home")`.
+ *      `router.replace("/(tabs)/home")` (or the vendor role picker).
  *   2. expo-router's built-in linking — tries to match `/auth/google` against
- *      the file-based route tree. Without this file, it would render the
- *      "Unmatched Route" screen for a beat before `router.replace` lands.
+ *      the file-based route tree. Without this file it would render the
+ *      "Unmatched Route" screen for as long as the user looks at the app.
  *
  * On iOS this file is never rendered (ASWebAuthenticationSession intercepts
- * the callback URL before it reaches the app's URL handler), but we keep the
- * route defined for both platforms so the behavior matches.
+ * the callback URL before iOS routes it).
  *
- * The component renders only a spinner: the real work is happening in
- * parallel in `signInWithGoogleWeb`, and any moment now `router.replace`
- * from `finishAuth` will swap us out for the home tab (or the vendor role
- * picker on top of the previous screen).
+ * We render only a `<Redirect>` — expo-router treats it as an immediate
+ * navigation, so nothing visible paints. Routing to "/" takes the user
+ * through `app/index.tsx`'s auth check: token-in-SecureStore → home,
+ * no token → login. Whichever path `signInWithGoogleWeb` produced
+ * (success or thrown error) is already reflected in storage by the time
+ * this stub mounts, so the user lands in the right place without a flash
+ * of an intermediate screen.
+ *
+ * IMPORTANT: don't return a loading view here — that would be visible while
+ * `finishAuth` is still running, and on the slow path the user would see a
+ * spinner on top of their previous screen until they tap back.
  */
 export default function GoogleAuthCallback() {
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: "#0f0a1f",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <ActivityIndicator size="large" color="#a855f7" />
-    </View>
-  );
+  return <Redirect href="/" />;
 }
