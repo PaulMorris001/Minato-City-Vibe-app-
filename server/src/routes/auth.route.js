@@ -10,6 +10,8 @@ import {
   getUserById,
   getUserEvents,
   googleAuth,
+  googleWebStart,
+  googleWebCallback,
   appleAuth,
   forgotPassword,
   verifyOTP,
@@ -25,6 +27,9 @@ const router = express.Router();
 router.post('/register', register)
 router.post("/login", login);
 router.post("/google-auth", googleAuth);
+// Web-based Google OAuth (OTA hotfix while native sign-in is broken)
+router.get("/auth/google/web/start", googleWebStart);
+router.get("/auth/google/web/callback", googleWebCallback);
 router.post("/apple-auth", appleAuth);
 
 // Password reset routes

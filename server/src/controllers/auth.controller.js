@@ -725,6 +725,293 @@ export async function googleAuth(req, res) {
   }
 }
 
+// ─── Web-based Google OAuth (OTA-friendly hotfix) ───────────────────────────
+//
+// The native Google Sign-In SDK is non-functional in the current build:
+//   - iOS Info.plist has `com.googleusercontent.apps.placeholder` as the
+//     reverse-client URL scheme (a prebuild ran without the real iOS client
+//     id env var set), so Google's callback can't return to the app.
+//   - Android's google-services.json has `oauth_client: []`, so the SHA-1 of
+//     the release keystore isn't tied to an OAuth client and the picker fails
+//     with DEVELOPER_ERROR after the user selects an account.
+//
+// Both require a new native build to fix. Until then this endpoint pair gives
+// us a 100% OTA-shippable replacement: the app opens this URL in a system
+// browser via `WebBrowser.openAuthSessionAsync`, the user signs in with
+// Google, Google redirects to /auth/google/web/callback on us, we
+// find-or-create the user, then redirect the browser to `mobile://auth/google?…`
+// with a JWT — `openAuthSessionAsync` sees the `mobile://` scheme (which IS
+// already registered in the binary) and hands the URL back to the app.
+//
+// Requirements (must be set BEFORE this works):
+//   1. Render env vars: GOOGLE_CLIENT_ID (already set) AND GOOGLE_CLIENT_SECRET
+//      (the secret matching the web OAuth client whose id is GOOGLE_CLIENT_ID).
+//   2. In Google Cloud Console → the web OAuth client → Authorized redirect
+//      URIs → add: https://night-vibe.onrender.com/api/auth/google/web/callback
+
+const GOOGLE_WEB_REDIRECT_PATH = "/api/auth/google/web/callback";
+
+function getGoogleWebRedirectUri() {
+  const base = (
+    process.env.SERVER_URL || "https://night-vibe.onrender.com"
+  ).replace(/\/$/, "");
+  return `${base}${GOOGLE_WEB_REDIRECT_PATH}`;
+}
+
+function buildGoogleWebClient() {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    throw new Error(
+      "Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET env vars on the server"
+    );
+  }
+  return new OAuth2Client(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    getGoogleWebRedirectUri()
+  );
+}
+
+// Tiny HTML page that bounces the system browser to a custom-scheme URL.
+// Custom-scheme 302 redirects are inconsistent across browsers (Safari, Chrome,
+// in-app webviews); a meta refresh + JS + a visible fallback link covers all
+// the cases we've hit. The page never shows for >1 frame in the happy path
+// because openAuthSessionAsync detaches as soon as it sees the mobile:// URL.
+function renderRedirectPage(url, message = "Returning to Nightvibe…") {
+  // Escape the URL minimally for HTML/JS embedding.
+  const safe = String(url).replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  return `<!DOCTYPE html>
+<html><head>
+  <meta charset="utf-8" />
+  <meta http-equiv="refresh" content="0;url=${safe}" />
+  <title>Nightvibe</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; background:#0f0a1f; color:#eee;
+           display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }
+    a { color:#a855f7; text-decoration:none; }
+  </style>
+</head><body>
+  <div>
+    <p>${message}</p>
+    <p><a href="${safe}">Tap here if Nightvibe doesn't reopen automatically.</a></p>
+  </div>
+  <script>setTimeout(function(){ window.location.replace("${safe}"); }, 50);</script>
+</body></html>`;
+}
+
+// Short, single-use state token kept in-memory. Stops a third-party site from
+// CSRF-ing the callback. Tokens are 10-minute TTL; no DB row needed.
+const googleWebStateStore = new Map(); // state -> { createdAt }
+const GOOGLE_WEB_STATE_TTL_MS = 10 * 60 * 1000;
+
+function rememberWebState(state) {
+  googleWebStateStore.set(state, { createdAt: Date.now() });
+  // Lazy GC so the map can't grow unbounded.
+  if (googleWebStateStore.size > 500) {
+    const cutoff = Date.now() - GOOGLE_WEB_STATE_TTL_MS;
+    for (const [k, v] of googleWebStateStore) {
+      if (v.createdAt < cutoff) googleWebStateStore.delete(k);
+    }
+  }
+}
+
+function consumeWebState(state) {
+  const entry = googleWebStateStore.get(state);
+  if (!entry) return false;
+  googleWebStateStore.delete(state);
+  if (Date.now() - entry.createdAt > GOOGLE_WEB_STATE_TTL_MS) return false;
+  return true;
+}
+
+/**
+ * GET /api/auth/google/web/start
+ *
+ * Entry point hit by the mobile app via WebBrowser.openAuthSessionAsync.
+ * Redirects the browser to Google's consent screen.
+ */
+export async function googleWebStart(req, res) {
+  const reqId = `gws-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  try {
+    const oauth2Client = buildGoogleWebClient();
+    const state = crypto.randomBytes(24).toString("hex");
+    rememberWebState(state);
+
+    const authUrl = oauth2Client.generateAuthUrl({
+      access_type: "online",
+      prompt: "select_account",
+      scope: ["openid", "profile", "email"],
+      state,
+    });
+
+    console.log(
+      `[google-web-start ${reqId}] redirecting to Google ` +
+        `redirect_uri=${getGoogleWebRedirectUri()} state=${state.slice(0, 8)}…`
+    );
+    res.redirect(302, authUrl);
+  } catch (err) {
+    console.error(`[google-web-start ${reqId}] ✗ ${err.message}`);
+    // Surface the failure to the app via the same redirect channel so the
+    // UI doesn't just hang on a blank page.
+    res
+      .status(500)
+      .send(
+        renderRedirectPage(
+          `mobile://auth/google?error=${encodeURIComponent(err.message)}`,
+          "Sign-in is not configured. Returning…"
+        )
+      );
+  }
+}
+
+/**
+ * GET /api/auth/google/web/callback
+ *
+ * Google redirects here after the user grants consent. We exchange the code
+ * for tokens, verify the id_token, find-or-create the user, mint our JWT, and
+ * bounce the browser to `mobile://auth/google?token=…&user=…`. The app's
+ * WebBrowser session captures that URL and resolves.
+ */
+export async function googleWebCallback(req, res) {
+  const reqId = `gwc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const startedAt = Date.now();
+  const { code, state, error: googleError } = req.query;
+
+  console.log(
+    `[google-web-callback ${reqId}] ▶ received code=${code ? "yes" : "no"} ` +
+      `state=${state ? `${String(state).slice(0, 8)}…` : "missing"} ` +
+      `googleError=${googleError || "none"}`
+  );
+
+  // Google returned an error (e.g. user denied) — bounce back with it.
+  if (googleError) {
+    console.warn(`[google-web-callback ${reqId}] google returned error=${googleError}`);
+    return res
+      .status(200)
+      .send(
+        renderRedirectPage(
+          `mobile://auth/google?error=${encodeURIComponent(String(googleError))}`,
+          "Sign-in was cancelled. Returning…"
+        )
+      );
+  }
+
+  if (!code || !state || !consumeWebState(String(state))) {
+    console.warn(
+      `[google-web-callback ${reqId}] ✗ invalid request (missing code/state or unknown state)`
+    );
+    return res
+      .status(400)
+      .send(
+        renderRedirectPage(
+          `mobile://auth/google?error=${encodeURIComponent("invalid_state")}`,
+          "Sign-in expired. Returning…"
+        )
+      );
+  }
+
+  try {
+    const oauth2Client = buildGoogleWebClient();
+    const { tokens } = await oauth2Client.getToken(String(code));
+    if (!tokens.id_token) {
+      throw new Error("Google did not return an id_token");
+    }
+    console.log(`[google-web-callback ${reqId}] ✓ exchanged code for tokens`);
+
+    const ticket = await oauth2Client.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const googleId = payload.sub;
+    const email = payload.email;
+    const name = payload.name;
+    const picture = payload.picture;
+    console.log(
+      `[google-web-callback ${reqId}] ✓ verified id_token sub=${googleId} email=${email}`
+    );
+
+    if (!email) {
+      throw new Error("Google did not return an email");
+    }
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Find-or-create — same logic as native /google-auth so accounts created
+    // through either path are interchangeable.
+    let user = await User.findOne({
+      $or: [{ googleId }, { email: normalizedEmail }],
+    });
+
+    if (user) {
+      if (user.isBanned) {
+        console.warn(`[google-web-callback ${reqId}] ✗ user is banned id=${user._id}`);
+        return res
+          .status(200)
+          .send(
+            renderRedirectPage(
+              `mobile://auth/google?error=${encodeURIComponent("account_suspended")}`,
+              "Account suspended. Returning…"
+            )
+          );
+      }
+      if (!user.googleId) {
+        user.googleId = googleId;
+        user.authProvider = "google";
+        if (!user.profilePicture && picture) user.profilePicture = picture;
+        await user.save();
+        console.log(`[google-web-callback ${reqId}] linked Google to existing user id=${user._id}`);
+      }
+    } else {
+      user = new User({
+        username: name || normalizedEmail.split("@")[0],
+        email: normalizedEmail,
+        authProvider: "google",
+        googleId,
+        profilePicture: picture || "",
+        isVendor: false,
+        termsAcceptedAt: new Date(),
+      });
+      await user.save();
+      console.log(`[google-web-callback ${reqId}] ✓ created new user id=${user._id}`);
+    }
+
+    const token = jwt.sign({ id: user._id }, config.jwt.secret, {
+      expiresIn: config.jwt.expiresIn,
+    });
+
+    // Compact user payload — matches what the existing native flow returns so
+    // the mobile finishAuth() helper works unchanged.
+    const userPayload = {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      profilePicture: user.profilePicture || "",
+      isVendor: !!user.isVendor,
+      authProvider: user.authProvider,
+    };
+    const userParam = encodeURIComponent(JSON.stringify(userPayload));
+    const redirectUrl = `mobile://auth/google?token=${encodeURIComponent(token)}&user=${userParam}`;
+
+    console.log(
+      `[google-web-callback ${reqId}] ◀ success in ${Date.now() - startedAt}ms ` +
+        `id=${user._id} isVendor=${user.isVendor}`
+    );
+    res.status(200).send(renderRedirectPage(redirectUrl));
+  } catch (err) {
+    console.error(
+      `[google-web-callback ${reqId}] ✗ FAILED in ${Date.now() - startedAt}ms ` +
+        `name=${err.name} message=${err.message}`
+    );
+    if (err.stack) console.error(`[google-web-callback ${reqId}] stack: ${err.stack}`);
+    res
+      .status(200)
+      .send(
+        renderRedirectPage(
+          `mobile://auth/google?error=${encodeURIComponent(err.message || "auth_failed")}`,
+          "Sign-in failed. Returning…"
+        )
+      );
+  }
+}
+
 // Apple's public keys for verifying Sign in with Apple identity tokens.
 // `jose` caches and refreshes the key set automatically.
 const appleJWKS = createRemoteJWKSet(

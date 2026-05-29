@@ -18,7 +18,7 @@ import * as Sentry from "@sentry/react-native";
 import { BASE_URL } from "@/constants/constants";
 import { capitalize } from "@/libs/helpers";
 import { useAccount } from "@/contexts/AccountContext";
-import { configureGoogleSignIn, signInWithGoogle } from "@/utils/googleAuth";
+import { configureGoogleSignIn, signInWithGoogleWeb } from "@/utils/googleAuth";
 import { isAppleAuthAvailable, signInWithApple } from "@/utils/appleAuth";
 import { registerForPushNotifications } from "@/utils/pushNotifications";
 import { AU } from "@/components/auth/tokens";
@@ -73,98 +73,50 @@ export function SocialAuthButtons() {
     const startedAt = Date.now();
     Sentry.addBreadcrumb({
       category: "auth.google",
-      message: "handleGoogleSignIn: tapped",
+      message: "handleGoogleSignIn: tapped (web flow)",
       level: "info",
       data: { platform: Platform.OS, baseUrl: BASE_URL },
     });
-    console.log("[SocialAuth] handleGoogleSignIn: tapped", {
+    console.log("[SocialAuth] handleGoogleSignIn: tapped (web flow)", {
       platform: Platform.OS,
     });
 
     try {
-      const userInfo = await signInWithGoogle();
-      const tokenInfo = {
-        idTokenLen: userInfo.data?.idToken?.length || 0,
-        hasAccessToken: !!userInfo.data?.accessToken,
-        elapsedMs: Date.now() - startedAt,
-      };
-      console.log("[SocialAuth] got token from Google, calling server", tokenInfo);
-      Sentry.addBreadcrumb({
-        category: "auth.google",
-        message: "got token from Google, calling server",
-        level: "info",
-        data: tokenInfo,
-      });
-
-      if (!userInfo.data?.idToken && !userInfo.data?.accessToken) {
-        throw new Error("No token received from Google");
-      }
-
-      let res;
-      try {
-        res = await axios.post(`${BASE_URL}/google-auth`, {
-          idToken: userInfo.data.idToken,
-          accessToken: userInfo.data.accessToken,
-        });
-      } catch (httpErr: any) {
-        const errData = {
-          platform: Platform.OS,
-          isAxios: !!httpErr?.isAxiosError,
-          code: httpErr?.code,
-          message: httpErr?.message,
-          status: httpErr?.response?.status,
-          serverMessage: httpErr?.response?.data?.message,
-          serverDetails: httpErr?.response?.data?.details,
-          url: `${BASE_URL}/google-auth`,
-          elapsedMs: Date.now() - startedAt,
-        };
-        console.warn("[SocialAuth] server /google-auth call failed", errData);
-        Sentry.addBreadcrumb({
-          category: "auth.google",
-          message: "server /google-auth call failed",
-          level: "error",
-          data: errData,
-        });
-        Sentry.captureException(httpErr, {
-          tags: { action: "google.serverPost", platform: Platform.OS },
-          contexts: { google: errData },
-        });
-        throw httpErr;
-      }
-
-      console.log("[SocialAuth] server /google-auth OK", {
-        userId: res.data?.user?.id,
-        isVendor: res.data?.user?.isVendor,
+      // Web-based OAuth via WebBrowser → server callback → mobile:// deep link.
+      // Replaces the native GoogleSignin SDK call that's broken in the
+      // shipped binary (placeholder iOS URL scheme + missing Android OAuth
+      // client). The server returns our JWT + user in the deep-link params.
+      const { token, user } = await signInWithGoogleWeb();
+      console.log("[SocialAuth] web sign-in OK", {
+        userId: user.id,
+        isVendor: user.isVendor,
         elapsedMs: Date.now() - startedAt,
       });
       Sentry.addBreadcrumb({
         category: "auth.google",
-        message: "server /google-auth OK",
+        message: "web sign-in OK",
         level: "info",
-        data: { userId: res.data?.user?.id },
+        data: { userId: user.id },
       });
-
-      await finishAuth(res.data.user, res.data.token);
+      await finishAuth(user, token);
     } catch (error: any) {
-      // User-cancelled flows throw too — don't show an error for those.
       const cancelled =
-        (typeof error?.message === "string" &&
-          error.message.toLowerCase().includes("cancel")) ||
-        error?.code === "SIGN_IN_CANCELLED" ||
-        error?.code === "12501";
+        typeof error?.message === "string" &&
+        error.message.toLowerCase().includes("cancel");
 
       if (!cancelled) {
         console.warn("[SocialAuth] Google sign-in failed", {
           platform: Platform.OS,
-          code: error?.code,
           message: error?.message,
-          status: error?.response?.status,
-          serverMessage: error?.response?.data?.message,
+        });
+        Sentry.captureException(error, {
+          tags: { action: "google.handleSignIn", platform: Platform.OS },
         });
         Alert.alert(
           "Error",
-          error.response?.data?.message ||
-            "Google sign-in failed. Please try again."
+          typeof error?.message === "string" && error.message
+            ? error.message
+            : "Google sign-in failed. Please try again."
         );
       } else {
         console.log("[SocialAuth] Google sign-in cancelled by user");
