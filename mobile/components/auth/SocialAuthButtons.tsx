@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import axios from "axios";
 import * as SecureStore from "expo-secure-store";
+import * as Sentry from "@sentry/react-native";
 
 import { BASE_URL } from "@/constants/constants";
 import { capitalize } from "@/libs/helpers";
@@ -69,27 +70,104 @@ export function SocialAuthButtons() {
   const handleGoogleSignIn = async () => {
     if (busy) return;
     setGoogleLoading(true);
+    const startedAt = Date.now();
+    Sentry.addBreadcrumb({
+      category: "auth.google",
+      message: "handleGoogleSignIn: tapped",
+      level: "info",
+      data: { platform: Platform.OS, baseUrl: BASE_URL },
+    });
+    console.log("[SocialAuth] handleGoogleSignIn: tapped", {
+      platform: Platform.OS,
+    });
+
     try {
       const userInfo = await signInWithGoogle();
+      const tokenInfo = {
+        idTokenLen: userInfo.data?.idToken?.length || 0,
+        hasAccessToken: !!userInfo.data?.accessToken,
+        elapsedMs: Date.now() - startedAt,
+      };
+      console.log("[SocialAuth] got token from Google, calling server", tokenInfo);
+      Sentry.addBreadcrumb({
+        category: "auth.google",
+        message: "got token from Google, calling server",
+        level: "info",
+        data: tokenInfo,
+      });
+
       if (!userInfo.data?.idToken && !userInfo.data?.accessToken) {
         throw new Error("No token received from Google");
       }
-      const res = await axios.post(`${BASE_URL}/google-auth`, {
-        idToken: userInfo.data.idToken,
-        accessToken: userInfo.data.accessToken,
+
+      let res;
+      try {
+        res = await axios.post(`${BASE_URL}/google-auth`, {
+          idToken: userInfo.data.idToken,
+          accessToken: userInfo.data.accessToken,
+        });
+      } catch (httpErr: any) {
+        const errData = {
+          platform: Platform.OS,
+          isAxios: !!httpErr?.isAxiosError,
+          code: httpErr?.code,
+          message: httpErr?.message,
+          status: httpErr?.response?.status,
+          serverMessage: httpErr?.response?.data?.message,
+          serverDetails: httpErr?.response?.data?.details,
+          url: `${BASE_URL}/google-auth`,
+          elapsedMs: Date.now() - startedAt,
+        };
+        console.warn("[SocialAuth] server /google-auth call failed", errData);
+        Sentry.addBreadcrumb({
+          category: "auth.google",
+          message: "server /google-auth call failed",
+          level: "error",
+          data: errData,
+        });
+        Sentry.captureException(httpErr, {
+          tags: { action: "google.serverPost", platform: Platform.OS },
+          contexts: { google: errData },
+        });
+        throw httpErr;
+      }
+
+      console.log("[SocialAuth] server /google-auth OK", {
+        userId: res.data?.user?.id,
+        isVendor: res.data?.user?.isVendor,
+        elapsedMs: Date.now() - startedAt,
       });
+      Sentry.addBreadcrumb({
+        category: "auth.google",
+        message: "server /google-auth OK",
+        level: "info",
+        data: { userId: res.data?.user?.id },
+      });
+
       await finishAuth(res.data.user, res.data.token);
     } catch (error: any) {
       // User-cancelled flows throw too — don't show an error for those.
       const cancelled =
-        typeof error?.message === "string" &&
-        error.message.toLowerCase().includes("cancel");
+        (typeof error?.message === "string" &&
+          error.message.toLowerCase().includes("cancel")) ||
+        error?.code === "SIGN_IN_CANCELLED" ||
+        error?.code === "12501";
+
       if (!cancelled) {
+        console.warn("[SocialAuth] Google sign-in failed", {
+          platform: Platform.OS,
+          code: error?.code,
+          message: error?.message,
+          status: error?.response?.status,
+          serverMessage: error?.response?.data?.message,
+        });
         Alert.alert(
           "Error",
           error.response?.data?.message ||
             "Google sign-in failed. Please try again."
         );
+      } else {
+        console.log("[SocialAuth] Google sign-in cancelled by user");
       }
     } finally {
       setGoogleLoading(false);

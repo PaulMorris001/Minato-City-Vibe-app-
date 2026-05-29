@@ -545,13 +545,58 @@ export async function getUserEvents(req, res) {
 
 // Google OAuth authentication
 export async function googleAuth(req, res) {
-  const { idToken, accessToken } = req.body;
+  // Per-request id so a single sign-in attempt's logs are easy to grep on Render.
+  const reqId = `g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const startedAt = Date.now();
+  const ip =
+    req.headers["x-forwarded-for"]?.toString().split(",")[0].trim() ||
+    req.ip ||
+    req.socket?.remoteAddress ||
+    "unknown";
+  const ua = req.headers["user-agent"] || "unknown";
+
+  const { idToken, accessToken } = req.body || {};
+
+  // Loud arrival log — if we don't see this for a failing device, the request
+  // is never reaching the server (most likely client-side: missing URL scheme
+  // on iOS, missing SHA-1 OAuth client on Android).
+  console.log(
+    `[google-auth ${reqId}] ▶ received ip=${ip} ua="${ua.slice(0, 80)}" ` +
+      `idToken=${idToken ? `present(len=${idToken.length})` : "missing"} ` +
+      `accessToken=${accessToken ? `present(len=${accessToken.length})` : "missing"} ` +
+      `body-keys=[${Object.keys(req.body || {}).join(",")}]`
+  );
+  console.log(
+    `[google-auth ${reqId}] config GOOGLE_CLIENT_ID=${
+      process.env.GOOGLE_CLIENT_ID
+        ? `${process.env.GOOGLE_CLIENT_ID.slice(0, 14)}…${process.env.GOOGLE_CLIENT_ID.slice(-24)}`
+        : "NOT_SET"
+    }`
+  );
 
   try {
     let googleId, email, name, picture;
 
     if (idToken) {
-      // Verify the Google ID token
+      // Peek at the JWT header/payload BEFORE verifying so we can see why
+      // verification fails (wrong audience, expired, wrong issuer, etc.).
+      try {
+        const parts = idToken.split(".");
+        const header = JSON.parse(Buffer.from(parts[0], "base64").toString("utf8"));
+        const claims = JSON.parse(Buffer.from(parts[1], "base64").toString("utf8"));
+        console.log(
+          `[google-auth ${reqId}] idToken header.alg=${header.alg} header.kid=${header.kid} ` +
+            `claims.iss=${claims.iss} claims.aud=${claims.aud} claims.azp=${claims.azp} ` +
+            `claims.email=${claims.email} claims.exp=${claims.exp} ` +
+            `claims.iat=${claims.iat} now=${Math.floor(Date.now() / 1000)}`
+        );
+      } catch (peekErr) {
+        console.warn(
+          `[google-auth ${reqId}] could not peek at idToken (malformed JWT?): ${peekErr.message}`
+        );
+      }
+
+      console.log(`[google-auth ${reqId}] verifying idToken with Google…`);
       const ticket = await googleClient.verifyIdToken({
         idToken,
         audience: process.env.GOOGLE_CLIENT_ID,
@@ -562,16 +607,24 @@ export async function googleAuth(req, res) {
       email = payload.email;
       name = payload.name;
       picture = payload.picture;
+      console.log(
+        `[google-auth ${reqId}] ✓ idToken verified sub=${googleId} email=${email} ` +
+          `email_verified=${payload.email_verified}`
+      );
     } else if (accessToken) {
-      // Use access token to get user info from Google
-      const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      console.log(`[google-auth ${reqId}] fetching userinfo with accessToken…`);
+      const response = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
       });
 
       if (!response.ok) {
-        throw new Error('Failed to fetch user info from Google');
+        const text = await response.text().catch(() => "");
+        console.error(
+          `[google-auth ${reqId}] ✗ userinfo fetch failed status=${response.status} body=${text.slice(0, 200)}`
+        );
+        throw new Error("Failed to fetch user info from Google");
       }
 
       const userInfo = await response.json();
@@ -579,11 +632,16 @@ export async function googleAuth(req, res) {
       email = userInfo.email;
       name = userInfo.name;
       picture = userInfo.picture;
+      console.log(
+        `[google-auth ${reqId}] ✓ userinfo fetched sub=${googleId} email=${email}`
+      );
     } else {
+      console.warn(`[google-auth ${reqId}] ✗ no idToken or accessToken in body`);
       return res.status(400).json({ message: "Either idToken or accessToken is required" });
     }
 
     if (!email) {
+      console.warn(`[google-auth ${reqId}] ✗ no email in Google payload`);
       return res.status(400).json({ message: "Email not provided by Google" });
     }
 
@@ -599,7 +657,13 @@ export async function googleAuth(req, res) {
     });
 
     if (user) {
+      console.log(
+        `[google-auth ${reqId}] existing user found id=${user._id} email=${user.email} ` +
+          `authProvider=${user.authProvider} hadGoogleId=${!!user.googleId} ` +
+          `isBanned=${!!user.isBanned} isVendor=${!!user.isVendor}`
+      );
       if (user.isBanned) {
+        console.warn(`[google-auth ${reqId}] ✗ user is banned id=${user._id}`);
         return res.status(403).json({
           message: "This account has been suspended for violating our content policy.",
         });
@@ -612,8 +676,10 @@ export async function googleAuth(req, res) {
           user.profilePicture = picture;
         }
         await user.save();
+        console.log(`[google-auth ${reqId}] linked Google to existing account id=${user._id}`);
       }
     } else {
+      console.log(`[google-auth ${reqId}] no existing user — creating new account email=${normalizedEmail}`);
       // Create new user — Google sign-in implies acceptance of Terms via the in-app prompt
       user = new User({
         username: name || normalizedEmail.split('@')[0],
@@ -625,12 +691,17 @@ export async function googleAuth(req, res) {
         termsAcceptedAt: new Date(),
       });
       await user.save();
+      console.log(`[google-auth ${reqId}] ✓ new user created id=${user._id}`);
     }
 
     // Generate JWT token
     const token = jwt.sign({ id: user._id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
     });
+
+    console.log(
+      `[google-auth ${reqId}] ◀ success in ${Date.now() - startedAt}ms id=${user._id} isVendor=${user.isVendor}`
+    );
 
     res.json({
       message: "Google authentication successful",
@@ -645,7 +716,11 @@ export async function googleAuth(req, res) {
       }
     });
   } catch (error) {
-    console.error("Google auth error:", error);
+    console.error(
+      `[google-auth ${reqId}] ✗ FAILED in ${Date.now() - startedAt}ms ` +
+        `name=${error.name} message=${error.message}`
+    );
+    if (error.stack) console.error(`[google-auth ${reqId}] stack: ${error.stack}`);
     res.status(400).json({ message: "Google authentication failed", details: error.message });
   }
 }
