@@ -107,7 +107,7 @@ export default function VendorLayout() {
       <StatusBar barStyle="light-content" />
       <View style={styles.navbar}>
         <View style={styles.navLeft}>
-          <Text style={styles.logoText}>NightVibe</Text>
+          <Text style={styles.logoText}>CityVibe</Text>
           <View style={styles.badge}>
             <Ionicons name="briefcase" size={11} color="#C084FC" />
             <Text style={styles.badgeText}>VENDOR</Text>

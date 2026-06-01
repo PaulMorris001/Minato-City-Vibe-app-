@@ -78,9 +78,9 @@ export const sendPasswordResetOTP = async (email, otp, username) => {
     const transporter = createTransporter();
 
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"NightVibe" <Support@nvibez.com>',
+      from: process.env.EMAIL_FROM || '"CityVibe" <Support@nvibez.com>',
       to: email,
-      subject: 'Password Reset - NightVibe',
+      subject: 'Password Reset - CityVibe',
       html: `
         <!DOCTYPE html>
         <html>
@@ -186,7 +186,7 @@ export const sendPasswordResetOTP = async (email, otp, username) => {
         <body>
           <div class="container">
             <div class="header">
-              <h1>🌙 NightVibe</h1>
+              <h1>🌙 CityVibe</h1>
             </div>
 
             <div class="content">
@@ -216,11 +216,11 @@ export const sendPasswordResetOTP = async (email, otp, username) => {
 
             <div class="footer">
               <p>
-                This is an automated message from NightVibe.<br>
+                This is an automated message from CityVibe.<br>
                 Need help? Contact us at <a href="mailto:Support@nvibez.com">Support@nvibez.com</a>
               </p>
               <p style="margin-top: 10px;">
-                © ${new Date().getFullYear()} NightVibe. All rights reserved.
+                © ${new Date().getFullYear()} CityVibe. All rights reserved.
               </p>
             </div>
           </div>
@@ -241,7 +241,7 @@ If you didn't request a password reset, please ignore this email.
 For your security, do not share this code with anyone.
 
 Best regards,
-The NightVibe Team
+The CityVibe Team
       `,
     };
 
@@ -273,9 +273,9 @@ export const sendSignupVerificationOTP = async (email, otp, username) => {
   try {
     const transporter = createTransporter();
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"NightVibe" <Support@nvibez.com>',
+      from: process.env.EMAIL_FROM || '"CityVibe" <Support@nvibez.com>',
       to: email,
-      subject: "Verify your email - NightVibe",
+      subject: "Verify your email - CityVibe",
       html: `
         <!DOCTYPE html>
         <html>
@@ -295,22 +295,22 @@ export const sendSignupVerificationOTP = async (email, otp, username) => {
         </head>
         <body>
           <div class="container">
-            <div class="header"><h1>🌙 NightVibe</h1></div>
+            <div class="header"><h1>🌙 CityVibe</h1></div>
             <div class="content">
               <p>Hi ${username || "there"},</p>
-              <p>Welcome to NightVibe! Confirm your email to finish setting up your account.</p>
+              <p>Welcome to CityVibe! Confirm your email to finish setting up your account.</p>
               <div class="otp-container">
                 <div class="otp-label">Your verification code</div>
                 <div class="otp-code">${otp}</div>
               </div>
               <p class="hint">This code expires in 10 minutes. If you didn't sign up, you can safely ignore this email.</p>
-              <p>— The NightVibe Team</p>
+              <p>— The CityVibe Team</p>
             </div>
           </div>
         </body>
         </html>
       `,
-      text: `Hi ${username || "there"},\n\nWelcome to NightVibe. Your verification code is ${otp}. It expires in 10 minutes.\n\n— The NightVibe Team`,
+      text: `Hi ${username || "there"},\n\nWelcome to CityVibe. Your verification code is ${otp}. It expires in 10 minutes.\n\n— The CityVibe Team`,
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -329,9 +329,9 @@ export const sendPasswordResetSuccessEmail = async (email, username) => {
     const transporter = createTransporter();
 
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"NightVibe" <Support@nvibez.com>',
+      from: process.env.EMAIL_FROM || '"CityVibe" <Support@nvibez.com>',
       to: email,
-      subject: 'Password Reset Successful - NightVibe',
+      subject: 'Password Reset Successful - CityVibe',
       html: `
         <!DOCTYPE html>
         <html>
@@ -348,14 +348,14 @@ export const sendPasswordResetSuccessEmail = async (email, username) => {
         <body>
           <div class="container">
             <div class="header">
-              <h1>🌙 NightVibe</h1>
+              <h1>🌙 CityVibe</h1>
             </div>
             <div class="content">
               <h2 style="text-align: center; color: #10b981;">Password Reset Successful!</h2>
               <p>Hello ${username || 'there'},</p>
-              <p>Your password has been successfully reset. You can now log in to your NightVibe account with your new password.</p>
+              <p>Your password has been successfully reset. You can now log in to your CityVibe account with your new password.</p>
               <p>If you did not perform this action, please contact our support team immediately.</p>
-              <p>Best regards,<br>The NightVibe Team</p>
+              <p>Best regards,<br>The CityVibe Team</p>
             </div>
           </div>
         </body>
@@ -364,12 +364,12 @@ export const sendPasswordResetSuccessEmail = async (email, username) => {
       text: `
 Hello ${username || 'there'},
 
-Your password has been successfully reset. You can now log in to your NightVibe account with your new password.
+Your password has been successfully reset. You can now log in to your CityVibe account with your new password.
 
 If you did not perform this action, please contact our support team immediately.
 
 Best regards,
-The NightVibe Team
+The CityVibe Team
       `,
     };
 

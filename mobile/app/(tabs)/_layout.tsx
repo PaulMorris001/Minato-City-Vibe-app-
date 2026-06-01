@@ -292,7 +292,7 @@ export default function TabsLayout() {
       <StatusBar barStyle="light-content" />
       {currentTab === "home" && (
         <View style={styles.navbar}>
-          <Text style={styles.logoText}>NightVibe</Text>
+          <Text style={styles.logoText}>CityVibe</Text>
           <View style={styles.navbarActions}>
             <TouchableOpacity
               onPress={() => router.push("/notifications" as any)}

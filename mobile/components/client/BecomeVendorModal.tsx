@@ -132,7 +132,7 @@ export default function BecomeVendorModal({
 
       Alert.alert(
         "Success!",
-        "Welcome to NightVibe vendors! You can now manage your business.",
+        "Welcome to CityVibe vendors! You can now manage your business.",
         [
           {
             text: "Go to Dashboard",
@@ -171,7 +171,7 @@ export default function BecomeVendorModal({
         <Ionicons name="briefcase" size={48} color={Colors.primary} />
         <Text style={styles.introTitle}>Start Your Business</Text>
         <Text style={styles.introText}>
-          Fill in your business details to join NightVibe as a vendor
+          Fill in your business details to join CityVibe as a vendor
         </Text>
       </View>
 

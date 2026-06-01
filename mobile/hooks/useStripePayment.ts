@@ -39,7 +39,7 @@ export function useStripePayment() {
     // 2. Init payment sheet
     const { error: initError } = await initPaymentSheet({
       paymentIntentClientSecret: clientSecret,
-      merchantDisplayName: "NightVibe",
+      merchantDisplayName: "CityVibe",
       style: "alwaysDark",
       defaultBillingDetails: {},
     });

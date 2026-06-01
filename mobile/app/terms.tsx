@@ -17,15 +17,15 @@ import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 const sections = [
   {
     title: "1. Acceptance of Terms",
-    body: "By creating an account or using NightVibe, you agree to these Terms of Service (\"Terms\") and our Privacy Policy. If you do not agree, do not use the app. You must be at least 13 years old to use NightVibe.",
+    body: "By creating an account or using CityVibe, you agree to these Terms of Service (\"Terms\") and our Privacy Policy. If you do not agree, do not use the app. You must be at least 13 years old to use CityVibe.",
   },
   {
     title: "2. Zero Tolerance for Objectionable Content",
-    body: "NightVibe has zero tolerance for objectionable content or abusive users. Objectionable content includes — but is not limited to — hate speech, harassment, threats, sexual or pornographic material, graphic violence, illegal activity, spam, and content that infringes on the rights of others.\n\nUsers who post such content will have their content removed and their accounts may be permanently suspended.",
+    body: "CityVibe has zero tolerance for objectionable content or abusive users. Objectionable content includes — but is not limited to — hate speech, harassment, threats, sexual or pornographic material, graphic violence, illegal activity, spam, and content that infringes on the rights of others.\n\nUsers who post such content will have their content removed and their accounts may be permanently suspended.",
   },
   {
     title: "3. Zero Tolerance for Abusive Users",
-    body: "Harassment, bullying, impersonation, doxxing, or any behavior that targets, threatens, or harms other users is strictly prohibited. Repeat offenders will be permanently banned from NightVibe.",
+    body: "Harassment, bullying, impersonation, doxxing, or any behavior that targets, threatens, or harms other users is strictly prohibited. Repeat offenders will be permanently banned from CityVibe.",
   },
   {
     title: "4. Reporting & Blocking",
@@ -33,23 +33,23 @@ const sections = [
   },
   {
     title: "5. User Content & Conduct",
-    body: "You are solely responsible for any content you post, including events, guides, profile information, and messages. By posting content, you grant NightVibe a non-exclusive license to display and distribute it within the app. You agree not to:\n\n• Post content that violates these Terms\n• Use NightVibe for any unlawful purpose\n• Attempt to circumvent moderation or safety features\n• Create multiple or fake accounts\n• Scrape, harvest, or misuse other users' data",
+    body: "You are solely responsible for any content you post, including events, guides, profile information, and messages. By posting content, you grant CityVibe a non-exclusive license to display and distribute it within the app. You agree not to:\n\n• Post content that violates these Terms\n• Use CityVibe for any unlawful purpose\n• Attempt to circumvent moderation or safety features\n• Create multiple or fake accounts\n• Scrape, harvest, or misuse other users' data",
   },
   {
     title: "6. Content Removal & Account Termination",
-    body: "NightVibe reserves the right to remove any content and suspend or terminate any account at our sole discretion, with or without notice, for any violation of these Terms.",
+    body: "CityVibe reserves the right to remove any content and suspend or terminate any account at our sole discretion, with or without notice, for any violation of these Terms.",
   },
   {
     title: "7. Payments",
-    body: "Paid events and guides are processed by Stripe. Tickets and purchases are subject to the policies of the event creator. NightVibe is not responsible for the conduct of third-party sellers.",
+    body: "Paid events and guides are processed by Stripe. Tickets and purchases are subject to the policies of the event creator. CityVibe is not responsible for the conduct of third-party sellers.",
   },
   {
     title: "8. Disclaimer & Limitation of Liability",
-    body: "NightVibe is provided \"as is\" without warranties of any kind. We are not responsible for user-generated content or for events organized by users. To the maximum extent permitted by law, NightVibe shall not be liable for any indirect, incidental, or consequential damages arising from your use of the app.",
+    body: "CityVibe is provided \"as is\" without warranties of any kind. We are not responsible for user-generated content or for events organized by users. To the maximum extent permitted by law, CityVibe shall not be liable for any indirect, incidental, or consequential damages arising from your use of the app.",
   },
   {
     title: "9. Changes to These Terms",
-    body: "We may update these Terms from time to time. Continued use of NightVibe after changes are posted constitutes your acceptance of the updated Terms.",
+    body: "We may update these Terms from time to time. Continued use of CityVibe after changes are posted constitutes your acceptance of the updated Terms.",
   },
   {
     title: "10. Contact",
@@ -75,7 +75,7 @@ export default function TermsScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.intro}>
-          These Terms govern your use of NightVibe. They explain what's
+          These Terms govern your use of CityVibe. They explain what's
           expected of you on the platform and how we keep the community safe.
         </Text>
 

@@ -31,7 +31,7 @@ export default function Login() {
       <div style={styles.card}>
         <div style={styles.logoRow}>
           <span style={styles.logoIcon}>◈</span>
-          <span style={styles.logoText}>NightVibe</span>
+          <span style={styles.logoText}>CityVibe</span>
           <span style={styles.adminBadge}>Admin</span>
         </div>
         <h2 style={styles.heading}>Sign in to continue</h2>

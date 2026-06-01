@@ -14,7 +14,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { AU, AU_GRADIENT_CTA } from "./tokens";
 
 /**
- * Wordmark — "NightVibe" in display weight.
+ * Wordmark — "CityVibe" in display weight.
  * Note: true gradient-fill text needs masked-view; we approximate with the
  * design's gradient start color (#C084FC), which reads cleanly on dark.
  */
@@ -28,7 +28,7 @@ export function Wordmark({ size = 18 }: { size?: number }) {
         color: AU.purpleSoft,
       }}
     >
-      NightVibe
+      CityVibe
     </Text>
   );
 }

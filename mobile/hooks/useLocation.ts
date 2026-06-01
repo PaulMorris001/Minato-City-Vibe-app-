@@ -46,7 +46,7 @@ export function useLocation(): UseLocationResult {
       if (status !== "granted") {
         Alert.alert(
           "Location Permission Required",
-          "NightVibe needs access to your location to show nearby vendors and events. Please enable location access in your device settings.",
+          "CityVibe needs access to your location to show nearby vendors and events. Please enable location access in your device settings.",
           [
             { text: "Cancel", style: "cancel" },
             {

@@ -11,7 +11,7 @@ const html = (message, isError) => `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Delete Account – NightVibe</title>
+  <title>Delete Account – CityVibe</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -83,7 +83,7 @@ const html = (message, isError) => `<!DOCTYPE html>
 <body>
   <div class="card">
     <h1>Delete Account</h1>
-    <p>Permanently delete your NightVibe account and all associated data. This action cannot be undone.</p>
+    <p>Permanently delete your CityVibe account and all associated data. This action cannot be undone.</p>
     ${message ? `<div class="message">${message}</div>` : ''}
     <div class="warning">
       ⚠️ This will permanently delete your profile, event history, messages, and all data linked to your account.
@@ -104,7 +104,7 @@ const successHtml = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Account Deleted – NightVibe</title>
+  <title>Account Deleted – CityVibe</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -135,7 +135,7 @@ const successHtml = `<!DOCTYPE html>
   <div class="card">
     <div class="icon">✓</div>
     <h1>Account Deleted</h1>
-    <p>Your NightVibe account and all associated data have been permanently deleted. We're sorry to see you go.</p>
+    <p>Your CityVibe account and all associated data have been permanently deleted. We're sorry to see you go.</p>
   </div>
 </body>
 </html>`;

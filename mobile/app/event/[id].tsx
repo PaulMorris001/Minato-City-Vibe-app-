@@ -978,7 +978,7 @@ export default function EventDetailsPage() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.bannerTitle}>Payout held</Text>
                   <Text style={styles.bannerBody}>
-                    Ticket revenue is held by NightVibe and released to your Stripe
+                    Ticket revenue is held by CityVibe and released to your Stripe
                     account 48h after the event ends.
                   </Text>
                 </View>
@@ -1384,19 +1384,19 @@ export default function EventDetailsPage() {
                   if (res.ok) {
                     Alert.alert(
                       "Added to calendar",
-                      "We added this event with a 1-hour reminder and a link that opens it in NightVibe."
+                      "We added this event with a 1-hour reminder and a link that opens it in CityVibe."
                     );
                   } else if (res.error === "permission") {
                     Alert.alert(
                       "Calendar access needed",
-                      "Enable calendar access for NightVibe in Settings to add this event."
+                      "Enable calendar access for CityVibe in Settings to add this event."
                     );
                   } else if (res.error === "no_calendar") {
                     Alert.alert("No calendar found", "This device doesn't have a calendar we can write to.");
                   } else if (res.error === "unavailable") {
                     Alert.alert(
                       "Update required",
-                      "Adding to calendar will be available in the next app update. Please update NightVibe from the store."
+                      "Adding to calendar will be available in the next app update. Please update CityVibe from the store."
                     );
                   } else {
                     Alert.alert("Couldn't add", "Something went wrong adding this event to your calendar.");

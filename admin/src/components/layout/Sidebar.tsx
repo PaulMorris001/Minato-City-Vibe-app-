@@ -89,7 +89,7 @@ function SidebarContent({
     <>
       <div style={styles.logo}>
         <span style={styles.logoIcon}>◈</span>
-        <span style={styles.logoText}>NightVibe</span>
+        <span style={styles.logoText}>CityVibe</span>
         <span style={styles.adminBadge}>Admin</span>
       </div>
 

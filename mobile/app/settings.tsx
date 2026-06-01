@@ -333,7 +333,7 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Email Verification</Text>
         <Text style={styles.sectionDescription}>
-          Verifying your email is required to sell tickets on NightVibe.
+          Verifying your email is required to sell tickets on CityVibe.
         </Text>
         {user.emailVerifiedAt ? (
           <View style={styles.verifStatusRow}>

@@ -9,7 +9,7 @@ const PLAY_STORE = 'https://play.google.com/store/apps/details?id=com.nightvibe.
 const APP_STORE = 'https://apps.apple.com/us/app/nightvibe-a97112/id6767689517';
 const APP_STORE_ID = '6767689517';
 const SITE_BASE = 'https://night-vibe.onrender.com';
-const BRAND_TAGLINE = 'NightVibe — every night out, in one app.';
+const BRAND_TAGLINE = 'CityVibe — every night out, in one app.';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -124,7 +124,7 @@ function buildLandingPage({
   appDeepLink,
   body,
 }) {
-  const t = escapeHtml(title || 'NightVibe');
+  const t = escapeHtml(title || 'CityVibe');
   const d = escapeHtml(description || BRAND_TAGLINE);
   const ogImage = escapeHtml(imageUrl || `${SITE_BASE}/og-default.png`);
   const url = escapeHtml(canonicalUrl);
@@ -138,13 +138,13 @@ function buildLandingPage({
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${t} – NightVibe</title>
+  <title>${t} – CityVibe</title>
   <meta name="description" content="${d}" />
   <link rel="canonical" href="${url}" />
 
   <!-- Open Graph (WhatsApp, iMessage, Facebook, LinkedIn, Slack, Discord) -->
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="NightVibe" />
+  <meta property="og:site_name" content="CityVibe" />
   <meta property="og:title" content="${t}" />
   <meta property="og:description" content="${d}" />
   <meta property="og:url" content="${url}" />
@@ -267,14 +267,14 @@ function buildLandingPage({
 </head>
 <body>
   <div class="card">
-    <div class="logo">NightVibe</div>
+    <div class="logo">CityVibe</div>
     ${bodyHtml}
     <a class="open-btn" href="${deepLinkEsc}">Open in the app</a>
     <div class="store-row">
       <a class="store-btn" href="${APP_STORE}">App Store</a>
       <a class="store-btn" href="${PLAY_STORE}">Google Play</a>
     </div>
-    <div class="footer-note">Tap the button above to open in NightVibe.</div>
+    <div class="footer-note">Tap the button above to open in CityVibe.</div>
   </div>
   <!--
     Intentionally no JS auto-redirect. iMessage / Apple Link Presentation
@@ -322,12 +322,12 @@ router.get('/event/:token', async (req, res) => {
     const body = `
       <div class="kicker">Event Invite</div>
       <h1>You've been invited.</h1>
-      <p class="meta">Open NightVibe to view this event and RSVP.</p>
+      <p class="meta">Open CityVibe to view this event and RSVP.</p>
     `;
     return res
       .setHeader('Content-Type', 'text/html')
       .send(buildLandingPage({
-        title: 'Event Invite — NightVibe',
+        title: 'Event Invite — CityVibe',
         description: BRAND_TAGLINE,
         imageUrl: null,
         canonicalUrl,
@@ -349,7 +349,7 @@ router.get('/event/:token', async (req, res) => {
   const description = truncate(
     descBits.join(' · ') ||
       event.description ||
-      'Tap to view this event and RSVP on NightVibe.',
+      'Tap to view this event and RSVP on CityVibe.',
     180
   );
 
@@ -360,7 +360,7 @@ router.get('/event/:token', async (req, res) => {
       ? `<div class="cover" style="background-image: url('${escapeHtml(event.image)}');"></div>`
       : `<div class="cover"></div>`}
     <div class="kicker">${event.isPaid ? 'Get tickets' : 'You\'re invited'}</div>
-    <h1>${escapeHtml(event.title || 'NightVibe Event')}</h1>
+    <h1>${escapeHtml(event.title || 'CityVibe Event')}</h1>
     <div class="meta">
       ${when ? `<div class="meta-row">📅 ${escapeHtml(when)}</div>` : ''}
       ${venue ? `<div class="meta-row">📍 ${escapeHtml(venue)}</div>` : ''}
@@ -373,7 +373,7 @@ router.get('/event/:token', async (req, res) => {
     .setHeader('Content-Type', 'text/html')
     .setHeader('Cache-Control', 'public, max-age=300')
     .send(buildLandingPage({
-      title: event.title || 'NightVibe Event',
+      title: event.title || 'CityVibe Event',
       description,
       imageUrl: previewImage,
       canonicalUrl,
@@ -402,7 +402,7 @@ router.get('/guide/:id', async (req, res) => {
     return res
       .setHeader('Content-Type', 'text/html')
       .send(buildLandingPage({
-        title: 'City Guide — NightVibe',
+        title: 'City Guide — CityVibe',
         description: BRAND_TAGLINE,
         imageUrl: null,
         canonicalUrl,
@@ -410,7 +410,7 @@ router.get('/guide/:id', async (req, res) => {
         body: `
           <div class="kicker">City Guide</div>
           <h1>Discover the city.</h1>
-          <p class="meta">Open NightVibe to read this guide.</p>
+          <p class="meta">Open CityVibe to read this guide.</p>
         `,
       }));
   }
@@ -423,14 +423,14 @@ router.get('/guide/:id', async (req, res) => {
 
   const descBits = [cityLine, guide.topic, author, priceLine].filter(Boolean);
   const description = truncate(
-    descBits.join(' · ') || guide.description || 'A city guide on NightVibe.',
+    descBits.join(' · ') || guide.description || 'A city guide on CityVibe.',
     180
   );
 
   const body = `
     <div class="cover"></div>
     <div class="kicker">City Guide${guide.topic ? ` · ${escapeHtml(guide.topic)}` : ''}</div>
-    <h1>${escapeHtml(guide.title || 'NightVibe Guide')}</h1>
+    <h1>${escapeHtml(guide.title || 'CityVibe Guide')}</h1>
     <div class="meta">
       ${cityLine ? `<div class="meta-row">📍 ${escapeHtml(cityLine)}</div>` : ''}
       ${author ? `<div class="meta-row">✍️ ${escapeHtml(author)}</div>` : ''}
@@ -442,7 +442,7 @@ router.get('/guide/:id', async (req, res) => {
     .setHeader('Content-Type', 'text/html')
     .setHeader('Cache-Control', 'public, max-age=300')
     .send(buildLandingPage({
-      title: guide.title || 'NightVibe Guide',
+      title: guide.title || 'CityVibe Guide',
       description,
       imageUrl: null,
       canonicalUrl,

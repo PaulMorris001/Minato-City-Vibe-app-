@@ -10,7 +10,7 @@ const GOOGLE_IOS_URL_SCHEME = GOOGLE_IOS_CLIENT_ID
   : "com.googleusercontent.apps.placeholder";
 
 module.exports = {
-  name: "Nightvibe",
+  name: "Cityvibe",
   slug: "nightvibe",
   version: "1.1.0",
   orientation: "portrait",
@@ -103,14 +103,14 @@ module.exports = {
       "expo-location",
       {
         locationWhenInUsePermission:
-          "NightVibe uses your location to show events and guides near you.",
+          "CityVibe uses your location to show events and guides near you.",
       },
     ],
     [
       "expo-camera",
       {
         cameraPermission:
-          "NightVibe uses the camera to scan event and guide QR codes.",
+          "CityVibe uses the camera to scan event and guide QR codes.",
         recordAudioAndroid: false,
       },
     ],
@@ -153,7 +153,7 @@ module.exports = {
     [
       "expo-calendar",
       {
-        calendarPermission: "NightVibe needs calendar access to add events you're attending so you get a reminder and a quick link back to the event.",
+        calendarPermission: "CityVibe needs calendar access to add events you're attending so you get a reminder and a quick link back to the event.",
       },
     ],
   ],

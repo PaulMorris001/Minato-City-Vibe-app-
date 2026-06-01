@@ -51,8 +51,8 @@ export default function ScanScreen() {
       ]);
     } else {
       Alert.alert(
-        "Not a NightVibe code",
-        "This QR code isn't a NightVibe event or guide.",
+        "Not a CityVibe code",
+        "This QR code isn't a CityVibe event or guide.",
         [{ text: "Scan again", onPress: () => setScanned(false) }]
       );
     }
@@ -76,7 +76,7 @@ export default function ScanScreen() {
             <Ionicons name="qr-code-outline" size={56} color={Colors.primary} />
             <Text style={styles.permTitle}>Camera access needed</Text>
             <Text style={styles.permText}>
-              NightVibe uses the camera to scan event and guide QR codes.
+              CityVibe uses the camera to scan event and guide QR codes.
             </Text>
             {permission.canAskAgain ? (
               <TouchableOpacity style={styles.permBtn} onPress={requestPermission}>
@@ -102,7 +102,7 @@ export default function ScanScreen() {
             <View style={styles.overlay}>
               <View style={styles.frame} />
               <Text style={styles.hint}>
-                Point at a NightVibe event or guide QR code
+                Point at a CityVibe event or guide QR code
               </Text>
             </View>
           </View>

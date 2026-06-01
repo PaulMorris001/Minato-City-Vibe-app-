@@ -244,7 +244,7 @@ export default function Login() {
               </View>
 
               <Text style={styles.footerText}>
-                New to NightVibe?{" "}
+                New to CityVibe?{" "}
                 <Text
                   style={styles.footerLink}
                   onPress={() => router.replace("/signup")}

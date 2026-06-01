@@ -437,7 +437,7 @@ export default function Signup() {
               )}
 
               <Text style={styles.footerText}>
-                Already on NightVibe?{" "}
+                Already on CityVibe?{" "}
                 <Text
                   style={styles.footerLink}
                   onPress={() => router.push("/login" as any)}

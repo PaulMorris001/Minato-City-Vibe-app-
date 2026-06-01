@@ -330,7 +330,7 @@ export default function EventsPage() {
     try {
       const link = createEventShareLink(event.shareToken || event._id);
       await Share.share({
-        message: `Check out this event on NightVibe: ${event.title}\n${link}`,
+        message: `Check out this event on CityVibe: ${event.title}\n${link}`,
         title: event.title,
         url: link,
       });
