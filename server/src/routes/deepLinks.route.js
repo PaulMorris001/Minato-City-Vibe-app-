@@ -81,9 +81,13 @@ router.get('/.well-known/assetlinks.json', (req, res) => {
         namespace: 'android_app',
         package_name: 'com.obito.cityvibe',
         sha256_cert_fingerprints: [
-          // Both the upload key and the Play app-signing key, per Play Console.
-          'FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C',
-          'D2:92:C6:81:C4:62:49:CF:11:DA:96:BE:86:66:C2:5F:35:15:26:63:C4:03:B4:67:A0:8F:F5:CD:FC:14:5B:84',
+          // EAS-generated upload key (signs APKs/AABs before Play). Required
+          // for internal-distribution APKs and pre-Play-Signing installs.
+          'D5:F1:BD:BE:91:6D:53:14:0C:74:52:97:E3:A0:8E:2C:FE:36:8A:10:B4:F0:DD:41:09:55:5E:FD:18:B9:E0:79',
+          // TODO: add the Play app-signing key SHA-256 here once the app is
+          // uploaded to Play Console under com.obito.cityvibe — Play will
+          // show it under Setup → App integrity → App signing. Without this
+          // line, Play-installed users won't get App Link verification.
         ],
       },
     },
