@@ -44,7 +44,8 @@ import * as Sentry from '@sentry/react-native';
 import ErrorBoundary from "@/components/ErrorBoundary";
 
 Sentry.init({
-  dsn: 'https://b73520e1b6648db41574a92098b42ec2@o4510577981915136.ingest.us.sentry.io/4510577983356928',
+  dsn: 'https://7bdbc70f71d50069c92caff275f1243e@o4510577981915136.ingest.us.sentry.io/4511517861871616',
+  // dsn: 'https://b73520e1b6648db41574a92098b42ec2@o4510577981915136.ingest.us.sentry.io/4510577983356928',
   // dsn: 'https://c506563770a3f78e29dd984fe34407a7@o4510577846714368.ingest.us.sentry.io/4510577847697408',
 
   // Adds more context data to events (IP address, cookies, user, etc.)
@@ -346,10 +347,7 @@ export default Sentry.wrap(function RootLayout() {
 
   return (
     <ErrorBoundary>
-      <StripeProvider
-        publishableKey={stripeKey}
-        merchantIdentifier="merchant.com.nightvibe.minato"
-      >
+      <StripeProvider publishableKey={stripeKey}>
         <AccountProvider>
           <UnreadProvider>
           <PortalProvider>

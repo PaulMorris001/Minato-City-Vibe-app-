@@ -11,7 +11,7 @@ const GOOGLE_IOS_URL_SCHEME = GOOGLE_IOS_CLIENT_ID
 
 module.exports = {
   name: "Cityvibe",
-  slug: "nightvibe",
+  slug: "cityvibe",
   version: "1.1.0",
   orientation: "portrait",
   icon: "./assets/images/ios/icon.png",
@@ -28,14 +28,14 @@ module.exports = {
   // will not pick up an update built for a newer version.
   runtimeVersion: { policy: "appVersion" },
   updates: {
-    url: "https://u.expo.dev/a1e5c06d-26a5-4e05-89d9-3b9acf9a3ea4",
+    url: "https://u.expo.dev/cd801b2b-9608-4a99-be4e-8b17bbcd5824",
     // Wait up to 5s on launch for an update; otherwise the cached bundle
     // ships and the new one applies on the *next* open.
     fallbackToCacheTimeout: 5000,
   },
   ios: {
     supportsTablet: true,
-    bundleIdentifier: "com.nightvibe.minato",
+    bundleIdentifier: "com.obito.cityvibe",
     usesAppleSignIn: true,
     associatedDomains: ["applinks:night-vibe.onrender.com"],
     // In EAS Build, GOOGLE_SERVICES_PLIST is the path to the secret file.
@@ -51,7 +51,7 @@ module.exports = {
     },
   },
   android: {
-    package: "com.nightvibe.mobile",
+    package: "com.obito.cityvibe",
     intentFilters: [
       {
         action: "VIEW",
@@ -133,8 +133,8 @@ module.exports = {
       "@sentry/react-native/expo",
       {
         url: "https://sentry.io/",
-        project: "react-native",
-        organization: "minato-tu",
+        project: "cityvibe",
+        organization: "obito-ventures-inc",
         setCommits: false,
       },
     ],
@@ -164,8 +164,8 @@ module.exports = {
   extra: {
     router: {},
     eas: {
-      projectId: "a1e5c06d-26a5-4e05-89d9-3b9acf9a3ea4",
+      projectId: "cd801b2b-9608-4a99-be4e-8b17bbcd5824",
     },
   },
-  owner: "setemiloye1",
+  owner: "obitoven1s-organization",
 };

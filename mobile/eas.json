@@ -27,9 +27,9 @@
       },
       "env": {
         "SENTRY_SKIP_AUTO_RELEASE": "true",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "80317886238-hp629limga2n8hbv9ost1msft548a9n5.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "80317886238-pg4cjpt9c58fs4p4rfmnrmkk06uc9npo.apps.googleusercontent.com",
-        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51T4n9gAQi5IiU4TsAuK1pOtwYNHq7r5B1ai4CnletaEnyy8QhLjhCpiJvjs40ou5lbNkEO7wLjQAsXZ5ovGyKYeQ00gACGZRBX"
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "254041426547-p1frm03n7076anms84tgbht35pnvsju0.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "254041426547-rtrktn1a7ipqg12bhac41e75af387iit.apps.googleusercontent.com",
+        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51TeGgCPA0vusRaHhJTB3viTgFZrhX9bhT61U8c3KBOUwh4RDHqhipLYYJgrIbRwD0z6x5WL1mqyOk7Vo5UCtmGYN00fTHPFk6h"
       }
     },
     "production": {
@@ -42,9 +42,9 @@
         "distribution": "store"
       },
       "env": {
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "80317886238-hp629limga2n8hbv9ost1msft548a9n5.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "80317886238-pg4cjpt9c58fs4p4rfmnrmkk06uc9npo.apps.googleusercontent.com",
-        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_live_51T4n9SA9OTetbPih5wkeK6Ih6uNMRhNqLyjif9MUqmwBaD5dk7opVASvvHMEKeD2HQZRpxa5rY4F9vrHEGV1lDFu00eVFNvMZy"
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "254041426547-p1frm03n7076anms84tgbht35pnvsju0.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "254041426547-rtrktn1a7ipqg12bhac41e75af387iit.apps.googleusercontent.com",
+        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_live_51TeGgCPA0vusRaHh3sQb6wFrcyBHg0WrmPiG1cUP0NPS2OxORLpKYKVPs0gkoUkGf6jKj9Amrxbt7peEYquej2bf00Pd2pHZ7A"
       }
     }
   },

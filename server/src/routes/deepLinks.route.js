@@ -5,9 +5,13 @@ import Guide from '../models/guide.model.js';
 
 const router = express.Router();
 
-const PLAY_STORE = 'https://play.google.com/store/apps/details?id=com.nightvibe.mobile';
-const APP_STORE = 'https://apps.apple.com/us/app/nightvibe-a97112/id6767689517';
-const APP_STORE_ID = '6767689517';
+const PLAY_STORE = 'https://play.google.com/store/apps/details?id=com.obito.cityvibe';
+// Flip to true (and set APP_STORE / APP_STORE_ID) once the new App Store
+// listing is live. Until then we hide the App Store button + smart-app-banner
+// so users don't get sent to a "no longer available" page from the takedown.
+const HAS_APP_STORE_LISTING = false;
+const APP_STORE = '';
+const APP_STORE_ID = '';
 const SITE_BASE = 'https://night-vibe.onrender.com';
 const BRAND_TAGLINE = 'CityVibe — every night out, in one app.';
 
@@ -75,7 +79,7 @@ router.get('/.well-known/assetlinks.json', (req, res) => {
       ],
       target: {
         namespace: 'android_app',
-        package_name: 'com.nightvibe.mobile',
+        package_name: 'com.obito.cityvibe',
         sha256_cert_fingerprints: [
           // Both the upload key and the Play app-signing key, per Play Console.
           'FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C',
@@ -94,7 +98,7 @@ router.get('/.well-known/apple-app-site-association', (req, res) => {
       apps: [],
       details: [
         {
-          appID: '5C28S2GD6A.com.nightvibe.minato',
+          appID: '3UZH9FGG9Q.com.obito.cityvibe',
           paths: ['/event/*', '/guide/*'],
         },
       ],
@@ -161,8 +165,8 @@ function buildLandingPage({
   <meta name="twitter:description" content="${d}" />
   <meta name="twitter:image" content="${ogImage}" />
 
-  <!-- Smart App Banner (iOS Safari) -->
-  <meta name="apple-itunes-app" content="app-id=${APP_STORE_ID}, app-argument=${deepLinkEsc}" />
+  ${HAS_APP_STORE_LISTING ? `<!-- Smart App Banner (iOS Safari) -->
+  <meta name="apple-itunes-app" content="app-id=${APP_STORE_ID}, app-argument=${deepLinkEsc}" />` : ''}
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -271,7 +275,7 @@ function buildLandingPage({
     ${bodyHtml}
     <a class="open-btn" href="${deepLinkEsc}">Open in the app</a>
     <div class="store-row">
-      <a class="store-btn" href="${APP_STORE}">App Store</a>
+      ${HAS_APP_STORE_LISTING ? `<a class="store-btn" href="${APP_STORE}">App Store</a>` : ''}
       <a class="store-btn" href="${PLAY_STORE}">Google Play</a>
     </div>
     <div class="footer-note">Tap the button above to open in CityVibe.</div>
