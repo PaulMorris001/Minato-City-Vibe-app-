@@ -6,6 +6,7 @@ import connectDB from './config/db.js';
 import { initializeSocket } from './services/socket.service.js';
 import { startEventReminderJob } from './jobs/eventReminder.job.js';
 import { startPayoutReleaseJob } from './jobs/payoutRelease.job.js';
+import { startExternalEventsRefresh } from './jobs/externalEventsRefresh.job.js';
 
 import authRoutes from './routes/auth.route.js'
 import vendorRoutes from "./routes/vendor.route.js";
@@ -29,6 +30,7 @@ import csaeRoutes from "./routes/csae.route.js";
 import reportRoutes from "./routes/report.route.js";
 import blockRoutes from "./routes/block.route.js";
 import locationRoutes from "./routes/location.route.js";
+import externalEventRoutes from "./routes/externalEvent.route.js";
 
 
 const app = express();
@@ -70,6 +72,7 @@ app.use("/api/", bookingRoutes);
 app.use("/api/", reportRoutes);
 app.use("/api/", blockRoutes);
 app.use("/api/", locationRoutes);
+app.use("/api/", externalEventRoutes);
 app.use("/", deleteAccountRoutes);
 app.use("/", deepLinksRoutes);
 app.use("/", privacyRoutes);
@@ -86,4 +89,5 @@ httpServer.listen(config.server.port, config.server.host, async () => {
   await connectDB();
   startEventReminderJob();
   startPayoutReleaseJob();
+  startExternalEventsRefresh();
 });

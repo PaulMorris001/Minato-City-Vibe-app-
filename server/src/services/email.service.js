@@ -4,25 +4,41 @@ import nodemailer from "nodemailer";
  * Email service for sending OTP and other emails
  */
 
+// Timeouts so a slow / unreachable SMTP server can't hang an HTTP request for
+// minutes. ~25s ceiling end-to-end keeps us well under the mobile client's
+// retry budget while still leaving room for handshake on flaky networks.
+const SMTP_TIMEOUTS = {
+  connectionTimeout: 10000, // ms to establish TCP
+  greetingTimeout: 10000, // ms to wait for the server greeting
+  socketTimeout: 15000, // ms between socket reads once connected
+};
+
+// Single source of truth for credentials. SMTP_USER / SMTP_PASS are kept as
+// fallbacks so older deployments don't break, but the primary names are
+// EMAIL_USER / EMAIL_PASSWORD across every provider branch below.
+const getCreds = () => ({
+  user: process.env.EMAIL_USER || process.env.SMTP_USER,
+  pass: process.env.EMAIL_PASSWORD || process.env.SMTP_PASS,
+});
+
 // Create transporter
 const createTransporter = () => {
   const emailService = process.env.EMAIL_SERVICE?.toLowerCase().trim();
+  const auth = getCreds();
 
   console.log('📧 Email Service Configuration:', {
     service: emailService,
-    user: process.env.EMAIL_USER,
-    hasPassword: !!process.env.EMAIL_PASSWORD,
-    from: process.env.EMAIL_FROM
+    user: auth.user,
+    hasPassword: !!auth.pass,
+    from: process.env.EMAIL_FROM,
   });
 
   if (emailService === 'gmail') {
     console.log('✅ Using Gmail service for emails');
     return nodemailer.createTransport({
       service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD, // Use App Password for Gmail
-      },
+      auth, // Use App Password for Gmail
+      ...SMTP_TIMEOUTS,
     });
   }
 
@@ -39,27 +55,25 @@ const createTransporter = () => {
       host,
       port,
       secure,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD,
-      },
+      auth,
+      ...SMTP_TIMEOUTS,
     });
   }
 
-  // Default: Use SMTP settings from environment
-  console.log('⚙️ Using SMTP configuration:', {
-    host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-    port: process.env.SMTP_PORT || 587
-  });
+  // Default: Generic SMTP from environment. Reads the same EMAIL_USER /
+  // EMAIL_PASSWORD as the named-service branches above so a single set of
+  // creds works no matter how the host is configured.
+  const host = process.env.SMTP_HOST || 'smtp.ethereal.email';
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+  const secure = port === 465; // 465 = SMTPS, 587 = STARTTLS (secure=false + upgrade)
+  console.log(`⚙️ Using SMTP configuration: ${host}:${port} (secure=${secure})`);
 
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-    port: process.env.SMTP_PORT || 587,
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
+    host,
+    port,
+    secure,
+    auth,
+    ...SMTP_TIMEOUTS,
   });
 };
 

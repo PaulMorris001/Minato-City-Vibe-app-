@@ -30,6 +30,8 @@ import socketService from "@/services/socket.service";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 import { createEventShareLink } from "@/utils/shareLinks";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
+import ExternalEventCard from "@/components/shared/ExternalEventCard";
+import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { Avatar } from "@/components/shared/Avatar";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { trackEvent as trackAnalyticsEvent } from "@/utils/analytics";
@@ -104,6 +106,9 @@ export default function EventsPage() {
   const [discoverPage, setDiscoverPage] = useState(1);
   const [discoverHasMore, setDiscoverHasMore] = useState(true);
   const [discoverLoadingMore, setDiscoverLoadingMore] = useState(false);
+  // External events (Ticketmaster etc) — fetched in parallel with native discover
+  // events and merged into a single date-sorted feed below.
+  const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
   const [discoverLoc, setDiscoverLoc] = useState<Partial<LocationSelection> | null>(null);
   const [discoverPickerKey, setDiscoverPickerKey] = useState(0);
   const [inviteTab, setInviteTab] = useState<"people" | "vendors">("people");
@@ -197,13 +202,26 @@ export default function EventsPage() {
       if (loc?.state) params.append("state", loc.state);
       if (loc?.country) params.append("country", loc.country);
 
-      const res = await fetch(
-        `${BASE_URL}/events/public/explore?${params.toString()}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const data = await res.json();
+      // Fire both feeds in parallel. External events are only fetched on the
+      // first page — they're upcoming events without pagination needs in v1.
+      // Pagination through external events can be added later if the feed
+      // gets dense enough to need it.
+      const [nativeRes, externalRes] = await Promise.allSettled([
+        fetch(`${BASE_URL}/events/public/explore?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        pageNum === 1
+          ? externalEventService.explore({
+              city: loc?.city,
+              country: loc?.country,
+              limit: 20,
+            })
+          : Promise.resolve({ events: [], nextCursor: null }),
+      ]);
 
-      if (res.ok) {
+      // Native events (preserve all existing logic)
+      if (nativeRes.status === "fulfilled" && nativeRes.value.ok) {
+        const data = await nativeRes.value.json();
         const incoming: PublicEvent[] = data.events || [];
         if (pageNum === 1 || isRefresh) {
           setDiscoverEvents(incoming);
@@ -212,6 +230,18 @@ export default function EventsPage() {
         }
         setDiscoverPage(pageNum);
         setDiscoverHasMore(incoming.length === DISCOVER_LIMIT);
+      }
+
+      // External events: only refresh on page 1 / refresh; keep cached
+      // otherwise so they don't flicker when the user paginates native events.
+      if (pageNum === 1 || isRefresh) {
+        if (externalRes.status === "fulfilled") {
+          setExternalEvents(externalRes.value.events || []);
+        } else {
+          // Silent fallback — an external API hiccup should never break the feed
+          console.warn("[Discover] external events fetch failed:", externalRes.reason);
+          setExternalEvents([]);
+        }
       }
     } catch {}
     finally {
@@ -802,7 +832,7 @@ export default function EventsPage() {
 
               {discoverLoading ? (
                 <EventCardSkeleton count={5} />
-              ) : discoverEvents.length === 0 ? (
+              ) : discoverEvents.length === 0 && externalEvents.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Ionicons name="globe-outline" size={64} color="#6b7280" />
                   <Text style={styles.emptyStateTitle}>No public events yet</Text>
@@ -810,15 +840,42 @@ export default function EventsPage() {
                 </View>
               ) : (
                 <>
-                  {discoverEvents.map((ev) => (
-                    <View key={ev._id} style={{ paddingHorizontal: 16, marginBottom: 12 }}>
-                      <PublicEventCard
-                        event={ev}
-                        onPurchaseTicket={handlePurchaseTicket}
-                        onJoinFreeEvent={handleJoinFreeEvent}
-                      />
-                    </View>
-                  ))}
+                  {/*
+                    Mixed feed: native + external events merged by date.
+                    Native pagination still drives `discoverHasMore` —
+                    external events are a one-shot batch on page 1.
+                  */}
+                  {[
+                    ...discoverEvents.map((ev) => ({
+                      _kind: "native" as const,
+                      _id: ev._id,
+                      sort: new Date(ev.date).getTime(),
+                      data: ev,
+                    })),
+                    ...externalEvents.map((ev) => ({
+                      _kind: "external" as const,
+                      _id: ev._id,
+                      sort: new Date(ev.date).getTime(),
+                      data: ev,
+                    })),
+                  ]
+                    .sort((a, b) => a.sort - b.sort)
+                    .map((item) => (
+                      <View
+                        key={`${item._kind}-${item._id}`}
+                        style={{ paddingHorizontal: 16, marginBottom: 12 }}
+                      >
+                        {item._kind === "native" ? (
+                          <PublicEventCard
+                            event={item.data}
+                            onPurchaseTicket={handlePurchaseTicket}
+                            onJoinFreeEvent={handleJoinFreeEvent}
+                          />
+                        ) : (
+                          <ExternalEventCard event={item.data} />
+                        )}
+                      </View>
+                    ))}
                   {discoverHasMore && (
                     <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMoreDiscover} disabled={discoverLoadingMore} activeOpacity={0.7}>
                       {discoverLoadingMore ? <ActivityIndicator size="small" color="#a855f7" /> : <Text style={styles.loadMoreText}>Load More</Text>}
