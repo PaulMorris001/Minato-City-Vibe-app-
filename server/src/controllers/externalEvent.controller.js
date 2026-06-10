@@ -1,5 +1,57 @@
 import ExternalEvent from "../models/externalEvent.model.js";
 
+/** Escape a string for safe use as a literal inside a regex. */
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Map between ISO-2 country codes and display names so callers can pass
+ * either format and we'll match upstream-stored events regardless. Covers the
+ * markets we actively ingest (top US event cities + Nigeria + likely
+ * expansion markets); extend as we add more.
+ *
+ * Returns case-insensitive RegExp candidates so a query for "Nigeria" finds
+ * documents stored as "NG", and vice versa.
+ */
+const COUNTRY_ALIASES = [
+  ["US", ["United States", "USA", "U.S.", "U.S.A."]],
+  ["NG", ["Nigeria"]],
+  ["GB", ["United Kingdom", "UK", "Great Britain", "England"]],
+  ["CA", ["Canada"]],
+  ["AU", ["Australia"]],
+  ["DE", ["Germany"]],
+  ["FR", ["France"]],
+  ["IE", ["Ireland"]],
+  ["ES", ["Spain"]],
+  ["IT", ["Italy"]],
+  ["NL", ["Netherlands"]],
+  ["MX", ["Mexico"]],
+  ["BR", ["Brazil"]],
+  ["ZA", ["South Africa"]],
+];
+
+function countryMatchCandidates(input) {
+  const v = String(input).trim();
+  const upper = v.toUpperCase();
+  // Find a matching row in either direction.
+  const row = COUNTRY_ALIASES.find(
+    ([iso, names]) =>
+      iso.toUpperCase() === upper ||
+      names.some((n) => n.toLowerCase() === v.toLowerCase())
+  );
+  const out = new Set([v]);
+  if (row) {
+    out.add(row[0]); // ISO code
+    row[1].forEach((n) => out.add(n));
+  }
+  // Build case-insensitive exact-match regexes so the $in array works
+  // against whatever case the DB happens to store.
+  return Array.from(out).map(
+    (s) => new RegExp(`^${escapeRegex(s)}$`, "i")
+  );
+}
+
 /**
  * Public feed of upcoming external events.
  * Mobile app calls this alongside `/events/public/explore` to fill the feed.
@@ -16,20 +68,73 @@ export const getExternalEventsExplore = async (req, res) => {
   try {
     const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
     const { city, country, source, category, cursor } = req.query;
+    // When `includePlaceholders=true`, low-quality entries (those with only
+    // generic Ticketmaster fallback art) are included. Default off to keep
+    // the feed visually clean.
+    const includePlaceholders = req.query.includePlaceholders === "true";
 
-    const q = {
+    const match = {
       isActive: true,
       date: { $gt: cursor ? new Date(cursor) : new Date() },
     };
-    if (city) q.city = city;
-    if (country) q.country = country;
-    if (source) q.source = source;
-    if (category) q.category = category;
+    /*
+     * City matching is fuzzy on purpose:
+     *   - Case-insensitive (Ticketmaster: "New York"; some pickers: "new york")
+     *   - Anchored exact match by default but ignores trailing " City" so e.g.
+     *     "New York City" from the CSC API matches our stored "New York".
+     */
+    if (city) {
+      const trimmed = String(city).trim().replace(/\s+City$/i, "");
+      match.city = { $regex: `^${escapeRegex(trimmed)}$`, $options: "i" };
+    }
+    /*
+     * Country accepts either the ISO 2-letter code (what TM stores) OR the
+     * full display name (what the picker typically sends). We match the
+     * known mapping in both directions so callers can send whichever they
+     * have. If we don't recognize the value, fall back to a case-insensitive
+     * exact match — covers ISO codes verbatim.
+     */
+    if (country) {
+      const candidates = countryMatchCandidates(country);
+      match.country = { $in: candidates };
+    }
+    if (source) match.source = source;
+    if (category) match.category = category;
+    if (!includePlaceholders) match.hasRealImage = true;
 
-    const events = await ExternalEvent.find(q)
-      .sort({ date: 1 })
-      .limit(limit + 1) // probe one extra to know whether more exist
-      .lean();
+    /*
+     * Dedup pipeline.
+     *
+     * Same-show / same-tour entries appear many times (Beyoncé residency
+     * across 6 nights, NBA playoff series, recurring weekly trivia). They
+     * all share (title, venueName) but differ by date / sourceId.
+     *
+     * We bucket by (title, venueName) and return only the soonest event
+     * per bucket. The detail screen can later query the rest of the
+     * bucket as "more dates available."
+     */
+    const pipeline = [
+      { $match: match },
+      { $sort: { date: 1 } }, // soonest first, so $first below is "the soonest"
+      {
+        $group: {
+          _id: {
+            title: { $toLower: "$title" },
+            venue: { $toLower: { $ifNull: ["$venueName", ""] } },
+          },
+          // Keep the soonest event of each duplicate-set as the canonical one.
+          event: { $first: "$$ROOT" },
+          // Track how many other dates exist for this (title, venue) so the
+          // mobile card can show "+ N more dates" affordance.
+          additionalDates: { $sum: 1 },
+        },
+      },
+      { $replaceRoot: { newRoot: { $mergeObjects: ["$event", { additionalDates: { $subtract: ["$additionalDates", 1] } }] } } },
+      { $sort: { date: 1 } },
+      { $limit: limit + 1 }, // +1 to detect "has more"
+    ];
+
+    const events = await ExternalEvent.aggregate(pipeline);
 
     const hasMore = events.length > limit;
     const page = hasMore ? events.slice(0, limit) : events;

@@ -31,7 +31,11 @@ const externalEventSchema = new mongoose.Schema(
     title: { type: String, required: true },
     description: { type: String, default: "" },
     image: { type: String, default: "" }, // 16:9 cover for the feed card
-    images: { type: [String], default: [] }, // detail-page gallery (all sizes from provider)
+    // false when the provider only had a generic stock fallback for this
+    // event. Used by the feed to either downrank or replace these with a
+    // styled gradient placeholder.
+    hasRealImage: { type: Boolean, default: true, index: true },
+    images: { type: [String], default: [] }, // detail-page gallery (real images only)
 
     // When + where
     date: { type: Date, required: true, index: true }, // event start (UTC)

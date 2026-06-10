@@ -20,6 +20,8 @@ import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import CreateEventModal from "@/components/client/CreateEventModal";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
+import ExternalEventCard from "@/components/shared/ExternalEventCard";
+import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { trackEvent } from "@/utils/analytics";
 
@@ -307,6 +309,9 @@ export default function Home() {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
   const [highlights, setHighlights] = useState<{ trending: PublicEvent[]; upcoming: PublicEvent[] }>({ trending: [], upcoming: [] });
+  // External (Ticketmaster etc) events, fetched in parallel with publicEvents.
+  // Currently surfaced in the "Trending Now" carousel mixed with native events.
+  const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [topGuides, setTopGuides] = useState<TopGuide[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -342,6 +347,24 @@ export default function Home() {
         setPublicEvents(data.events || []);
       }
     } catch {}
+  };
+
+  /**
+   * External events from third-party providers (Ticketmaster etc), surfaced
+   * alongside native events in the Trending carousel. Failure is silent —
+   * the rest of the home tab works fine without them.
+   */
+  const fetchExternalEvents = async (city?: string | null) => {
+    try {
+      const res = await externalEventService.explore({
+        city: city || undefined,
+        limit: 10,
+      });
+      setExternalEvents(res.events || []);
+    } catch (err) {
+      console.warn("[Home] external events fetch failed:", err);
+      setExternalEvents([]);
+    }
   };
 
   const fetchHighlights = async () => {
@@ -401,15 +424,25 @@ export default function Home() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchPublicEvents(selectedCity, true), fetchHighlights(), fetchVendors(), fetchTopGuides()]);
+    await Promise.all([
+      fetchPublicEvents(selectedCity, true),
+      fetchExternalEvents(selectedCity),
+      fetchHighlights(),
+      fetchVendors(),
+      fetchTopGuides(),
+    ]);
     setRefreshing(false);
   };
 
   useEffect(() => {
     fetchUsername();
-    Promise.all([fetchPublicEvents(null), fetchHighlights(), fetchVendors(), fetchTopGuides()]).finally(() =>
-      setInitialLoading(false)
-    );
+    Promise.all([
+      fetchPublicEvents(null),
+      fetchExternalEvents(null),
+      fetchHighlights(),
+      fetchVendors(),
+      fetchTopGuides(),
+    ]).finally(() => setInitialLoading(false));
 
     intervalRef.current = setInterval(() => {
       fetchPublicEvents(selectedCity, true);
@@ -735,7 +768,7 @@ export default function Home() {
               renderItem={() => <Skeleton width={300} height={200} borderRadius={16} style={{ marginRight: 12 }} />}
             />
           </View>
-        ) : highlights.trending.length > 0 && (
+        ) : (highlights.trending.length > 0 || externalEvents.length > 0) && (
           <View style={styles.section}>
             <SectionHeader
               title="Trending Now 🔥"
@@ -745,17 +778,27 @@ export default function Home() {
             />
             <FlatList
               horizontal
-              data={highlights.trending}
-              keyExtractor={(item) => item._id}
+              data={[
+                // Mixed feed: native trending + external events, deduped by id
+                // and tagged with `_kind` so the render branches to the right
+                // card component below.
+                ...highlights.trending.map((e) => ({ _kind: "native" as const, data: e, sort: new Date(e.date).getTime() })),
+                ...externalEvents.map((e) => ({ _kind: "external" as const, data: e, sort: new Date(e.date).getTime() })),
+              ].sort((a, b) => a.sort - b.sort)}
+              keyExtractor={(item) => `${item._kind}-${item.data._id}`}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalList}
               renderItem={({ item }) => (
                 <View style={{ width: 300, marginRight: 12 }}>
-                  <PublicEventCard
-                    event={item}
-                    onPurchaseTicket={handlePurchaseTicket}
-                    onJoinFreeEvent={handleJoinFreeEvent}
-                  />
+                  {item._kind === "native" ? (
+                    <PublicEventCard
+                      event={item.data}
+                      onPurchaseTicket={handlePurchaseTicket}
+                      onJoinFreeEvent={handleJoinFreeEvent}
+                    />
+                  ) : (
+                    <ExternalEventCard event={item.data} />
+                  )}
                 </View>
               )}
             />

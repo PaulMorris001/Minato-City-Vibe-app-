@@ -22,6 +22,7 @@ import { BASE_URL } from "@/constants/constants";
 import { LocationSelection } from "@/libs/interfaces";
 import { LocationPicker } from "@/components/shared";
 import { PublicEvent } from "@/components/shared/PublicEventCard";
+import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { heroEmojiFor } from "@/utils/eventDetails";
 import { AU, AU_FONT } from "@/components/auth/tokens";
@@ -65,6 +66,8 @@ export default function PublicEventsPage() {
   const router = useRouter();
   const { payForTicket } = useStripePayment();
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
+  // External provider events (Ticketmaster, etc) shown alongside native ones.
+  const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
@@ -99,18 +102,46 @@ export default function PublicEventsPage() {
       if (loc?.state) params.append("state", loc.state);
       if (loc?.country) params.append("country", loc.country);
 
-      const response = await fetch(`${BASE_URL}/events/public/explore?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
+      // Fetch native + external in parallel. External events only on page 1
+      // (they're a fixed batch — pagination tied to the native page count).
+      const [nativeRes, externalRes] = await Promise.allSettled([
+        fetch(`${BASE_URL}/events/public/explore?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        pageNum === 1
+          ? externalEventService.explore({
+              city: loc?.city || undefined,
+              // ISO code matches what Ticketmaster stores; full country name
+              // wouldn't match anything ("Nigeria" vs "NG"). See externalEvent
+              // controller for the loose matching logic.
+              country: loc?.countryIso || loc?.country || undefined,
+              limit: 30,
+            })
+          : Promise.resolve({ events: [], nextCursor: null }),
+      ]);
 
-      if (response.ok) {
-        const newEvents: PublicEvent[] = data.events || [];
-        setPublicEvents((prev) => (isRefresh || pageNum === 1 ? newEvents : [...prev, ...newEvents]));
-        setTotalEvents(data.total || newEvents.length);
-        setHasMore(newEvents.length === EVENTS_PER_PAGE);
-      } else {
-        Alert.alert("Error", data.message || "Failed to load events");
+      // Native (preserve existing behavior + error handling)
+      if (nativeRes.status === "fulfilled") {
+        const response = nativeRes.value;
+        const data = await response.json();
+        if (response.ok) {
+          const newEvents: PublicEvent[] = data.events || [];
+          setPublicEvents((prev) => (isRefresh || pageNum === 1 ? newEvents : [...prev, ...newEvents]));
+          setTotalEvents(data.total || newEvents.length);
+          setHasMore(newEvents.length === EVENTS_PER_PAGE);
+        } else {
+          Alert.alert("Error", data.message || "Failed to load events");
+        }
+      }
+
+      // External: refresh on page 1; failure is silent, the feed degrades gracefully.
+      if (pageNum === 1 || isRefresh) {
+        if (externalRes.status === "fulfilled") {
+          setExternalEvents(externalRes.value.events || []);
+        } else {
+          console.warn("[public-events] external fetch failed:", externalRes.reason);
+          setExternalEvents([]);
+        }
       }
     } catch (error) {
       console.error("Fetch public events error:", error);
@@ -251,36 +282,54 @@ export default function PublicEventsPage() {
     const now = new Date();
     const startToday = new Date(now);
     startToday.setHours(0, 0, 0, 0);
-    let list = publicEvents;
-    if (activeCategory === "Tonight") {
-      list = list.filter((e) => {
-        const d = new Date(e.date);
-        return d.toDateString() === now.toDateString();
-      });
-    } else if (activeCategory === "This week") {
-      const weekEnd = new Date(startToday);
-      weekEnd.setDate(startToday.getDate() + 7);
-      list = list.filter((e) => {
-        const d = new Date(e.date);
+
+    // Unify both feeds into a tagged shape so we can sort/filter together,
+    // then branch on `_kind` in the renderer.
+    type FeedItem =
+      | { _kind: "native"; data: PublicEvent }
+      | { _kind: "external"; data: ExternalEvent };
+
+    const inDateWindow = (iso: string) => {
+      const d = new Date(iso);
+      if (activeCategory === "Tonight") return d.toDateString() === now.toDateString();
+      if (activeCategory === "This week") {
+        const weekEnd = new Date(startToday);
+        weekEnd.setDate(startToday.getDate() + 7);
         return d >= startToday && d <= weekEnd;
-      });
-    }
-    const arr = [...list];
+      }
+      return true;
+    };
+
+    const nativeItems: FeedItem[] = publicEvents
+      .filter((e) => inDateWindow(e.date))
+      .map((e) => ({ _kind: "native", data: e }));
+
+    // Price-based sorts don't make sense for external events (range pricing,
+    // some no price at all). Drop external from those sorts.
+    const isPriceSort = sort === "price_asc" || sort === "price_desc";
+    const externalItems: FeedItem[] = isPriceSort
+      ? []
+      : externalEvents
+          .filter((e) => inDateWindow(e.date))
+          .map((e) => ({ _kind: "external", data: e }));
+
+    const all = [...nativeItems, ...externalItems];
+
     switch (sort) {
       case "furthest":
-        arr.sort((a, b) => +new Date(b.date) - +new Date(a.date));
+        all.sort((a, b) => +new Date(b.data.date) - +new Date(a.data.date));
         break;
       case "price_asc":
-        arr.sort((a, b) => priceOf(a) - priceOf(b));
+        all.sort((a, b) => priceOf(a.data as PublicEvent) - priceOf(b.data as PublicEvent));
         break;
       case "price_desc":
-        arr.sort((a, b) => priceOf(b) - priceOf(a));
+        all.sort((a, b) => priceOf(b.data as PublicEvent) - priceOf(a.data as PublicEvent));
         break;
       default:
-        arr.sort((a, b) => +new Date(a.date) - +new Date(b.date));
+        all.sort((a, b) => +new Date(a.data.date) - +new Date(b.data.date));
     }
-    return arr;
-  }, [publicEvents, activeCategory, sort]);
+    return all;
+  }, [publicEvents, externalEvents, activeCategory, sort]);
 
   const locationLabel = discoverLoc?.city
     ? `${discoverLoc.city}${discoverLoc.state ? `, ${discoverLoc.state}` : ""}`
@@ -293,7 +342,111 @@ export default function PublicEventsPage() {
 
   // ─── Renderers ──────────────────────────────────────────────────────────
 
-  const renderCard = ({ item }: { item: PublicEvent }) => {
+  // Heterogeneous render: external events delegate to ExternalEventCard;
+  // native events keep the bespoke layout below.
+  const renderCard = ({
+    item: feedItem,
+  }: {
+    item:
+      | { _kind: "native"; data: PublicEvent }
+      | { _kind: "external"; data: ExternalEvent };
+  }) => {
+    if (feedItem._kind === "external") {
+      const ext = feedItem.data;
+      const priceLine =
+        ext.priceMin == null && ext.priceMax == null
+          ? "See on Ticketmaster"
+          : ext.priceMin != null && ext.priceMax != null && ext.priceMin !== ext.priceMax
+          ? `$${Math.round(ext.priceMin)}–$${Math.round(ext.priceMax)}`
+          : `From $${Math.round((ext.priceMin ?? ext.priceMax) as number)}`;
+      const moreDates = ext.additionalDates ?? 0;
+
+      // Same outer shape, poster, body, footer layout as the native renderCard
+      // below — only swaps in a "Ticketmaster" tag pill and a "Get tickets" CTA
+      // that opens the detail screen (the floating CTA in the detail screen
+      // is what actually sends users to Ticketmaster).
+      return (
+        <TouchableOpacity
+          style={styles.card}
+          activeOpacity={0.9}
+          onPress={() =>
+            router.push({ pathname: "/external-event/[id]", params: { id: ext._id } })
+          }
+        >
+          <View style={styles.poster}>
+            {ext.image ? (
+              <Image source={{ uri: ext.image }} style={StyleSheet.absoluteFill} contentFit="cover" />
+            ) : (
+              <LinearGradient
+                colors={gradientFor(ext._id) as any}
+                start={{ x: 0.15, y: 0 }}
+                end={{ x: 0.85, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              >
+                <Text style={styles.posterEmoji}>{heroEmojiFor(ext.title)}</Text>
+              </LinearGradient>
+            )}
+            <LinearGradient
+              colors={["transparent", "rgba(11,6,19,0.35)"]}
+              style={StyleSheet.absoluteFill}
+            />
+
+            {/* Source pill replaces the native city tag */}
+            <View style={[styles.tagPill, { backgroundColor: "#026CDF" }]}>
+              <Text style={styles.tagPillText} numberOfLines={1}>
+                TICKETMASTER
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.cardBody}>
+            <Text style={styles.cardTitle}>{ext.title}</Text>
+            {!!ext.venueName && <Text style={styles.cardHost}>at {ext.venueName}</Text>}
+
+            <View style={styles.metaRow}>
+              <Ionicons name="calendar-outline" size={13} color={AU.textDim} />
+              <Text style={styles.metaText}>{formatDate(ext.date)}</Text>
+              {!!ext.city && (
+                <>
+                  <View style={styles.metaDot} />
+                  <Ionicons name="location-outline" size={14} color={AU.textDim} />
+                  <Text style={styles.metaText} numberOfLines={1}>
+                    {ext.city}
+                    {ext.state ? `, ${ext.state}` : ""}
+                  </Text>
+                </>
+              )}
+            </View>
+
+            <View style={styles.cardFooter}>
+              <View style={styles.priceCluster}>
+                <Text style={styles.priceText}>{priceLine}</Text>
+                {moreDates > 0 && (
+                  <Text style={styles.scarcityText}>
+                    +{moreDates} more {moreDates === 1 ? "date" : "dates"}
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity
+                style={styles.ctaBtn}
+                activeOpacity={0.85}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  router.push({
+                    pathname: "/external-event/[id]",
+                    params: { id: ext._id },
+                  });
+                }}
+              >
+                <Text style={styles.ctaText}>Get tickets</Text>
+                <Ionicons name="arrow-forward" size={14} color={AU.bg} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+    const item = feedItem.data;
     const isFree = !item.isPaid || priceOf(item) === 0;
     const left = item.ticketsRemaining;
     const scarce = typeof left === "number" && left <= 15;
@@ -527,7 +680,7 @@ export default function PublicEventsPage() {
           <FlatList
             data={visibleEvents}
             renderItem={renderCard}
-            keyExtractor={(item) => item._id}
+            keyExtractor={(item) => `${item._kind}-${item.data._id}`}
             ListHeaderComponent={ListHeader}
             ListEmptyComponent={renderEmpty}
             ListFooterComponent={renderFooter}

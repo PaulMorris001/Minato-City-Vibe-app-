@@ -213,7 +213,11 @@ export default function EventsPage() {
         pageNum === 1
           ? externalEventService.explore({
               city: loc?.city,
-              country: loc?.country,
+              // Send the ISO code (e.g. "NG"), NOT the display name
+              // ("Nigeria"). Ticketmaster stores country as ISO code so name
+              // would never match. Fall back to the name if the picker
+              // didn't provide an iso (older state).
+              country: loc?.countryIso || loc?.country,
               limit: 20,
             })
           : Promise.resolve({ events: [], nextCursor: null }),

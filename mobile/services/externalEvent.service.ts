@@ -15,6 +15,10 @@ export interface ExternalEvent {
   title: string;
   description: string;
   image: string;
+  /** false when provider only had a generic placeholder image */
+  hasRealImage?: boolean;
+  /** When `explore` deduped this card, how many other dates exist for the same show */
+  additionalDates?: number;
   images: string[];
   date: string; // ISO
   endDate?: string;

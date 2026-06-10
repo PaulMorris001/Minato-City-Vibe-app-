@@ -15,14 +15,41 @@ const API_BASE = "https://app.ticketmaster.com/discovery/v2";
  *   https://developer.ticketmaster.com/products-and-docs/apis/getting-started/
  */
 
-/** Pick the largest 16:9-ish image from Ticketmaster's image array. */
+/**
+ * Pick the best cover image from Ticketmaster's image array.
+ *
+ * Ticketmaster marks generic category-stock images with `fallback: true`
+ * (e.g., "generic concert silhouette" for events the promoter never uploaded
+ * a real image for). Those make the feed look like a wall of placeholders,
+ * so we strictly prefer real images and only fall back to fallbacks when
+ * there's nothing else.
+ *
+ * Returns { url, isFallback } so the caller can decide whether to skip the
+ * event entirely if every available image is generic.
+ */
 function pickCoverImage(images = []) {
-  if (!images.length) return "";
-  const ratio169 = images.filter((i) => i.ratio === "16_9");
-  const pool = ratio169.length ? ratio169 : images;
-  // Largest by width
-  const sorted = [...pool].sort((a, b) => (b.width || 0) - (a.width || 0));
-  return sorted[0]?.url || "";
+  if (!images.length) return { url: "", isFallback: true };
+
+  // Bucket by quality: real-image > 16:9-real > 16:9-fallback > anything
+  const real = images.filter((i) => !i.fallback);
+  const real169 = real.filter((i) => i.ratio === "16_9");
+  const fallback169 = images.filter((i) => i.ratio === "16_9");
+
+  const pickLargest = (arr) =>
+    arr.length
+      ? [...arr].sort((a, b) => (b.width || 0) - (a.width || 0))[0]
+      : null;
+
+  const chosen =
+    pickLargest(real169) ||
+    pickLargest(real) ||
+    pickLargest(fallback169) ||
+    pickLargest(images);
+
+  return {
+    url: chosen?.url || "",
+    isFallback: !!chosen?.fallback || real.length === 0,
+  };
 }
 
 /** Normalize one Ticketmaster event into our ExternalEvent shape. */
@@ -42,13 +69,28 @@ function normalize(tm) {
     : null;
   if (!startDate || isNaN(startDate.getTime())) return null;
 
+  // Cover image: prefer real (non-fallback) photos so the feed isn't a sea
+  // of generic stock images. We tolerate fallbacks but tag them so consumers
+  // can filter the worst noise later.
+  const cover = pickCoverImage(tm.images);
+
   return {
     source: "ticketmaster",
     sourceId: tm.id,
     title: tm.name,
     description: tm.info || tm.pleaseNote || "",
-    image: pickCoverImage(tm.images),
-    images: (tm.images || []).map((i) => i.url).filter(Boolean),
+    image: cover.url,
+    hasRealImage: !cover.isFallback,
+    // Detail-page gallery: ONLY real images, deduped by URL, sorted by width.
+    // Skips the generic fallbacks so the gallery doesn't repeat the same
+    // stock photo at 6 sizes.
+    images: (() => {
+      const seen = new Set();
+      return (tm.images || [])
+        .filter((i) => !i.fallback && i.url && !seen.has(i.url) && seen.add(i.url))
+        .sort((a, b) => (b.width || 0) - (a.width || 0))
+        .map((i) => i.url);
+    })(),
     date: startDate,
     endDate: tm.dates?.end?.dateTime ? new Date(tm.dates.end.dateTime) : undefined,
     timezone: tm.dates?.timezone || "",

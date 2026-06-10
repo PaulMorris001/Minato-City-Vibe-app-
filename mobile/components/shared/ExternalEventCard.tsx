@@ -1,9 +1,9 @@
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import * as WebBrowser from "expo-web-browser";
+import { useRouter } from "expo-router";
 import { Fonts } from "@/constants/fonts";
 import { scaleFontSize } from "@/utils/responsive";
 import type { ExternalEvent } from "@/services/externalEvent.service";
@@ -46,31 +46,19 @@ function formatPriceLine(event: ExternalEvent): string | null {
 }
 
 export default function ExternalEventCard({ event, style }: ExternalEventCardProps) {
+  const router = useRouter();
   const sourceMeta = SOURCE_META[event.source] ?? { label: event.source, bg: "#374151" };
   const priceLine = formatPriceLine(event);
 
-  const openTicketUrl = async () => {
-    if (!event.ticketUrl) {
-      Alert.alert("Unavailable", "No ticket link is available for this event.");
-      return;
-    }
-    try {
-      await WebBrowser.openBrowserAsync(event.ticketUrl, {
-        // Keeps users in our app's visual chrome — the in-app browser sheet
-        // dismisses cleanly when they tap Done. They never see Safari/Chrome.
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-      });
-    } catch (err) {
-      console.warn("[ExternalEventCard] openBrowserAsync failed:", err);
-      Alert.alert("Couldn't open", "Try again or check your network.");
-    }
-  };
+  // Card tap → detail screen (NOT the provider URL). Only the explicit
+  // "Get Tickets" button in the detail screen sends users out to Ticketmaster.
+  const openDetail = () => router.push(`/external-event/${event._id}` as any);
 
   return (
     <TouchableOpacity
       style={[styles.eventCard, style]}
       activeOpacity={0.9}
-      onPress={openTicketUrl}
+      onPress={openDetail}
     >
       <View style={styles.eventCardInner}>
         {event.image ? (
@@ -154,7 +142,7 @@ export default function ExternalEventCard({ event, style }: ExternalEventCardPro
               style={styles.getTicketsButton}
               onPress={(e) => {
                 e.stopPropagation();
-                openTicketUrl();
+                openDetail();
               }}
               activeOpacity={0.85}
             >
@@ -164,11 +152,16 @@ export default function ExternalEventCard({ event, style }: ExternalEventCardPro
                 end={{ x: 1, y: 0 }}
                 style={styles.getTicketsGradient}
               >
-                <Ionicons name="ticket" size={16} color="#fff" />
-                <Text style={styles.getTicketsText}>Get Tickets</Text>
-                <Ionicons name="arrow-forward" size={14} color="#fff" />
+                <Ionicons name="information-circle" size={16} color="#fff" />
+                <Text style={styles.getTicketsText}>View Details</Text>
+                <Ionicons name="chevron-forward" size={14} color="#fff" />
               </LinearGradient>
             </TouchableOpacity>
+            {(event.additionalDates ?? 0) > 0 && (
+              <Text style={styles.moreDatesHint}>
+                +{event.additionalDates} more {event.additionalDates === 1 ? "date" : "dates"}
+              </Text>
+            )}
           </View>
         </LinearGradient>
       </View>
@@ -287,5 +280,13 @@ const styles = StyleSheet.create({
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.bold,
     color: "#fff",
+  },
+  moreDatesHint: {
+    marginTop: 8,
+    fontSize: scaleFontSize(12),
+    fontFamily: Fonts.medium,
+    color: "#c084fc",
+    textAlign: "center",
+    letterSpacing: 0.3,
   },
 });
