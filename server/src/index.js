@@ -1,6 +1,8 @@
 import express from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import config from './config/env.js';
 import connectDB from './config/db.js';
 import { initializeSocket } from './services/socket.service.js';
@@ -33,6 +35,8 @@ import locationRoutes from "./routes/location.route.js";
 import externalEventRoutes from "./routes/externalEvent.route.js";
 
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const app = express();
 const httpServer = createServer(app);
 
@@ -53,6 +57,11 @@ app.get('/health', (req, res) => {
     environment: config.server.env
   });
 });
+
+// Public marketing landing page. Served at the domain root so the site loads
+// as a real page for humans (and partners like Ticketmaster) instead of 404ing
+// the way a bare JSON API would. Static files live in server/public.
+app.use(express.static(path.join(__dirname, '../public')));
 
 app.use("/api/", adminRoutes);
 app.use("/api/", authRoutes);
