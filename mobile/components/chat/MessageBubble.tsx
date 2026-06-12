@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  withTiming,
   runOnJS,
   interpolate,
   Extrapolation,
@@ -71,6 +72,10 @@ interface MessageBubbleProps {
   onReactionsChanged?: (messageId: string, reactions: MessageReaction[]) => void;
   /** Fired when the user swipes the message to reply/reference it. */
   onReply?: (message: Message) => void;
+  /** Fired when the quoted reply preview is tapped (jump to original). */
+  onReplyPress?: (messageId: string) => void;
+  /** Briefly flag this bubble after the user jumps to it from a reply. */
+  isHighlighted?: boolean;
 }
 
 /** Short label for a quoted/replied message (handles non-text types). */
@@ -106,6 +111,8 @@ export default function MessageBubble({
   onImagePress,
   onReactionsChanged,
   onReply,
+  onReplyPress,
+  isHighlighted = false,
 }: MessageBubbleProps) {
   const router = useRouter();
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -196,6 +203,17 @@ export default function MessageBubble({
         ),
       },
     ],
+  }));
+
+  // Brief halo when the user jumps to this message from a quoted reply.
+  const highlightOpacity = useSharedValue(0);
+  useEffect(() => {
+    highlightOpacity.value = withTiming(isHighlighted ? 1 : 0, {
+      duration: isHighlighted ? 160 : 450,
+    });
+  }, [isHighlighted]);
+  const highlightStyle = useAnimatedStyle(() => ({
+    opacity: highlightOpacity.value,
   }));
 
   const senderName = message.sender?.username || "";
@@ -430,17 +448,23 @@ export default function MessageBubble({
         return (
           <View>
             {message.replyTo && (
-              <View style={styles.replyContainer}>
+              <TouchableOpacity
+                style={styles.replyContainer}
+                activeOpacity={0.7}
+                onPress={() => message.replyTo && onReplyPress?.(message.replyTo._id)}
+              >
                 <View style={styles.replyBar} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.replyUsername}>
-                    {message.replyTo.sender?.username || "Unknown"}
+                    {message.replyTo.sender?._id === currentUserId
+                      ? "You"
+                      : message.replyTo.sender?.username || "Unknown"}
                   </Text>
                   <Text style={styles.replyText} numberOfLines={2}>
                     {replyPreviewLabel(message.replyTo)}
                   </Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             )}
             <Text style={[styles.messageText, isOwnMessage ? styles.ownText : styles.otherText]}>
               {message.content}
@@ -542,6 +566,10 @@ export default function MessageBubble({
               )}
 
               <View style={{ position: "relative" }}>
+                <Animated.View
+                  style={[styles.highlightFill, highlightStyle]}
+                  pointerEvents="none"
+                />
                 {renderBubble()}
 
                 {/* Reactions chip */}
@@ -650,6 +678,15 @@ const styles = StyleSheet.create({
     borderColor: "rgba(192,132,252,0.45)",
     alignItems: "center",
     justifyContent: "center",
+  },
+  highlightFill: {
+    position: "absolute",
+    top: -6,
+    bottom: -6,
+    left: -10,
+    right: -10,
+    borderRadius: 20,
+    backgroundColor: "rgba(168,85,247,0.22)",
   },
   row: {
     flexDirection: "row",

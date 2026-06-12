@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -57,7 +57,9 @@ export default function ChatScreen() {
   const [editGroupImage, setEditGroupImage] = useState<string | null>(null);
   const [savingGroup, setSavingGroup] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadCurrentUser = async () => {
     try {
@@ -409,6 +411,44 @@ export default function ChatScreen() {
   const messageSections = buildMessageSections(messages);
   const isGroup = chat?.type === "group";
 
+  // Lookup of loaded messages by id, used to "hydrate" a reply preview whose
+  // replyTo.sender wasn't populated by the server (the original is almost
+  // always already loaded since it lives in this same conversation).
+  const messagesById = useMemo(() => {
+    const map = new Map<string, Message>();
+    for (const m of messages) map.set(m._id, m);
+    return map;
+  }, [messages]);
+
+  const hydrateReply = useCallback(
+    (msg: Message): Message => {
+      const r = msg.replyTo;
+      if (r && !r.sender?.username) {
+        const full = messagesById.get(r._id);
+        if (full) return { ...msg, replyTo: full };
+      }
+      return msg;
+    },
+    [messagesById]
+  );
+
+  // Tap a quoted reply → scroll to (and briefly highlight) the original message.
+  const handleReplyPress = useCallback(
+    (messageId: string) => {
+      const index = messageSections.findIndex((it) => it._id === messageId);
+      if (index < 0) return;
+      flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.4 });
+      setHighlightedId(messageId);
+      if (highlightTimer.current) clearTimeout(highlightTimer.current);
+      highlightTimer.current = setTimeout(() => setHighlightedId(null), 1800);
+    },
+    [messageSections]
+  );
+
+  useEffect(() => () => {
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+  }, []);
+
   const renderMessage = ({ item, index }: { item: MessageSection; index: number }) => {
     if ("type" in item && item.type === "date") {
       return (
@@ -434,14 +474,16 @@ export default function ChatScreen() {
 
     return (
       <MessageBubble
-        message={msg}
+        message={hydrateReply(msg)}
         isOwnMessage={isOwnMessage}
         isGroup={!!isGroup}
         showSender={showSender}
         currentUserId={currentUserId}
+        isHighlighted={highlightedId === msg._id}
         onImagePress={(url) => setSelectedImage(url)}
         onReactionsChanged={handleReactionsChanged}
         onReply={setReplyingTo}
+        onReplyPress={handleReplyPress}
       />
     );
   };
@@ -585,6 +627,21 @@ export default function ChatScreen() {
             onContentSizeChange={() =>
               flatListRef.current?.scrollToEnd({ animated: false })
             }
+            onScrollToIndexFailed={(info) => {
+              // Rows have variable heights and no getItemLayout, so a target
+              // that isn't measured yet can fail — approximate, then retry.
+              flatListRef.current?.scrollToOffset({
+                offset: info.averageItemLength * info.index,
+                animated: true,
+              });
+              setTimeout(() => {
+                flatListRef.current?.scrollToIndex({
+                  index: info.index,
+                  animated: true,
+                  viewPosition: 0.4,
+                });
+              }, 250);
+            }}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyEmoji}>👋</Text>
