@@ -468,9 +468,14 @@ export default function MessageBubble({
                   onPress={() => replyId && onReplyPress?.(replyId)}
                 >
                   <View style={styles.replyBar} />
-                  <View style={{ flex: 1 }}>
+                  {/* flexShrink (not flex:1) so the quote sizes to its content
+                      and widens the bubble — otherwise a short message text
+                      collapses the quote to one char per line. */}
+                  <View style={{ flexShrink: 1, minWidth: 0 }}>
                     {!!replyName && (
-                      <Text style={styles.replyUsername}>{replyName}</Text>
+                      <Text style={styles.replyUsername} numberOfLines={1}>
+                        {replyName}
+                      </Text>
                     )}
                     <Text style={styles.replyText} numberOfLines={2}>
                       {replyPreviewLabel(message.replyTo)}
@@ -548,7 +553,7 @@ export default function MessageBubble({
           </View>
         </Animated.View>
 
-        <Animated.View style={rowSwipeStyle}>
+        <Animated.View style={[styles.swipeRow, rowSwipeStyle]}>
           <View style={[styles.row, rowAlign]}>
             {showAvatarSlot && (
               <View style={styles.avatarSlot}>
@@ -672,7 +677,12 @@ export default function MessageBubble({
 const styles = StyleSheet.create({
   swipeWrap: {
     position: "relative",
-    justifyContent: "center",
+    width: "100%",
+  },
+  // The animated row must stay full-width; otherwise the bubble's maxWidth: "78%"
+  // resolves against a collapsed width and the text stacks one char per line.
+  swipeRow: {
+    width: "100%",
   },
   replyIconUnderlay: {
     position: "absolute",
