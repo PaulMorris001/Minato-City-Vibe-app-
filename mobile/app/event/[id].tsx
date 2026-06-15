@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -1483,7 +1484,7 @@ export default function EventDetailsPage() {
           targetUserId={event.createdBy?._id}
           targetUsername={event.createdBy?.username}
           currentUserId={currentUserId}
-          onBlocked={() => router.back()}
+          onBlocked={() => goBack()}
         />
       ) : null}
 

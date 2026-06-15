@@ -10,6 +10,8 @@ interface SocketEvents {
   onNewMessage?: (message: any) => void;
   onMessageRead?: (data: any) => void;
   onMessageReaction?: (data: { chatId: string; messageId: string; reactions: any[] }) => void;
+  onMessageDeleted?: (data: { chatId: string; messageId: string }) => void;
+  onMessageEdited?: (data: { chatId: string; message: any }) => void;
   onChatPinned?: (data: { chatId: string; pinned: boolean }) => void;
   onChatMuted?: (data: { chatId: string; muted: boolean }) => void;
   onTypingStart?: (data: any) => void;
@@ -111,6 +113,14 @@ class SocketService {
 
       this.socket.on("message:reaction", (data) => {
         this.notify("onMessageReaction", data);
+      });
+
+      this.socket.on("message:deleted", (data) => {
+        this.notify("onMessageDeleted", data);
+      });
+
+      this.socket.on("message:edited", (data) => {
+        this.notify("onMessageEdited", data);
       });
 
       this.socket.on("chat:pinned", (data) => {

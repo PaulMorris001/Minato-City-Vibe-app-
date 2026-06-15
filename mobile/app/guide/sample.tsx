@@ -7,6 +7,7 @@ import {
   ScrollView,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 
@@ -91,7 +92,7 @@ export default function SampleGuidePage() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => goBack()}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>

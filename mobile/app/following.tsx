@@ -13,6 +13,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { router, useLocalSearchParams } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { scaleFontSize } from "@/utils/responsive";
 import { capitalize } from "@/libs/helpers";
 import followService, { FollowUser } from "@/services/follow.service";
@@ -103,7 +104,7 @@ export default function FollowingScreen() {
     <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => goBack()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Following</Text>

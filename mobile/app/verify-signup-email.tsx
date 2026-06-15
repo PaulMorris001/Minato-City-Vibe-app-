@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -177,7 +178,7 @@ export default function VerifySignupEmail() {
 
           {/* Top bar */}
           <View style={styles.topBar}>
-            <GlassRoundButton icon="chevron-back" onPress={() => router.back()} />
+            <GlassRoundButton icon="chevron-back" onPress={() => goBack()} />
             <View style={styles.progressPill}>
               <ProgressArc value={1} />
               <Text style={styles.progressLabel}>FINAL STEP</Text>

@@ -270,7 +270,7 @@ class ChatService {
   }
 
   /**
-   * Delete a message for the user
+   * Delete a message for everyone (sender only)
    */
   async deleteMessage(messageId: string): Promise<void> {
     try {
@@ -281,11 +281,45 @@ class ChatService {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to delete message");
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data?.message || "Failed to delete message");
       }
     } catch (error) {
       console.error("Delete message error:", error);
       throw error;
+    }
+  }
+
+  /**
+   * Edit a text message (sender only, within 10 minutes)
+   */
+  async editMessage(messageId: string, content: string): Promise<Message> {
+    const headers = await this.getAuthHeader();
+    const response = await fetch(`${BASE_URL}/messages/${messageId}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ content }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.message || "Failed to edit message");
+    }
+    const data = await response.json();
+    return data.data as Message;
+  }
+
+  /**
+   * Delete (hide) a conversation for the current user
+   */
+  async deleteChat(chatId: string): Promise<void> {
+    const headers = await this.getAuthHeader();
+    const response = await fetch(`${BASE_URL}/chats/${chatId}`, {
+      method: "DELETE",
+      headers,
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.message || "Failed to delete conversation");
     }
   }
 

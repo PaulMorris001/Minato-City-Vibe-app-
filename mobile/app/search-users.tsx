@@ -13,6 +13,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { router } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { BASE_URL } from "@/constants/constants";
 import { scaleFontSize } from "@/utils/responsive";
 import { capitalize } from "@/libs/helpers";
@@ -109,7 +110,7 @@ export default function SearchUsersScreen() {
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => goBack()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Find People</Text>

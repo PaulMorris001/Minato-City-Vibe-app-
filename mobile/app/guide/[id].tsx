@@ -13,6 +13,7 @@ import { createGuideShareLink } from "@/utils/shareLinks";
 import { formatLocation } from "@/utils/location";
 import { toggleGuideSave } from "@/libs/api";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { Guide } from "@/libs/interfaces";
@@ -406,7 +407,7 @@ export default function GuideDetailPage() {
           targetUserId={guide.author?._id}
           targetUsername={guide.author?.username || guide.authorName}
           currentUserId={currentUserId}
-          onBlocked={() => router.back()}
+          onBlocked={() => goBack()}
         />
       ) : null}
 

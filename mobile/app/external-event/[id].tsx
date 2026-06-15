@@ -12,6 +12,7 @@ import {
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as WebBrowser from "expo-web-browser";
@@ -128,7 +129,7 @@ export default function ExternalEventDetail() {
         console.warn("[ExternalEventDetail] load failed:", err);
         if (!cancelled) {
           Alert.alert("Couldn't load event", "Try again later.");
-          router.back();
+          goBack();
         }
       } finally {
         if (!cancelled) setLoading(false);

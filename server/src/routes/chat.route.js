@@ -8,6 +8,8 @@ import {
   getChatMessages,
   markMessagesAsRead,
   deleteMessage,
+  editMessage,
+  deleteChat,
   searchChatsAndMessages,
   updateGroupChat,
   toggleMessageReaction,
@@ -49,8 +51,14 @@ router.get("/chats/:chatId/messages", authenticate, getChatMessages);
 // Mark messages as read
 router.put("/chats/:chatId/read", authenticate, markMessagesAsRead);
 
-// Delete message for user
+// Delete message for everyone (sender only)
 router.delete("/messages/:messageId", authenticate, deleteMessage);
+
+// Edit a text message (sender only, within 10 minutes)
+router.put("/messages/:messageId", authenticate, editMessage);
+
+// Delete (hide) a conversation for the user
+router.delete("/chats/:chatId", authenticate, deleteChat);
 
 // Toggle reaction on a message
 router.post("/messages/:messageId/reactions", authenticate, toggleMessageReaction);

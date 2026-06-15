@@ -39,6 +39,9 @@ const CH_BG = "#0B0613";
 
 const QUICK_REACTIONS = ["❤️", "✨", "🔥", "👍", "😂"];
 
+// Messages can only be edited within 10 minutes of being sent.
+const EDIT_WINDOW_MS = 10 * 60 * 1000;
+
 const SENDER_PALETTE = [
   "#A855F7",
   "#7C3AED",
@@ -70,6 +73,10 @@ interface MessageBubbleProps {
   currentUserId?: string;
   onImagePress?: (imageUrl: string) => void;
   onReactionsChanged?: (messageId: string, reactions: MessageReaction[]) => void;
+  /** Fired when the user picks "Edit" from the long-press menu (own text messages). */
+  onEdit?: (message: Message) => void;
+  /** Fired when the user confirms "Delete" from the long-press menu (own messages). */
+  onDelete?: (message: Message) => void;
   /** Fired when the user swipes the message to reply/reference it. */
   onReply?: (message: Message) => void;
   /** Fired when the quoted reply preview is tapped (jump to original). */
@@ -114,12 +121,16 @@ export default function MessageBubble({
   currentUserId,
   onImagePress,
   onReactionsChanged,
+  onEdit,
+  onDelete,
   onReply,
   onReplyPress,
   isHighlighted = false,
 }: MessageBubbleProps) {
   const router = useRouter();
   const [pickerVisible, setPickerVisible] = useState(false);
+  // Long-press menu has two stages: the action list, then the emoji picker.
+  const [menuMode, setMenuMode] = useState<"actions" | "react">("actions");
 
   // System messages render as centered pill
   if (message.type === "system") {
@@ -224,7 +235,21 @@ export default function MessageBubble({
   const senderInitial = senderName.charAt(0).toUpperCase() || "?";
   const senderTint = senderColor(message.sender?._id || senderName);
 
-  const handleLongPress = () => setPickerVisible(true);
+  // A pending (temp) message has no server id yet — no actions until it lands.
+  const isTemp = message._id.startsWith("temp_");
+  const withinEditWindow =
+    Date.now() - new Date(message.createdAt).getTime() <= EDIT_WINDOW_MS;
+  const canEdit =
+    isOwnMessage && !isTemp && message.type === "text" && withinEditWindow;
+  const canDelete = isOwnMessage && !isTemp;
+
+  const handleLongPress = () => {
+    if (isTemp) return;
+    // With no edit/delete options (e.g. someone else's message) go straight to
+    // the emoji picker instead of a one-row menu.
+    setMenuMode(canEdit || canDelete ? "actions" : "react");
+    setPickerVisible(true);
+  };
 
   const handleToggleReaction = async (emoji: string) => {
     setPickerVisible(false);
@@ -234,6 +259,23 @@ export default function MessageBubble({
     } catch (err: any) {
       Alert.alert("Error", err?.message || "Couldn't react");
     }
+  };
+
+  const handleEdit = () => {
+    setPickerVisible(false);
+    onEdit?.(message);
+  };
+
+  const handleDelete = () => {
+    setPickerVisible(false);
+    Alert.alert(
+      "Delete message",
+      "This message will be removed for everyone. This can't be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => onDelete?.(message) },
+      ]
+    );
   };
 
   const handleEventPress = () => {
@@ -645,7 +687,7 @@ export default function MessageBubble({
               </View>
             </View>
 
-            {/* Quick reaction picker */}
+            {/* Long-press menu — actions first, then the emoji picker */}
             <Modal
               visible={pickerVisible}
               transparent
@@ -653,18 +695,61 @@ export default function MessageBubble({
               onRequestClose={() => setPickerVisible(false)}
             >
               <Pressable style={styles.pickerOverlay} onPress={() => setPickerVisible(false)}>
-                <View style={styles.pickerPill}>
-                  {QUICK_REACTIONS.map((e) => (
+                {menuMode === "react" ? (
+                  <View style={styles.pickerPill}>
+                    {QUICK_REACTIONS.map((e) => (
+                      <TouchableOpacity
+                        key={e}
+                        style={styles.pickerEmoji}
+                        onPress={() => handleToggleReaction(e)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.pickerEmojiText}>{e}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={styles.actionMenu}>
+                    {canEdit && (
+                      <>
+                        <TouchableOpacity
+                          style={styles.actionRow}
+                          onPress={handleEdit}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="create-outline" size={18} color={CH_TEXT} />
+                          <Text style={styles.actionLabel}>Edit</Text>
+                        </TouchableOpacity>
+                        <View style={styles.actionDivider} />
+                      </>
+                    )}
+
                     <TouchableOpacity
-                      key={e}
-                      style={styles.pickerEmoji}
-                      onPress={() => handleToggleReaction(e)}
+                      style={styles.actionRow}
+                      onPress={() => setMenuMode("react")}
                       activeOpacity={0.7}
                     >
-                      <Text style={styles.pickerEmojiText}>{e}</Text>
+                      <Ionicons name="happy-outline" size={18} color={CH_TEXT} />
+                      <Text style={styles.actionLabel}>React</Text>
                     </TouchableOpacity>
-                  ))}
-                </View>
+
+                    {canDelete && (
+                      <>
+                        <View style={styles.actionDivider} />
+                        <TouchableOpacity
+                          style={styles.actionRow}
+                          onPress={handleDelete}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                          <Text style={[styles.actionLabel, styles.actionLabelDanger]}>
+                            Delete
+                          </Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                )}
               </Pressable>
             </Modal>
           </View>
@@ -1016,6 +1101,39 @@ const styles = StyleSheet.create({
   },
   pickerEmojiText: {
     fontSize: 26,
+  },
+
+  // Long-press action menu (Edit / React / Delete)
+  actionMenu: {
+    minWidth: 230,
+    borderRadius: 16,
+    backgroundColor: "rgba(26,16,48,0.98)",
+    borderWidth: 1,
+    borderColor: CH_STROKE_HI,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+  },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+  },
+  actionLabel: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 15,
+    color: CH_TEXT,
+  },
+  actionLabelDanger: {
+    color: "#ef4444",
+  },
+  actionDivider: {
+    height: 1,
+    backgroundColor: CH_STROKE,
   },
 });
 

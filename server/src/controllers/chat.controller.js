@@ -179,18 +179,56 @@ export const markMessagesAsRead = async (req, res) => {
   }
 };
 
-// Delete message for user
+// Delete a message for everyone (sender only)
 export const deleteMessage = async (req, res) => {
   try {
     const userId = req.user.id;
     const { messageId } = req.params;
 
-    await ChatService.deleteMessageForUser(messageId, userId);
+    await ChatService.deleteMessage(messageId, userId);
 
+    // Previews may have changed for every participant.
+    invalidateCachePattern('user_chats_');
     res.status(200).json({ message: "Message deleted successfully" });
   } catch (error) {
     console.error("Delete message error:", error);
-    res.status(500).json({ message: error.message || "Error deleting message" });
+    const status = error.statusCode || 500;
+    res.status(status).json({ message: error.message || "Error deleting message" });
+  }
+};
+
+// Edit a text message (sender only, within 10 minutes)
+export const editMessage = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { messageId } = req.params;
+    const { content } = req.body;
+
+    const message = await ChatService.editMessage(messageId, userId, content);
+
+    invalidateCachePattern('user_chats_');
+    res.status(200).json({ message: "Message updated", data: message });
+  } catch (error) {
+    console.error("Edit message error:", error);
+    const status = error.statusCode || 500;
+    res.status(status).json({ message: error.message || "Error editing message" });
+  }
+};
+
+// Delete (hide) a conversation for the authenticated user
+export const deleteChat = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { chatId } = req.params;
+
+    await ChatService.deleteChatForUser(chatId, userId);
+
+    invalidateCache(`user_chats_${userId}`);
+    res.status(200).json({ message: "Conversation deleted" });
+  } catch (error) {
+    console.error("Delete chat error:", error);
+    const status = error.statusCode || 500;
+    res.status(status).json({ message: error.message || "Error deleting conversation" });
   }
 };
 

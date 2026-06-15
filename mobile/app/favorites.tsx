@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import * as SecureStore from "expo-secure-store";
@@ -104,7 +105,7 @@ export default function FavoritesPage() {
         colors={["#0f0f1a", "#1a1a2e", "#16213e"]}
         style={styles.header}
       >
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => goBack()}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerContent}>

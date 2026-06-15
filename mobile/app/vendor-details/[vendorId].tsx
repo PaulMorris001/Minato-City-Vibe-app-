@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { fetchVendorServices } from "@/libs/api";
 import {
   View,
@@ -481,7 +482,7 @@ export default function VendorDetails() {
         style={styles.header}
       >
         <View style={styles.headerContent}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => goBack()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
           <View style={styles.titleContainer}>

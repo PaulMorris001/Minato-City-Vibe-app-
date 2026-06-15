@@ -10,6 +10,7 @@ import {
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { Colors } from "@/constants/colors";
@@ -62,7 +63,7 @@ export default function ScanScreen() {
     <View style={styles.container}>
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => goBack()} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.title}>Scan QR</Text>

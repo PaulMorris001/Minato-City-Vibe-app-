@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import {
   View,
   Text,
@@ -118,7 +119,7 @@ export default function VerifyOTP() {
         {/* Back Button */}
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => goBack()}
           activeOpacity={0.7}
         >
           <Ionicons name="arrow-back" size={24} color="#a855f7" />

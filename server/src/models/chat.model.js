@@ -78,6 +78,13 @@ const chatSchema = mongoose.Schema({
     ref: "user"
   }],
 
+  // Users who have deleted (hidden) this chat from their inbox.
+  // Cleared on new activity so the conversation re-surfaces with new messages.
+  deletedFor: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "user"
+  }],
+
   isActive: {
     type: Boolean,
     default: true

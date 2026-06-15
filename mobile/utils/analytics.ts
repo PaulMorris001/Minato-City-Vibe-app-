@@ -9,6 +9,9 @@ export type AnalyticsEvent =
   | "ticket_purchased"
   | "chat_opened"
   | "message_sent"
+  | "message_edited"
+  | "message_deleted"
+  | "conversation_deleted"
   | "event_created"
   | "search_performed";
 

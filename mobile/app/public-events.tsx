@@ -16,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import * as SecureStore from "expo-secure-store";
 import * as Haptics from "expo-haptics";
 import { BASE_URL } from "@/constants/constants";
@@ -637,7 +638,7 @@ export default function PublicEventsPage() {
         {/* Pinned header */}
         <View style={styles.header}>
           <View style={styles.headerTopRow}>
-            <TouchableOpacity style={styles.circleBtn} onPress={() => router.back()} hitSlop={6}>
+            <TouchableOpacity style={styles.circleBtn} onPress={() => goBack()} hitSlop={6}>
               <Ionicons name="arrow-back" size={20} color={AU.text} />
             </TouchableOpacity>
             <TouchableOpacity

@@ -15,7 +15,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
+import { goHome } from "@/utils/navigation";
 import ChatListItem from "@/components/chat/ChatListItem";
 import { Avatar } from "@/components/shared/Avatar";
 import chatService, { Chat } from "@/services/chat.service";
@@ -191,10 +192,32 @@ export default function MessagesScreen() {
           })
         );
       },
+      onMessageEdited: ({ chatId, message }) => {
+        setChats((prev) =>
+          prev.map((c) =>
+            c._id === chatId && c.lastMessage?._id === message._id
+              ? { ...c, lastMessage: { ...c.lastMessage, ...message } }
+              : c
+          )
+        );
+      },
+      onMessageDeleted: () => {
+        // A message was deleted for everyone — the server may have repointed a
+        // chat's preview, so refetch to keep the inbox list accurate.
+        fetchChats(true);
+      },
     });
 
     return () => socketService.off("messages-screen");
   }, [currentUserId]);
+
+  // Refetch when the inbox regains focus (e.g. returning from a chat after
+  // deleting a conversation) so hidden chats drop out immediately.
+  useFocusEffect(
+    useCallback(() => {
+      if (currentUserId) fetchChats(true);
+    }, [currentUserId])
+  );
 
   useEffect(() => {
     if (!chats) return;
@@ -349,7 +372,7 @@ export default function MessagesScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} activeOpacity={0.7}>
+            <TouchableOpacity onPress={() => goHome()} style={styles.iconBtn} activeOpacity={0.7}>
               <Ionicons name="chevron-back" size={18} color={CH_TEXT} />
             </TouchableOpacity>
             <View>

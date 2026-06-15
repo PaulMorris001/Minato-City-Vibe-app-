@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
@@ -88,7 +89,7 @@ export default function VerifyEmail() {
         const msg = err?.response?.data?.message;
         // 400 "already verified" — bounce back, the section will refresh.
         if (status === 400 && /already verified/i.test(msg || "")) {
-          router.back();
+          goBack();
           return;
         }
         setInitialSendError(msg || "Couldn't send the verification code. Try resending below.");
@@ -133,7 +134,7 @@ export default function VerifyEmail() {
           await SecureStore.setItemAsync("user", JSON.stringify(u));
         }
         Alert.alert("Verified", "Your email is verified.", [
-          { text: "Done", onPress: () => router.back() },
+          { text: "Done", onPress: () => goBack() },
         ]);
       }
     } catch (err: any) {
@@ -197,7 +198,7 @@ export default function VerifyEmail() {
 
             {/* Top bar — back only */}
             <View style={styles.topBar}>
-              <GlassRoundButton icon="chevron-back" onPress={() => router.back()} />
+              <GlassRoundButton icon="chevron-back" onPress={() => goBack()} />
               <View style={{ width: 38 }} />
             </View>
 

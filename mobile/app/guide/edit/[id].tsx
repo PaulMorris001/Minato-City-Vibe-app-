@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { GUIDE_TOPICS, GuideSection, Guide, LocationSelection } from "@/libs/interfaces";
@@ -61,12 +62,12 @@ export default function CreateGuidePage() {
         setGuide(data.guide);
       } else {
         Alert.alert("Error", data.message || "Failed to load guide");
-        router.back();
+        goBack();
       }
     } catch (error) {
       console.error("Failed to fetch guide:", error);
       Alert.alert("Error", "Failed to load guide");
-      router.back();
+      goBack();
     } finally {
       setLoading(false);
     }
@@ -232,7 +233,7 @@ export default function CreateGuidePage() {
           [
             {
               text: "OK",
-              onPress: () => router.back(),
+              onPress: () => goBack(),
             },
           ]
         );
@@ -253,7 +254,7 @@ export default function CreateGuidePage() {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.back()}
+            onPress={() => goBack()}
           >
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
@@ -275,7 +276,7 @@ export default function CreateGuidePage() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => goBack()}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>

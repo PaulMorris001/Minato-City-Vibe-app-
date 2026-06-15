@@ -59,6 +59,7 @@ export default function ChatScreen() {
   const [editGroupImage, setEditGroupImage] = useState<string | null>(null);
   const [savingGroup, setSavingGroup] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -180,6 +181,16 @@ export default function ChatScreen() {
           prev.map((m) => (m._id === messageId ? { ...m, reactions } : m))
         );
       },
+      onMessageDeleted: ({ chatId, messageId }) => {
+        if (chatId !== id) return;
+        setMessages((prev) => prev.filter((m) => m._id !== messageId));
+      },
+      onMessageEdited: ({ chatId, message }) => {
+        if (chatId !== id) return;
+        setMessages((prev) =>
+          prev.map((m) => (m._id === message._id ? { ...m, ...message } : m))
+        );
+      },
     });
 
     socketService.on("chat-screen-group", {
@@ -299,6 +310,96 @@ export default function ChatScreen() {
   const handleReactionsChanged = (messageId: string, reactions: MessageReaction[]) => {
     setMessages((prev) =>
       prev.map((m) => (m._id === messageId ? { ...m, reactions } : m))
+    );
+  };
+
+  // Enter edit mode for one of the user's own messages. Clears any reply draft
+  // so the two composer modes never overlap.
+  const handleEditMessage = (message: Message) => {
+    setReplyingTo(null);
+    setEditingMessage(message);
+  };
+
+  // Delete a message for everyone (sender only). Optimistically remove it; the
+  // socket broadcast keeps every other participant in sync.
+  const handleDeleteMessage = async (message: Message) => {
+    if (editingMessage?._id === message._id) setEditingMessage(null);
+    const snapshot = messages;
+    setMessages((prev) => prev.filter((m) => m._id !== message._id));
+    try {
+      await chatService.deleteMessage(message._id);
+      trackEvent("message_deleted", { chatId: id });
+    } catch (error: any) {
+      console.error("Error deleting message:", error);
+      setMessages(snapshot); // restore on failure
+      Alert.alert("Couldn't delete", error?.message || "Please try again.");
+    }
+  };
+
+  // Save an edit. Optimistically update content, then reconcile with the server.
+  const handleSubmitEdit = async (message: Message, content: string) => {
+    const trimmed = content.trim();
+    setEditingMessage(null);
+    if (!trimmed || trimmed === message.content) return;
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m._id === message._id ? { ...m, content: trimmed, isEdited: true } : m
+      )
+    );
+    try {
+      const updated = await chatService.editMessage(message._id, trimmed);
+      setMessages((prev) =>
+        prev.map((m) => (m._id === updated._id ? { ...m, ...updated } : m))
+      );
+      trackEvent("message_edited", { chatId: id });
+    } catch (error: any) {
+      console.error("Error editing message:", error);
+      // Revert to the original content on failure.
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === message._id
+            ? { ...m, content: message.content, isEdited: message.isEdited }
+            : m
+        )
+      );
+      Alert.alert("Couldn't edit", error?.message || "Please try again.");
+    }
+  };
+
+  // The composer's submit routes to edit when a message is being edited.
+  const handleComposerSubmit = (content: string) => {
+    if (editingMessage) {
+      handleSubmitEdit(editingMessage, content);
+    } else {
+      handleSendMessage(content);
+    }
+  };
+
+  // Delete (hide) this whole conversation for the current user, then leave.
+  const handleDeleteConversation = () => {
+    if (!chat) return;
+    Alert.alert(
+      "Delete conversation",
+      "This removes the conversation from your inbox. It reappears if someone sends a new message.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await chatService.deleteChat(chat._id);
+              setSettingsVisible(false);
+              trackEvent("conversation_deleted", { chatId: chat._id });
+              if (router.canGoBack()) router.back();
+              else router.replace("/messages");
+            } catch (error: any) {
+              Alert.alert("Couldn't delete", error?.message || "Please try again.");
+            }
+          },
+        },
+      ]
     );
   };
 
@@ -604,6 +705,8 @@ export default function ChatScreen() {
         isHighlighted={highlightedId === msg._id}
         onImagePress={(url) => setSelectedImage(url)}
         onReactionsChanged={handleReactionsChanged}
+        onEdit={handleEditMessage}
+        onDelete={handleDeleteMessage}
         onReply={setReplyingTo}
         onReplyPress={handleReplyPress}
       />
@@ -782,12 +885,14 @@ export default function ChatScreen() {
 
           {/* Composer */}
           <ChatInput
-            onSend={handleSendMessage}
+            onSend={handleComposerSubmit}
             onImagePick={handleImagePick}
             onTypingChange={(isTyping) => socketService.sendTyping(id, isTyping)}
             disabled={sending}
             replyingTo={replyingTo}
             onCancelReply={() => setReplyingTo(null)}
+            editingMessage={editingMessage}
+            onCancelEdit={() => setEditingMessage(null)}
             currentUserId={currentUserId}
           />
         </KeyboardAvoidingView>
@@ -958,6 +1063,16 @@ export default function ChatScreen() {
                   ))}
                 </>
               )}
+
+              {/* Danger zone — delete (hide) this conversation */}
+              <TouchableOpacity
+                style={styles.deleteChatRow}
+                onPress={handleDeleteConversation}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                <Text style={styles.deleteChatText}>Delete conversation</Text>
+              </TouchableOpacity>
             </ScrollView>
           </View>
         </View>
@@ -1404,6 +1519,23 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: CH_TEXT_DIM,
     marginTop: 2,
+  },
+  deleteChatRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 24,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: "rgba(239,68,68,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.28)",
+  },
+  deleteChatText: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 14,
+    color: "#ef4444",
   },
   evImagePicker: {
     width: "100%",

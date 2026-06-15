@@ -11,6 +11,7 @@ import {
   Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { GUIDE_TOPICS, GuideSection, LocationSelection } from "@/libs/interfaces";
@@ -176,7 +177,7 @@ export default function CreateGuidePage() {
           [
             {
               text: "OK",
-              onPress: () => router.back(),
+              onPress: () => goBack(),
             },
           ]
         );
@@ -197,7 +198,7 @@ export default function CreateGuidePage() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => goBack()}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Create Guide</Text>

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -21,6 +21,9 @@ interface ChatInputProps {
   /** Message being replied to, shown as a preview strip above the input. */
   replyingTo?: Message | null;
   onCancelReply?: () => void;
+  /** Message being edited — pre-fills the input and switches Send into Save. */
+  editingMessage?: Message | null;
+  onCancelEdit?: () => void;
   currentUserId?: string;
 }
 
@@ -32,11 +35,18 @@ export default function ChatInput({
   disabled = false,
   replyingTo,
   onCancelReply,
+  editingMessage,
+  onCancelEdit,
   currentUserId,
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
+
+  // Entering edit mode pre-fills the composer; leaving it clears the draft.
+  useEffect(() => {
+    setMessage(editingMessage ? editingMessage.content || "" : "");
+  }, [editingMessage]);
 
   const handleTextChange = (text: string) => {
     setMessage(text);
@@ -76,6 +86,27 @@ export default function ChatInput({
 
   return (
     <View style={styles.outer}>
+      {editingMessage && (
+        <View style={styles.replyPreview}>
+          <Ionicons name="create-outline" size={16} color={CH_PURPLE_SOFT} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.replyName} numberOfLines={1}>
+              Editing message
+            </Text>
+            <Text style={styles.replyText} numberOfLines={1}>
+              {editingMessage.content}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={onCancelEdit}
+            hitSlop={10}
+            activeOpacity={0.7}
+            style={styles.replyClose}
+          >
+            <Ionicons name="close" size={16} color={CH_TEXT_MUTE} />
+          </TouchableOpacity>
+        </View>
+      )}
       {replyingTo && (
         <View style={styles.replyPreview}>
           <View style={styles.replyBar} />
@@ -104,7 +135,7 @@ export default function ChatInput({
             style={styles.input}
             value={message}
             onChangeText={handleTextChange}
-            placeholder={placeholder}
+            placeholder={editingMessage ? "Edit message…" : placeholder}
             placeholderTextColor={CH_TEXT_MUTE}
             multiline
             maxLength={1000}
@@ -139,7 +170,7 @@ export default function ChatInput({
             end={{ x: 1, y: 1 }}
             style={styles.sendButton}
           >
-            <Ionicons name="paper-plane" size={16} color="#fff" />
+            <Ionicons name={editingMessage ? "checkmark" : "paper-plane"} size={16} color="#fff" />
           </LinearGradient>
         </TouchableOpacity>
       </View>

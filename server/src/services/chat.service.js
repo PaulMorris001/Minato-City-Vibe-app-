@@ -101,7 +101,8 @@ class ChatService {
   async getUserChats(userId) {
     const chats = await Chat.find({
       participants: userId,
-      isActive: true
+      isActive: true,
+      deletedFor: { $ne: userId }
     })
       .populate('participants', 'username email profilePicture')
       .populate('admins', 'username email profilePicture')
@@ -162,6 +163,11 @@ class ChatService {
 
     // Update chat's last message and unread counts
     chat.lastMessage = message._id;
+
+    // New activity re-surfaces the conversation for anyone who had deleted it.
+    if (chat.deletedFor && chat.deletedFor.length) {
+      chat.deletedFor = [];
+    }
 
     // Increment unread count for all participants except sender
     chat.participants.forEach(participantId => {
@@ -308,18 +314,150 @@ class ChatService {
   }
 
   /**
-   * Delete message for user
+   * Delete a message for everyone. Only the sender may delete their own message.
+   * Soft-deletes (isDeleted) so it's filtered everywhere, and broadcasts so the
+   * message disappears in real time for everyone in the chat.
    */
-  async deleteMessageForUser(messageId, userId) {
+  async deleteMessage(messageId, userId) {
     const message = await Message.findById(messageId);
     if (!message) {
-      throw new Error('Message not found');
+      const err = new Error('Message not found');
+      err.statusCode = 404;
+      throw err;
     }
 
-    if (!message.deletedFor.includes(userId)) {
-      message.deletedFor.push(userId);
-      await message.save();
+    if (message.sender.toString() !== userId.toString()) {
+      const err = new Error('You can only delete your own messages');
+      err.statusCode = 403;
+      throw err;
     }
+
+    message.isDeleted = true;
+    await message.save();
+
+    // If this was the chat's preview message, repoint it to the previous
+    // visible one so the inbox list doesn't show a deleted message.
+    const chat = await Chat.findById(message.chat);
+    if (chat && chat.lastMessage && chat.lastMessage.toString() === message._id.toString()) {
+      const prev = await Message.findOne({
+        chat: chat._id,
+        isDeleted: false,
+        _id: { $ne: message._id }
+      }).sort({ createdAt: -1 });
+      chat.lastMessage = prev ? prev._id : undefined;
+      await chat.save();
+    }
+
+    const io = getSocketInstance();
+    if (io) {
+      const payload = {
+        chatId: message.chat.toString(),
+        messageId: message._id.toString()
+      };
+      io.to(`chat:${message.chat.toString()}`).emit("message:deleted", payload);
+      // Personal rooms so the chat-list preview refreshes even when the
+      // recipient isn't inside the conversation.
+      if (chat) {
+        chat.participants.forEach((pid) => {
+          io.to(`user:${pid.toString()}`).emit("message:deleted", payload);
+        });
+      }
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Edit a text message. Sender-only, text-only, within a 10 minute window.
+   */
+  async editMessage(messageId, userId, content) {
+    if (!content || !content.trim()) {
+      const err = new Error('Message content is required');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const message = await Message.findById(messageId);
+    if (!message) {
+      const err = new Error('Message not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    if (message.sender.toString() !== userId.toString()) {
+      const err = new Error('You can only edit your own messages');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    if (message.type !== 'text') {
+      const err = new Error('Only text messages can be edited');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const EDIT_WINDOW_MS = 10 * 60 * 1000;
+    if (Date.now() - new Date(message.createdAt).getTime() > EDIT_WINDOW_MS) {
+      const err = new Error('This message can no longer be edited (10 minute limit).');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    message.content = content.trim();
+    message.isEdited = true;
+    message.editedAt = new Date();
+    await message.save();
+
+    await message.populate('sender', 'username email profilePicture');
+    await message.populate({
+      path: 'replyTo',
+      populate: { path: 'sender', select: 'username profilePicture' }
+    });
+    await message.populate('event');
+    await message.populate('guide', 'title authorName city cityState topic price');
+    await message.populate('reactions.user', 'username profilePicture');
+
+    const io = getSocketInstance();
+    if (io) {
+      io.to(`chat:${message.chat.toString()}`).emit("message:edited", {
+        chatId: message.chat.toString(),
+        message
+      });
+    }
+
+    return message;
+  }
+
+  /**
+   * Delete (hide) a conversation for one user. Their existing messages are
+   * cleared from their view and the chat drops out of their inbox until new
+   * activity re-surfaces it. Other participants are unaffected.
+   */
+  async deleteChatForUser(chatId, userId) {
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      const err = new Error('Chat not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    if (!chat.participants.some(p => p.toString() === userId.toString())) {
+      const err = new Error("You don't have access to this chat");
+      err.statusCode = 403;
+      throw err;
+    }
+
+    if (!chat.deletedFor.some(u => u.toString() === userId.toString())) {
+      chat.deletedFor.push(userId);
+    }
+    chat.unreadCount.set(userId.toString(), 0);
+    await chat.save();
+
+    // Clear existing messages for this user so a re-surfaced chat starts clean.
+    await Message.updateMany(
+      { chat: chatId },
+      { $addToSet: { deletedFor: userId } }
+    );
 
     return { success: true };
   }

@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
@@ -64,7 +65,7 @@ export default function TermsScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       <LinearGradient colors={["#0f0f1a", "#1a1a2e", "#16213e"]} style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => goBack()}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <View>

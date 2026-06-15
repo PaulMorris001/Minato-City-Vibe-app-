@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useRouter } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import {
   View,
   Text,
@@ -80,7 +81,7 @@ export default function ForgotPassword() {
         {/* Back Button */}
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => goBack()}
           activeOpacity={0.7}
         >
           <Ionicons name="arrow-back" size={24} color="#a855f7" />
@@ -120,7 +121,7 @@ export default function ForgotPassword() {
         <View style={styles.footer}>
           <Text style={styles.footerText}>
             Remember your password?{" "}
-            <Text style={styles.link} onPress={() => router.back()}>
+            <Text style={styles.link} onPress={() => goBack()}>
               Back to Login
             </Text>
           </Text>

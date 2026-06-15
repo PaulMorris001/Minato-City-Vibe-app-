@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
@@ -185,7 +186,7 @@ export default function TicketsScreen() {
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => goBack()} style={styles.backButton} activeOpacity={0.7}>
             <Ionicons name="chevron-back" size={18} color={TK_TEXT} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
