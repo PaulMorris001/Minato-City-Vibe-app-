@@ -5,6 +5,7 @@ import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
 import Ticket from "../models/ticket.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
+import { issueEventPass } from "../services/pass.service.js";
 import { invalidateCachePattern } from "../utils/cache.js";
 
 const PLATFORM_FEE_PERCENT = config.stripe.platformFeePercent; // e.g. 10
@@ -461,6 +462,11 @@ export const confirmTicketPurchase = async (req, res) => {
       sellerNetCents,
     });
 
+    // Issue the attendance pass + email the QR ticket (fire-and-forget).
+    issueEventPass({ userId, eventId, type: "ticket", ticketId: ticket._id }).catch(
+      (e) => console.error("issueEventPass (stripe confirm) failed:", e)
+    );
+
     // Surface the buyer as a confirmed attendee so the event's going-count,
     // capacity % and friends-going stats reflect reality immediately.
     let listsChanged = false;
@@ -712,7 +718,7 @@ export const stripeWebhook = async (req, res) => {
         if (!existing) {
           const evt = await Event.findById(eventId);
           if (evt) {
-            await Ticket.create({
+            const webhookTicket = await Ticket.create({
               event: eventId,
               user: buyerId,
               ticketPrice: evt.ticketPrice,
@@ -720,6 +726,16 @@ export const stripeWebhook = async (req, res) => {
               platformFeeCents: Number(paymentIntent.metadata?.platformFeeCents || 0),
               sellerNetCents: Number(paymentIntent.metadata?.sellerNetCents || 0),
             });
+
+            // Issue the attendance pass + email the QR ticket (fire-and-forget).
+            issueEventPass({
+              userId: buyerId,
+              eventId,
+              type: "ticket",
+              ticketId: webhookTicket._id,
+            }).catch((e) =>
+              console.error("issueEventPass (stripe webhook) failed:", e)
+            );
 
             let listsChanged = false;
             if (!evt.rsvpUsers.some((id) => id.toString() === buyerId)) {

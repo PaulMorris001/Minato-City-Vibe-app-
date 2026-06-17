@@ -10,8 +10,9 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter, useFocusEffect } from "expo-router";
-import { goBack } from "@/utils/navigation";
+import { useRouter, useFocusEffect, useNavigation } from "expo-router";
+import { CommonActions } from "@react-navigation/native";
+import { goBack, resetToAccountRoot } from "@/utils/navigation";
 import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
@@ -24,6 +25,7 @@ import { uploadImage } from "@/utils/imageUpload";
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { activeAccount, switchAccount } = useAccount();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -118,6 +120,28 @@ export default function SettingsScreen() {
     }
   };
 
+  // Reset the navigation tree so the target account's root is the ONLY thing in
+  // history. This both fixes the vendor→client "dead tabs" bug (a lingering
+  // (vendor) layout was re-firing its redirect and clobbering the tab
+  // navigator) and satisfies the requirement that the hardware back button
+  // can't return to the previous account type.
+  const resetToAccount = (type: "client" | "vendor") => {
+    const targetGroup = type === "vendor" ? "(vendor)" : "(tabs)";
+    try {
+      navigation.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: targetGroup }],
+        })
+      );
+    } catch (err) {
+      // If the route name doesn't resolve for any reason, fall back to a
+      // dismiss-all + replace, which still clears pushed screens like Settings.
+      console.warn("Account reset failed, falling back to replace:", err);
+      resetToAccountRoot(type);
+    }
+  };
+
   const handleSwitchAccount = () => {
     if (!user.isVendor) {
       Alert.alert(
@@ -127,17 +151,25 @@ export default function SettingsScreen() {
       return;
     }
 
-    const switchingToClient = activeAccount === "vendor";
-    switchAccount();
+    const target: "client" | "vendor" =
+      activeAccount === "vendor" ? "client" : "vendor";
 
-    // client → vendor is handled by the tabs layout effect, so we let that
-    // navigate (adding one here too would double-navigate). But the vendor
-    // layout intentionally suppresses its redirect while settings is open, so
-    // for vendor → client we navigate to the client side ourselves — otherwise
-    // the switch doesn't take effect until you leave settings.
-    if (switchingToClient) {
-      router.replace("/(tabs)/home");
-    }
+    Alert.alert(
+      target === "vendor" ? "Switch to Vendor account?" : "Switch to Client account?",
+      target === "vendor"
+        ? "You'll be taken to your vendor dashboard."
+        : "You'll be taken to the client app.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Switch",
+          onPress: async () => {
+            await switchAccount(target);
+            resetToAccount(target);
+          },
+        },
+      ]
+    );
   };
 
   const handleSaveProfile = async () => {

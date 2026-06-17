@@ -10,7 +10,7 @@ import {
   StatusBar,
   Image,
 } from "react-native";
-import { Stack, useRouter, useFocusEffect, usePathname } from "expo-router";
+import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as SecureStore from "expo-secure-store";
@@ -21,7 +21,7 @@ import { BASE_URL } from "@/constants/constants";
 import { useAccount } from "@/contexts/AccountContext";
 
 export default function VendorLayout() {
-  const { activeAccount, setActiveAccount } = useAccount();
+  const { setActiveAccount } = useAccount();
   const [user, setUser] = useState<{
     id: string;
     username: string;
@@ -37,7 +37,6 @@ export default function VendorLayout() {
   });
   const [isProfileModalVisible, setIsProfileModalVisible] = useState(false);
   const router = useRouter();
-  const pathname = usePathname();
 
   const fetchUserProfile = async () => {
     try {
@@ -66,10 +65,12 @@ export default function VendorLayout() {
     }
   };
 
+  // Entry into the vendor layout always happens *after* the caller has already
+  // set the active account to "vendor" (login role picker, become-vendor,
+  // settings switch, or the tabs launch-restore redirect). So we no longer set
+  // it here — doing so was a side effect that raced with switching away.
   useEffect(() => {
     fetchUserProfile();
-    // Set active account to vendor when entering vendor layout
-    setActiveAccount("vendor");
   }, []);
 
   useFocusEffect(
@@ -78,13 +79,11 @@ export default function VendorLayout() {
     }, [])
   );
 
-  // Separate effect for account switching to avoid conflicts with settings navigation
-  useEffect(() => {
-    // Only redirect if we're not on the settings page
-    if (activeAccount === "client" && !pathname.includes("settings")) {
-      router.replace("/(tabs)/home" as any);
-    }
-  }, [activeAccount, pathname]);
+  // NOTE: the old "redirect to /(tabs)/home when activeAccount === client"
+  // effect was removed. Switching to client now does a full navigation reset
+  // (see settings.tsx → resetToAccount), which unmounts this layout entirely.
+  // Keeping a reactive redirect here caused the lingering vendor layout to
+  // re-fire router.replace and break the client tab navigator.
 
   const handleProfilePress = () => {
     setIsProfileModalVisible(true);

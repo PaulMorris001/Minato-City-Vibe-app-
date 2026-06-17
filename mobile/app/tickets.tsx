@@ -193,6 +193,14 @@ export default function TicketsScreen() {
             <Text style={styles.headerTitle}>My Tickets</Text>
             <Text style={styles.headerSubtitle}>Tickets & service bookings</Text>
           </View>
+          <TouchableOpacity
+            onPress={() => router.push("/passes" as any)}
+            style={styles.passesButton}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="qr-code-outline" size={16} color={TK_PURPLE_SOFT} />
+            <Text style={styles.passesButtonText}>Passes</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Tabs */}
@@ -364,6 +372,23 @@ const styles = StyleSheet.create({
     borderColor: TK_STROKE,
     alignItems: "center",
     justifyContent: "center",
+  },
+  passesButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(168,85,247,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(168,85,247,0.28)",
+  },
+  passesButtonText: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 12.5,
+    color: TK_PURPLE_SOFT,
+    letterSpacing: 0.1,
   },
   headerTitle: {
     fontFamily: "BricolageGrotesque_800ExtraBold",

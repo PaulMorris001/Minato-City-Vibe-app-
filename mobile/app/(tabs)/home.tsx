@@ -352,7 +352,11 @@ export default function Home() {
   const { payForTicket } = useStripePayment();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
-  const [highlights, setHighlights] = useState<{ trending: PublicEvent[]; upcoming: PublicEvent[] }>({ trending: [], upcoming: [] });
+  const [highlights, setHighlights] = useState<{
+    trending: PublicEvent[];
+    upcoming: PublicEvent[];
+    myUpcoming: PublicEvent[];
+  }>({ trending: [], upcoming: [], myUpcoming: [] });
   // External (Ticketmaster etc) events, fetched in parallel with publicEvents.
   // Currently surfaced in the "Trending Now" carousel mixed with native events.
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
@@ -420,7 +424,11 @@ export default function Home() {
       });
       const data = await response.json();
       if (response.ok) {
-        setHighlights({ trending: data.trending || [], upcoming: data.upcoming || [] });
+        setHighlights({
+          trending: data.trending || [],
+          upcoming: data.upcoming || [],
+          myUpcoming: data.myUpcoming || [],
+        });
       }
     } catch {}
   };
@@ -579,11 +587,44 @@ export default function Home() {
     }
   };
 
-  const heroEvent = highlights.upcoming[0] || publicEvents[0];
-  const afterThat = highlights.upcoming.slice(1, 6);
-  if (afterThat.length === 0 && publicEvents.length > 0) {
-    afterThat.push(...publicEvents.slice(0, 5));
+  // ── Home hero selection ──────────────────────────────────────────────────
+  // 1. If the user has any event they're hosting / RSVP'd to / paid for, the
+  //    soonest one is the hero (backend returns these in `myUpcoming`, date-asc).
+  // 2. Otherwise, promote the first item of the "After that" carousel (the mixed
+  //    native + external feed) into the hero and drop it from the carousel.
+  //    A promoted external event gets a "Read more" button.
+  const myHero = highlights.myUpcoming?.[0] || null;
+
+  // Native pool for the carousel — general upcoming events (falls back to the
+  // public-events list), minus whatever is shown as the hero so it isn't dupes.
+  const nativePool = highlights.upcoming.length ? highlights.upcoming : publicEvents;
+
+  const baseFeed = [
+    ...nativePool
+      .filter((e) => e._id !== myHero?._id)
+      .map((e) => ({ _kind: "native" as const, data: e, sort: new Date(e.date).getTime() })),
+    ...externalEvents.map((e) => ({
+      _kind: "external" as const,
+      data: e,
+      sort: new Date(e.date).getTime(),
+    })),
+  ].sort((a, b) => a.sort - b.sort);
+
+  // Resolve hero + the carousel feed. When there's no personal event, the first
+  // feed item is promoted to the hero and removed from the carousel.
+  let resolvedHero: PublicEvent | null = myHero;
+  let resolvedExternal: ExternalEvent | null = null;
+  let resolvedFeed = baseFeed;
+  if (!resolvedHero && baseFeed.length > 0) {
+    const first = baseFeed[0];
+    resolvedFeed = baseFeed.slice(1);
+    if (first._kind === "native") resolvedHero = first.data;
+    else resolvedExternal = first.data;
   }
+  // const bindings so TS narrows them inside the hero's onPress closures.
+  const heroEvent = resolvedHero;
+  const heroExternal = resolvedExternal;
+  const mixedFeed = resolvedFeed;
 
   return (
     <>
@@ -610,7 +651,7 @@ export default function Home() {
         {/* Hero Card */}
         {initialLoading ? (
           <HeroSkeleton />
-        ) : heroEvent && (
+        ) : heroEvent ? (
           <TouchableOpacity
             style={styles.heroCard}
             activeOpacity={0.92}
@@ -724,7 +765,53 @@ export default function Home() {
               </View>
             </LinearGradient>
           </TouchableOpacity>
-        )}
+        ) : heroExternal ? (
+          // Promoted external (Ticketmaster etc.) event — no RSVP/ticket actions
+          // here, just a "Read more" link to the external detail screen.
+          <TouchableOpacity
+            style={styles.heroCard}
+            activeOpacity={0.92}
+            onPress={() => router.push(`/external-event/${heroExternal._id}` as any)}
+          >
+            <LinearGradient
+              colors={["#2D1B69", "#0B0613"]}
+              style={styles.heroCardInner}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              {heroExternal.image && (
+                <Image source={{ uri: heroExternal.image }} style={styles.heroImage} contentFit="cover" />
+              )}
+              <View style={styles.heroOverlay} />
+              <View style={styles.heroContent}>
+                <View style={styles.heroTopRow}>
+                  <View style={styles.heroBadge}>
+                    <View style={styles.liveDot} />
+                    <Text style={styles.heroBadgeText}>Featured</Text>
+                  </View>
+                </View>
+                <View style={styles.heroBottom}>
+                  <Text style={styles.heroInviteLabel}>Happening soon</Text>
+                  <Text style={styles.heroTitle} numberOfLines={2}>{heroExternal.title}</Text>
+                  {(heroExternal.venueName || heroExternal.location) && (
+                    <Text style={styles.heroLocation} numberOfLines={1}>
+                      <Ionicons name="location-outline" size={12} color="rgba(244,238,255,0.7)" />{" "}
+                      {heroExternal.venueName || heroExternal.location}
+                    </Text>
+                  )}
+                  <TouchableOpacity
+                    style={styles.heroButton}
+                    activeOpacity={0.85}
+                    onPress={() => router.push(`/external-event/${heroExternal._id}` as any)}
+                  >
+                    <Text style={styles.heroButtonText}>Read more</Text>
+                    <Ionicons name="arrow-forward" size={14} color={C.bg} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : null}
 
         {/* After That */}
         {initialLoading ? (
@@ -739,7 +826,7 @@ export default function Home() {
               renderItem={() => <SmallCardSkeleton />}
             />
           </View>
-        ) : (afterThat.length > 0 || externalEvents.length > 0) && (
+        ) : mixedFeed.length > 0 && (
           <View style={styles.section}>
             <SectionHeader
               title="After that →"
@@ -749,12 +836,9 @@ export default function Home() {
             />
             <FlatList
               horizontal
-              data={[
-                // Mixed feed: native events + external (Ticketmaster) events,
-                // tagged with `_kind` so the render branches to the right card.
-                ...afterThat.map((e) => ({ _kind: "native" as const, data: e, sort: new Date(e.date).getTime() })),
-                ...externalEvents.map((e) => ({ _kind: "external" as const, data: e, sort: new Date(e.date).getTime() })),
-              ].sort((a, b) => a.sort - b.sort)}
+              // Mixed feed (native + external), date-sorted, with the hero item
+              // already removed when it was promoted from this carousel.
+              data={mixedFeed}
               keyExtractor={(item) => `${item._kind}-${item.data._id}`}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalList}

@@ -12,7 +12,9 @@ import { emitEventInvite } from "../services/socket.service.js";
 import { setCache, getCache, invalidateCache, invalidateCachePattern } from "../utils/cache.js";
 import { areMutualFollows } from "../utils/followCheck.js";
 import { getBlockedIds } from "../utils/blockFilter.js";
-import { assertClean } from "../utils/contentFilter.js";
+import { assertClean, assertMeaningful } from "../utils/contentFilter.js";
+import { exactCaseInsensitive } from "../utils/escapeRegex.js";
+import { issueEventPass } from "../services/pass.service.js";
 import config from "../config/env.js";
 
 // Create a new event
@@ -40,6 +42,10 @@ export const createEvent = async (req, res) => {
     if (!title || !date || !location) {
       return res.status(400).json({ message: "Title, date, and location are required" });
     }
+
+    // Reject JSON/operator payloads and symbol-soup titles before they're stored
+    // and displayed as an event name.
+    assertMeaningful([{ field: "Title", value: title }]);
 
     assertClean([
       { field: "Title", value: title },
@@ -220,6 +226,7 @@ export const createEventFromGroup = async (req, res) => {
     if (!title || !date || !location) {
       return res.status(400).json({ message: "Title, date, and location are required" });
     }
+    assertMeaningful([{ field: "Title", value: title }]);
     assertClean([
       { field: "Title", value: title },
       { field: "Description", value: description },
@@ -644,6 +651,11 @@ export const updateEvent = async (req, res) => {
       return res.status(400).json({ message: reason });
     }
 
+    // Title is optional on update — only validate meaningfulness when supplied.
+    if (title !== undefined) {
+      assertMeaningful([{ field: "Title", value: title }]);
+    }
+
     assertClean([
       { field: "Title", value: title },
       { field: "Description", value: description },
@@ -769,8 +781,16 @@ export const inviteUserByUsername = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to invite users to this event" });
     }
 
-    // Find user by username
-    const userToInvite = await User.findOne({ username });
+    // Find user by username — case-insensitive so "John" matches a stored
+    // "john". Usernames preserve display case but are matched case-insensitively
+    // (see utils/escapeRegex.js); a plain { username } match silently failed to
+    // find users whose capitalization differed from what was typed.
+    if (!username || typeof username !== "string") {
+      return res.status(400).json({ message: "Username is required" });
+    }
+    const userToInvite = await User.findOne({
+      username: exactCaseInsensitive(username),
+    });
 
     if (!userToInvite) {
       return res.status(404).json({ message: "User not found" });
@@ -1285,6 +1305,12 @@ export const purchaseTicket = async (req, res) => {
       await event.save();
     }
 
+    // Issue the attendance pass + email the QR (fire-and-forget; never blocks
+    // or fails the purchase).
+    issueEventPass({ userId, eventId, type: "ticket", ticketId: ticket._id }).catch(
+      (e) => console.error("issueEventPass (purchaseTicket) failed:", e)
+    );
+
     const populatedTicket = await Ticket.findById(ticket._id)
       .populate('event', 'title date location image')
       .populate('user', 'username email profilePicture');
@@ -1357,6 +1383,15 @@ export const rsvpEvent = async (req, res) => {
     }
 
     await event.save();
+
+    // Issue an attendance pass + email the QR when marking "going". Idempotent,
+    // fire-and-forget — re-RSVPing won't re-send. (Ticket holders already got a
+    // pass at purchase; issueEventPass dedupes per event+user.)
+    if (status === "going") {
+      issueEventPass({ userId, eventId, type: "rsvp" }).catch((e) =>
+        console.error("issueEventPass (rsvp) failed:", e)
+      );
+    }
     invalidateCachePattern('public_events_');
     invalidateCachePattern('event_highlights_');
     invalidateCachePattern(`event_detail_${eventId}_`);
@@ -1456,12 +1491,57 @@ export const getEventHighlights = async (req, res) => {
       return obj;
     };
 
-    const [trendingEnriched, upcomingEnriched] = await Promise.all([
+    // The user's OWN upcoming events — hosting, RSVP'd, or paid for — soonest
+    // first. Drives the home hero so a user always sees their next commitment
+    // before generic discovery content. `rsvpUsers` already includes ticket
+    // buyers and accepted-invite guests; we also union in any valid-ticket
+    // events defensively (covers tickets issued before that behavior existed).
+    const myTickets = await Ticket.find({ user: userId, isValid: true })
+      .select("event")
+      .lean();
+    const myTicketEventIds = myTickets.map((t) => t.event);
+
+    const myUpcoming = await Event.find({
+      isActive: true,
+      date: { $gte: now },
+      $or: [
+        { createdBy: userId },
+        { rsvpUsers: userId },
+        { _id: { $in: myTicketEventIds } },
+      ],
+    })
+      .populate("createdBy", "username email profilePicture")
+      .sort({ date: 1 })
+      .limit(5);
+
+    // Enrich + set userStatus so the hero label ("You are hosting / attending /
+    // have a ticket for") renders correctly.
+    const enrichMine = async (event) => {
+      const obj = await enrichEvent(event);
+      const inRsvp = event.rsvpUsers?.some((id) => id.toString() === userId);
+      if (obj.isCreator) {
+        obj.userStatus = "creator";
+      } else if (event.isPaid) {
+        obj.userStatus = obj.userHasPurchased || inRsvp ? "accepted" : "none";
+      } else {
+        // Free event the user joined/RSVP'd — not a paid ticket.
+        obj.userHasPurchased = false;
+        obj.userStatus = inRsvp ? "accepted" : "none";
+      }
+      return obj;
+    };
+
+    const [trendingEnriched, upcomingEnriched, myUpcomingEnriched] = await Promise.all([
       Promise.all(trending.map(enrichEvent)),
       Promise.all(upcoming.map(enrichEvent)),
+      Promise.all(myUpcoming.map(enrichMine)),
     ]);
 
-    const result = { trending: trendingEnriched, upcoming: upcomingEnriched };
+    const result = {
+      trending: trendingEnriched,
+      upcoming: upcomingEnriched,
+      myUpcoming: myUpcomingEnriched,
+    };
     setCache(cacheKey, result, 120); // 2 min TTL
     res.status(200).json(result);
   } catch (error) {

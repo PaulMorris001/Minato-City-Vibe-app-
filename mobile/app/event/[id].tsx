@@ -1426,6 +1426,14 @@ export default function EventDetailsPage() {
             {isCreator && (
               <>
                 <SheetAction
+                  icon="qr-code-outline"
+                  label="Check in guests"
+                  onPress={() => {
+                    setActionSheetVisible(false);
+                    router.push(`/check-in/${event._id}` as any);
+                  }}
+                />
+                <SheetAction
                   icon="person-add-outline"
                   label="Invite people"
                   onPress={() => {

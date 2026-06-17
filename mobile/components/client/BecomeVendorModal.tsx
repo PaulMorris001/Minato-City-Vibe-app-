@@ -13,7 +13,6 @@ import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
 import { VendorType, LocationSelection } from "@/libs/interfaces";
-import { useRouter } from "expo-router";
 import {
   BottomSheetModal,
   FormInput,
@@ -22,6 +21,7 @@ import {
   LocationPicker,
 } from "@/components/shared";
 import { uploadImage } from "@/utils/imageUpload";
+import { resetToAccountRoot } from "@/utils/navigation";
 import { useAccount } from "@/contexts/AccountContext";
 import { fetchVendorTypes } from "@/libs/api";
 
@@ -34,7 +34,6 @@ export default function BecomeVendorModal({
   visible,
   onClose,
 }: BecomeVendorModalProps) {
-  const router = useRouter();
   const { setActiveAccount } = useAccount();
   const [loading, setLoading] = useState(false);
   const [vendorTypes, setVendorTypes] = useState<VendorType[]>([]);
@@ -139,8 +138,10 @@ export default function BecomeVendorModal({
             onPress: async () => {
               onClose();
               await setActiveAccount("vendor");
+              // Reset into the vendor root so the back button can't return to
+              // the client tabs we just left.
               setTimeout(() => {
-                router.replace("/(vendor)/dashboard");
+                resetToAccountRoot("vendor");
               }, 100);
             },
           },

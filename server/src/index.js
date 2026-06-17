@@ -1,9 +1,11 @@
 import express from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
+import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import config from './config/env.js';
+import { sanitizeRequest } from './middleware/sanitize.middleware.js';
 import connectDB from './config/db.js';
 import { initializeSocket } from './services/socket.service.js';
 import { startEventReminderJob } from './jobs/eventReminder.job.js';
@@ -33,12 +35,29 @@ import reportRoutes from "./routes/report.route.js";
 import blockRoutes from "./routes/block.route.js";
 import locationRoutes from "./routes/location.route.js";
 import externalEventRoutes from "./routes/externalEvent.route.js";
+import attendanceRoutes from "./routes/attendance.route.js";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const httpServer = createServer(app);
+
+// The app runs behind Render's reverse proxy, so the client IP is in
+// X-Forwarded-For. Trust the first proxy hop so req.ip is the real client IP —
+// required for the rate limiters to key per-user instead of per-proxy.
+app.set('trust proxy', 1);
+
+// Security headers. CSP and COEP are disabled on purpose: this process also
+// serves the static marketing page and the Google-auth bounce pages, which use
+// inline <script>/<style>; a strict CSP would break them. The remaining
+// protections (noSniff, frameguard, HSTS, hidePoweredBy, etc.) still apply.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
 
 app.use(cors(config.cors));
 app.options(/(.*)/, cors(config.cors));
@@ -48,6 +67,10 @@ app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Strip MongoDB operator keys ($, dotted paths) from inputs to block
+// NoSQL injection. Runs after body parsing, before any route handler.
+app.use(sanitizeRequest);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -82,6 +105,7 @@ app.use("/api/", reportRoutes);
 app.use("/api/", blockRoutes);
 app.use("/api/", locationRoutes);
 app.use("/api/", externalEventRoutes);
+app.use("/api/", attendanceRoutes);
 app.use("/", deleteAccountRoutes);
 app.use("/", deepLinksRoutes);
 app.use("/", privacyRoutes);

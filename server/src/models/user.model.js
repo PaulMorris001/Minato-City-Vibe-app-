@@ -1,8 +1,14 @@
 import mongoose from "mongoose";
 
 const userSchema = mongoose.Schema({
-  username: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
+  // Display case is preserved (e.g. "JohnDoe"), but uniqueness and lookups are
+  // case-insensitive — enforced at the application layer in the auth controller
+  // and via case-insensitive queries (see utils/escapeRegex.js). This avoids a
+  // forced data migration on existing mixed-case usernames. To additionally
+  // enforce at the DB layer, dedupe existing rows then add a unique index with
+  // collation { locale: "en", strength: 2 }.
+  username: { type: String, required: true, trim: true },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: false }, // Optional for OAuth users
 
   // OAuth authentication fields

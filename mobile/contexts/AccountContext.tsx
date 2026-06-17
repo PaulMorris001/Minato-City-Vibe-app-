@@ -5,9 +5,15 @@ type AccountType = "client" | "vendor";
 
 interface AccountContextType {
   activeAccount: AccountType;
-  setActiveAccount: (type: AccountType) => void;
+  setActiveAccount: (type: AccountType) => Promise<void>;
   isVendor: boolean;
-  switchAccount: () => void;
+  /**
+   * Persist + apply an account switch. Pass an explicit target, or omit to
+   * toggle. Returns the resolved account type so the caller can navigate to the
+   * matching root. Navigation is intentionally left to the caller (see
+   * resetToAccountRoot in utils/navigation) so the back stack can be reset.
+   */
+  switchAccount: (target?: AccountType) => Promise<AccountType>;
 }
 
 const AccountContext = createContext<AccountContextType | undefined>(undefined);
@@ -39,9 +45,11 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const switchAccount = () => {
-    const newType: AccountType = activeAccount === "client" ? "vendor" : "client";
-    setActiveAccount(newType);
+  const switchAccount = async (target?: AccountType): Promise<AccountType> => {
+    const newType: AccountType =
+      target ?? (activeAccount === "client" ? "vendor" : "client");
+    await setActiveAccount(newType);
+    return newType;
   };
 
   return (

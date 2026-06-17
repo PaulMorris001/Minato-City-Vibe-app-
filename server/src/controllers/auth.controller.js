@@ -5,7 +5,7 @@ import { OAuth2Client } from "google-auth-library";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import config from "../config/env.js";
 import User from "../models/user.model.js";
-import { Vendor, City } from "../models/vendor.model.js";
+import { Vendor, City, VendorType } from "../models/vendor.model.js";
 import { findOrCreateCity } from "./vendors.controller.js";
 import { uploadBase64Image, deleteImage } from "../services/image.service.js";
 import {
@@ -18,8 +18,54 @@ import Follow from "../models/follow.model.js";
 import Event from "../models/event.model.js";
 import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean } from "../utils/contentFilter.js";
+import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// Pragmatic email shape check. Not RFC-5322-exhaustive on purpose — it rejects
+// the obviously-malformed inputs (no @, spaces, missing TLD) without blocking
+// legitimate addresses. Deliverability is still confirmed via the signup OTP.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export function isValidEmail(value) {
+  return typeof value === "string" && EMAIL_RE.test(value.trim());
+}
+
+/**
+ * Resolve a VendorType ObjectId from either an explicit id or a type name.
+ * Older clients send only the `vendorType` *name* (a string) and omit
+ * `vendorTypeId`. Without an id, becomeVendor used to skip creating the Vendor
+ * discovery document entirely — leaving the user a vendor that never appears in
+ * any listing. Falling back to a name lookup keeps those accounts discoverable.
+ */
+async function resolveVendorTypeId(vendorTypeId, vendorTypeName) {
+  if (vendorTypeId) return vendorTypeId;
+  if (vendorTypeName && typeof vendorTypeName === "string") {
+    const match = await VendorType.findOne({
+      name: exactCaseInsensitive(vendorTypeName),
+    })
+      .select("_id")
+      .lean();
+    if (match) return match._id;
+  }
+  return null;
+}
+
+/**
+ * Build a username that is unique (case-insensitively) for OAuth sign-ups,
+ * where we can't prompt the user to pick another. Strips whitespace, caps the
+ * length, and appends an incrementing suffix until it's free.
+ */
+async function generateUniqueUsername(seed) {
+  let base = String(seed || "").trim().replace(/\s+/g, "").slice(0, 20) || "user";
+  let candidate = base;
+  let suffix = 0;
+  // eslint-disable-next-line no-await-in-loop
+  while (await User.exists({ username: exactCaseInsensitive(candidate) })) {
+    suffix += 1;
+    candidate = `${base}${suffix}`;
+  }
+  return candidate;
+}
 
 export async function register(req, res) {
   const { username, email, password, termsAccepted } = req.body;
@@ -31,10 +77,55 @@ export async function register(req, res) {
       });
     }
 
-    assertClean([{ field: "Username", value: username }]);
+    if (!username || !email || !password) {
+      return res
+        .status(400)
+        .json({ message: "Username, email, and password are required." });
+    }
+
+    const normalizedUsername = String(username).trim();
+    if (normalizedUsername.length < 2 || normalizedUsername.length > 30) {
+      return res
+        .status(400)
+        .json({ message: "Username must be between 2 and 30 characters." });
+    }
+
+    assertClean([{ field: "Username", value: normalizedUsername }]);
 
     // Normalize email to lowercase and trim whitespace
     const normalizedEmail = email.toLowerCase().trim();
+
+    if (!isValidEmail(normalizedEmail)) {
+      return res
+        .status(400)
+        .json({ message: "Please enter a valid email address." });
+    }
+
+    if (password.length < 6) {
+      return res
+        .status(400)
+        .json({ message: "Password must be at least 6 characters long." });
+    }
+
+    // Case-insensitive uniqueness. The email index is unique at the DB layer,
+    // but usernames are only enforced here (see user.model.js), so check both
+    // up front to return a clear 409 instead of a generic save error.
+    const [emailTaken, usernameTaken] = await Promise.all([
+      User.findOne({ email: normalizedEmail }).select("_id").lean(),
+      User.findOne({ username: exactCaseInsensitive(normalizedUsername) })
+        .select("_id")
+        .lean(),
+    ]);
+    if (emailTaken) {
+      return res
+        .status(409)
+        .json({ message: "An account with this email already exists." });
+    }
+    if (usernameTaken) {
+      return res
+        .status(409)
+        .json({ message: "That username is already taken. Please choose another." });
+    }
 
     const hashed = await bcrypt.hash(password, 10);
 
@@ -44,7 +135,7 @@ export async function register(req, res) {
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
     const user = new User({
-      username,
+      username: normalizedUsername,
       email: normalizedEmail,
       password: hashed,
       isVendor: false, // All users start as clients
@@ -87,33 +178,55 @@ export async function register(req, res) {
 }
 
 export async function login(req, res) {
-  const { email, password } = req.body;
-  // Normalize email to match how it's stored in the database
-  const normalizedEmail = email.toLowerCase().trim();
-  const user = await User.findOne({ email: normalizedEmail });
-  if (!user) return res.status(404).json({ message: "User not found" });
+  // Wrapped in try/catch: previously an unexpected throw here (DB hiccup, or a
+  // non-string email reaching .toLowerCase()) sent no response at all, leaving
+  // the client spinner hanging and bouncing back to the login screen.
+  try {
+    const { email, password } = req.body;
 
-  if (user.isBanned) {
-    return res.status(403).json({
-      message: "This account has been suspended for violating our content policy.",
-    });
-  }
-
-  const valid = await bcrypt.compare(password, user.password);
-  if (!valid) return res.status(401).json({ message: "Invalid Credentials" });
-
-  const token = jwt.sign({ id: user._id }, config.jwt.secret, {
-    expiresIn: config.jwt.expiresIn,
-  });
-  res.json({
-    token,
-    user: {
-      id: user._id,
-      username: user.username,
-      email: user.email,
-      isVendor: user.isVendor
+    if (typeof email !== "string" || typeof password !== "string" || !email || !password) {
+      return res.status(400).json({ message: "Email and password are required." });
     }
-  });
+
+    // Normalize email to match how it's stored in the database
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (user.isBanned) {
+      return res.status(403).json({
+        message: "This account has been suspended for violating our content policy.",
+      });
+    }
+
+    // OAuth-only accounts have no password hash — bcrypt.compare would throw.
+    // Guide the user to the right sign-in method instead.
+    if (!user.password) {
+      const provider = user.authProvider === "apple" ? "Apple" : "Google";
+      return res.status(400).json({
+        message: `This account was created with ${provider}. Please use ${provider} Sign-In.`,
+      });
+    }
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) return res.status(401).json({ message: "Invalid Credentials" });
+
+    const token = jwt.sign({ id: user._id }, config.jwt.secret, {
+      expiresIn: config.jwt.expiresIn,
+    });
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        isVendor: user.isVendor
+      }
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ message: "Something went wrong. Please try again." });
+  }
 }
 
 // Become a vendor (upgrade from client to vendor)
@@ -172,8 +285,12 @@ export async function becomeVendor(req, res) {
       });
     }
 
-    // Create/upsert linked Vendor document with ObjectId refs for discovery
-    if (vendorTypeId && cityDoc) {
+    // Create/upsert linked Vendor document with ObjectId refs for discovery.
+    // Resolve the vendorType from its name when the client didn't send an id —
+    // otherwise the Vendor doc (which *requires* vendorType + city) is never
+    // created and the account is invisible in every vendor listing.
+    const resolvedVendorTypeId = await resolveVendorTypeId(vendorTypeId, vendorType);
+    if (resolvedVendorTypeId && cityDoc) {
       try {
         await Vendor.findOneAndUpdate(
           { user: user._id },
@@ -181,7 +298,7 @@ export async function becomeVendor(req, res) {
             name: businessName,
             description: businessDescription,
             images: businessPictureUrl ? [businessPictureUrl] : [],
-            vendorType: vendorTypeId,
+            vendorType: resolvedVendorTypeId,
             city: cityDoc._id,
             contact: {
               phone: contactInfo?.phone || "",
@@ -200,6 +317,15 @@ export async function becomeVendor(req, res) {
         console.error("Error creating vendor document:", vendorError);
         // Non-fatal: user is already a vendor, just log the error
       }
+    } else {
+      // Loud, greppable warning so orphaned vendor accounts (no discovery doc)
+      // are diagnosable instead of silently disappearing from listings.
+      console.warn(
+        `[becomeVendor] No Vendor discovery doc created for user=${user._id} — ` +
+          `vendorTypeId=${vendorTypeId || "none"} vendorTypeName=${vendorType || "none"} ` +
+          `resolvedType=${resolvedVendorTypeId || "none"} city=${cityDoc?._id || "none"}. ` +
+          `This vendor will not appear in browse/city listings until re-synced.`
+      );
     }
 
     res.json({
@@ -312,9 +438,34 @@ export async function updateVendorProfile(req, res) {
         facebook: contactInfo.facebook || "",
       };
     }
+
+    // Backfill the required discovery fields so a vendor whose Vendor doc was
+    // never created (older onboarding without vendorTypeId) gets healed on the
+    // next profile save and starts appearing in listings.
+    const resolvedTypeId = await resolveVendorTypeId(null, vendorType || user.vendorType);
+    if (resolvedTypeId) vendorUpdate.vendorType = resolvedTypeId;
+    if (!vendorUpdate.name && user.businessName) vendorUpdate.name = user.businessName;
+    if (!vendorUpdate.city && user.location?.city && user.location?.state) {
+      const cityDoc = await findOrCreateCity({
+        name: user.location.city,
+        state: user.location.state,
+        country: user.location.country,
+      });
+      if (cityDoc) vendorUpdate.city = cityDoc._id;
+    }
+
     if (Object.keys(vendorUpdate).length > 0) {
-      Vendor.findOneAndUpdate({ user: user._id }, vendorUpdate).catch(err =>
-        console.error("Error syncing vendor document:", err)
+      // Only upsert when we can satisfy the Vendor schema's required fields
+      // (name + vendorType + city); otherwise fall back to a plain update so we
+      // never throw trying to create an incomplete doc.
+      const canUpsert =
+        vendorUpdate.name && vendorUpdate.vendorType && vendorUpdate.city;
+      const filter = { user: user._id };
+      const update = canUpsert
+        ? { ...vendorUpdate, $setOnInsert: { priceRange: 2, user: user._id } }
+        : vendorUpdate;
+      Vendor.findOneAndUpdate(filter, update, canUpsert ? { upsert: true } : {}).catch(
+        (err) => console.error("Error syncing vendor document:", err)
       );
     }
 
@@ -438,12 +589,16 @@ export async function searchUsers(req, res) {
 
     const blockedIds = await getBlockedIds(req.user.id);
 
+    // Escape the query — raw user input in $regex is a ReDoS / regex-injection
+    // vector (e.g. ".*" would match everyone).
+    const safeQuery = escapeRegex(query.trim());
+
     const users = await User.find({
       _id: { $ne: req.user.id, $nin: blockedIds }, // Exclude current user + blocked
       isBanned: { $ne: true },
       $or: [
-        { username: { $regex: query, $options: "i" } },
-        { email: { $regex: query, $options: "i" } }
+        { username: { $regex: safeQuery, $options: "i" } },
+        { email: { $regex: safeQuery, $options: "i" } }
       ]
     })
       .select("_id username email profilePicture isVendor businessName")
@@ -682,7 +837,7 @@ export async function googleAuth(req, res) {
       console.log(`[google-auth ${reqId}] no existing user — creating new account email=${normalizedEmail}`);
       // Create new user — Google sign-in implies acceptance of Terms via the in-app prompt
       user = new User({
-        username: name || normalizedEmail.split('@')[0],
+        username: await generateUniqueUsername(name || normalizedEmail.split('@')[0]),
         email: normalizedEmail,
         authProvider: 'google',
         googleId,
@@ -986,7 +1141,7 @@ export async function googleWebCallback(req, res) {
       }
     } else {
       user = new User({
-        username: name || normalizedEmail.split("@")[0],
+        username: await generateUniqueUsername(name || normalizedEmail.split("@")[0]),
         email: normalizedEmail,
         authProvider: "google",
         googleId,
@@ -1108,17 +1263,10 @@ export async function appleAuth(req, res) {
       }
 
       // Build a username from the provided name, else the email local part,
-      // ensuring uniqueness against existing usernames.
-      let baseUsername =
-        (fullName && fullName.trim()) || normalizedEmail.split("@")[0];
-      baseUsername = baseUsername.replace(/\s+/g, "").slice(0, 20) || "user";
-      let username = baseUsername;
-      let suffix = 0;
-      // eslint-disable-next-line no-await-in-loop
-      while (await User.exists({ username })) {
-        suffix += 1;
-        username = `${baseUsername}${suffix}`;
-      }
+      // ensuring case-insensitive uniqueness against existing usernames.
+      const username = await generateUniqueUsername(
+        (fullName && fullName.trim()) || normalizedEmail.split("@")[0]
+      );
 
       user = new User({
         username,

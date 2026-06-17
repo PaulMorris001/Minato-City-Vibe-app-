@@ -336,6 +336,102 @@ export const sendSignupVerificationOTP = async (email, otp, username) => {
 };
 
 /**
+ * Send an event pass with an embedded CityVibe-styled QR code. Issued when a
+ * user RSVPs to a free event or buys a ticket. The QR is attached inline (cid)
+ * so it renders in the email body; the organizer scans it at the door to mark
+ * the holder as attended.
+ *
+ * @param {string} email
+ * @param {object} opts
+ * @param {string} opts.username
+ * @param {string} opts.eventTitle
+ * @param {string} opts.eventDateText  human-readable date/time
+ * @param {string} opts.eventLocation
+ * @param {Buffer} opts.qrBuffer       PNG of the pass QR
+ * @param {"rsvp"|"ticket"} opts.type
+ */
+export const sendEventPassEmail = async (
+  email,
+  { username, eventTitle, eventDateText, eventLocation, qrBuffer, type }
+) => {
+  try {
+    const transporter = createTransporter();
+    const passLabel = type === "ticket" ? "Your Ticket" : "Your RSVP Pass";
+    const subject = `${passLabel} — ${eventTitle}`;
+
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || '"CityVibe" <Support@nvibez.com>',
+      to: email,
+      subject,
+      attachments: [
+        {
+          filename: "cityvibe-pass.png",
+          content: qrBuffer,
+          cid: "passqr@cityvibe",
+        },
+      ],
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, sans-serif; line-height: 1.6; color: #333; background: #f4f4f4; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 20px auto; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: white; padding: 30px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; font-weight: 800; }
+            .content { padding: 36px 30px; text-align: center; }
+            .event-title { font-size: 22px; font-weight: 700; color: #1f2937; margin: 0 0 6px; }
+            .event-meta { font-size: 14px; color: #6b7280; margin: 2px 0; }
+            .qr-wrap { background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%); border: 1px solid #e9d5ff; border-radius: 16px; padding: 24px; margin: 28px auto; display: inline-block; }
+            .qr-wrap img { display: block; width: 240px; height: 240px; }
+            .badge { display: inline-block; background: #7c3aed; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 6px 14px; border-radius: 999px; margin-bottom: 18px; }
+            .hint { font-size: 13px; color: #6b7280; margin-top: 18px; }
+            .footer { background: #f9fafb; padding: 20px 30px; text-align: center; font-size: 13px; color: #6b7280; border-top: 1px solid #e5e7eb; }
+            .footer a { color: #a855f7; text-decoration: none; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header"><h1>🌙 CityVibe</h1></div>
+            <div class="content">
+              <div class="badge">${passLabel}</div>
+              <p class="event-title">${eventTitle}</p>
+              ${eventDateText ? `<p class="event-meta">📅 ${eventDateText}</p>` : ""}
+              ${eventLocation ? `<p class="event-meta">📍 ${eventLocation}</p>` : ""}
+              <div class="qr-wrap">
+                <img src="cid:passqr@cityvibe" alt="Your CityVibe pass QR code" />
+              </div>
+              <p class="hint">
+                Show this QR code at the entrance. The organizer will scan it to
+                check you in. Keep it private — anyone with this code can use your pass.
+              </p>
+            </div>
+            <div class="footer">
+              <p>See you there, ${username || "friend"}! 🎉</p>
+              <p>Need help? <a href="mailto:Support@nvibez.com">Support@nvibez.com</a></p>
+              <p style="margin-top: 8px;">© ${new Date().getFullYear()} CityVibe. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `${passLabel} for ${eventTitle}\n${eventDateText || ""}${
+        eventLocation ? `\n${eventLocation}` : ""
+      }\n\nYour pass QR code is attached. Show it at the entrance to be checked in. Keep it private.\n\n— The CityVibe Team`,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`🎟️ Event pass email sent to ${email}:`, info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("❌ Error sending event pass email:", error);
+    throw new Error("Failed to send event pass email");
+  }
+};
+
+/**
  * Send password reset success notification
  */
 export const sendPasswordResetSuccessEmail = async (email, username) => {
