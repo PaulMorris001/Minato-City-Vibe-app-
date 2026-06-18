@@ -74,6 +74,12 @@ const messageSchema = mongoose.Schema({
     ref: "message"
   },
 
+  // Users @mentioned in this message (resolved against chat participants)
+  mentions: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "user"
+  }],
+
   // Deleted status
   isDeleted: {
     type: Boolean,

@@ -61,6 +61,7 @@ export default function ChatScreen() {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [showScrollDown, setShowScrollDown] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -672,6 +673,20 @@ export default function ChatScreen() {
     if (highlightTimer.current) clearTimeout(highlightTimer.current);
   }, []);
 
+  // Track how far the list is scrolled up so we can offer a jump-to-latest
+  // button (the list otherwise only auto-scrolls when new content arrives).
+  const handleMessagesScroll = (e: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const distanceFromBottom =
+      contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    setShowScrollDown(distanceFromBottom > 240);
+  };
+
+  const scrollToBottom = () => {
+    flatListRef.current?.scrollToEnd({ animated: true });
+    setShowScrollDown(false);
+  };
+
   const renderMessage = ({ item, index }: { item: MessageSection; index: number }) => {
     if ("type" in item && item.type === "date") {
       return (
@@ -709,6 +724,12 @@ export default function ChatScreen() {
         onDelete={handleDeleteMessage}
         onReply={setReplyingTo}
         onReplyPress={handleReplyPress}
+        onMentionPress={(username) => {
+          const p = chat?.participants.find(
+            (pp) => pp.username?.toLowerCase() === username.toLowerCase()
+          );
+          if (p) openUserProfile(p._id);
+        }}
       />
     );
   };
@@ -842,13 +863,17 @@ export default function ChatScreen() {
           )}
 
           {/* Messages */}
+          <View style={styles.listWrap}>
           <FlatList
             ref={flatListRef}
             data={messageSections}
             renderItem={renderMessage}
             keyExtractor={(item) => item._id}
+            style={styles.messagesFlat}
             contentContainerStyle={styles.messagesList}
             showsVerticalScrollIndicator={false}
+            onScroll={handleMessagesScroll}
+            scrollEventThrottle={16}
             onContentSizeChange={() =>
               flatListRef.current?.scrollToEnd({ animated: false })
             }
@@ -875,6 +900,17 @@ export default function ChatScreen() {
               </View>
             }
           />
+            {showScrollDown && (
+              <TouchableOpacity
+                style={styles.scrollDownFab}
+                onPress={scrollToBottom}
+                activeOpacity={0.85}
+                hitSlop={8}
+              >
+                <Ionicons name="chevron-down" size={22} color="#fff" />
+              </TouchableOpacity>
+            )}
+          </View>
 
           {/* Typing indicator (text strip) */}
           {typingLabel && (
@@ -894,6 +930,9 @@ export default function ChatScreen() {
             editingMessage={editingMessage}
             onCancelEdit={() => setEditingMessage(null)}
             currentUserId={currentUserId}
+            mentionCandidates={(chat?.participants || [])
+              .filter((p) => p._id !== currentUserId && p.username)
+              .map((p) => ({ _id: p._id, username: p.username }))}
           />
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -1313,6 +1352,30 @@ const styles = StyleSheet.create({
   },
 
   // Messages
+  listWrap: {
+    flex: 1,
+  },
+  messagesFlat: {
+    flex: 1,
+  },
+  scrollDownFab: {
+    position: "absolute",
+    right: 16,
+    bottom: 16,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: CH_PURPLE,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
   messagesList: {
     paddingVertical: 12,
     paddingBottom: 8,

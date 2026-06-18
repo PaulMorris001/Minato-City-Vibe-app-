@@ -16,39 +16,16 @@ import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
-import TicketCard from "@/components/TicketCard";
 import TicketCardSkeleton from "@/components/skeletons/TicketCardSkeleton";
 import chatService from "@/services/chat.service";
 
 const TK_BG = "#0B0613";
 const TK_SURFACE = "rgba(26,16,48,0.7)";
 const TK_STROKE = "rgba(255,255,255,0.08)";
-const TK_STROKE_HI = "rgba(255,255,255,0.14)";
 const TK_TEXT = "#F4EEFF";
 const TK_TEXT_DIM = "rgba(244,238,255,0.62)";
 const TK_TEXT_MUTE = "rgba(244,238,255,0.38)";
 const TK_PURPLE_SOFT = "#C084FC";
-
-interface Ticket {
-  _id: string;
-  event: {
-    _id: string;
-    title: string;
-    date: string;
-    location: string;
-    image?: string;
-    createdBy: {
-      _id: string;
-      username: string;
-      email: string;
-      profilePicture?: string;
-    };
-  };
-  ticketPrice: number;
-  purchaseDate: string;
-  ticketCode: string;
-  isValid: boolean;
-}
 
 interface ClientBooking {
   _id: string;
@@ -66,48 +43,20 @@ const BOOKING_STATUS_COLORS: Record<string, string> = {
   cancelled: "#9CA3AF",
 };
 
-export default function TicketsScreen() {
+export default function BookingsScreen() {
   const router = useRouter();
-  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [bookings, setBookings] = useState<ClientBooking[]>([]);
-  const [activeTab, setActiveTab] = useState<"tickets" | "bookings">("tickets");
-  const [loading, setLoading] = useState(true);
   const [bookingsLoading, setBookingsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [chattingWith, setChattingWith] = useState<string | null>(null);
 
-  const fetchTickets = async () => {
+  const fetchBookings = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
       if (!token) {
         router.replace("/login");
         return;
       }
-
-      const response = await fetch(`${BASE_URL}/tickets`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setTickets(data.tickets || []);
-      } else {
-        Alert.alert("Error", data.message || "Failed to fetch tickets");
-      }
-    } catch (error) {
-      console.error("Fetch tickets error:", error);
-      Alert.alert("Error", "Failed to load tickets");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  const fetchBookings = async () => {
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      if (!token) return;
       const res = await fetch(`${BASE_URL}/bookings/client`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -119,6 +68,7 @@ export default function TicketsScreen() {
       console.error("Fetch bookings error:", error);
     } finally {
       setBookingsLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -135,50 +85,18 @@ export default function TicketsScreen() {
   };
 
   useEffect(() => {
-    fetchTickets();
     fetchBookings();
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      fetchTickets();
       fetchBookings();
     }, [])
   );
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchTickets();
     fetchBookings();
-  };
-
-  const renderTab = (id: "tickets" | "bookings", label: string, count: number) => {
-    const on = activeTab === id;
-    return (
-      <TouchableOpacity
-        key={id}
-        onPress={() => setActiveTab(id)}
-        activeOpacity={0.8}
-        style={styles.tab}
-      >
-        <Text style={[styles.tabLabel, on ? styles.tabLabelActive : styles.tabLabelInactive]}>
-          {label}
-        </Text>
-        <View style={[styles.countPill, on ? styles.countPillActive : styles.countPillInactive]}>
-          <Text style={[styles.countText, on ? styles.countTextActive : styles.countTextInactive]}>
-            {count}
-          </Text>
-        </View>
-        {on && (
-          <LinearGradient
-            colors={["#A855F7", "#EC4899"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.tabUnderline}
-          />
-        )}
-      </TouchableOpacity>
-    );
   };
 
   return (
@@ -190,8 +108,8 @@ export default function TicketsScreen() {
             <Ionicons name="chevron-back" size={18} color={TK_TEXT} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>My Tickets</Text>
-            <Text style={styles.headerSubtitle}>Tickets & service bookings</Text>
+            <Text style={styles.headerTitle}>My Bookings</Text>
+            <Text style={styles.headerSubtitle}>Your service bookings</Text>
           </View>
           <TouchableOpacity
             onPress={() => router.push("/passes" as any)}
@@ -203,12 +121,6 @@ export default function TicketsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabRow}>
-          {renderTab("tickets", "Event Tickets", tickets.length)}
-          {renderTab("bookings", "Service Bookings", bookings.length)}
-        </View>
-
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
@@ -217,40 +129,16 @@ export default function TicketsScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#A855F7" />
           }
         >
-          {activeTab === "tickets" ? (
-            loading ? (
-              <TicketCardSkeleton count={3} />
-            ) : tickets.length === 0 ? (
-              <EmptyState
-                emoji="🎟️"
-                title="No tickets yet"
-                subtitle={
-                  bookings.length > 0
-                    ? "Switch to Service Bookings to see your bookings."
-                    : "When you book or buy a ticket, it'll show up here."
-                }
-              />
-            ) : (
-              <View style={styles.ticketList}>
-                {tickets.map((ticket) => (
-                  <TicketCard key={ticket._id} ticket={ticket} />
-                ))}
-              </View>
-            )
-          ) : bookingsLoading ? (
+          {bookingsLoading ? (
             <TicketCardSkeleton count={3} />
           ) : bookings.length === 0 ? (
             <EmptyState
               emoji="🧰"
               title="No bookings yet"
-              subtitle={
-                tickets.length > 0
-                  ? "Switch to Event Tickets to see your tickets."
-                  : "Book a vendor service to see your bookings here."
-              }
+              subtitle="Book a vendor service to see your bookings here."
             />
           ) : (
-            <View style={styles.ticketList}>
+            <View style={styles.bookingList}>
               {bookings.map((booking) => (
                 <View key={booking._id} style={styles.bookingCard}>
                   <View style={styles.bookingHeader}>
@@ -332,14 +220,14 @@ function EmptyState({ emoji, title, subtitle }: { emoji: string; title: string; 
       <Text style={styles.emptyEmoji}>{emoji}</Text>
       <Text style={styles.emptyStateTitle}>{title}</Text>
       <Text style={styles.emptyStateText}>{subtitle}</Text>
-      <TouchableOpacity activeOpacity={0.85} onPress={() => router.push("/(tabs)/home" as any)}>
+      <TouchableOpacity activeOpacity={0.85} onPress={() => router.push("/(tabs)/vendors" as any)}>
         <LinearGradient
           colors={["#A855F7", "#7C3AED", "#EC4899"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.emptyCta}
         >
-          <Text style={styles.emptyCtaText}>Browse events</Text>
+          <Text style={styles.emptyCtaText}>Browse vendors</Text>
         </LinearGradient>
       </TouchableOpacity>
     </View>
@@ -362,6 +250,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
+    marginBottom: 16,
   },
   backButton: {
     width: 38,
@@ -404,67 +293,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  // Tabs
-  tabRow: {
-    flexDirection: "row",
-    paddingHorizontal: 22,
-    paddingTop: 16,
-    gap: 22,
-    borderBottomWidth: 1,
-    borderBottomColor: TK_STROKE,
-    marginBottom: 16,
-  },
-  tab: {
-    position: "relative",
-    paddingBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  tabLabel: {
-    fontFamily: "BricolageGrotesque_700Bold",
-    fontSize: 14,
-    letterSpacing: -0.14,
-  },
-  tabLabelActive: {
-    color: TK_TEXT,
-  },
-  tabLabelInactive: {
-    color: TK_TEXT_MUTE,
-  },
-  countPill: {
-    paddingHorizontal: 7,
-    paddingVertical: 1,
-    borderRadius: 999,
-    minWidth: 18,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  countPillActive: {
-    backgroundColor: "rgba(168,85,247,0.18)",
-  },
-  countPillInactive: {
-    backgroundColor: "rgba(255,255,255,0.06)",
-  },
-  countText: {
-    fontFamily: "Outfit_700Bold",
-    fontSize: 10,
-  },
-  countTextActive: {
-    color: TK_PURPLE_SOFT,
-  },
-  countTextInactive: {
-    color: TK_TEXT_MUTE,
-  },
-  tabUnderline: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 2,
-    borderRadius: 2,
-  },
-
   // Lists
   scrollView: {
     flex: 1,
@@ -473,7 +301,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingBottom: 24,
   },
-  ticketList: {
+  bookingList: {
     gap: 14,
   },
 

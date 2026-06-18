@@ -710,10 +710,10 @@ export default function Home() {
                           <TouchableOpacity
                             style={styles.heroButton}
                             activeOpacity={0.85}
-                            onPress={() => router.push("/tickets" as any)}
+                            onPress={() => router.push("/passes" as any)}
                           >
-                            <Text style={styles.heroButtonText}>View Ticket</Text>
-                            <Ionicons name="ticket-outline" size={14} color={C.bg} />
+                            <Text style={styles.heroButtonText}>View Pass</Text>
+                            <Ionicons name="qr-code-outline" size={14} color={C.bg} />
                           </TouchableOpacity>
                         ) : isAttending ? (
                           <TouchableOpacity

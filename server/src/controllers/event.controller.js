@@ -996,6 +996,13 @@ export const respondToInvite = async (req, res) => {
 
     await event.save();
 
+    // Accepting an invite is an RSVP — issue the entry pass + email the QR.
+    if (status === "accepted") {
+      issueEventPass({ userId, eventId, type: "rsvp" }).catch((e) =>
+        console.error("issueEventPass (respondToInvite) failed:", e)
+      );
+    }
+
     const updatedEvent = await Event.findById(eventId)
       .populate('createdBy', 'username email profilePicture')
       .populate('invitedUsers', 'username email profilePicture')
@@ -1069,6 +1076,12 @@ export const joinEventByShareLink = async (req, res) => {
 
     await event.save();
 
+    // Joining via a share link — including a private-event invite link — is an
+    // automatic RSVP, so issue the entry pass + email the QR.
+    issueEventPass({ userId, eventId: event._id, type: "rsvp" }).catch((e) =>
+      console.error("issueEventPass (joinByShareLink) failed:", e)
+    );
+
     invalidateCachePattern(`event_detail_${event._id}_`);
     invalidateCachePattern('public_events_');
     invalidateCachePattern('event_highlights_');
@@ -1139,6 +1152,11 @@ export const joinFreePublicEvent = async (req, res) => {
       event.rsvpUsers.push(userId);
     }
     await event.save();
+
+    // Joining a free public event is an RSVP — issue the entry pass + email QR.
+    issueEventPass({ userId, eventId, type: "rsvp" }).catch((e) =>
+      console.error("issueEventPass (joinFreePublicEvent) failed:", e)
+    );
 
     invalidateCachePattern(`event_detail_${eventId}_`);
     invalidateCachePattern('public_events_');
@@ -1245,86 +1263,6 @@ export const getPublicEvents = async (req, res) => {
   } catch (error) {
     console.error("Get public events error:", error);
     res.status(500).json({ message: "Error fetching public events", error: error.message });
-  }
-};
-
-// Purchase a ticket for a public paid event
-export const purchaseTicket = async (req, res) => {
-  try {
-    const { eventId } = req.params;
-    const userId = req.user.id;
-
-    const event = await Event.findById(eventId);
-
-    if (!event) {
-      return res.status(404).json({ message: "Event not found" });
-    }
-
-    if (!event.isPublic) {
-      return res.status(403).json({ message: "This is a private event" });
-    }
-
-    if (!event.isPaid) {
-      return res.status(400).json({ message: "This event is free" });
-    }
-
-    // Check if user already has a ticket
-    const existingTicket = await Ticket.findOne({ event: eventId, user: userId, isValid: true });
-    if (existingTicket) {
-      return res.status(400).json({ message: "You already have a ticket for this event" });
-    }
-
-    // Check if tickets are still available
-    const soldTickets = await Ticket.countDocuments({ event: eventId, isValid: true });
-    if (soldTickets >= event.maxGuests) {
-      return res.status(400).json({ message: "No tickets available" });
-    }
-
-    // Create ticket
-    const ticket = new Ticket({
-      event: eventId,
-      user: userId,
-      ticketPrice: event.ticketPrice
-    });
-
-    await ticket.save();
-
-    // A paid ticket holder is a confirmed attendee — surface them in the
-    // event's rsvp/invited lists so going-count, capacity % and friends-going
-    // all reflect reality without the buyer having to tap "RSVP" separately.
-    let listsChanged = false;
-    if (!event.rsvpUsers.some(id => id.toString() === userId)) {
-      event.rsvpUsers.push(userId);
-      listsChanged = true;
-    }
-    if (!event.invitedUsers.some(id => id.toString() === userId)) {
-      event.invitedUsers.push(userId);
-      listsChanged = true;
-    }
-    if (listsChanged) {
-      await event.save();
-    }
-
-    // Issue the attendance pass + email the QR (fire-and-forget; never blocks
-    // or fails the purchase).
-    issueEventPass({ userId, eventId, type: "ticket", ticketId: ticket._id }).catch(
-      (e) => console.error("issueEventPass (purchaseTicket) failed:", e)
-    );
-
-    const populatedTicket = await Ticket.findById(ticket._id)
-      .populate('event', 'title date location image')
-      .populate('user', 'username email profilePicture');
-
-    invalidateCachePattern(`event_detail_${eventId}_`);
-    invalidateCachePattern('public_events_');
-    invalidateCachePattern('event_highlights_');
-    res.status(201).json({
-      message: "Ticket purchased successfully",
-      ticket: populatedTicket
-    });
-  } catch (error) {
-    console.error("Purchase ticket error:", error);
-    res.status(500).json({ message: "Error purchasing ticket", error: error.message });
   }
 };
 

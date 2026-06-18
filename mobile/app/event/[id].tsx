@@ -1348,7 +1348,7 @@ export default function EventDetailsPage() {
               onRsvp={() => handleRsvp("going")}
               onCancelRsvp={() => handleRsvp("not_going")}
               onRequestJoin={handleRequestToJoin}
-              onViewTicket={() => router.push("/tickets" as any)}
+              onViewTicket={() => router.push("/passes" as any)}
             />
           </SafeAreaView>
         </View>
@@ -1797,7 +1797,7 @@ function StickyCTA(props: {
             end={{ x: 1, y: 0.5 }}
             style={styles.ctaBtnGradient}
           />
-          <Text style={styles.ctaBtnText}>View your ticket →</Text>
+          <Text style={styles.ctaBtnText}>View your pass →</Text>
         </TouchableOpacity>
       </View>
     );

@@ -17,8 +17,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
 import * as SecureStore from "expo-secure-store";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import { capitalize } from "@/libs/helpers";
+import { remoteLog } from "@/utils/remoteLog";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useAccount } from "@/contexts/AccountContext";
@@ -84,10 +85,38 @@ export default function TabsLayout() {
         router.replace("/login");
       }
     } catch (error) {
-      console.error("Error fetching user profile:", error);
-      // If profile fetch fails (e.g., invalid token), redirect to login
-      await SecureStore.deleteItemAsync("token");
-      router.replace("/login");
+      const status = (error as AxiosError)?.response?.status;
+      // Only a genuine auth failure (the token was rejected) should end the
+      // session. Network blips, timeouts and 5xx must NOT delete the token —
+      // doing so bounces the user to /login, where they re-auth, hit the same
+      // transient error, and loop. Keep the session and fall back to the
+      // cached user instead.
+      if (status === 401 || status === 403) {
+        await SecureStore.deleteItemAsync("token");
+        router.replace("/login");
+        return;
+      }
+
+      remoteLog("warn", "profile.fetch.failed", {
+        status,
+        message: (error as Error)?.message,
+      });
+
+      try {
+        const cached = await SecureStore.getItemAsync("user");
+        if (cached) {
+          const u = JSON.parse(cached);
+          setUser({
+            id: u.id || u._id || "",
+            username: u.username || "",
+            email: u.email || "",
+            profilePicture: u.profilePicture || "",
+            isVendor: u.isVendor || false,
+          });
+        }
+      } catch (e) {
+        console.error("Failed to hydrate cached user:", e);
+      }
     }
   };
 
@@ -333,7 +362,7 @@ export default function TabsLayout() {
               </LinearGradient>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => router.push("/tickets" as any)}
+              onPress={() => router.push("/passes" as any)}
               style={styles.ticketButton}
               activeOpacity={0.7}
             >
@@ -341,7 +370,7 @@ export default function TabsLayout() {
                 colors={["#a855f7", "#7c3aed"]}
                 style={styles.ticketGradient}
               >
-                <Ionicons name="ticket" size={20} color="#fff" />
+                <Ionicons name="qr-code" size={20} color="#fff" />
               </LinearGradient>
             </TouchableOpacity>
             <TouchableOpacity

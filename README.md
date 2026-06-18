@@ -4,8 +4,9 @@ A comprehensive event management and social networking mobile application built 
 
 ## Features
 
-- 🎉 **Event Management**: Create, manage, and join events
-- 💬 **Real-time Chat**: Direct messaging and group chats with Socket.IO
+- 🎉 **Event Management**: Create, manage, invite to, and join events (with pending-invite tracking)
+- 🎟️ **Event Passes & Check-In**: A single QR entry pass is issued for every RSVP and ticket purchase, scanned at the door to mark attendance
+- 💬 **Real-time Chat**: Direct & group messaging with Socket.IO — replies, reactions, edits, @mentions, tappable links, and copy-to-clipboard
 - 🎭 **Vendor Discovery**: Find and connect with event vendors
 - 👥 **Social Networking**: Connect with friends and event attendees
 - 📍 **Location-based**: Discover events and vendors by city
@@ -177,7 +178,21 @@ NightVibe/
 - `GET /api/events/:eventId` - Get event by ID
 - `PUT /api/events/:eventId` - Update event
 - `DELETE /api/events/:eventId` - Delete event
-- `POST /api/events/:eventId/invite` - Invite user to event
+- `POST /api/events/:eventId/invite` - Invite user to event (adds to pending invites)
+- `POST /api/events/:eventId/respond-invite` - Accept/decline a pending invite
+- `POST /api/events/:eventId/rsvp` - RSVP going / not going
+- `POST /api/events/:eventId/join` - Join a free public event
+
+### Event Passes & Tickets
+
+Event entry is unified under the **pass** system: RSVPs and paid tickets both
+issue a QR pass (see `attendance.model.js`). Paid events charge via Stripe and
+the confirmed purchase issues the same kind of pass.
+
+- `POST /api/stripe/payment-intent/ticket/:eventId` - Start a ticket purchase (paid events)
+- `POST /api/stripe/confirm/ticket/:eventId` - Confirm purchase → issues a QR pass
+- `GET /api/my-passes` - Get the user's QR entry passes (RSVP + ticket)
+- `POST /api/events/:eventId/check-in` - Scan a pass to check an attendee in (organizer)
 
 ### Chats
 
@@ -211,6 +226,9 @@ NightVibe/
 
 - `message:new` - New message in chat
 - `message:read` - Message read by user
+- `message:reaction` - Emoji reaction added/removed
+- `message:edited` - Message content edited
+- `message:deleted` - Message deleted for everyone
 - `typing:start` - User is typing
 - `typing:stop` - User stopped typing
 - `user:online` - User came online

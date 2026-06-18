@@ -13,7 +13,6 @@ import {
   joinEventByShareLink,
   joinFreePublicEvent,
   getPublicEvents,
-  purchaseTicket,
   getUserTickets,
   getEventTicketSales,
   rsvpEvent,
@@ -46,9 +45,6 @@ router.get("/tickets", authenticate, getUserTickets);
 
 // Join a free public event
 router.post("/events/:eventId/join", authenticate, joinFreePublicEvent);
-
-// Purchase a ticket for a public paid event
-router.post("/events/:eventId/purchase", authenticate, purchaseTicket);
 
 // Get ticket sales for an event (organizer only)
 router.get("/events/:eventId/tickets", authenticate, getEventTicketSales);

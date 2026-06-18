@@ -7,12 +7,15 @@ import {
   Pressable,
   Modal,
   Alert,
+  Linking,
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
+import * as Clipboard from "expo-clipboard";
+import { parseMessageSegments } from "@/utils/messageText";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
@@ -81,6 +84,8 @@ interface MessageBubbleProps {
   onReply?: (message: Message) => void;
   /** Fired when the quoted reply preview is tapped (jump to original). */
   onReplyPress?: (messageId: string) => void;
+  /** Fired when an @mention in the message body is tapped. */
+  onMentionPress?: (username: string) => void;
   /** Briefly flag this bubble after the user jumps to it from a reply. */
   isHighlighted?: boolean;
 }
@@ -125,6 +130,7 @@ export default function MessageBubble({
   onDelete,
   onReply,
   onReplyPress,
+  onMentionPress,
   isHighlighted = false,
 }: MessageBubbleProps) {
   const router = useRouter();
@@ -242,13 +248,26 @@ export default function MessageBubble({
   const canEdit =
     isOwnMessage && !isTemp && message.type === "text" && withinEditWindow;
   const canDelete = isOwnMessage && !isTemp;
+  const canCopy = !isTemp && message.type === "text" && !!message.content;
 
   const handleLongPress = () => {
     if (isTemp) return;
-    // With no edit/delete options (e.g. someone else's message) go straight to
-    // the emoji picker instead of a one-row menu.
-    setMenuMode(canEdit || canDelete ? "actions" : "react");
+    // With no actionable options (e.g. someone else's image) go straight to the
+    // emoji picker instead of a one-row menu.
+    setMenuMode(canEdit || canDelete || canCopy ? "actions" : "react");
     setPickerVisible(true);
+  };
+
+  const handleCopy = async () => {
+    setPickerVisible(false);
+    try {
+      await Clipboard.setStringAsync(message.content || "");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+        () => {}
+      );
+    } catch {
+      // Clipboard write failed (rare) — nothing useful to surface.
+    }
   };
 
   const handleToggleReaction = async (emoji: string) => {
@@ -527,7 +546,31 @@ export default function MessageBubble({
               );
             })()}
             <Text style={[styles.messageText, isOwnMessage ? styles.ownText : styles.otherText]}>
-              {message.content}
+              {parseMessageSegments(message.content || "").map((seg, i) => {
+                if (seg.kind === "link") {
+                  return (
+                    <Text
+                      key={i}
+                      style={isOwnMessage ? styles.linkOwn : styles.linkOther}
+                      onPress={() => Linking.openURL(seg.url).catch(() => {})}
+                    >
+                      {seg.value}
+                    </Text>
+                  );
+                }
+                if (seg.kind === "mention") {
+                  return (
+                    <Text
+                      key={i}
+                      style={isOwnMessage ? styles.mentionOwn : styles.mentionOther}
+                      onPress={() => onMentionPress?.(seg.username)}
+                    >
+                      {seg.value}
+                    </Text>
+                  );
+                }
+                return <Text key={i}>{seg.value}</Text>;
+              })}
             </Text>
             {message.isEdited && (
               <Text style={[styles.editedText, isOwnMessage ? styles.ownText : styles.otherText]}>
@@ -724,6 +767,20 @@ export default function MessageBubble({
                       </>
                     )}
 
+                    {canCopy && (
+                      <>
+                        <TouchableOpacity
+                          style={styles.actionRow}
+                          onPress={handleCopy}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="copy-outline" size={18} color={CH_TEXT} />
+                          <Text style={styles.actionLabel}>Copy</Text>
+                        </TouchableOpacity>
+                        <View style={styles.actionDivider} />
+                      </>
+                    )}
+
                     <TouchableOpacity
                       style={styles.actionRow}
                       onPress={() => setMenuMode("react")}
@@ -859,6 +916,22 @@ const styles = StyleSheet.create({
   },
   otherText: {
     color: CH_TEXT,
+  },
+  linkOwn: {
+    color: "#fff",
+    textDecorationLine: "underline",
+  },
+  linkOther: {
+    color: CH_PURPLE_SOFT,
+    textDecorationLine: "underline",
+  },
+  mentionOwn: {
+    color: "#fff",
+    fontFamily: "Outfit_700Bold",
+  },
+  mentionOther: {
+    color: CH_PURPLE_SOFT,
+    fontFamily: "Outfit_700Bold",
   },
   captionText: {
     fontFamily: "Outfit_500Medium",
