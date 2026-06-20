@@ -31,6 +31,7 @@ import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 import { createEventShareLink } from "@/utils/shareLinks";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
+import GuestGate from "@/components/shared/GuestGate";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { Avatar } from "@/components/shared/Avatar";
 import { useStripePayment } from "@/hooks/useStripePayment";
@@ -93,6 +94,7 @@ export default function EventsPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isGuest, setIsGuest] = useState(false);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [isInviteModalVisible, setIsInviteModalVisible] = useState(false);
@@ -140,9 +142,13 @@ export default function EventsPage() {
     try {
       const token = await SecureStore.getItemAsync("token");
       if (!token) {
-        router.replace("/login");
+        // Guest — "My Events" needs an account. Show the sign-in gate instead
+        // of bouncing them straight to /login.
+        setIsGuest(true);
+        setLoading(false);
         return;
       }
+      setIsGuest(false);
 
       const response = await fetch(
         `${BASE_URL}/events?page=${pageNum}&limit=${PAGE_LIMIT}`,
@@ -763,6 +769,16 @@ export default function EventsPage() {
       </TouchableOpacity>
     );
   };
+
+  if (isGuest) {
+    return (
+      <GuestGate
+        title="Log in to see your events"
+        subtitle="Sign in or create an account to host events, RSVP, manage invites, and track what you're attending."
+        icon="calendar-outline"
+      />
+    );
+  }
 
   return (
     <>

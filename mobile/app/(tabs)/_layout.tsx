@@ -35,6 +35,7 @@ export default function TabsLayout() {
   const currentTab = segments[1]; // Gets the current tab name (home, vendors, bests, etc.)
   const insets = useSafeAreaInsets();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isGuest, setIsGuest] = useState(false);
 
   const [user, setUser] = useState<{
     id: string;
@@ -52,18 +53,17 @@ export default function TabsLayout() {
   const [isProfileModalVisible, setIsProfileModalVisible] = useState(false);
   const router = useRouter();
 
-  // Check authentication immediately on mount
+  // Check auth on mount. Guests are allowed in (full guest browsing) — we just
+  // flag them so the profile button routes to login instead of opening the
+  // account modal.
   useEffect(() => {
     const checkAuth = async () => {
       const token = await SecureStore.getItemAsync("token");
-      if (!token) {
-        router.replace("/login");
-        return;
-      }
+      setIsGuest(!token);
       setIsCheckingAuth(false);
     };
     checkAuth();
-  }, [router]);
+  }, []);
 
   const fetchUserProfile = async () => {
     try {
@@ -81,8 +81,8 @@ export default function TabsLayout() {
           isVendor: userData.isVendor || false,
         });
       } else {
-        // If no token during profile fetch, redirect to login
-        router.replace("/login");
+        // Guest — nothing to fetch, leave the empty user state in place.
+        return;
       }
     } catch (error) {
       const status = (error as AxiosError)?.response?.status;
@@ -145,6 +145,10 @@ export default function TabsLayout() {
   }
 
   const handleProfilePress = () => {
+    if (isGuest) {
+      router.push("/login");
+      return;
+    }
     setIsProfileModalVisible(true);
   };
 
@@ -323,6 +327,17 @@ export default function TabsLayout() {
         <View style={styles.navbar}>
           <Text style={styles.logoText}>CityVibe</Text>
           <View style={styles.navbarActions}>
+            {isGuest ? (
+              <TouchableOpacity
+                onPress={() => router.push("/login")}
+                style={styles.loginPill}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="log-in-outline" size={16} color="#fff" />
+                <Text style={styles.loginPillText}>Log in</Text>
+              </TouchableOpacity>
+            ) : (
+              <>
             <TouchableOpacity
               onPress={() => router.push("/notifications" as any)}
               style={styles.ticketButton}
@@ -380,6 +395,8 @@ export default function TabsLayout() {
             >
               <Avatar uri={user.profilePicture} name={user.username} size={36} />
             </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
       )}
@@ -547,6 +564,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+  },
+  loginPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#a855f7",
+  },
+  loginPillText: {
+    color: "#fff",
+    fontFamily: Fonts.bold,
+    fontSize: 13.5,
   },
   ticketButton: {
     borderRadius: 20,

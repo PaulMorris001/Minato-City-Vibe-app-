@@ -2,8 +2,11 @@
  * Splits a chat message's plain text into renderable segments so the bubble can
  * make URLs tappable and highlight @mentions, while leaving normal text alone.
  *
- * Kept deliberately dependency-free (one regex pass) — it runs for every text
- * message on every render.
+ * Mentions are matched against the chat's KNOWN usernames (passed in) so that
+ * usernames containing spaces or symbols (e.g. "@setemi Loye") are tagged in
+ * full. We try the longest usernames first so "@setemi Loye" wins over a bare
+ * "@setemi". When no username list is available we fall back to a simple
+ * `@word` match.
  */
 
 export type MessageSegment =
@@ -11,47 +14,78 @@ export type MessageSegment =
   | { kind: "link"; value: string; url: string }
   | { kind: "mention"; value: string; username: string };
 
-// http(s):// links, bare www. links, or @username mentions. Scanned left→right.
-const TOKEN_RE = /(https?:\/\/[^\s]+|www\.[^\s]+)|(@\w+)/gi;
+const URL_AT_START = /^(https?:\/\/[^\s]+|www\.[^\s]+)/i;
 const URL_RE = /(https?:\/\/[^\s]+|www\.[^\s]+)/i;
 
 export function hasLink(text: string): boolean {
   return URL_RE.test(text);
 }
 
-export function parseMessageSegments(text: string): MessageSegment[] {
+export function parseMessageSegments(
+  text: string,
+  usernames: string[] = []
+): MessageSegment[] {
   if (!text) return [];
+
+  // Longest usernames first so a multi-word name matches before its first word.
+  const known = [...new Set(usernames.filter(Boolean))].sort(
+    (a, b) => b.length - a.length
+  );
+
   const segments: MessageSegment[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  TOKEN_RE.lastIndex = 0;
-
-  while ((match = TOKEN_RE.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      segments.push({ kind: "text", value: text.slice(lastIndex, match.index) });
+  let buf = "";
+  const flush = () => {
+    if (buf) {
+      segments.push({ kind: "text", value: buf });
+      buf = "";
     }
-    const [full, urlTok, mentionTok] = match;
+  };
 
-    if (urlTok) {
-      // Trailing punctuation (a period ending a sentence, a closing paren) is
-      // almost never part of the URL — strip it back into a text segment.
-      const trimmed = urlTok.replace(/[.,!?;:)\]]+$/, "");
+  let i = 0;
+  while (i < text.length) {
+    const rest = text.slice(i);
+
+    // URL (no spaces, so a simple anchored match is safe).
+    const urlMatch = URL_AT_START.exec(rest);
+    if (urlMatch) {
+      const raw = urlMatch[1];
+      const trimmed = raw.replace(/[.,!?;:)\]]+$/, "");
       const url = trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
+      flush();
       segments.push({ kind: "link", value: trimmed, url });
-      const trailing = urlTok.slice(trimmed.length);
-      if (trailing) segments.push({ kind: "text", value: trailing });
-    } else if (mentionTok) {
-      segments.push({
-        kind: "mention",
-        value: mentionTok,
-        username: mentionTok.slice(1),
-      });
+      i += trimmed.length;
+      continue;
     }
-    lastIndex = match.index + full.length;
+
+    // Mention: '@' at a word boundary (start of string or after whitespace).
+    if (text[i] === "@" && (i === 0 || /\s/.test(text[i - 1]))) {
+      const after = text.slice(i + 1);
+      const afterLower = after.toLowerCase();
+      let matched: string | null = null;
+
+      for (const name of known) {
+        if (afterLower.startsWith(name.toLowerCase())) {
+          matched = after.slice(0, name.length); // preserve original casing
+          break;
+        }
+      }
+      if (!matched) {
+        const m = /^[A-Za-z0-9_]+/.exec(after);
+        if (m) matched = m[0];
+      }
+
+      if (matched) {
+        flush();
+        segments.push({ kind: "mention", value: "@" + matched, username: matched });
+        i += 1 + matched.length;
+        continue;
+      }
+    }
+
+    buf += text[i];
+    i += 1;
   }
 
-  if (lastIndex < text.length) {
-    segments.push({ kind: "text", value: text.slice(lastIndex) });
-  }
+  flush();
   return segments;
 }

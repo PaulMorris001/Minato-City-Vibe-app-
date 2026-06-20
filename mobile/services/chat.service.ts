@@ -352,6 +352,23 @@ class ChatService {
   }
 
   /**
+   * Remove a member from a group chat (admins only)
+   */
+  async removeParticipant(chatId: string, participantId: string): Promise<Chat> {
+    const headers = await this.getAuthHeader();
+    const response = await fetch(
+      `${BASE_URL}/chats/${chatId}/participants/${participantId}`,
+      { method: "DELETE", headers }
+    );
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.message || "Failed to remove member");
+    }
+    const data = await response.json();
+    return data.chat as Chat;
+  }
+
+  /**
    * Toggle a reaction on a message
    */
   async toggleReaction(messageId: string, emoji: string): Promise<Message> {

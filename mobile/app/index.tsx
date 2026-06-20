@@ -16,11 +16,12 @@ export default function Index() {
       const hasSeenOnboarding = await SecureStore.getItemAsync("hasSeenOnboarding");
 
       if (!token) {
-        // Not logged in — if there's a pending deep link from a stale notification
-        // tap, drop it. The user needs to log in first; pushing them straight to
-        // a chat would just 401.
+        // Not logged in — drop any pending deep link from a stale notification
+        // tap (a chat link would just 401). New users see onboarding; returning
+        // guests land on Home and can browse without an account (sign-up is
+        // prompted only when they take an action).
         consumePendingDeepLink();
-        setAppState(hasSeenOnboarding ? "login" : "onboarding");
+        setAppState(hasSeenOnboarding ? "home" : "onboarding");
         return;
       }
 

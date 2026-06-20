@@ -63,6 +63,8 @@ export default function MessagesScreen() {
   const [searchingUsers, setSearchingUsers] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string>("");
   const [typingByChat, setTypingByChat] = useState<Record<string, Set<string>>>({});
+  // Conversation targeted by a long-press (shows the pin/delete action sheet).
+  const [actionChat, setActionChat] = useState<Chat | null>(null);
 
   // ── New group chat (not linked to any event) ──────────────────────────────
   const [groupModalVisible, setGroupModalVisible] = useState(false);
@@ -238,6 +240,54 @@ export default function MessagesScreen() {
     }
   }, [searchQuery, chats, currentUserId]);
 
+  const handleTogglePin = async (chat: Chat) => {
+    const pinned = !(chat.pinnedBy || []).some((p) => p === currentUserId);
+    setActionChat(null);
+    // Optimistic — sortChats re-pins to the top via the chats→filteredChats effect.
+    setChats((prev) =>
+      prev.map((c) =>
+        c._id === chat._id
+          ? {
+              ...c,
+              pinnedBy: pinned
+                ? [...(c.pinnedBy || []), currentUserId]
+                : (c.pinnedBy || []).filter((p) => p !== currentUserId),
+            }
+          : c
+      )
+    );
+    try {
+      await chatService.setChatPinned(chat._id, pinned);
+    } catch {
+      Alert.alert("Error", "Couldn't update pin");
+      fetchChats(true);
+    }
+  };
+
+  const handleDeleteChat = (chat: Chat) => {
+    setActionChat(null);
+    Alert.alert(
+      "Delete conversation",
+      "This removes the conversation from your inbox. It reappears if someone sends a new message.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setChats((prev) => prev.filter((c) => c._id !== chat._id));
+            try {
+              await chatService.deleteChat(chat._id);
+            } catch {
+              Alert.alert("Error", "Couldn't delete conversation");
+              fetchChats(true);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchChats();
@@ -351,6 +401,7 @@ export default function MessagesScreen() {
         currentUserId={currentUserId}
         isTyping={isTyping}
         onPress={() => handleChatPress(item)}
+        onLongPress={() => setActionChat(item)}
       />
     );
   };
@@ -690,6 +741,58 @@ export default function MessagesScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Long-press action sheet — pin / delete a conversation in place */}
+      <Modal
+        visible={!!actionChat}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActionChat(null)}
+      >
+        <TouchableOpacity
+          style={styles.sheetOverlay}
+          activeOpacity={1}
+          onPress={() => setActionChat(null)}
+        >
+          <View style={styles.sheet}>
+            {actionChat && (
+              <>
+                <TouchableOpacity
+                  style={styles.sheetRow}
+                  activeOpacity={0.7}
+                  onPress={() => handleTogglePin(actionChat)}
+                >
+                  <Ionicons
+                    name={
+                      (actionChat.pinnedBy || []).some((p) => p === currentUserId)
+                        ? "pin"
+                        : "pin-outline"
+                    }
+                    size={20}
+                    color="#C084FC"
+                  />
+                  <Text style={styles.sheetRowText}>
+                    {(actionChat.pinnedBy || []).some((p) => p === currentUserId)
+                      ? "Unpin conversation"
+                      : "Pin conversation"}
+                  </Text>
+                </TouchableOpacity>
+                <View style={styles.sheetDivider} />
+                <TouchableOpacity
+                  style={styles.sheetRow}
+                  activeOpacity={0.7}
+                  onPress={() => handleDeleteChat(actionChat)}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                  <Text style={[styles.sheetRowText, { color: "#ef4444" }]}>
+                    Delete conversation
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -698,6 +801,38 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: CH_BG,
+  },
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: "#1A1030",
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingTop: 8,
+    paddingBottom: 34,
+    paddingHorizontal: 8,
+    borderTopWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  sheetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  sheetRowText: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 15.5,
+    color: "#F4EEFF",
+  },
+  sheetDivider: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    marginHorizontal: 16,
   },
   safeArea: {
     flex: 1,

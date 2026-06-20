@@ -18,6 +18,7 @@ import { fetchVendorsBrowse } from "@/libs/api";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
+import { ensureAuth } from "@/utils/requireAuth";
 import { LocationSelection } from "@/libs/interfaces";
 import { formatLocation } from "@/utils/location";
 import { Fonts } from "@/constants/fonts";
@@ -98,9 +99,9 @@ export default function VendorsPage() {
     setIsLoggedIn(!!token);
   };
 
-  const handleBecomeVendor = () => {
-    if (isLoggedIn) setShowVendorModal(true);
-    else router.push("/login");
+  const handleBecomeVendor = async () => {
+    if (!(await ensureAuth("become a vendor"))) return;
+    setShowVendorModal(true);
   };
 
   const searchVendors = async (query: string) => {

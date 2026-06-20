@@ -103,6 +103,10 @@ interface Event {
   pendingInvites: User[];
   joinRequests?: User[];
   vendors?: EventVendor[];
+  vendorInvites?: {
+    vendor: EventVendor;
+    status: "pending" | "accepted" | "declined";
+  }[];
   rsvpCount: number;
   rsvpUsers: RsvpUser[];
   userRsvp: boolean;
@@ -1319,6 +1323,79 @@ export default function EventDetailsPage() {
               </View>
             </GlassCard>
           )}
+
+          {/* Pending invites + pending vendors — organizer view */}
+          {isCreator &&
+            ((event.pendingInvites && event.pendingInvites.length > 0) ||
+              (event.vendorInvites || []).some((vi) => vi.status === "pending")) && (
+              <GlassCard style={styles.pendingCard}>
+                {event.pendingInvites && event.pendingInvites.length > 0 && (
+                  <View style={styles.pendingBlock}>
+                    <Text style={styles.microLabel}>INVITED · AWAITING RESPONSE</Text>
+                    {event.pendingInvites.map((u) => (
+                      <TouchableOpacity
+                        key={u._id}
+                        style={styles.pendingRow}
+                        activeOpacity={0.7}
+                        onPress={() => openUserProfile(u._id)}
+                      >
+                        <View style={styles.pendingAvatarWrap}>
+                          {u.profilePicture ? (
+                            <Image source={{ uri: u.profilePicture }} style={styles.attendeeAvatar} />
+                          ) : (
+                            <View style={styles.attendeeAvatarFallback}>
+                              <Text style={styles.attendeeInitials}>{initialsOf(u.username)}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.pendingName} numberOfLines={1}>
+                          {u.username}
+                        </Text>
+                        <Text style={styles.pendingStatus}>Pending</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {(event.vendorInvites || []).filter((vi) => vi.status === "pending").length > 0 && (
+                  <View style={styles.pendingBlock}>
+                    <Text style={styles.microLabel}>VENDORS · AWAITING CONFIRMATION</Text>
+                    {(event.vendorInvites || [])
+                      .filter((vi) => vi.status === "pending")
+                      .map((vi) => {
+                        const vt =
+                          typeof vi.vendor.vendorType === "object"
+                            ? vi.vendor.vendorType?.name
+                            : (vi.vendor.vendorType as string | undefined);
+                        return (
+                          <TouchableOpacity
+                            key={vi.vendor._id}
+                            style={styles.pendingRow}
+                            activeOpacity={0.85}
+                            onPress={() =>
+                              router.push({
+                                pathname: "/vendor-details/[vendorId]",
+                                params: { vendorId: vi.vendor._id, vendorName: vi.vendor.name },
+                              } as any)
+                            }
+                          >
+                            <View style={styles.pendingVendorIcon}>
+                              <Text style={styles.pendingVendorEmoji}>✦</Text>
+                            </View>
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              <Text style={styles.pendingName} numberOfLines={1}>
+                                {vi.vendor.name}
+                              </Text>
+                              {!!vt && <Text style={styles.vendorTag}>{vt}</Text>}
+                            </View>
+                            <Text style={styles.pendingStatus}>Pending</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                  </View>
+                )}
+              </GlassCard>
+            )}
         </View>
       </ScrollView>
 
@@ -2379,6 +2456,33 @@ const styles = StyleSheet.create({
 
   // Attendees
   attendeesCard: { flexDirection: "row", alignItems: "center", gap: 12 },
+  pendingCard: { gap: 18 },
+  pendingBlock: { gap: 10 },
+  pendingRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  pendingAvatarWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: AU.surface,
+    overflow: "hidden",
+  },
+  pendingName: { flex: 1, color: AU.text, fontFamily: Fonts.semiBold, fontSize: 14 },
+  pendingStatus: {
+    color: "#FCD34D",
+    fontFamily: Fonts.bold,
+    fontSize: 10.5,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  pendingVendorIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(168,85,247,0.16)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pendingVendorEmoji: { color: AU.purpleSoft, fontSize: 14 },
   attendeesHeadline: {
     color: AU.text,
     fontFamily: "BricolageGrotesque_700Bold",

@@ -78,6 +78,20 @@ const eventSchema = mongoose.Schema({
     ref: "vendor"
   }],
 
+  // Vendor invitations awaiting a response. A vendor with a linked user account
+  // is invited (status "pending") and only moves into `vendors` once accepted.
+  // Vendors without a linked account are added straight to `vendors`.
+  vendorInvites: [{
+    vendor: { type: mongoose.Schema.Types.ObjectId, ref: "vendor", required: true },
+    status: {
+      type: String,
+      enum: ["pending", "accepted", "declined"],
+      default: "pending",
+    },
+    invitedAt: { type: Date, default: Date.now },
+    respondedAt: { type: Date },
+  }],
+
   // Event status
   isActive: { type: Boolean, default: true },
 

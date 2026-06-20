@@ -51,11 +51,13 @@ export function GlassRoundButton({
   onPress,
   disabled,
   size = 38,
+  iconRatio = 0.42,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   onPress?: () => void;
   disabled?: boolean;
   size?: number;
+  iconRatio?: number;
 }) {
   return (
     <TouchableOpacity
@@ -67,7 +69,7 @@ export function GlassRoundButton({
         { width: size, height: size, borderRadius: size / 2, opacity: disabled ? 0.35 : 1 },
       ]}
     >
-      <Ionicons name={icon} size={size * 0.42} color={AU.text} />
+      <Ionicons name={icon} size={size * iconRatio} color={AU.text} />
     </TouchableOpacity>
   );
 }

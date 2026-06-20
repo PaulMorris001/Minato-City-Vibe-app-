@@ -19,6 +19,7 @@ import Event from "../models/event.model.js";
 import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean } from "../utils/contentFilter.js";
 import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
+import { validatePassword } from "../utils/passwordPolicy.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -101,10 +102,9 @@ export async function register(req, res) {
         .json({ message: "Please enter a valid email address." });
     }
 
-    if (password.length < 6) {
-      return res
-        .status(400)
-        .json({ message: "Password must be at least 6 characters long." });
+    const pwCheck = validatePassword(password);
+    if (!pwCheck.ok) {
+      return res.status(400).json({ message: pwCheck.message });
     }
 
     // Case-insensitive uniqueness. The email index is unique at the DB layer,
@@ -1505,9 +1505,10 @@ export async function resetPassword(req, res) {
       return res.status(400).json({ message: "Email, reset token, and new password are required" });
     }
 
-    // Validate password length
-    if (newPassword.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters long" });
+    // Validate password strength
+    const pwCheck = validatePassword(newPassword);
+    if (!pwCheck.ok) {
+      return res.status(400).json({ message: pwCheck.message });
     }
 
     // Find user

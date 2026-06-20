@@ -281,6 +281,53 @@ export const updateGroupChat = async (req, res) => {
   }
 };
 
+// Remove a participant from a group chat (admins only)
+export const removeParticipantFromGroup = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { chatId, participantId } = req.params;
+
+    const chat = await Chat.findById(chatId);
+    if (!chat) return res.status(404).json({ message: "Chat not found" });
+    if (chat.type !== "group") return res.status(400).json({ message: "Not a group chat" });
+
+    if (!chat.admins.some((a) => a.toString() === userId)) {
+      return res.status(403).json({ message: "Only group admins can remove members" });
+    }
+    if (participantId === userId) {
+      return res.status(400).json({ message: "You can't remove yourself from the group" });
+    }
+    if (!chat.participants.some((p) => p.toString() === participantId)) {
+      return res.status(404).json({ message: "User is not in this group" });
+    }
+
+    chat.participants = chat.participants.filter((p) => p.toString() !== participantId);
+    chat.admins = chat.admins.filter((a) => a.toString() !== participantId);
+    if (chat.unreadCount && typeof chat.unreadCount.delete === "function") {
+      chat.unreadCount.delete(participantId);
+    }
+    await chat.save();
+
+    const updated = await Chat.findById(chatId)
+      .populate("participants", "username email profilePicture")
+      .populate("admins", "username email profilePicture");
+
+    // Notify the room (so the member list refreshes) and the removed user.
+    const { getSocketInstance } = await import("../services/socket.service.js");
+    const io = getSocketInstance();
+    if (io) {
+      io.to(`chat:${chatId}`).emit("group:updated", { chatId });
+      io.to(`user:${participantId}`).emit("group:removed", { chatId });
+    }
+
+    invalidateCachePattern('user_chats_');
+    res.json({ message: "Member removed", chat: updated });
+  } catch (error) {
+    console.error("Remove participant error:", error);
+    res.status(500).json({ message: "Error removing member", error: error.message });
+  }
+};
+
 // Toggle a reaction on a message
 export const toggleMessageReaction = async (req, res) => {
   try {

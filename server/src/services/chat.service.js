@@ -150,16 +150,16 @@ class ChatService {
     // Resolve @mentions in text messages against the chat's participants so we
     // only ever store real members (an @ typed against a stranger is ignored).
     let mentions = [];
-    if ((type || 'text') === 'text' && content) {
-      const tokens = [...content.matchAll(/@(\w+)/g)].map((m) => m[1].toLowerCase());
-      if (tokens.length) {
-        const participantUsers = await User.find({
-          _id: { $in: chat.participants },
-        }).select('username');
-        mentions = participantUsers
-          .filter((u) => u.username && tokens.includes(u.username.toLowerCase()))
-          .map((u) => u._id);
-      }
+    if ((type || 'text') === 'text' && content && content.includes('@')) {
+      const lower = content.toLowerCase();
+      const participantUsers = await User.find({
+        _id: { $in: chat.participants },
+      }).select('username');
+      // Match the full "@username" (usernames may contain spaces/symbols, e.g.
+      // "@setemi Loye"), so the whole name is captured rather than one word.
+      mentions = participantUsers
+        .filter((u) => u.username && lower.includes('@' + u.username.toLowerCase()))
+        .map((u) => u._id);
     }
 
     // Create message

@@ -19,6 +19,8 @@ import {
   getEventHighlights,
   addVendorToEvent,
   removeVendorFromEvent,
+  respondToVendorInvite,
+  getMyVendorEventInvites,
 } from "../controllers/event.controller.js";
 import { authenticate, optionalAuth } from "../middleware/auth.middleware.js";
 
@@ -34,11 +36,11 @@ router.post("/events/from-group/:chatId", authenticate, createEventFromGroup);
 // Get all events for the authenticated user
 router.get("/events", authenticate, getUserEvents);
 
-// Get public events for exploration
-router.get("/events/public/explore", authenticate, getPublicEvents);
+// Get public events for exploration (guest-accessible)
+router.get("/events/public/explore", optionalAuth, getPublicEvents);
 
-// Get event highlights (trending + upcoming)
-router.get("/events/highlights", authenticate, getEventHighlights);
+// Get event highlights (trending + upcoming) — guest-accessible
+router.get("/events/highlights", optionalAuth, getEventHighlights);
 
 // Get user's purchased tickets
 router.get("/tickets", authenticate, getUserTickets);
@@ -81,5 +83,11 @@ router.post("/events/share/:shareToken/join", authenticate, joinEventByShareLink
 // Vendor management for events (creator only)
 router.post("/events/:eventId/vendors/:vendorId", authenticate, addVendorToEvent);
 router.delete("/events/:eventId/vendors/:vendorId", authenticate, removeVendorFromEvent);
+
+// Pending event invites for the logged-in user's vendor(s)
+router.get("/vendor/event-invites", authenticate, getMyVendorEventInvites);
+
+// Vendor responds to an event invite (accept/decline)
+router.post("/events/:eventId/vendor-invite/respond", authenticate, respondToVendorInvite);
 
 export default router;

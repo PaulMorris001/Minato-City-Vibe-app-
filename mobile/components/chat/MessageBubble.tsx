@@ -30,6 +30,7 @@ import type { Message, MessageReaction } from "@/services/chat.service";
 import chatService from "@/services/chat.service";
 import { openUserProfile } from "@/utils/userNavigation";
 import { Avatar } from "@/components/shared/Avatar";
+import BottomSheetModal from "@/components/shared/BottomSheetModal";
 
 const CH_TEXT = "#F4EEFF";
 const CH_TEXT_DIM = "rgba(244,238,255,0.62)";
@@ -86,6 +87,8 @@ interface MessageBubbleProps {
   onReplyPress?: (messageId: string) => void;
   /** Fired when an @mention in the message body is tapped. */
   onMentionPress?: (username: string) => void;
+  /** Known usernames in this chat, so multi-word @mentions tag in full. */
+  mentionUsernames?: string[];
   /** Briefly flag this bubble after the user jumps to it from a reply. */
   isHighlighted?: boolean;
 }
@@ -131,10 +134,13 @@ export default function MessageBubble({
   onReply,
   onReplyPress,
   onMentionPress,
+  mentionUsernames,
   isHighlighted = false,
 }: MessageBubbleProps) {
   const router = useRouter();
   const [pickerVisible, setPickerVisible] = useState(false);
+  // Tapping a reaction pill opens a sheet listing who reacted.
+  const [reactionsSheetVisible, setReactionsSheetVisible] = useState(false);
   // Long-press menu has two stages: the action list, then the emoji picker.
   const [menuMode, setMenuMode] = useState<"actions" | "react">("actions");
 
@@ -151,13 +157,24 @@ export default function MessageBubble({
 
   const reactions = message.reactions || [];
 
-  // Group reactions by emoji
+  // Group reactions by emoji, keeping the list of who reacted so we can show a
+  // "reacted by" sheet.
   const groupedReactions = useMemo(() => {
-    const map: Record<string, { emoji: string; count: number; mine: boolean }> = {};
+    const map: Record<
+      string,
+      {
+        emoji: string;
+        count: number;
+        mine: boolean;
+        users: { _id: string; username?: string; profilePicture?: string }[];
+      }
+    > = {};
     for (const r of reactions) {
       const uid = reactionUserId(r);
-      if (!map[r.emoji]) map[r.emoji] = { emoji: r.emoji, count: 0, mine: false };
+      const u = typeof r.user === "string" ? { _id: r.user } : r.user;
+      if (!map[r.emoji]) map[r.emoji] = { emoji: r.emoji, count: 0, mine: false, users: [] };
       map[r.emoji].count += 1;
+      map[r.emoji].users.push(u);
       if (uid && uid === currentUserId) map[r.emoji].mine = true;
     }
     return Object.values(map);
@@ -546,7 +563,7 @@ export default function MessageBubble({
               );
             })()}
             <Text style={[styles.messageText, isOwnMessage ? styles.ownText : styles.otherText]}>
-              {parseMessageSegments(message.content || "").map((seg, i) => {
+              {parseMessageSegments(message.content || "", mentionUsernames).map((seg, i) => {
                 if (seg.kind === "link") {
                   return (
                     <Text
@@ -686,7 +703,7 @@ export default function MessageBubble({
                     {groupedReactions.map((r) => (
                       <TouchableOpacity
                         key={r.emoji}
-                        onPress={() => handleToggleReaction(r.emoji)}
+                        onPress={() => setReactionsSheetVisible(true)}
                         activeOpacity={0.7}
                         style={styles.reactionItem}
                       >
@@ -809,6 +826,40 @@ export default function MessageBubble({
                 )}
               </Pressable>
             </Modal>
+
+            {/* Who-reacted sheet */}
+            <BottomSheetModal
+              visible={reactionsSheetVisible}
+              onClose={() => setReactionsSheetVisible(false)}
+              title="Reactions"
+              maxHeight="60%"
+            >
+              {groupedReactions.map((g) => (
+                <View key={g.emoji} style={styles.reactSheetGroup}>
+                  {g.users.map((u, idx) => {
+                    const isMe = !!currentUserId && u._id === currentUserId;
+                    return (
+                      <TouchableOpacity
+                        key={`${g.emoji}-${u._id}-${idx}`}
+                        style={styles.reactSheetRow}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          setReactionsSheetVisible(false);
+                          if (isMe) handleToggleReaction(g.emoji);
+                          else openUserProfile(u._id);
+                        }}
+                      >
+                        <Avatar uri={u.profilePicture} name={u.username} size={38} />
+                        <Text style={styles.reactSheetName} numberOfLines={1}>
+                          {isMe ? "You · tap to remove" : u.username || "User"}
+                        </Text>
+                        <Text style={styles.reactSheetEmoji}>{g.emoji}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
+            </BottomSheetModal>
           </View>
         </Animated.View>
       </View>
@@ -1073,6 +1124,24 @@ const styles = StyleSheet.create({
   },
 
   // Reactions
+  reactSheetGroup: {
+    marginBottom: 4,
+  },
+  reactSheetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 8,
+  },
+  reactSheetName: {
+    flex: 1,
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 15,
+    color: "#fff",
+  },
+  reactSheetEmoji: {
+    fontSize: 20,
+  },
   reactionsChip: {
     position: "absolute",
     bottom: -10,

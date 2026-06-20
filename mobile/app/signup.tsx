@@ -20,6 +20,7 @@ import * as Sentry from "@sentry/react-native";
 
 import { BASE_URL } from "@/constants/constants";
 import { remoteLog } from "@/utils/remoteLog";
+import { passwordError } from "@/utils/passwordPolicy";
 import { PosterBackground } from "@/components/auth/PosterBackground";
 import {
   GradientAccent,
@@ -138,8 +139,10 @@ export default function Signup() {
       return "3–20 characters, letters / numbers / underscores only.";
     if (current.key === "email" && !EMAIL_RE.test(v))
       return "That email doesn't look right.";
-    if (current.key === "password" && (v.length < 8 || !/\d/.test(v) || !/[a-zA-Z]/.test(v)))
-      return "Use 8+ characters with at least one letter and one number.";
+    if (current.key === "password") {
+      const err = passwordError(values.password);
+      if (err) return err;
+    }
     if (current.key === "confirm" && v !== values.password)
       return "Passwords don't match yet.";
     return null;

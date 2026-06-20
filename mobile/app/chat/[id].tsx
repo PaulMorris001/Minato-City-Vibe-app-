@@ -378,6 +378,29 @@ export default function ChatScreen() {
   };
 
   // Delete (hide) this whole conversation for the current user, then leave.
+  const handleRemoveMember = (member: { _id: string; username: string }) => {
+    if (!chat) return;
+    Alert.alert(
+      "Remove member",
+      `Remove ${capitalize(member.username)} from the group?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const updated = await chatService.removeParticipant(chat._id, member._id);
+              setChat(updated);
+            } catch (e: any) {
+              Alert.alert("Error", e?.message || "Couldn't remove member");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleDeleteConversation = () => {
     if (!chat) return;
     Alert.alert(
@@ -614,6 +637,12 @@ export default function ChatScreen() {
 
   const messageSections = buildMessageSections(messages);
   const isGroup = chat?.type === "group";
+  // Usernames in this chat, used so multi-word @mentions ("@setemi Loye") get
+  // tagged and highlighted in full rather than just the first word.
+  const participantUsernames = useMemo(
+    () => (chat?.participants || []).map((p) => p.username).filter(Boolean) as string[],
+    [chat?.participants]
+  );
   // Group admins can spin up an event for the whole group (the server
   // auto-enrolls every member). Available whenever the viewer is an admin.
   const isGroupAdmin = !!(isGroup && chat?.admins?.some((a) => a._id === currentUserId));
@@ -730,6 +759,7 @@ export default function ChatScreen() {
           );
           if (p) openUserProfile(p._id);
         }}
+        mentionUsernames={participantUsernames}
       />
     );
   };
@@ -1097,6 +1127,15 @@ export default function ChatScreen() {
                         <View style={styles.adminBadge}>
                           <Text style={styles.adminBadgeText}>Admin</Text>
                         </View>
+                      )}
+                      {isGroupAdmin && p._id !== currentUserId && (
+                        <TouchableOpacity
+                          onPress={() => handleRemoveMember(p)}
+                          hitSlop={8}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="remove-circle-outline" size={20} color="#ef4444" />
+                        </TouchableOpacity>
                       )}
                     </View>
                   ))}

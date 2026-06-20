@@ -18,6 +18,7 @@ import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 
 import { Avatar } from "@/components/shared/Avatar";
+import GuestGate from "@/components/shared/GuestGate";
 import { AU } from "@/components/auth/tokens";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
@@ -55,6 +56,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<TabKey>("hosted");
+  const [isGuest, setIsGuest] = useState(false);
 
   const fetchProfile = async () => {
     try {
@@ -110,6 +112,8 @@ export default function ProfileScreen() {
 
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
+    const token = await SecureStore.getItemAsync("token");
+    setIsGuest(!token);
     await Promise.all([fetchProfile(), fetchEvents(), fetchGuides()]);
     if (!silent) setLoading(false);
     setRefreshing(false);
@@ -139,6 +143,8 @@ export default function ProfileScreen() {
     [events]
   );
   const visibleEvents = tab === "hosted" ? hosted : attended;
+
+  if (isGuest) return <GuestGate />;
 
   return (
     <View style={styles.container}>

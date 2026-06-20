@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { Fonts } from "@/constants/fonts";
 import { scaleFontSize } from "@/utils/responsive";
@@ -62,11 +62,19 @@ const slides: OnboardingSlide[] = [
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  // When opened as the public "App features" tour (from the login screen), we
+  // just dismiss back instead of completing onboarding / entering the app.
+  const { from } = useLocalSearchParams<{ from?: string }>();
+  const isFeatures = from === "features";
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
 
   const handleComplete = async () => {
+    if (isFeatures) {
+      router.back();
+      return;
+    }
     await SecureStore.setItemAsync("hasSeenOnboarding", "true");
     router.replace("/(tabs)/home");
   };
@@ -177,7 +185,11 @@ export default function OnboardingScreen() {
           style={styles.nextButtonGradient}
         >
           <Text style={styles.nextButtonText}>
-            {currentIndex === slides.length - 1 ? "Get Started" : "Next"}
+            {currentIndex === slides.length - 1
+              ? isFeatures
+                ? "Done"
+                : "Get Started"
+              : "Next"}
           </Text>
           <Ionicons
             name={
@@ -189,6 +201,18 @@ export default function OnboardingScreen() {
             color="#fff"
           />
         </LinearGradient>
+      </TouchableOpacity>
+
+      {/* Account entry — visible in both the first-run tour and the public
+          features view, so a returning user can always reach login. */}
+      <TouchableOpacity
+        style={styles.loginLink}
+        onPress={() => router.push("/login")}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.loginLinkText}>
+          Already have an account? <Text style={styles.loginLinkBold}>Log in</Text>
+        </Text>
       </TouchableOpacity>
     </LinearGradient>
   );
@@ -259,7 +283,7 @@ const styles = StyleSheet.create({
   },
   nextButton: {
     marginHorizontal: 24,
-    marginBottom: 60,
+    marginBottom: 16,
     borderRadius: 16,
     overflow: "hidden",
     shadowColor: "#a855f7",
@@ -279,5 +303,19 @@ const styles = StyleSheet.create({
     fontSize: scaleFontSize(18),
     fontFamily: Fonts.bold,
     color: "#fff",
+  },
+  loginLink: {
+    alignItems: "center",
+    marginBottom: 48,
+    paddingVertical: 6,
+  },
+  loginLinkText: {
+    fontSize: scaleFontSize(14),
+    fontFamily: Fonts.regular,
+    color: "#9ca3af",
+  },
+  loginLinkBold: {
+    fontFamily: Fonts.bold,
+    color: "#a855f7",
   },
 });

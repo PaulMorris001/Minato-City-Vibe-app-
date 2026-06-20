@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import type { Message } from "@/services/chat.service";
@@ -52,22 +52,24 @@ export default function ChatInput({
   // Show @mention suggestions while the user is typing an @token at the end of
   // the draft. Keeping it to the trailing token avoids needing the caret index.
   const updateMentionMatches = (text: string) => {
-    const m = text.match(/(?:^|\s)@(\w*)$/);
+    // Capture everything after the trailing "@" (including spaces) so usernames
+    // with spaces/symbols, e.g. "@setemi Loye", can be matched and completed.
+    const m = text.match(/(?:^|\s)@([^@]*)$/);
     if (!m || mentionCandidates.length === 0) {
       if (mentionMatches.length) setMentionMatches([]);
       return;
     }
     const q = m[1].toLowerCase();
+    // Empty query (just "@") shows every member; otherwise prefix-match. The
+    // list is scrollable, so we no longer cap the number of results.
     setMentionMatches(
-      mentionCandidates
-        .filter((c) => c.username.toLowerCase().startsWith(q))
-        .slice(0, 5)
+      mentionCandidates.filter((c) => c.username.toLowerCase().startsWith(q))
     );
   };
 
   const applyMention = (username: string) => {
     setMessage((prev) =>
-      prev.replace(/(^|\s)@(\w*)$/, (_full, pre) => `${pre}@${username} `)
+      prev.replace(/(^|\s)@([^@]*)$/, (_full, pre) => `${pre}@${username} `)
     );
     setMentionMatches([]);
   };
@@ -161,7 +163,12 @@ export default function ChatInput({
         </View>
       )}
       {mentionMatches.length > 0 && (
-        <View style={styles.mentionList}>
+        <ScrollView
+          style={styles.mentionList}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+          showsVerticalScrollIndicator
+        >
           {mentionMatches.map((c) => (
             <TouchableOpacity
               key={c._id}
@@ -175,7 +182,7 @@ export default function ChatInput({
               <Text style={styles.mentionUsername}>{capitalize(c.username)}</Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       )}
       <View style={styles.container}>
         <View style={styles.inputPill}>
@@ -271,6 +278,7 @@ const styles = StyleSheet.create({
   mentionList: {
     marginHorizontal: 14,
     marginTop: 8,
+    maxHeight: 200,
     borderRadius: 14,
     backgroundColor: "rgba(20,12,38,0.96)",
     borderWidth: 1,

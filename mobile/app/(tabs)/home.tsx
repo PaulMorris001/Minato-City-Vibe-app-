@@ -24,6 +24,7 @@ import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { trackEvent } from "@/utils/analytics";
+import { ensureAuth } from "@/utils/requireAuth";
 
 const C = {
   bg: "#0B0613",
@@ -385,10 +386,11 @@ export default function Home() {
   const fetchPublicEvents = async (city?: string | null, silent = false) => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      if (!token) return;
       const cityParam = city ? `&city=${encodeURIComponent(city)}` : "";
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
       const response = await fetch(`${BASE_URL}/events/public/explore?limit=10${cityParam}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers,
       });
       const data = await response.json();
       if (response.ok) {
@@ -418,9 +420,10 @@ export default function Home() {
   const fetchHighlights = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      if (!token) return;
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
       const response = await fetch(`${BASE_URL}/events/highlights`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers,
       });
       const data = await response.json();
       if (response.ok) {
@@ -436,9 +439,10 @@ export default function Home() {
   const fetchVendors = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      if (!token) return;
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
       const response = await fetch(`${BASE_URL}/vendors/search?query=&limit=10`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers,
       });
       const data = await response.json();
       if (response.ok) {
@@ -514,6 +518,7 @@ export default function Home() {
   }, []);
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
+    if (!(await ensureAuth("buy a ticket"))) return;
     const result = await payForTicket(eventId);
     if (!result.success) {
       if (result.error) Alert.alert("Payment Failed", result.error);
@@ -543,6 +548,7 @@ export default function Home() {
   };
 
   const handleRsvp = async (eventId: string, action: "accept" | "decline") => {
+    if (!(await ensureAuth("RSVP to this event"))) return;
     try {
       const token = await SecureStore.getItemAsync("token");
       if (!token) return;
@@ -568,6 +574,7 @@ export default function Home() {
   };
 
   const handleJoinFreeEvent = async (eventId: string, eventTitle: string) => {
+    if (!(await ensureAuth("join this event"))) return;
     try {
       const token = await SecureStore.getItemAsync("token");
       if (!token) return;
@@ -861,32 +868,6 @@ export default function Home() {
           </View>
         )}
 
-        {/* Quick Actions */}
-        <View style={styles.section}>
-          <SectionHeader title="Throw something" subtitle="Start planning in 30 seconds" />
-          <View style={styles.quickGrid}>
-            {QUICK_ACTIONS.map((action, i) => (
-              <TouchableOpacity
-                key={action.label}
-                style={styles.quickAction}
-                activeOpacity={0.8}
-                onPress={() => {
-                  if (action.label === "Book Vendor") {
-                    router.push("/(tabs)/vendors");
-                  } else {
-                    setIsModalVisible(true);
-                  }
-                }}
-              >
-                <View style={[styles.quickActionIcon, { backgroundColor: `${action.color}18` }]}>
-                  <Ionicons name={action.icon} size={22} color={action.color} />
-                </View>
-                <Text style={styles.quickActionLabel}>{action.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
         {/* Trending Now */}
         {initialLoading ? (
           <View style={styles.section}>
@@ -1017,7 +998,10 @@ export default function Home() {
       {/* FAB */}
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => setIsModalVisible(true)}
+        onPress={async () => {
+          if (!(await ensureAuth("create an event"))) return;
+          setIsModalVisible(true);
+        }}
         activeOpacity={0.85}
       >
         <LinearGradient colors={[C.purple, C.purpleDeep]} style={styles.fabGradient}>

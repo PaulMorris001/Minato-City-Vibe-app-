@@ -13,6 +13,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as SecureStore from "expo-secure-store";
 import { VendorStats } from "@/libs/interfaces";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
+import VendorEventInvites from "./VendorEventInvites";
 import {
   VN,
   VNF,
@@ -130,6 +131,9 @@ export default function DashboardTab({
           Welcome back, <Text style={styles.greetingName}>{firstName || "vendor"}</Text>
         </Text>
       </View>
+
+      {/* Pending event invitations */}
+      <VendorEventInvites />
 
       {/* Earnings hero */}
       <View style={styles.sectionH}>

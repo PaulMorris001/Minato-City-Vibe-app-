@@ -436,6 +436,7 @@ export const getEventById = async (req, res) => {
       ['rsvpUsers', 'username profilePicture'],
       ['groupChatId', '_id name groupImage unreadCount'],
       ['vendors', 'name images rating verified vendorType city'],
+      ['vendorInvites.vendor', 'name images rating verified vendorType city'],
     ];
     const populateAll = (q) => POPULATIONS.reduce((acc, [p, f]) => acc.populate(p, f), q);
 
@@ -716,6 +717,12 @@ export const updateEvent = async (req, res) => {
     if (description !== undefined) event.description = description;
 
     await event.save();
+
+    // Keep the linked group chat's name in lockstep with the event title so a
+    // rename in one place shows up in the other. (Reflects on next chat load.)
+    if (title && event.groupChatId) {
+      await Chat.findByIdAndUpdate(event.groupChatId, { name: title });
+    }
 
     invalidateCachePattern(`event_detail_${eventId}_`);
     const updatedEvent = await Event.findById(eventId)
@@ -1172,14 +1179,15 @@ export const joinFreePublicEvent = async (req, res) => {
 export const getPublicEvents = async (req, res) => {
   try {
     const { limit = 20, page = 1, city, state, country, date, sort } = req.query;
-    const userId = req.user.id;
+    // optionalAuth — userId is null for logged-out (guest) browsers.
+    const userId = req.user?.id || null;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const cacheKey = `public_events_${userId}_${page}_${limit}_${city || ''}_${state || ''}_${country || ''}_${date || ''}`;
+    const cacheKey = `public_events_${userId || 'guest'}_${page}_${limit}_${city || ''}_${state || ''}_${country || ''}_${date || ''}`;
     const cached = getCache(cacheKey);
     if (cached) return res.status(200).json(cached);
 
-    const blockedIds = await getBlockedIds(userId);
+    const blockedIds = userId ? await getBlockedIds(userId) : [];
 
     const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -1237,7 +1245,7 @@ export const getPublicEvents = async (req, res) => {
         const eventObj = event.toObject();
 
         // Check if current user created this event
-        eventObj.isCreator = event.createdBy._id.toString() === userId;
+        eventObj.isCreator = !!userId && event.createdBy._id.toString() === userId;
 
         if (event.isPaid && event.maxGuests > 0) {
           const soldTickets = await Ticket.countDocuments({ event: event._id, isValid: true });
@@ -1245,11 +1253,13 @@ export const getPublicEvents = async (req, res) => {
           eventObj.ticketsRemaining = event.maxGuests - soldTickets;
 
           // Check if current user has already purchased a ticket
-          const userTicket = await Ticket.findOne({ event: event._id, user: userId, isValid: true });
+          const userTicket = userId
+            ? await Ticket.findOne({ event: event._id, user: userId, isValid: true })
+            : null;
           eventObj.userHasPurchased = !!userTicket;
         } else {
           // Free event - check if user has already joined (is in invitedUsers)
-          const hasJoined = event.invitedUsers.some(id => id.toString() === userId);
+          const hasJoined = !!userId && event.invitedUsers.some(id => id.toString() === userId);
           eventObj.userHasPurchased = hasJoined;
         }
 
@@ -1381,9 +1391,10 @@ export const getEventTicketSales = async (req, res) => {
 // Get event highlights: trending (most RSVPs) + upcoming (next 7 days)
 export const getEventHighlights = async (req, res) => {
   try {
-    const userId = req.user.id;
+    // optionalAuth — userId is null for logged-out (guest) browsers.
+    const userId = req.user?.id || null;
 
-    const cacheKey = `event_highlights_${userId}`;
+    const cacheKey = `event_highlights_${userId || 'guest'}`;
     const cached = getCache(cacheKey);
     if (cached) return res.status(200).json(cached);
     const now = new Date();
@@ -1415,16 +1426,18 @@ export const getEventHighlights = async (req, res) => {
 
     const enrichEvent = async (event) => {
       const obj = event.toObject();
-      obj.isCreator = event.createdBy._id.toString() === userId;
+      obj.isCreator = !!userId && event.createdBy._id.toString() === userId;
       obj.rsvpCount = event.rsvpUsers?.length || 0;
       if (event.isPaid && event.maxGuests > 0) {
         const sold = await Ticket.countDocuments({ event: event._id, isValid: true });
         obj.ticketsSold = sold;
         obj.ticketsRemaining = event.maxGuests - sold;
-        const userTicket = await Ticket.findOne({ event: event._id, user: userId, isValid: true });
+        const userTicket = userId
+          ? await Ticket.findOne({ event: event._id, user: userId, isValid: true })
+          : null;
         obj.userHasPurchased = !!userTicket;
       } else {
-        obj.userHasPurchased = event.invitedUsers.some(id => id.toString() === userId);
+        obj.userHasPurchased = !!userId && event.invitedUsers.some(id => id.toString() === userId);
       }
       return obj;
     };
@@ -1434,23 +1447,26 @@ export const getEventHighlights = async (req, res) => {
     // before generic discovery content. `rsvpUsers` already includes ticket
     // buyers and accepted-invite guests; we also union in any valid-ticket
     // events defensively (covers tickets issued before that behavior existed).
-    const myTickets = await Ticket.find({ user: userId, isValid: true })
-      .select("event")
-      .lean();
+    const myTickets = userId
+      ? await Ticket.find({ user: userId, isValid: true }).select("event").lean()
+      : [];
     const myTicketEventIds = myTickets.map((t) => t.event);
 
-    const myUpcoming = await Event.find({
-      isActive: true,
-      date: { $gte: now },
-      $or: [
-        { createdBy: userId },
-        { rsvpUsers: userId },
-        { _id: { $in: myTicketEventIds } },
-      ],
-    })
-      .populate("createdBy", "username email profilePicture")
-      .sort({ date: 1 })
-      .limit(5);
+    // Guests have no "your upcoming events" — skip the user-specific query.
+    const myUpcoming = userId
+      ? await Event.find({
+          isActive: true,
+          date: { $gte: now },
+          $or: [
+            { createdBy: userId },
+            { rsvpUsers: userId },
+            { _id: { $in: myTicketEventIds } },
+          ],
+        })
+          .populate("createdBy", "username email profilePicture")
+          .sort({ date: 1 })
+          .limit(5)
+      : [];
 
     // Enrich + set userStatus so the hero label ("You are hosting / attending /
     // have a ticket for") renders correctly.
@@ -1507,14 +1523,150 @@ export const addVendorToEvent = async (req, res) => {
       return res.status(400).json({ message: "Vendor already added to this event" });
     }
 
+    // A vendor with a linked user account gets an invite they must accept; a
+    // vendor with no account can't respond, so it's added to the bill directly.
+    if (vendor.user) {
+      const existingInvite = event.vendorInvites.find(
+        (vi) => vi.vendor.toString() === vendorId
+      );
+      if (existingInvite && existingInvite.status === "pending") {
+        return res.status(400).json({ message: "Vendor already invited" });
+      }
+      if (existingInvite) {
+        existingInvite.status = "pending";
+        existingInvite.invitedAt = new Date();
+        existingInvite.respondedAt = undefined;
+      } else {
+        event.vendorInvites.push({ vendor: vendorId, status: "pending" });
+      }
+      await event.save();
+
+      try {
+        const inviter = await User.findById(userId).select("username");
+        await Notification.create({
+          user: vendor.user,
+          type: "vendor_invite",
+          title: "Vendor Invitation",
+          body: `${inviter?.username || "An organizer"} invited ${vendor.name} to "${event.title}"`,
+          data: { eventId: event._id.toString(), vendorId: vendor._id.toString() },
+        });
+        emitEventInvite(vendor.user.toString(), {
+          eventId: event._id.toString(),
+          kind: "vendor_invite",
+        });
+      } catch (notifyErr) {
+        console.error("Vendor invite notification failed:", notifyErr);
+      }
+
+      invalidateCachePattern(`event_detail_${eventId}_`);
+      return res.status(200).json({ message: "Vendor invited", status: "pending" });
+    }
+
     event.vendors.push(vendorId);
     await event.save();
 
     invalidateCachePattern(`event_detail_${eventId}_`);
-    res.status(200).json({ message: "Vendor added to event" });
+    res.status(200).json({ message: "Vendor added to event", status: "accepted" });
   } catch (error) {
     console.error("Add vendor to event error:", error);
     res.status(500).json({ message: "Failed to add vendor" });
+  }
+};
+
+// Vendor (the linked user) accepts or declines an event invite
+export const respondToVendorInvite = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { status } = req.body; // "accepted" | "declined"
+    const userId = req.user.id;
+
+    if (!["accepted", "declined"].includes(status)) {
+      return res.status(400).json({ message: "Status must be 'accepted' or 'declined'" });
+    }
+
+    const event = await Event.findById(eventId);
+    if (!event) return res.status(404).json({ message: "Event not found" });
+
+    // Find which of the event's pending vendor invites belongs to a vendor the
+    // requesting user owns.
+    const myVendors = await Vendor.find({ user: userId }).select("_id name");
+    const myVendorIds = myVendors.map((v) => v._id.toString());
+
+    const invite = event.vendorInvites.find(
+      (vi) => myVendorIds.includes(vi.vendor.toString()) && vi.status === "pending"
+    );
+    if (!invite) {
+      return res.status(404).json({ message: "No pending invite for your vendor on this event" });
+    }
+
+    invite.status = status;
+    invite.respondedAt = new Date();
+
+    if (status === "accepted" && !event.vendors.some((v) => v.toString() === invite.vendor.toString())) {
+      event.vendors.push(invite.vendor);
+    }
+    await event.save();
+
+    // Let the organizer know how the vendor responded.
+    try {
+      const vendor = myVendors.find((v) => v._id.toString() === invite.vendor.toString());
+      await Notification.create({
+        user: event.createdBy,
+        type: "vendor_invite_response",
+        title: status === "accepted" ? "Vendor accepted" : "Vendor declined",
+        body: `${vendor?.name || "A vendor"} ${status} your invite to "${event.title}"`,
+        data: { eventId: event._id.toString() },
+      });
+      emitEventInvite(event.createdBy.toString(), {
+        eventId: event._id.toString(),
+        kind: "vendor_invite_response",
+      });
+    } catch (notifyErr) {
+      console.error("Vendor invite response notification failed:", notifyErr);
+    }
+
+    invalidateCachePattern(`event_detail_${eventId}_`);
+    res.status(200).json({ message: `Invite ${status}`, status });
+  } catch (error) {
+    console.error("Respond to vendor invite error:", error);
+    res.status(500).json({ message: "Failed to respond to invite" });
+  }
+};
+
+// List pending event invites for the requesting user's vendor(s)
+export const getMyVendorEventInvites = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const myVendors = await Vendor.find({ user: userId }).select("_id");
+    if (myVendors.length === 0) return res.status(200).json({ invites: [] });
+    const myVendorIds = myVendors.map((v) => v._id.toString());
+
+    const events = await Event.find({
+      vendorInvites: { $elemMatch: { vendor: { $in: myVendors.map((v) => v._id) }, status: "pending" } },
+    })
+      .populate("createdBy", "username profilePicture")
+      .sort({ date: 1 });
+
+    const invites = events.map((ev) => {
+      const mine = ev.vendorInvites.find(
+        (vi) => myVendorIds.includes(vi.vendor.toString()) && vi.status === "pending"
+      );
+      return {
+        eventId: ev._id,
+        title: ev.title,
+        date: ev.date,
+        location: ev.location,
+        image: ev.image,
+        createdBy: ev.createdBy,
+        vendorId: mine?.vendor,
+        invitedAt: mine?.invitedAt,
+      };
+    });
+
+    res.status(200).json({ invites });
+  } catch (error) {
+    console.error("Get vendor event invites error:", error);
+    res.status(500).json({ message: "Failed to fetch invites" });
   }
 };
 

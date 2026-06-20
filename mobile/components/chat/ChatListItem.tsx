@@ -16,6 +16,7 @@ interface ChatListItemProps {
   currentUserId: string;
   isTyping?: boolean;
   onPress: () => void;
+  onLongPress?: () => void;
 }
 
 function formatTime(dateString: string) {
@@ -43,6 +44,7 @@ export default function ChatListItem({
   currentUserId,
   isTyping = false,
   onPress,
+  onLongPress,
 }: ChatListItemProps) {
   const getChatInfo = () => {
     if (chat.type === "group") {
@@ -95,6 +97,8 @@ export default function ChatListItem({
         isUnread && !isMuted ? styles.containerUnread : null,
       ]}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
       activeOpacity={0.85}
     >
       {isPinned && (

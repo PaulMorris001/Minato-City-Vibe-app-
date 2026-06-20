@@ -133,8 +133,9 @@ export default function Login() {
   };
 
   const handleClose = () => {
+    // The X dismisses login and returns to browsing the app as a guest.
     if (router.canGoBack()) router.back();
-    else router.replace("/signup");
+    else router.replace("/(tabs)/home");
   };
 
   return (
@@ -152,7 +153,7 @@ export default function Login() {
           >
             <View style={styles.topBar}>
               <Wordmark />
-              <GlassRoundButton icon="close" onPress={handleClose} />
+              <GlassRoundButton icon="close" onPress={handleClose} size={48} iconRatio={0.58} />
             </View>
 
             <View style={{ flex: 1 }} />

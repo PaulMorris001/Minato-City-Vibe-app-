@@ -12,6 +12,7 @@ import {
   deleteChat,
   searchChatsAndMessages,
   updateGroupChat,
+  removeParticipantFromGroup,
   toggleMessageReaction,
   setChatPinned,
   setChatMuted
@@ -36,6 +37,9 @@ router.get("/chats/:chatId", authenticate, getChatById);
 
 // Update group chat name / image (admins only)
 router.put("/chats/:chatId", authenticate, updateGroupChat);
+
+// Remove a member from a group chat (admins only)
+router.delete("/chats/:chatId/participants/:participantId", authenticate, removeParticipantFromGroup);
 
 // Search chats and messages
 router.get("/chats/search", authenticate, searchChatsAndMessages);

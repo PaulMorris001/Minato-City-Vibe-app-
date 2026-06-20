@@ -15,6 +15,7 @@ import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
 import { FormInput, PrimaryButton } from "@/components/shared";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
+import { passwordChecks, passwordError } from "@/utils/passwordPolicy";
 
 export default function ResetPassword() {
   const router = useRouter();
@@ -29,8 +30,9 @@ export default function ResetPassword() {
       return;
     }
 
-    if (newPassword.length < 6) {
-      Alert.alert("Error", "Password must be at least 6 characters long");
+    const pwErr = passwordError(newPassword);
+    if (pwErr) {
+      Alert.alert("Error", pwErr);
       return;
     }
 
@@ -91,7 +93,8 @@ export default function ResetPassword() {
           </View>
           <Text style={styles.title}>Create New Password</Text>
           <Text style={styles.subtitle}>
-            Your new password must be different from previously used passwords.
+            Choose a strong password with at least 8 characters, including upper
+            and lower case letters, a number, and a symbol.
           </Text>
         </View>
 
@@ -117,21 +120,18 @@ export default function ResetPassword() {
 
           <View style={styles.passwordRequirements}>
             <Text style={styles.requirementsTitle}>Password Requirements:</Text>
-            <View style={styles.requirementItem}>
-              <Ionicons
-                name={newPassword.length >= 6 ? "checkmark-circle" : "ellipse-outline"}
-                size={16}
-                color={newPassword.length >= 6 ? "#10b981" : "#6b7280"}
-              />
-              <Text
-                style={[
-                  styles.requirementText,
-                  newPassword.length >= 6 && styles.requirementMet,
-                ]}
-              >
-                At least 6 characters
-              </Text>
-            </View>
+            {passwordChecks(newPassword).map((c) => (
+              <View key={c.key} style={styles.requirementItem}>
+                <Ionicons
+                  name={c.met ? "checkmark-circle" : "ellipse-outline"}
+                  size={16}
+                  color={c.met ? "#10b981" : "#6b7280"}
+                />
+                <Text style={[styles.requirementText, c.met && styles.requirementMet]}>
+                  {c.label}
+                </Text>
+              </View>
+            ))}
             <View style={styles.requirementItem}>
               <Ionicons
                 name={
