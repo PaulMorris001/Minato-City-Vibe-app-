@@ -34,6 +34,25 @@ const chatSchema = mongoose.Schema({
     ref: "user"
   }],
 
+  // Pending invites for group chats. A user added by an admin lands here first
+  // and must accept before being moved into `participants`. Used only for group
+  // chats that aren't tied to an event (event groups auto-enroll members).
+  pendingInvites: [{
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      required: true
+    },
+    invitedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user"
+    },
+    invitedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+
   // Last message in the chat (for chat list preview)
   lastMessage: {
     type: mongoose.Schema.Types.ObjectId,
@@ -97,6 +116,7 @@ const chatSchema = mongoose.Schema({
 chatSchema.index({ participants: 1 });
 chatSchema.index({ type: 1 });
 chatSchema.index({ updatedAt: -1 });
+chatSchema.index({ "pendingInvites.user": 1 });
 
 // Virtual for getting the other participant in direct chats
 chatSchema.virtual('otherParticipant').get(function() {

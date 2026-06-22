@@ -208,6 +208,14 @@ export default function MessagesScreen() {
         // chat's preview, so refetch to keep the inbox list accurate.
         fetchChats(true);
       },
+      onGroupInvite: () => {
+        // Invited to a group — refetch so the pending invite shows in the inbox.
+        fetchChats(true);
+      },
+      onGroupRemoved: () => {
+        // Removed from a group (or declined an invite) — drop it from the inbox.
+        fetchChats(true);
+      },
     });
 
     return () => socketService.off("messages-screen");

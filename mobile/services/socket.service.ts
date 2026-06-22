@@ -19,6 +19,8 @@ interface SocketEvents {
   onUserOnline?: (userId: string) => void;
   onUserOffline?: (userId: string) => void;
   onGroupUpdated?: (data: { chatId: string; name?: string; groupImage?: string }) => void;
+  onGroupInvite?: (data: { chatId: string; groupName: string; inviterUsername: string }) => void;
+  onGroupRemoved?: (data: { chatId: string }) => void;
   onEventInvite?: (data: { eventId: string; eventTitle: string; inviterUsername: string }) => void;
   onFollowNew?: (data: { followerId: string; followerUsername: string; followerProfilePicture: string; isMutual: boolean }) => void;
 }
@@ -109,6 +111,14 @@ class SocketService {
 
       this.socket.on("group:updated", (data) => {
         this.notify("onGroupUpdated", data);
+      });
+
+      this.socket.on("group:invite", (data) => {
+        this.notify("onGroupInvite", data);
+      });
+
+      this.socket.on("group:removed", (data) => {
+        this.notify("onGroupRemoved", data);
       });
 
       this.socket.on("message:reaction", (data) => {

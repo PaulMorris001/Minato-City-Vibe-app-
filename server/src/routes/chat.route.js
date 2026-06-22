@@ -13,6 +13,8 @@ import {
   searchChatsAndMessages,
   updateGroupChat,
   removeParticipantFromGroup,
+  inviteUsersToGroup,
+  respondToGroupInvite,
   toggleMessageReaction,
   setChatPinned,
   setChatMuted
@@ -40,6 +42,12 @@ router.put("/chats/:chatId", authenticate, updateGroupChat);
 
 // Remove a member from a group chat (admins only)
 router.delete("/chats/:chatId/participants/:participantId", authenticate, removeParticipantFromGroup);
+
+// Invite users to a group chat (admins only)
+router.post("/chats/:chatId/invite", authenticate, inviteUsersToGroup);
+
+// Respond to a pending group invite (accept / decline)
+router.post("/chats/:chatId/invite/respond", authenticate, respondToGroupInvite);
 
 // Search chats and messages
 router.get("/chats/search", authenticate, searchChatsAndMessages);

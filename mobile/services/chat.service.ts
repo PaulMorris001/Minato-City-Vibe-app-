@@ -22,6 +22,7 @@ export interface Chat {
   groupImage?: string;
   participants: User[];
   admins?: User[];
+  pendingInvites?: { user: User; invitedBy?: User; invitedAt?: string }[];
   lastMessage?: Message;
   unreadCount: Map<string, number>;
   isArchived: Map<string, boolean>;
@@ -363,6 +364,46 @@ class ChatService {
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       throw new Error(data?.message || "Failed to remove member");
+    }
+    const data = await response.json();
+    return data.chat as Chat;
+  }
+
+  /**
+   * Invite users to a group chat (admins only). Invitees must accept before
+   * they join. Returns the updated chat with the new pending invites.
+   */
+  async inviteToGroup(
+    chatId: string,
+    userIds: string[]
+  ): Promise<{ chat: Chat; message: string }> {
+    const headers = await this.getAuthHeader();
+    const response = await fetch(`${BASE_URL}/chats/${chatId}/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ userIds }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.message || "Failed to invite members");
+    }
+    const data = await response.json();
+    return { chat: data.chat as Chat, message: data.message as string };
+  }
+
+  /**
+   * Accept or decline a pending group invite.
+   */
+  async respondToGroupInvite(chatId: string, accept: boolean): Promise<Chat> {
+    const headers = await this.getAuthHeader();
+    const response = await fetch(`${BASE_URL}/chats/${chatId}/invite/respond`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ accept }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.message || "Failed to respond to invite");
     }
     const data = await response.json();
     return data.chat as Chat;

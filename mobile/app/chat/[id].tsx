@@ -28,6 +28,7 @@ import MessageBubble from "@/components/chat/MessageBubble";
 import ChatInput from "@/components/chat/ChatInput";
 import { Avatar } from "@/components/shared/Avatar";
 import chatService, { Message, Chat, MessageReaction } from "@/services/chat.service";
+import followService, { FollowUser } from "@/services/follow.service";
 import socketService from "@/services/socket.service";
 import * as SecureStore from "expo-secure-store";
 import { capitalize } from "@/libs/helpers";
@@ -65,6 +66,29 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Older-message pagination. We load the most recent page first, then fetch
+  // earlier pages on demand so full history stays reachable in busy chats.
+  const [page, setPage] = useState(1);
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  // While prepending older messages we suppress the auto-scroll-to-end so the
+  // view doesn't jump to the bottom.
+  const isPrependingRef = useRef(false);
+
+  // Add-members (group invite) modal
+  const [addMembersVisible, setAddMembersVisible] = useState(false);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [mutualResults, setMutualResults] = useState<FollowUser[]>([]);
+  const [loadingMutuals, setLoadingMutuals] = useState(false);
+  const [selectedToAdd, setSelectedToAdd] = useState<FollowUser[]>([]);
+  const [invitingMembers, setInvitingMembers] = useState(false);
+
+  // Responding to a pending invite (when the viewer was invited to this group)
+  const [respondingInvite, setRespondingInvite] = useState(false);
+  // Mirrors isPendingInvitee for use inside socket callbacks (which close over
+  // stale state) — a pending invitee shouldn't see live messages before joining.
+  const pendingInviteeRef = useRef(false);
+
   // ── Create-event-from-group (admin only) ──────────────────────────────────
   const [createEventVisible, setCreateEventVisible] = useState(false);
   const [evTitle, setEvTitle] = useState("");
@@ -92,8 +116,10 @@ export default function ChatScreen() {
       setLoading(true);
       const c = await chatService.getChatById(id);
       setChat(c);
-      const messagesData = await chatService.getChatMessages(id);
+      const messagesData = await chatService.getChatMessages(id, 1);
       setMessages(messagesData.messages);
+      setPage(1);
+      setHasMoreOlder((messagesData.pagination?.totalPages || 1) > 1);
       trackEvent("chat_opened", { chatId: id, chatType: c.type });
       await chatService.markMessagesAsRead(id);
       if (currentUserId) {
@@ -143,6 +169,8 @@ export default function ChatScreen() {
 
     socketService.on("chat-screen", {
       onNewMessage: (message: Message) => {
+        // Don't surface live messages to a user who's only been invited.
+        if (pendingInviteeRef.current) return;
         if (message.chat === id) {
           setMessages((prev) => {
             if (prev.some((m) => m._id === message._id)) return prev;
@@ -647,6 +675,111 @@ export default function ChatScreen() {
   // auto-enrolls every member). Available whenever the viewer is an admin.
   const isGroupAdmin = !!(isGroup && chat?.admins?.some((a) => a._id === currentUserId));
 
+  // Members can be added to non-event groups. Event groups are managed through
+  // the event, so the invite flow only applies when there's no linked event.
+  const canAddMembers = isGroupAdmin && !chat?.event;
+
+  // The viewer was invited to this group but hasn't joined yet — show an
+  // accept / decline banner instead of the composer.
+  const isPendingInvitee = !!(
+    chat &&
+    currentUserId &&
+    !chat.participants.some((p) => p._id === currentUserId) &&
+    chat.pendingInvites?.some((inv) => inv.user?._id === currentUserId)
+  );
+  const inviterName = chat?.pendingInvites?.find(
+    (inv) => inv.user?._id === currentUserId
+  )?.invitedBy?.username;
+
+  useEffect(() => {
+    pendingInviteeRef.current = isPendingInvitee;
+  }, [isPendingInvitee]);
+
+  const handleRespondInvite = async (accept: boolean) => {
+    if (!chat || respondingInvite) return;
+    setRespondingInvite(true);
+    try {
+      const updated = await chatService.respondToGroupInvite(chat._id, accept);
+      if (accept) {
+        setChat(updated);
+        // Now a member — load the conversation history.
+        loadChatAndMessages();
+      } else {
+        if (router.canGoBack()) router.back();
+        else router.replace("/messages");
+      }
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Couldn't respond to the invite");
+    } finally {
+      setRespondingInvite(false);
+    }
+  };
+
+  // ── Add members (group invite) helpers ─────────────────────────────────────
+  const loadMutuals = useCallback(async (query: string) => {
+    try {
+      setLoadingMutuals(true);
+      const result = await followService.getMutualFollows(query);
+      setMutualResults(result.users);
+    } catch (e) {
+      console.error("Error loading mutual follows:", e);
+    } finally {
+      setLoadingMutuals(false);
+    }
+  }, []);
+
+  const openAddMembers = () => {
+    setSelectedToAdd([]);
+    setMemberSearch("");
+    setMutualResults([]);
+    setAddMembersVisible(true);
+    loadMutuals("");
+  };
+
+  // Debounced search inside the add-members modal.
+  useEffect(() => {
+    if (!addMembersVisible) return;
+    const t = setTimeout(() => loadMutuals(memberSearch), 300);
+    return () => clearTimeout(t);
+  }, [memberSearch, addMembersVisible, loadMutuals]);
+
+  const toggleSelectToAdd = (user: FollowUser) => {
+    setSelectedToAdd((prev) =>
+      prev.some((u) => u._id === user._id)
+        ? prev.filter((u) => u._id !== user._id)
+        : [...prev, user]
+    );
+  };
+
+  // Members and people with a pending invite shouldn't appear as add candidates.
+  const addCandidates = useMemo(() => {
+    if (!chat) return mutualResults;
+    const excluded = new Set<string>([
+      ...chat.participants.map((p) => p._id),
+      ...(chat.pendingInvites || []).map((inv) => inv.user?._id).filter(Boolean) as string[],
+    ]);
+    return mutualResults.filter((u) => !excluded.has(u._id));
+  }, [mutualResults, chat]);
+
+  const handleInviteMembers = async () => {
+    if (!chat || selectedToAdd.length === 0) return;
+    setInvitingMembers(true);
+    try {
+      const { chat: updated, message } = await chatService.inviteToGroup(
+        chat._id,
+        selectedToAdd.map((u) => u._id)
+      );
+      setChat(updated);
+      setAddMembersVisible(false);
+      setSelectedToAdd([]);
+      Alert.alert("Invites sent", message);
+    } catch (e: any) {
+      Alert.alert("Couldn't add members", e?.message || "Please try again.");
+    } finally {
+      setInvitingMembers(false);
+    }
+  };
+
   // Lookup of loaded messages by id, used to "hydrate" a reply preview whose
   // replyTo.sender wasn't populated by the server (the original is almost
   // always already loaded since it lives in this same conversation).
@@ -715,6 +848,38 @@ export default function ChatScreen() {
     flatListRef.current?.scrollToEnd({ animated: true });
     setShowScrollDown(false);
   };
+
+  // Fetch the next page of older messages and prepend them. Guarded so the
+  // list's onContentSizeChange doesn't yank the view back to the bottom.
+  const loadOlderMessages = useCallback(async () => {
+    if (loadingOlder || !hasMoreOlder) return;
+    setLoadingOlder(true);
+    try {
+      const nextPage = page + 1;
+      const data = await chatService.getChatMessages(id, nextPage);
+      const older = data.messages || [];
+      if (older.length > 0) {
+        // Suppress the snap-to-bottom for the layout passes triggered by the
+        // prepend (variable-height rows can fire onContentSizeChange several
+        // times); a short window covers them all.
+        isPrependingRef.current = true;
+        setTimeout(() => {
+          isPrependingRef.current = false;
+        }, 600);
+        setMessages((prev) => {
+          const existing = new Set(prev.map((m) => m._id));
+          const deduped = older.filter((m) => !existing.has(m._id));
+          return [...deduped, ...prev];
+        });
+        setPage(nextPage);
+      }
+      setHasMoreOlder(nextPage < (data.pagination?.totalPages || nextPage));
+    } catch (error) {
+      console.error("Error loading older messages:", error);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [id, page, hasMoreOlder, loadingOlder]);
 
   const renderMessage = ({ item, index }: { item: MessageSection; index: number }) => {
     if ("type" in item && item.type === "date") {
@@ -904,9 +1069,30 @@ export default function ChatScreen() {
             showsVerticalScrollIndicator={false}
             onScroll={handleMessagesScroll}
             scrollEventThrottle={16}
-            onContentSizeChange={() =>
-              flatListRef.current?.scrollToEnd({ animated: false })
+            onStartReached={loadOlderMessages}
+            onStartReachedThreshold={0.1}
+            ListHeaderComponent={
+              hasMoreOlder ? (
+                <TouchableOpacity
+                  style={styles.loadOlderBtn}
+                  onPress={loadOlderMessages}
+                  disabled={loadingOlder}
+                  activeOpacity={0.7}
+                >
+                  {loadingOlder ? (
+                    <ActivityIndicator size="small" color={CH_PURPLE_SOFT} />
+                  ) : (
+                    <Text style={styles.loadOlderText}>Load earlier messages</Text>
+                  )}
+                </TouchableOpacity>
+              ) : null
             }
+            onContentSizeChange={() => {
+              // Skip the snap-to-bottom when we've just prepended older history,
+              // otherwise the view would jump away from what the user is reading.
+              if (isPrependingRef.current) return;
+              flatListRef.current?.scrollToEnd({ animated: false });
+            }}
             onScrollToIndexFailed={(info) => {
               // Rows have variable heights and no getItemLayout, so a target
               // that isn't measured yet can fail — approximate, then retry.
@@ -949,21 +1135,56 @@ export default function ChatScreen() {
             </View>
           )}
 
-          {/* Composer */}
-          <ChatInput
-            onSend={handleComposerSubmit}
-            onImagePick={handleImagePick}
-            onTypingChange={(isTyping) => socketService.sendTyping(id, isTyping)}
-            disabled={sending}
-            replyingTo={replyingTo}
-            onCancelReply={() => setReplyingTo(null)}
-            editingMessage={editingMessage}
-            onCancelEdit={() => setEditingMessage(null)}
-            currentUserId={currentUserId}
-            mentionCandidates={(chat?.participants || [])
-              .filter((p) => p._id !== currentUserId && p.username)
-              .map((p) => ({ _id: p._id, username: p.username }))}
-          />
+          {/* Composer — replaced by an accept/decline banner while invited */}
+          {isPendingInvitee ? (
+            <View style={styles.inviteBanner}>
+              <Text style={styles.inviteBannerTitle}>
+                {inviterName
+                  ? `${capitalize(inviterName)} invited you to this group`
+                  : "You've been invited to this group"}
+              </Text>
+              <Text style={styles.inviteBannerHint}>
+                Join to see the conversation and send messages.
+              </Text>
+              <View style={styles.inviteBannerActions}>
+                <TouchableOpacity
+                  style={[styles.inviteDeclineBtn, respondingInvite && { opacity: 0.6 }]}
+                  onPress={() => handleRespondInvite(false)}
+                  disabled={respondingInvite}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.inviteDeclineText}>Decline</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.inviteAcceptBtn, respondingInvite && { opacity: 0.6 }]}
+                  onPress={() => handleRespondInvite(true)}
+                  disabled={respondingInvite}
+                  activeOpacity={0.85}
+                >
+                  {respondingInvite ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.inviteAcceptText}>Accept</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <ChatInput
+              onSend={handleComposerSubmit}
+              onImagePick={handleImagePick}
+              onTypingChange={(isTyping) => socketService.sendTyping(id, isTyping)}
+              disabled={sending}
+              replyingTo={replyingTo}
+              onCancelReply={() => setReplyingTo(null)}
+              editingMessage={editingMessage}
+              onCancelEdit={() => setEditingMessage(null)}
+              currentUserId={currentUserId}
+              mentionCandidates={(chat?.participants || [])
+                .filter((p) => p._id !== currentUserId && p.username)
+                .map((p) => ({ _id: p._id, username: p.username }))}
+            />
+          )}
         </KeyboardAvoidingView>
       </SafeAreaView>
 
@@ -1139,6 +1360,43 @@ export default function ChatScreen() {
                       )}
                     </View>
                   ))}
+
+                  {/* Pending invites awaiting a response */}
+                  {(chat?.pendingInvites?.length ?? 0) > 0 && (
+                    <>
+                      <Text style={[styles.settingsLabel, { marginTop: 16 }]}>
+                        Invited ({chat?.pendingInvites?.length ?? 0})
+                      </Text>
+                      {chat?.pendingInvites?.map((inv) => (
+                        <View key={inv.user._id} style={styles.participantRow}>
+                          <Avatar uri={inv.user.profilePicture} name={inv.user.username} size={32} />
+                          <Text style={styles.participantName}>{inv.user.username}</Text>
+                          <View style={styles.pendingBadge}>
+                            <Text style={styles.pendingBadgeText}>Pending</Text>
+                          </View>
+                        </View>
+                      ))}
+                    </>
+                  )}
+
+                  {canAddMembers && (
+                    <TouchableOpacity
+                      style={styles.addMembersRow}
+                      onPress={openAddMembers}
+                      activeOpacity={0.85}
+                    >
+                      <View style={styles.addMembersIcon}>
+                        <Ionicons name="person-add" size={18} color={CH_PURPLE_SOFT} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.createEventTitle}>Add members</Text>
+                        <Text style={styles.createEventHint}>
+                          Invited people join once they accept.
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={CH_TEXT_MUTE} />
+                    </TouchableOpacity>
+                  )}
                 </>
               )}
 
@@ -1152,6 +1410,108 @@ export default function ChatScreen() {
                 <Text style={styles.deleteChatText}>Delete conversation</Text>
               </TouchableOpacity>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add members (group invite) */}
+      <Modal
+        visible={addMembersVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setAddMembersVisible(false)}
+      >
+        <View style={styles.settingsOverlay}>
+          <View style={styles.settingsSheet}>
+            <View style={styles.settingsHeader}>
+              <Text style={styles.settingsTitle}>Add members</Text>
+              <TouchableOpacity onPress={() => setAddMembersVisible(false)}>
+                <Ionicons name="close" size={22} color={CH_TEXT} />
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              style={styles.memberSearchInput}
+              placeholder="Search people who follow you back"
+              placeholderTextColor={CH_TEXT_MUTE}
+              value={memberSearch}
+              onChangeText={setMemberSearch}
+              autoCapitalize="none"
+            />
+
+            {selectedToAdd.length > 0 && (
+              <View style={styles.selectedChipsRow}>
+                {selectedToAdd.map((u) => (
+                  <TouchableOpacity
+                    key={u._id}
+                    style={styles.selectedChip}
+                    onPress={() => toggleSelectToAdd(u)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.selectedChipText}>{u.username}</Text>
+                    <Ionicons name="close-circle" size={16} color={CH_TEXT_DIM} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            <FlatList
+              data={addCandidates}
+              keyExtractor={(item) => item._id}
+              style={{ maxHeight: 320 }}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <View style={styles.memberEmpty}>
+                  {loadingMutuals ? (
+                    <ActivityIndicator size="small" color={CH_PURPLE_SOFT} />
+                  ) : (
+                    <Text style={styles.memberEmptyText}>
+                      {memberSearch.trim()
+                        ? "No matching people"
+                        : "Only people who follow you back can be added."}
+                    </Text>
+                  )}
+                </View>
+              }
+              renderItem={({ item }) => {
+                const selected = selectedToAdd.some((u) => u._id === item._id);
+                return (
+                  <TouchableOpacity
+                    style={styles.memberRow}
+                    onPress={() => toggleSelectToAdd(item)}
+                    activeOpacity={0.7}
+                  >
+                    <Avatar uri={item.profilePicture} name={item.username} size={40} />
+                    <Text style={styles.memberRowName}>{item.username}</Text>
+                    <Ionicons
+                      name={selected ? "checkmark-circle" : "ellipse-outline"}
+                      size={22}
+                      color={selected ? CH_PURPLE : CH_TEXT_MUTE}
+                    />
+                  </TouchableOpacity>
+                );
+              }}
+            />
+
+            <TouchableOpacity
+              style={[
+                styles.evCreateBtn,
+                (invitingMembers || selectedToAdd.length === 0) && { opacity: 0.6 },
+              ]}
+              onPress={handleInviteMembers}
+              disabled={invitingMembers || selectedToAdd.length === 0}
+              activeOpacity={0.85}
+            >
+              {invitingMembers ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.evCreateBtnText}>
+                  {selectedToAdd.length > 0
+                    ? `Send invite${selectedToAdd.length > 1 ? `s (${selectedToAdd.length})` : ""}`
+                    : "Send invite"}
+                </Text>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1757,5 +2117,165 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: CH_PURPLE_SOFT,
     letterSpacing: 0.4,
+  },
+  pendingBadge: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: CH_STROKE_HI,
+  },
+  pendingBadgeText: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 10,
+    color: CH_TEXT_DIM,
+    letterSpacing: 0.4,
+  },
+  addMembersRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: "rgba(168,85,247,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(168,85,247,0.28)",
+  },
+  addMembersIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "rgba(168,85,247,0.16)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // "Load earlier messages" header at the top of the conversation
+  loadOlderBtn: {
+    alignSelf: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: CH_STROKE,
+  },
+  loadOlderText: {
+    fontFamily: "Outfit_500Medium",
+    fontSize: 12.5,
+    color: CH_PURPLE_SOFT,
+  },
+  // Accept / decline invite banner (shown in place of the composer)
+  inviteBanner: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 18,
+    borderTopWidth: 1,
+    borderTopColor: CH_STROKE,
+    backgroundColor: "rgba(168,85,247,0.06)",
+  },
+  inviteBannerTitle: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 14.5,
+    color: CH_TEXT,
+  },
+  inviteBannerHint: {
+    fontFamily: "Outfit_400Regular",
+    fontSize: 12,
+    color: CH_TEXT_DIM,
+    marginTop: 3,
+  },
+  inviteBannerActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 14,
+  },
+  inviteDeclineBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: CH_STROKE_HI,
+  },
+  inviteDeclineText: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 14,
+    color: CH_TEXT_DIM,
+  },
+  inviteAcceptBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: "center",
+    backgroundColor: CH_PURPLE,
+  },
+  inviteAcceptText: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 14,
+    color: "#fff",
+  },
+  // Add-members modal
+  memberSearchInput: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontFamily: "Outfit_500Medium",
+    fontSize: 14,
+    color: CH_TEXT,
+    borderWidth: 1,
+    borderColor: CH_STROKE,
+    marginBottom: 12,
+  },
+  selectedChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12,
+  },
+  selectedChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(168,85,247,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(168,85,247,0.30)",
+  },
+  selectedChipText: {
+    fontFamily: "Outfit_500Medium",
+    fontSize: 12.5,
+    color: CH_TEXT,
+  },
+  memberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: CH_STROKE,
+  },
+  memberRowName: {
+    flex: 1,
+    fontFamily: "Outfit_500Medium",
+    fontSize: 14,
+    color: CH_TEXT,
+  },
+  memberEmpty: {
+    paddingVertical: 28,
+    alignItems: "center",
+  },
+  memberEmptyText: {
+    fontFamily: "Outfit_400Regular",
+    fontSize: 13,
+    color: CH_TEXT_MUTE,
+    textAlign: "center",
+    paddingHorizontal: 20,
   },
 });

@@ -1,6 +1,7 @@
 import Chat from "../models/chat.model.js";
 import Message from "../models/message.model.js";
 import User from "../models/user.model.js";
+import Notification from "../models/notification.model.js";
 import { emitNewMessage, getSocketInstance } from "./socket.service.js";
 import { uploadBase64Image, deleteImage } from "./image.service.js";
 import { sendPushNotification } from "./notification.service.js";
@@ -100,12 +101,19 @@ class ChatService {
    */
   async getUserChats(userId) {
     const chats = await Chat.find({
-      participants: userId,
+      // Include groups the user has only been invited to (not yet a participant)
+      // so the pending invite surfaces in their inbox where they can respond.
+      $or: [
+        { participants: userId },
+        { "pendingInvites.user": userId }
+      ],
       isActive: true,
       deletedFor: { $ne: userId }
     })
       .populate('participants', 'username email profilePicture')
       .populate('admins', 'username email profilePicture')
+      .populate('pendingInvites.user', 'username email profilePicture')
+      .populate('pendingInvites.invitedBy', 'username email profilePicture')
       .populate('event', 'title date location image createdBy')
       .populate({
         path: 'lastMessage',
@@ -247,6 +255,17 @@ class ChatService {
     }
 
     if (!chat.participants.includes(userId)) {
+      // A user who only has a pending invite may open the chat to respond, but
+      // shouldn't read the history until they accept and join the group.
+      const isInvited = (chat.pendingInvites || []).some(
+        (inv) => inv.user.toString() === userId.toString()
+      );
+      if (isInvited) {
+        return {
+          messages: [],
+          pagination: { page, limit, total: 0, totalPages: 0 }
+        };
+      }
       throw new Error('User is not a participant in this chat');
     }
 
@@ -607,6 +626,238 @@ class ChatService {
     }
 
     return chat;
+  }
+
+  /**
+   * Post a system message ("X invited Y", "Z joined", …) into a chat and
+   * broadcast it like a normal message so it shows up live for everyone.
+   * `actorId` is stored as the sender (the schema requires one) but the bubble
+   * renders centered without attribution for `system` messages.
+   */
+  async postSystemMessage(chat, actorId, content) {
+    const message = new Message({
+      chat: chat._id,
+      sender: actorId,
+      type: 'system',
+      content
+    });
+    await message.save();
+
+    chat.lastMessage = message._id;
+    if (chat.deletedFor && chat.deletedFor.length) {
+      chat.deletedFor = [];
+    }
+    chat.participants.forEach((participantId) => {
+      const idStr = participantId.toString();
+      if (idStr !== actorId.toString()) {
+        const current = chat.unreadCount.get(idStr) || 0;
+        chat.unreadCount.set(idStr, current + 1);
+      }
+    });
+    await chat.save();
+
+    await message.populate('sender', 'username email profilePicture');
+
+    emitNewMessage(chat._id.toString(), message);
+    const io = getSocketInstance();
+    if (io) {
+      chat.participants.forEach((participantId) => {
+        io.to(`user:${participantId.toString()}`).emit("message:new", message);
+      });
+    }
+
+    return message;
+  }
+
+  /**
+   * Invite one or more users to a (non-event) group chat. Invitees are added to
+   * `pendingInvites` and must accept before joining. Each invite posts a system
+   * message, fires a notification, and emits a realtime `group:invite` event.
+   * Only group admins may invite, and only mutual follows can be invited.
+   */
+  async inviteUsersToGroup(chatId, adminId, userIds) {
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      const err = new Error("Chat not found");
+      err.statusCode = 404;
+      throw err;
+    }
+    if (chat.type !== "group") {
+      const err = new Error("Not a group chat");
+      err.statusCode = 400;
+      throw err;
+    }
+    if (chat.event) {
+      const err = new Error("Members of an event group are managed through the event");
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!chat.admins.some((a) => a.toString() === adminId.toString())) {
+      const err = new Error("Only group admins can add members");
+      err.statusCode = 403;
+      throw err;
+    }
+
+    const ids = Array.isArray(userIds) ? [...new Set(userIds.map(String))] : [];
+    if (ids.length === 0) {
+      const err = new Error("Select at least one person to add");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const admin = await User.findById(adminId).select("username");
+    const invited = [];
+    const skipped = [];
+
+    for (const targetId of ids) {
+      if (chat.participants.some((p) => p.toString() === targetId)) {
+        skipped.push({ userId: targetId, reason: "already a member" });
+        continue;
+      }
+      if ((chat.pendingInvites || []).some((inv) => inv.user.toString() === targetId)) {
+        skipped.push({ userId: targetId, reason: "already invited" });
+        continue;
+      }
+      const isMutual = await areMutualFollows(adminId, targetId);
+      if (!isMutual) {
+        skipped.push({ userId: targetId, reason: "not a mutual follow" });
+        continue;
+      }
+      const targetUser = await User.findById(targetId).select("username fcmToken");
+      if (!targetUser) {
+        skipped.push({ userId: targetId, reason: "user not found" });
+        continue;
+      }
+
+      chat.pendingInvites.push({ user: targetId, invitedBy: adminId });
+      invited.push(targetUser);
+    }
+
+    if (invited.length === 0) {
+      const err = new Error(
+        skipped[0]?.reason
+          ? `Couldn't add anyone (${skipped[0].reason})`
+          : "Couldn't add the selected people"
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
+    await chat.save();
+
+    // System message in the group so existing members see who was invited.
+    const names = invited.map((u) => u.username).join(", ");
+    await this.postSystemMessage(
+      chat,
+      adminId,
+      `${admin?.username || "An admin"} invited ${names} to the group`
+    );
+
+    // Notify + realtime-ping each invitee so the invite reaches them.
+    const io = getSocketInstance();
+    for (const target of invited) {
+      try {
+        await Notification.create({
+          user: target._id,
+          type: "group_invite",
+          title: "Group Invitation",
+          body: `${admin?.username || "Someone"} invited you to join "${chat.name}"`,
+          data: { chatId: chat._id.toString() }
+        });
+      } catch (e) {
+        console.error("group_invite notification error:", e);
+      }
+      if (io) {
+        io.to(`user:${target._id.toString()}`).emit("group:invite", {
+          chatId: chat._id.toString(),
+          groupName: chat.name,
+          inviterUsername: admin?.username || "Someone"
+        });
+      }
+      if (target.fcmToken) {
+        await sendPushNotification(
+          target.fcmToken,
+          "Group Invitation",
+          `${admin?.username || "Someone"} invited you to join "${chat.name}"`,
+          { type: "group_invite", chatId: chat._id.toString() }
+        );
+      }
+    }
+
+    const updated = await Chat.findById(chatId)
+      .populate("participants", "username email profilePicture")
+      .populate("admins", "username email profilePicture")
+      .populate("pendingInvites.user", "username email profilePicture")
+      .populate("pendingInvites.invitedBy", "username email profilePicture");
+
+    return { chat: updated, invitedCount: invited.length, skipped };
+  }
+
+  /**
+   * Accept or decline a pending group invite. On accept the user is moved into
+   * `participants`; on decline they're simply dropped from `pendingInvites`.
+   */
+  async respondToGroupInvite(chatId, userId, accept) {
+    const chat = await Chat.findById(chatId);
+    if (!chat) {
+      const err = new Error("Chat not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const userIdStr = userId.toString();
+    const hasInvite = (chat.pendingInvites || []).some(
+      (inv) => inv.user.toString() === userIdStr
+    );
+    if (!hasInvite) {
+      const err = new Error("No pending invite found for this group");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // Remove the pending invite regardless of the response.
+    chat.pendingInvites = chat.pendingInvites.filter(
+      (inv) => inv.user.toString() !== userIdStr
+    );
+
+    const io = getSocketInstance();
+
+    if (accept) {
+      if (!chat.participants.some((p) => p.toString() === userIdStr)) {
+        chat.participants.push(userId);
+      }
+      chat.unreadCount.set(userIdStr, 0);
+      if (chat.isArchived) chat.isArchived.set(userIdStr, false);
+      if (chat.isMuted) chat.isMuted.set(userIdStr, false);
+      await chat.save();
+
+      const joiner = await User.findById(userId).select("username");
+      await this.postSystemMessage(
+        chat,
+        userId,
+        `${joiner?.username || "Someone"} joined the group`
+      );
+
+      if (io) {
+        io.to(`chat:${chatId}`).emit("group:updated", { chatId: chatId.toString() });
+      }
+    } else {
+      await chat.save();
+      if (io) {
+        io.to(`user:${userIdStr}`).emit("group:removed", { chatId: chatId.toString() });
+      }
+    }
+
+    const updated = await Chat.findById(chatId)
+      .populate("participants", "username email profilePicture")
+      .populate("admins", "username email profilePicture")
+      .populate("pendingInvites.user", "username email profilePicture")
+      .populate({
+        path: "lastMessage",
+        populate: { path: "sender", select: "username profilePicture" }
+      });
+
+    return updated;
   }
 
   /**

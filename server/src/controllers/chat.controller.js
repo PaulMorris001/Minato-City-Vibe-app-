@@ -103,6 +103,8 @@ export const getChatById = async (req, res) => {
     const chat = await Chat.findById(chatId)
       .populate('participants', 'username email profilePicture')
       .populate('admins', 'username email profilePicture')
+      .populate('pendingInvites.user', 'username email profilePicture')
+      .populate('pendingInvites.invitedBy', 'username email profilePicture')
       .populate('event', 'title date location image createdBy')
       .populate({
         path: 'lastMessage',
@@ -113,8 +115,13 @@ export const getChatById = async (req, res) => {
       return res.status(404).json({ message: "Chat not found" });
     }
 
-    // Verify user is participant
-    if (!chat.participants.some(p => p._id.toString() === userId)) {
+    // Participants always have access; a user with a pending invite may open the
+    // chat to accept or decline (they just won't see the message history yet).
+    const isParticipant = chat.participants.some(p => p._id.toString() === userId);
+    const isInvited = (chat.pendingInvites || []).some(
+      inv => inv.user && inv.user._id.toString() === userId
+    );
+    if (!isParticipant && !isInvited) {
       return res.status(403).json({ message: "You don't have access to this chat" });
     }
 
@@ -325,6 +332,50 @@ export const removeParticipantFromGroup = async (req, res) => {
   } catch (error) {
     console.error("Remove participant error:", error);
     res.status(500).json({ message: "Error removing member", error: error.message });
+  }
+};
+
+// Invite users to a group chat (admins only). Invitees must accept before
+// joining. Only applies to group chats that aren't tied to an event.
+export const inviteUsersToGroup = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { chatId } = req.params;
+    const { userIds } = req.body;
+
+    const result = await ChatService.inviteUsersToGroup(chatId, userId, userIds);
+
+    invalidateCachePattern('user_chats_');
+    res.status(200).json({
+      message: `Invite sent to ${result.invitedCount} ${result.invitedCount === 1 ? "person" : "people"}`,
+      chat: result.chat,
+      skipped: result.skipped
+    });
+  } catch (error) {
+    console.error("Invite to group error:", error);
+    const status = error.statusCode || 500;
+    res.status(status).json({ message: error.message || "Error inviting members" });
+  }
+};
+
+// Respond to a pending group invite (the invited user accepts or declines)
+export const respondToGroupInvite = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { chatId } = req.params;
+    const { accept } = req.body;
+
+    const chat = await ChatService.respondToGroupInvite(chatId, userId, !!accept);
+
+    invalidateCachePattern('user_chats_');
+    res.status(200).json({
+      message: accept ? "You've joined the group" : "Invite declined",
+      chat
+    });
+  } catch (error) {
+    console.error("Respond to group invite error:", error);
+    const status = error.statusCode || 500;
+    res.status(status).json({ message: error.message || "Error responding to invite" });
   }
 };
 
