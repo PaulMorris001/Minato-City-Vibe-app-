@@ -18,7 +18,7 @@ const getBaseUrl = () => {
   }
 
   // Production builds use the deployed backend
-  return "https://night-vibe.onrender.com/api";
+  return "https://api.ourcityvibe.com/api";
 };
 
 export const BASE_URL = getBaseUrl();

@@ -502,7 +502,7 @@ export default function SettingsScreen() {
 
         <TouchableOpacity
           style={[styles.preferenceItem, { borderBottomWidth: 0 }]}
-          onPress={() => WebBrowser.openBrowserAsync("https://night-vibe.onrender.com/delete-account")}
+          onPress={() => WebBrowser.openBrowserAsync("https://www.ourcityvibe.com/delete-account")}
         >
           <View style={styles.preferenceLeft}>
             <Ionicons name="trash-outline" size={22} color="#ef4444" />

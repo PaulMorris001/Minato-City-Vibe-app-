@@ -37,7 +37,12 @@ module.exports = {
     supportsTablet: true,
     bundleIdentifier: "com.obito.cityvibe",
     usesAppleSignIn: true,
-    associatedDomains: ["applinks:night-vibe.onrender.com"],
+    // New canonical host first; legacy Render host kept so older share links
+    // still open the app until everyone has updated.
+    associatedDomains: [
+      "applinks:api.ourcityvibe.com",
+      "applinks:night-vibe.onrender.com",
+    ],
     // In EAS Build, GOOGLE_SERVICES_PLIST is the path to the secret file.
     // Locally, fall back to the file in the project root.
     googleServicesFile: process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist",
@@ -56,13 +61,19 @@ module.exports = {
       {
         action: "VIEW",
         autoVerify: true,
-        data: [{ scheme: "https", host: "night-vibe.onrender.com", pathPrefix: "/event" }],
+        data: [
+          { scheme: "https", host: "api.ourcityvibe.com", pathPrefix: "/event" },
+          { scheme: "https", host: "night-vibe.onrender.com", pathPrefix: "/event" },
+        ],
         category: ["BROWSABLE", "DEFAULT"],
       },
       {
         action: "VIEW",
         autoVerify: true,
-        data: [{ scheme: "https", host: "night-vibe.onrender.com", pathPrefix: "/guide" }],
+        data: [
+          { scheme: "https", host: "api.ourcityvibe.com", pathPrefix: "/guide" },
+          { scheme: "https", host: "night-vibe.onrender.com", pathPrefix: "/guide" },
+        ],
         category: ["BROWSABLE", "DEFAULT"],
       },
       // Custom-scheme handler so the web preview's "Open in app" button

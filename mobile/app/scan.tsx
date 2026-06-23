@@ -30,8 +30,8 @@ export default function ScanScreen() {
 
     const value = (data || "").trim();
 
-    // Match a NightVibe event/guide link, e.g.
-    // https://night-vibe.onrender.com/event/<id>  or  /guide/<id>
+    // Match a CityVibe event/guide link, e.g.
+    // https://api.ourcityvibe.com/event/<id>  or  /guide/<id>
     const eventMatch = value.match(/\/event\/([^/?#\s]+)/i);
     const guideMatch = value.match(/\/guide\/([^/?#\s]+)/i);
 

@@ -47,7 +47,7 @@ async function getWritableCalendarId(
 
 /**
  * Add an event to the device calendar with a deep link back to the app. The
- * link is a universal link (https://night-vibe.onrender.com/event/<id>) which,
+ * link is a universal link (https://api.ourcityvibe.com/event/<id>) which,
  * on a device with the app installed, opens straight to the event — so on the
  * day, tapping the link in the calendar entry lands the user on the event.
  */

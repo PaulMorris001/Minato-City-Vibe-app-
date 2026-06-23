@@ -425,7 +425,7 @@ export const getEventById = async (req, res) => {
     if (cached) return res.status(200).json(cached);
 
     // Accept either an ObjectId (`_id`) or a shareToken so deep links like
-    // `https://night-vibe.onrender.com/event/<shareToken>` (which expo-router
+    // `https://api.ourcityvibe.com/event/<shareToken>` (which expo-router
     // auto-routes to `/event/[id]`) resolve correctly without bouncing the
     // user through a 404 alert.
     const POPULATIONS = [

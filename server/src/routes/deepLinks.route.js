@@ -12,7 +12,7 @@ const PLAY_STORE = 'https://play.google.com/store/apps/details?id=com.obito.city
 const HAS_APP_STORE_LISTING = false;
 const APP_STORE = '';
 const APP_STORE_ID = '';
-const SITE_BASE = 'https://night-vibe.onrender.com';
+const SITE_BASE = 'https://api.ourcityvibe.com';
 const BRAND_TAGLINE = 'CityVibe — every night out, in one app.';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

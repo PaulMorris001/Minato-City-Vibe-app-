@@ -112,7 +112,7 @@ export const config = {
     // Deep-link scheme used for Stripe Connect onboarding redirect
     appUrl: process.env.APP_URL || "nightvibe://",
     // HTTPS server URL used as Stripe's required return/refresh URLs
-    serverUrl: process.env.SERVER_URL || "https://night-vibe.onrender.com",
+    serverUrl: process.env.SERVER_URL || "https://api.ourcityvibe.com",
   },
 
   // Sign in with Apple. For native iOS sign-in, the identity token's `aud`

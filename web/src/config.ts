@@ -1,0 +1,3 @@
+// Base URL of the CityVibe backend API.
+// Override at build time with VITE_API_URL if needed (e.g. staging).
+export const API_BASE = import.meta.env.VITE_API_URL || "https://api.ourcityvibe.com";

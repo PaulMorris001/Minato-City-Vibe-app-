@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "https://night-vibe.onrender.com/api";
+const BASE_URL = import.meta.env.VITE_API_URL || "https://api.ourcityvibe.com/api";
 
 console.log(BASE_URL)
 

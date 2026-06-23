@@ -919,12 +919,12 @@ export async function googleAuth(req, res) {
 //   1. Render env vars: GOOGLE_CLIENT_ID (already set) AND GOOGLE_CLIENT_SECRET
 //      (the secret matching the web OAuth client whose id is GOOGLE_CLIENT_ID).
 //   2. In Google Cloud Console → the web OAuth client → Authorized redirect
-//      URIs → add: https://night-vibe.onrender.com/api/auth/google/web/callback
+//      URIs → add: https://api.ourcityvibe.com/api/auth/google/web/callback
 
 const GOOGLE_WEB_REDIRECT_PATH = "/api/auth/google/web/callback";
 
 function getServerBase() {
-  return (process.env.SERVER_URL || "https://night-vibe.onrender.com").replace(
+  return (process.env.SERVER_URL || "https://api.ourcityvibe.com").replace(
     /\/$/,
     ""
   );

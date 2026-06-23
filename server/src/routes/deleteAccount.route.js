@@ -140,6 +140,62 @@ const successHtml = `<!DOCTYPE html>
 </body>
 </html>`;
 
+// Verify credentials and delete the account + associated data.
+// Returns { ok: true } on success, or { ok: false, message } on a known
+// validation failure. Throws on unexpected errors.
+async function deleteAccountByCredentials(email, password) {
+  const user = await User.findOne({ email: String(email || '').toLowerCase().trim() });
+
+  if (!user) {
+    return { ok: false, message: 'No account found with that email address.' };
+  }
+
+  if (user.authProvider === 'google') {
+    // Google OAuth users have no password — verify by email ownership only
+    // Delete without password check (they authenticated via Google)
+  } else {
+    if (!password) {
+      return { ok: false, message: 'Password is required.' };
+    }
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+      return { ok: false, message: 'Incorrect password. Please try again.' };
+    }
+  }
+
+  const userId = user._id;
+
+  // Delete all associated data
+  await Promise.all([
+    Follow.deleteMany({ $or: [{ follower: userId }, { following: userId }] }),
+    Notification.deleteMany({ $or: [{ recipient: userId }, { sender: userId }] }),
+    User.findByIdAndDelete(userId),
+  ]);
+
+  return { ok: true };
+}
+
+// JSON endpoint used by the standalone web app (www.ourcityvibe.com).
+router.post('/api/account/delete', async (req, res) => {
+  const { email, password } = req.body || {};
+  try {
+    const result = await deleteAccountByCredentials(email, password);
+    if (!result.ok) {
+      return res.status(400).json({ success: false, message: result.message });
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Delete account error:', err);
+    return res
+      .status(500)
+      .json({ success: false, message: 'Something went wrong. Please try again later.' });
+  }
+});
+
+// ─── Legacy server-rendered page ─────────────────────────────────────────────
+// Kept for backward compatibility with links pointing at the API host. The
+// canonical page now lives at https://www.ourcityvibe.com/delete-account.
+
 router.get('/delete-account', (req, res) => {
   res.send(html('', false));
 });
@@ -148,34 +204,10 @@ router.post('/delete-account', async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
-
-    if (!user) {
-      return res.send(html('No account found with that email address.', true));
+    const result = await deleteAccountByCredentials(email, password);
+    if (!result.ok) {
+      return res.send(html(result.message, true));
     }
-
-    if (user.authProvider === 'google') {
-      // Google OAuth users have no password — verify by email ownership only
-      // Delete without password check (they authenticated via Google)
-    } else {
-      if (!password) {
-        return res.send(html('Password is required.', true));
-      }
-      const valid = await bcrypt.compare(password, user.password);
-      if (!valid) {
-        return res.send(html('Incorrect password. Please try again.', true));
-      }
-    }
-
-    const userId = user._id;
-
-    // Delete all associated data
-    await Promise.all([
-      Follow.deleteMany({ $or: [{ follower: userId }, { following: userId }] }),
-      Notification.deleteMany({ $or: [{ recipient: userId }, { sender: userId }] }),
-      User.findByIdAndDelete(userId),
-    ]);
-
     res.send(successHtml);
   } catch (err) {
     console.error('Delete account error:', err);

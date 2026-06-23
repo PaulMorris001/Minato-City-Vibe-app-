@@ -6,9 +6,9 @@
  * either route on the result or no-op on `null`.
  *
  * Recognized URLs:
- *   https://night-vibe.onrender.com/event/<x>   → /event/[id]   (id = x)
- *   https://night-vibe.onrender.com/guide/<x>   → /guide/[id]   (id = x)
- *   https://night-vibe.onrender.com/share/<t>   → /share/[token] (token = t)
+ *   https://api.ourcityvibe.com/event/<x>   → /event/[id]   (id = x)
+ *   https://api.ourcityvibe.com/guide/<x>   → /guide/[id]   (id = x)
+ *   https://api.ourcityvibe.com/share/<t>   → /share/[token] (token = t)
  *   mobile://event/<x>                          → /event/[id]
  *   mobile://guide/<x>                          → /guide/[id]
  *   mobile://share/<t>                          → /share/[token]
@@ -27,7 +27,12 @@ export interface ParsedDeepLink {
   params: Record<string, string>;
 }
 
-const ALLOWED_HTTPS_HOST = "night-vibe.onrender.com";
+// New canonical host plus the legacy Render host, so share links created
+// before the domain move still open the app during the transition.
+const ALLOWED_HTTPS_HOSTS = new Set([
+  "api.ourcityvibe.com",
+  "night-vibe.onrender.com",
+]);
 const APP_SCHEME = "mobile:";
 const MAX_IDENTIFIER_LEN = 128;
 
@@ -67,7 +72,7 @@ export function parseDeepLink(
   // `pathname` — so prepend the host as the first segment.
   let segments: string[];
   if (parsed.protocol === "https:") {
-    if (parsed.host !== ALLOWED_HTTPS_HOST) return null;
+    if (!ALLOWED_HTTPS_HOSTS.has(parsed.host)) return null;
     segments = parsed.pathname.split("/").filter(Boolean);
   } else if (parsed.protocol === APP_SCHEME) {
     const head = parsed.host ? [parsed.host] : [];

@@ -91,7 +91,7 @@ const html = `<!DOCTYPE html>
 
     <div class="section">
       <h2>Data Retention</h2>
-      <p>We retain your account data for as long as your account is active. You may request deletion of your account and associated data at https://night-vibe.onrender.com/delete-account or by contacting Support@nvibez.com.</p>
+      <p>We retain your account data for as long as your account is active. You may request deletion of your account and associated data at https://www.ourcityvibe.com/delete-account or by contacting Support@nvibez.com.</p>
     </div>
 
     <div class="section">

@@ -1,0 +1,12 @@
+# SPA fallback for Hostinger (Apache).
+# Serves index.html for any path that isn't a real file/dir, so client-side
+# routes like /privacy, /csae-policy and /delete-account resolve on a hard
+# refresh or when opened directly from a link.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>

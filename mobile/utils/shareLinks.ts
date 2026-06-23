@@ -1,4 +1,4 @@
-const BASE = 'https://night-vibe.onrender.com';
+const BASE = 'https://api.ourcityvibe.com';
 
 /**
  * Build a share URL for an event. Prefer the shareToken; fall back to the
