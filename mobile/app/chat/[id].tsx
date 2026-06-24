@@ -1435,7 +1435,11 @@ export default function ChatScreen() {
         transparent
         onRequestClose={closeAddMembers}
       >
-        <View style={styles.settingsOverlay}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View style={styles.settingsOverlay}>
           <TouchableOpacity
             style={styles.settingsBackdrop}
             activeOpacity={1}
@@ -1533,6 +1537,7 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Create event from group (admin) */}
