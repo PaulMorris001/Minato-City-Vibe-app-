@@ -109,6 +109,10 @@ export const getChatById = async (req, res) => {
       .populate({
         path: 'lastMessage',
         populate: { path: 'sender', select: 'username profilePicture' }
+      })
+      .populate({
+        path: 'pinnedMessage',
+        populate: { path: 'sender', select: 'username profilePicture' }
       });
 
     if (!chat) {
@@ -409,6 +413,46 @@ export const setChatPinned = async (req, res) => {
     console.error("Pin chat error:", error);
     const status = error.statusCode || 500;
     res.status(status).json({ message: error.message || "Error updating pin" });
+  }
+};
+
+// Pin / unpin a message inside a chat
+export const pinChatMessage = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { chatId } = req.params;
+    const { messageId } = req.body; // null to unpin
+
+    const chat = await Chat.findById(chatId);
+    if (!chat) return res.status(404).json({ message: "Chat not found" });
+
+    const isParticipant = chat.participants.some((p) => p.toString() === userId);
+    if (!isParticipant) return res.status(403).json({ message: "Not a participant" });
+
+    chat.pinnedMessage = messageId || null;
+    await chat.save();
+
+    const updated = await Chat.findById(chatId)
+      .populate("participants", "username email profilePicture")
+      .populate("admins", "username email profilePicture")
+      .populate({
+        path: "pinnedMessage",
+        populate: { path: "sender", select: "username profilePicture" },
+      });
+
+    const { getSocketInstance } = await import("../services/socket.service.js");
+    const io = getSocketInstance();
+    if (io) {
+      io.to(`chat:${chatId}`).emit("chat:pinnedMessage", {
+        chatId,
+        pinnedMessage: updated.pinnedMessage || null,
+      });
+    }
+
+    res.status(200).json({ message: messageId ? "Message pinned" : "Message unpinned", chat: updated });
+  } catch (error) {
+    console.error("Pin message error:", error);
+    res.status(500).json({ message: error.message || "Error pinning message" });
   }
 };
 

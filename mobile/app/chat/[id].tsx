@@ -84,6 +84,8 @@ export default function ChatScreen() {
   const [selectedToAdd, setSelectedToAdd] = useState<FollowUser[]>([]);
   const [invitingMembers, setInvitingMembers] = useState(false);
 
+  const [pinning, setPinning] = useState(false);
+
   // Responding to a pending invite (when the viewer was invited to this group)
   const [respondingInvite, setRespondingInvite] = useState(false);
   // Mirrors isPendingInvitee for use inside socket callbacks (which close over
@@ -235,10 +237,18 @@ export default function ChatScreen() {
       },
     });
 
+    socketService.on("chat-screen-pinned", {
+      onChatPinnedMessage: (data) => {
+        if (data.chatId !== id) return;
+        setChat((prev) => prev ? { ...prev, pinnedMessage: data.pinnedMessage } : prev);
+      },
+    });
+
     return () => {
       socketService.leaveChat(id);
       socketService.off("chat-screen");
       socketService.off("chat-screen-group");
+      socketService.off("chat-screen-pinned");
     };
   }, [id, currentUserId, loadChatAndMessages]);
 
@@ -363,6 +373,21 @@ export default function ChatScreen() {
       console.error("Error deleting message:", error);
       setMessages(snapshot); // restore on failure
       Alert.alert("Couldn't delete", error?.message || "Please try again.");
+    }
+  };
+
+  const handlePinMessage = async (message: Message) => {
+    if (!chat) return;
+    const isPinned = (chat.pinnedMessage as any)?._id === message._id;
+    const newMessageId = isPinned ? null : message._id;
+    setPinning(true);
+    try {
+      const updated = await chatService.pinMessage(chat._id, newMessageId);
+      setChat((prev) => prev ? { ...prev, pinnedMessage: updated.pinnedMessage } : prev);
+    } catch (e: any) {
+      Alert.alert("Couldn't pin message", e?.message || "Please try again.");
+    } finally {
+      setPinning(false);
     }
   };
 
@@ -677,9 +702,7 @@ export default function ChatScreen() {
   // auto-enrolls every member). Available whenever the viewer is an admin.
   const isGroupAdmin = !!(isGroup && chat?.admins?.some((a) => a._id === currentUserId));
 
-  // Members can be added to non-event groups. Event groups are managed through
-  // the event, so the invite flow only applies when there's no linked event.
-  const canAddMembers = isGroupAdmin && !chat?.event;
+  const canAddMembers = isGroupAdmin;
 
   // The viewer was invited to this group but hasn't joined yet — show an
   // accept / decline banner instead of the composer.
@@ -927,6 +950,8 @@ export default function ChatScreen() {
         onReactionsChanged={handleReactionsChanged}
         onEdit={handleEditMessage}
         onDelete={handleDeleteMessage}
+        onPin={handlePinMessage}
+        isPinned={(chat?.pinnedMessage as any)?._id === msg._id}
         onReply={setReplyingTo}
         onReplyPress={handleReplyPress}
         onMentionPress={(username) => {
@@ -1065,6 +1090,32 @@ export default function ChatScreen() {
                   <Text style={styles.eventBannerCtaText}>View →</Text>
                 </View>
               </LinearGradient>
+            </TouchableOpacity>
+          )}
+
+          {/* Pinned message banner */}
+          {chat?.pinnedMessage && (chat.pinnedMessage as any)?._id && (
+            <TouchableOpacity
+              style={styles.pinnedBanner}
+              activeOpacity={0.85}
+              onPress={() => handleReplyPress((chat.pinnedMessage as any)._id)}
+            >
+              <Ionicons name="pin" size={13} color="#a855f7" style={{ marginRight: 6 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pinnedBannerLabel}>Pinned message</Text>
+                <Text style={styles.pinnedBannerText} numberOfLines={1}>
+                  {(chat.pinnedMessage as any).type === "image"
+                    ? "📷 Photo"
+                    : (chat.pinnedMessage as any).content || "Message"}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => handlePinMessage(chat.pinnedMessage as any)}
+                hitSlop={8}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={16} color="rgba(244,238,255,0.4)" />
+              </TouchableOpacity>
             </TouchableOpacity>
           )}
 
@@ -2301,5 +2352,27 @@ const styles = StyleSheet.create({
     color: CH_TEXT_MUTE,
     textAlign: "center",
     paddingHorizontal: 20,
+  },
+  pinnedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: "rgba(168,85,247,0.08)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(168,85,247,0.15)",
+  },
+  pinnedBannerLabel: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 10,
+    color: "#a855f7",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 1,
+  },
+  pinnedBannerText: {
+    fontFamily: "Outfit_400Regular",
+    fontSize: 13,
+    color: CH_TEXT_DIM,
   },
 });

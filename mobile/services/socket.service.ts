@@ -13,6 +13,7 @@ interface SocketEvents {
   onMessageDeleted?: (data: { chatId: string; messageId: string }) => void;
   onMessageEdited?: (data: { chatId: string; message: any }) => void;
   onChatPinned?: (data: { chatId: string; pinned: boolean }) => void;
+  onChatPinnedMessage?: (data: { chatId: string; pinnedMessage: any | null }) => void;
   onChatMuted?: (data: { chatId: string; muted: boolean }) => void;
   onTypingStart?: (data: any) => void;
   onTypingStop?: (data: any) => void;
@@ -135,6 +136,10 @@ class SocketService {
 
       this.socket.on("chat:pinned", (data) => {
         this.notify("onChatPinned", data);
+      });
+
+      this.socket.on("chat:pinnedMessage", (data) => {
+        this.notify("onChatPinnedMessage", data);
       });
 
       this.socket.on("chat:muted", (data) => {

@@ -1,6 +1,7 @@
 import Chat from "../models/chat.model.js";
 import Message from "../models/message.model.js";
 import User from "../models/user.model.js";
+import Event from "../models/event.model.js";
 import Notification from "../models/notification.model.js";
 import { emitNewMessage, getSocketInstance } from "./socket.service.js";
 import { uploadBase64Image, deleteImage } from "./image.service.js";
@@ -845,6 +846,14 @@ class ChatService {
       if (chat.isArchived) chat.isArchived.set(userIdStr, false);
       if (chat.isMuted) chat.isMuted.set(userIdStr, false);
       await chat.save();
+
+      // If this group is linked to an event, also add the user to the event
+      if (chat.event) {
+        await Event.findByIdAndUpdate(chat.event, {
+          $addToSet: { invitedUsers: userId },
+          $pull: { pendingInvites: userId },
+        });
+      }
 
       const joiner = await User.findById(userId).select("username");
       await this.postSystemMessage(

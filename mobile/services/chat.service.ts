@@ -28,6 +28,7 @@ export interface Chat {
   isArchived: Map<string, boolean>;
   isMuted: Map<string, boolean>;
   pinnedBy?: string[];
+  pinnedMessage?: Message | null;
   event?: ChatEventRef;
   createdAt: string;
   updatedAt: string;
@@ -439,6 +440,24 @@ class ChatService {
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       throw new Error(data?.message || "Failed to update pin");
+    }
+    const data = await response.json();
+    return data.chat as Chat;
+  }
+
+  /**
+   * Pin / unpin a message inside a chat. Pass null messageId to unpin.
+   */
+  async pinMessage(chatId: string, messageId: string | null): Promise<Chat> {
+    const headers = await this.getAuthHeader();
+    const response = await fetch(`${BASE_URL}/chats/${chatId}/pin-message`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ messageId }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.message || "Failed to pin message");
     }
     const data = await response.json();
     return data.chat as Chat;

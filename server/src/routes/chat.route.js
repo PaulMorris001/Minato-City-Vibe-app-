@@ -17,7 +17,8 @@ import {
   respondToGroupInvite,
   toggleMessageReaction,
   setChatPinned,
-  setChatMuted
+  setChatMuted,
+  pinChatMessage,
 } from "../controllers/chat.controller.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 
@@ -80,5 +81,8 @@ router.put("/chats/:chatId/pin", authenticate, setChatPinned);
 
 // Mute / unmute chat
 router.put("/chats/:chatId/mute", authenticate, setChatMuted);
+
+// Pin / unpin a message inside a chat
+router.put("/chats/:chatId/pin-message", authenticate, pinChatMessage);
 
 export default router;

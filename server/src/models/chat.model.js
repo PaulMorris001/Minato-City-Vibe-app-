@@ -85,6 +85,13 @@ const chatSchema = mongoose.Schema({
     ref: "user"
   }],
 
+  // A single pinned message visible at the top of the chat for all participants
+  pinnedMessage: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "message",
+    default: null
+  },
+
   // For event-linked group chats, the event this chat belongs to
   event: {
     type: mongoose.Schema.Types.ObjectId,

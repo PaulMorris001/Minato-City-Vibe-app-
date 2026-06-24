@@ -81,6 +81,10 @@ interface MessageBubbleProps {
   onEdit?: (message: Message) => void;
   /** Fired when the user confirms "Delete" from the long-press menu (own messages). */
   onDelete?: (message: Message) => void;
+  /** Fired when the user taps Pin / Unpin from the long-press menu. */
+  onPin?: (message: Message) => void;
+  /** Whether this message is currently the pinned message in the chat. */
+  isPinned?: boolean;
   /** Fired when the user swipes the message to reply/reference it. */
   onReply?: (message: Message) => void;
   /** Fired when the quoted reply preview is tapped (jump to original). */
@@ -131,6 +135,8 @@ export default function MessageBubble({
   onReactionsChanged,
   onEdit,
   onDelete,
+  onPin,
+  isPinned = false,
   onReply,
   onReplyPress,
   onMentionPress,
@@ -269,10 +275,13 @@ export default function MessageBubble({
 
   const handleLongPress = () => {
     if (isTemp) return;
-    // With no actionable options (e.g. someone else's image) go straight to the
-    // emoji picker instead of a one-row menu.
-    setMenuMode(canEdit || canDelete || canCopy ? "actions" : "react");
+    setMenuMode(canEdit || canDelete || canCopy || !!onPin ? "actions" : "react");
     setPickerVisible(true);
+  };
+
+  const handlePin = () => {
+    setPickerVisible(false);
+    onPin?.(message);
   };
 
   const handleCopy = async () => {
@@ -806,6 +815,26 @@ export default function MessageBubble({
                       <Ionicons name="happy-outline" size={18} color={CH_TEXT} />
                       <Text style={styles.actionLabel}>React</Text>
                     </TouchableOpacity>
+
+                    {onPin && (
+                      <>
+                        <View style={styles.actionDivider} />
+                        <TouchableOpacity
+                          style={styles.actionRow}
+                          onPress={handlePin}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons
+                            name={isPinned ? "pin" : "pin-outline"}
+                            size={18}
+                            color={isPinned ? "#a855f7" : CH_TEXT}
+                          />
+                          <Text style={[styles.actionLabel, isPinned && { color: "#a855f7" }]}>
+                            {isPinned ? "Unpin" : "Pin"}
+                          </Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
 
                     {canDelete && (
                       <>
