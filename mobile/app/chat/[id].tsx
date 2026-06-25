@@ -72,9 +72,8 @@ export default function ChatScreen() {
   const [page, setPage] = useState(1);
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  // While prepending older messages we suppress the auto-scroll-to-end so the
-  // view doesn't jump to the bottom.
-  const isPrependingRef = useRef(false);
+  // Whether the user is near the bottom — only auto-scroll there when true.
+  const isNearBottomRef = useRef(true);
 
   // Add-members (group invite) modal
   const [addMembersVisible, setAddMembersVisible] = useState(false);
@@ -875,7 +874,9 @@ export default function ChatScreen() {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     const distanceFromBottom =
       contentSize.height - (contentOffset.y + layoutMeasurement.height);
-    setShowScrollDown(distanceFromBottom > 240);
+    const nearBottom = distanceFromBottom < 240;
+    isNearBottomRef.current = nearBottom;
+    setShowScrollDown(!nearBottom);
   };
 
   const scrollToBottom = () => {
@@ -893,13 +894,6 @@ export default function ChatScreen() {
       const data = await chatService.getChatMessages(id, nextPage);
       const older = data.messages || [];
       if (older.length > 0) {
-        // Suppress the snap-to-bottom for the layout passes triggered by the
-        // prepend (variable-height rows can fire onContentSizeChange several
-        // times); a short window covers them all.
-        isPrependingRef.current = true;
-        setTimeout(() => {
-          isPrependingRef.current = false;
-        }, 600);
         setMessages((prev) => {
           const existing = new Set(prev.map((m) => m._id));
           const deduped = older.filter((m) => !existing.has(m._id));
@@ -1132,7 +1126,8 @@ export default function ChatScreen() {
             onScroll={handleMessagesScroll}
             scrollEventThrottle={16}
             onStartReached={loadOlderMessages}
-            onStartReachedThreshold={0.1}
+            onStartReachedThreshold={0.15}
+            maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
             ListHeaderComponent={
               hasMoreOlder ? (
                 <TouchableOpacity
@@ -1150,9 +1145,9 @@ export default function ChatScreen() {
               ) : null
             }
             onContentSizeChange={() => {
-              // Skip the snap-to-bottom when we've just prepended older history,
-              // otherwise the view would jump away from what the user is reading.
-              if (isPrependingRef.current) return;
+              // Only snap to bottom when the user is already near the bottom —
+              // never yank them away while reading older messages.
+              if (!isNearBottomRef.current) return;
               flatListRef.current?.scrollToEnd({ animated: false });
             }}
             onScrollToIndexFailed={(info) => {
