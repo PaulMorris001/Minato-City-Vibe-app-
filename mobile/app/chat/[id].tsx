@@ -74,6 +74,8 @@ export default function ChatScreen() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   // Whether the user is near the bottom — only auto-scroll there when true.
   const isNearBottomRef = useRef(true);
+  // True while the initial batch of messages is being laid out for the first time.
+  const initialScrollDoneRef = useRef(false);
 
   // Add-members (group invite) modal
   const [addMembersVisible, setAddMembersVisible] = useState(false);
@@ -116,6 +118,7 @@ export default function ChatScreen() {
   const loadChatAndMessages = useCallback(async () => {
     try {
       setLoading(true);
+      initialScrollDoneRef.current = false;
       const c = await chatService.getChatById(id);
       setChat(c);
       const messagesData = await chatService.getChatMessages(id, 1);
@@ -1145,8 +1148,14 @@ export default function ChatScreen() {
               ) : null
             }
             onContentSizeChange={() => {
-              // Only snap to bottom when the user is already near the bottom —
-              // never yank them away while reading older messages.
+              // Force scroll to bottom on the very first render so the chat
+              // always opens at the latest message. After that, only follow
+              // the user to the bottom when they're already near it.
+              if (!initialScrollDoneRef.current) {
+                initialScrollDoneRef.current = true;
+                flatListRef.current?.scrollToEnd({ animated: false });
+                return;
+              }
               if (!isNearBottomRef.current) return;
               flatListRef.current?.scrollToEnd({ animated: false });
             }}
