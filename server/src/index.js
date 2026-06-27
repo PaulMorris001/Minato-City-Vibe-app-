@@ -21,6 +21,8 @@ import guideRoutes from "./routes/guide.route.js";
 import uploadRoutes from "./routes/upload.route.js";
 import logRoutes from "./routes/log.route.js";
 import stripeRoutes from "./routes/stripe.route.js";
+import flutterwaveRoutes from "./routes/flutterwave.route.js";
+import paymentsRoutes from "./routes/payments.route.js";
 import notificationRoutes from "./routes/notification.route.js";
 import favoritesRoutes from "./routes/favorites.route.js";
 import adminRoutes from "./routes/admin.route.js";
@@ -96,6 +98,8 @@ app.use("/api/", guideRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/", logRoutes);
 app.use("/api/", stripeRoutes);
+app.use("/api/", flutterwaveRoutes);
+app.use("/api/", paymentsRoutes);
 app.use("/api/", notificationRoutes);
 app.use("/api/", favoritesRoutes);
 app.use("/api/", followRoutes);
@@ -112,7 +116,7 @@ app.use("/", privacyRoutes);
 app.use("/", csaeRoutes);
 
 
-// Initialize Socket.IO
+// Initialize Socket.IO 
 const io = initializeSocket(httpServer);
 
 // Start server

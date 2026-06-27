@@ -115,6 +115,18 @@ export const config = {
     serverUrl: process.env.SERVER_URL || "https://api.ourcityvibe.com",
   },
 
+  // Flutterwave Configuration — secondary provider for African vendors who
+  // can't onboard to Stripe Connect. Collects (cards/mobile money/NGN) into the
+  // platform balance and pays out to vendors' local banks via the Transfers API.
+  flutterwave: {
+    secretKey: process.env.FLW_SECRET_KEY || "",
+    publicKey: process.env.FLW_PUBLIC_KEY || "",
+    encryptionKey: process.env.FLW_ENCRYPTION_KEY || "",
+    // Shared secret set in the Flutterwave dashboard; compared against the
+    // `verif-hash` header on incoming webhooks.
+    secretHash: process.env.FLW_SECRET_HASH || "",
+  },
+
   // Sign in with Apple. For native iOS sign-in, the identity token's `aud`
   // claim is the app's bundle identifier, so that's the expected audience.
   apple: {

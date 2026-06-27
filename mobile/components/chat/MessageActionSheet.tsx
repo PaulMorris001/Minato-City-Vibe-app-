@@ -1,0 +1,262 @@
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Pressable,
+  Modal,
+  Alert,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import type { Message } from "@/services/chat.service";
+
+const CH_TEXT = "#F4EEFF";
+const CH_STROKE = "rgba(255,255,255,0.08)";
+const CH_STROKE_HI = "rgba(255,255,255,0.14)";
+
+const QUICK_REACTIONS = ["❤️", "✨", "🔥", "👍", "😂"];
+
+// Messages can only be edited within 10 minutes of being sent.
+const EDIT_WINDOW_MS = 10 * 60 * 1000;
+
+interface MessageActionSheetProps {
+  /** The message the menu was opened for, or null when closed. */
+  message: Message | null;
+  currentUserId?: string;
+  /** Whether `message` is currently the chat's pinned message. */
+  isPinned?: boolean;
+  /** Whether pinning is available in this chat (group/admin rules live upstream). */
+  canPin?: boolean;
+  onClose: () => void;
+  onEdit: (message: Message) => void;
+  onDelete: (message: Message) => void;
+  onCopy: (message: Message) => void;
+  onPin: (message: Message) => void;
+  onReact: (message: Message, emoji: string) => void;
+}
+
+/**
+ * Single, screen-level long-press menu for chat messages. Previously every
+ * MessageBubble mounted its own <Modal> for this (dozens at once); hoisting it
+ * to one instance is the biggest chat-list performance win.
+ */
+export default function MessageActionSheet({
+  message,
+  currentUserId,
+  isPinned = false,
+  canPin = false,
+  onClose,
+  onEdit,
+  onDelete,
+  onCopy,
+  onPin,
+  onReact,
+}: MessageActionSheetProps) {
+  const [menuMode, setMenuMode] = useState<"actions" | "react">("actions");
+
+  const isTemp = !!message && message._id.startsWith("temp_");
+  const isOwnMessage = !!message && message.sender?._id === currentUserId;
+  const withinEditWindow =
+    !!message && Date.now() - new Date(message.createdAt).getTime() <= EDIT_WINDOW_MS;
+  const canEdit = isOwnMessage && !isTemp && message?.type === "text" && withinEditWindow;
+  const canDelete = isOwnMessage && !isTemp;
+  const canCopy = !isTemp && message?.type === "text" && !!message?.content;
+
+  // Open on the action list, unless there are no actions at all (e.g. someone
+  // else's image with no pin) — then jump straight to the emoji picker.
+  useEffect(() => {
+    if (!message) return;
+    setMenuMode(canEdit || canDelete || canCopy || canPin ? "actions" : "react");
+  }, [message, canEdit, canDelete, canCopy, canPin]);
+
+  const handleDelete = () => {
+    if (!message) return;
+    onClose();
+    Alert.alert(
+      "Delete message",
+      "This message will be removed for everyone. This can't be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => onDelete(message) },
+      ]
+    );
+  };
+
+  return (
+    <Modal
+      visible={!!message}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.pickerOverlay} onPress={onClose}>
+        {menuMode === "react" ? (
+          <View style={styles.pickerPill}>
+            {QUICK_REACTIONS.map((e) => (
+              <TouchableOpacity
+                key={e}
+                style={styles.pickerEmoji}
+                onPress={() => {
+                  if (message) onReact(message, e);
+                  onClose();
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.pickerEmojiText}>{e}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : (
+          <View style={styles.actionMenu}>
+            {canEdit && (
+              <>
+                <TouchableOpacity
+                  style={styles.actionRow}
+                  onPress={() => {
+                    if (message) onEdit(message);
+                    onClose();
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="create-outline" size={18} color={CH_TEXT} />
+                  <Text style={styles.actionLabel}>Edit</Text>
+                </TouchableOpacity>
+                <View style={styles.actionDivider} />
+              </>
+            )}
+
+            {canCopy && (
+              <>
+                <TouchableOpacity
+                  style={styles.actionRow}
+                  onPress={() => {
+                    if (message) onCopy(message);
+                    onClose();
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="copy-outline" size={18} color={CH_TEXT} />
+                  <Text style={styles.actionLabel}>Copy</Text>
+                </TouchableOpacity>
+                <View style={styles.actionDivider} />
+              </>
+            )}
+
+            <TouchableOpacity
+              style={styles.actionRow}
+              onPress={() => setMenuMode("react")}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="happy-outline" size={18} color={CH_TEXT} />
+              <Text style={styles.actionLabel}>React</Text>
+            </TouchableOpacity>
+
+            {canPin && (
+              <>
+                <View style={styles.actionDivider} />
+                <TouchableOpacity
+                  style={styles.actionRow}
+                  onPress={() => {
+                    if (message) onPin(message);
+                    onClose();
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={isPinned ? "pin" : "pin-outline"}
+                    size={18}
+                    color={isPinned ? "#a855f7" : CH_TEXT}
+                  />
+                  <Text style={[styles.actionLabel, isPinned && { color: "#a855f7" }]}>
+                    {isPinned ? "Unpin" : "Pin"}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {canDelete && (
+              <>
+                <View style={styles.actionDivider} />
+                <TouchableOpacity
+                  style={styles.actionRow}
+                  onPress={handleDelete}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                  <Text style={[styles.actionLabel, styles.actionLabelDanger]}>
+                    Delete
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+      </Pressable>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pickerPill: {
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "rgba(26,16,48,0.98)",
+    borderWidth: 1,
+    borderColor: CH_STROKE_HI,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+  },
+  pickerEmoji: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pickerEmojiText: {
+    fontSize: 26,
+  },
+  actionMenu: {
+    minWidth: 230,
+    borderRadius: 16,
+    backgroundColor: "rgba(26,16,48,0.98)",
+    borderWidth: 1,
+    borderColor: CH_STROKE_HI,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+  },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+  },
+  actionLabel: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 15,
+    color: CH_TEXT,
+  },
+  actionLabelDanger: {
+    color: "#ef4444",
+  },
+  actionDivider: {
+    height: 1,
+    backgroundColor: CH_STROKE,
+  },
+});

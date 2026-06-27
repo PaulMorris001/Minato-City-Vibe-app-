@@ -52,6 +52,9 @@ const eventSchema = mongoose.Schema({
   // Pricing options (only for public events)
   isPaid: { type: Boolean, default: false },
   ticketPrice: { type: Number, default: 0 },
+  // Currency the organizer prices tickets in (USD for Stripe sellers, e.g. NGN
+  // for Flutterwave sellers). Drives the provider charge currency.
+  currency: { type: String, default: "USD" },
   maxGuests: { type: Number, default: 0 },
 
   // Group chat for this event (auto-created when first user is invited)

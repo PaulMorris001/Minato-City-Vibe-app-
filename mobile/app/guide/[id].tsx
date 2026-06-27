@@ -22,6 +22,7 @@ import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { useStripePayment } from "@/hooks/useStripePayment";
+import { currencyPrefix } from "@/constants/payments";
 import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
 import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
@@ -163,36 +164,23 @@ export default function GuideDetailPage() {
 
     setPurchasing(true);
     try {
+      // The hook runs the provider checkout AND confirms server-side (granting
+      // access) before returning, so success here means the guide is unlocked.
       const result = await payForGuide(id);
       if (!result.success) {
         if (result.error) showError(result.error, "Payment Failed");
         return;
       }
 
-      // Confirm with backend — this actually grants access to the guide
-      const confirmRes = await fetch(`${BASE_URL}/stripe/confirm/guide/${id}`, {
+      showSuccess("Guide unlocked! Enjoy reading.");
+      // Notify guide author that their guide was sold (in-app feed entry).
+      fetch(`${BASE_URL}/notifications/sold`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ paymentIntentId: result.paymentIntentId }),
-      });
-
-      if (confirmRes.ok) {
-        showSuccess("Guide unlocked! Enjoy reading.");
-        // Notify guide author that their guide was sold
-        fetch(`${BASE_URL}/notifications/sold`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "guide", id }),
-        }).catch(() => {});
-        setHasPurchased(true);
-        fetchGuide();
-      } else {
-        const d = await confirmRes.json();
-        showError(d.message || "Payment succeeded but access could not be granted. Please contact Support@nvibez.com.");
-      }
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "guide", id }),
+      }).catch(() => {});
+      setHasPurchased(true);
+      fetchGuide();
     } finally {
       setPurchasing(false);
     }
@@ -324,7 +312,7 @@ export default function GuideDetailPage() {
                   <Text style={styles.freeBadgeText}>FREE</Text>
                 </View>
               ) : (
-                <Text style={styles.priceValue}>${formatPrice(guide.price)}</Text>
+                <Text style={styles.priceValue}>{currencyPrefix(guide.currency)}{formatPrice(guide.price)}</Text>
               )}
             </View>
             <View style={styles.sectionCountChip}>
@@ -343,7 +331,7 @@ export default function GuideDetailPage() {
               ) : (
                 <>
                   <Ionicons name="lock-open-outline" size={20} color="#fff" />
-                  <Text style={styles.purchaseButtonText}>Unlock Guide · ${formatPrice(guide.price)}</Text>
+                  <Text style={styles.purchaseButtonText}>Unlock Guide · {currencyPrefix(guide.currency)}{formatPrice(guide.price)}</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -417,7 +405,7 @@ export default function GuideDetailPage() {
               ) : (
                 <>
                   <Ionicons name="lock-open-outline" size={18} color="#fff" />
-                  <Text style={styles.purchaseButtonText}>Unlock Guide · ${formatPrice(guide.price)}</Text>
+                  <Text style={styles.purchaseButtonText}>Unlock Guide · {currencyPrefix(guide.currency)}{formatPrice(guide.price)}</Text>
                 </>
               )}
             </TouchableOpacity>

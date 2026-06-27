@@ -1,12 +1,10 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useMemo, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Pressable,
-  Modal,
-  Alert,
   Linking,
 } from "react-native";
 import { Image } from "expo-image";
@@ -14,7 +12,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
-import * as Clipboard from "expo-clipboard";
 import { parseMessageSegments } from "@/utils/messageText";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -26,11 +23,10 @@ import Animated, {
   interpolate,
   Extrapolation,
 } from "react-native-reanimated";
-import type { Message, MessageReaction } from "@/services/chat.service";
-import chatService from "@/services/chat.service";
+import type { Message } from "@/services/chat.service";
+import { groupReactions } from "@/utils/reactions";
 import { openUserProfile } from "@/utils/userNavigation";
 import { Avatar } from "@/components/shared/Avatar";
-import BottomSheetModal from "@/components/shared/BottomSheetModal";
 
 const CH_TEXT = "#F4EEFF";
 const CH_TEXT_DIM = "rgba(244,238,255,0.62)";
@@ -40,11 +36,6 @@ const CH_STROKE_HI = "rgba(255,255,255,0.14)";
 const CH_BUBBLE_IN = "rgba(255,255,255,0.07)";
 const CH_PURPLE_SOFT = "#C084FC";
 const CH_BG = "#0B0613";
-
-const QUICK_REACTIONS = ["❤️", "✨", "🔥", "👍", "😂"];
-
-// Messages can only be edited within 10 minutes of being sent.
-const EDIT_WINDOW_MS = 10 * 60 * 1000;
 
 const SENDER_PALETTE = [
   "#A855F7",
@@ -76,15 +67,10 @@ interface MessageBubbleProps {
   showSender?: boolean;
   currentUserId?: string;
   onImagePress?: (imageUrl: string) => void;
-  onReactionsChanged?: (messageId: string, reactions: MessageReaction[]) => void;
-  /** Fired when the user picks "Edit" from the long-press menu (own text messages). */
-  onEdit?: (message: Message) => void;
-  /** Fired when the user confirms "Delete" from the long-press menu (own messages). */
-  onDelete?: (message: Message) => void;
-  /** Fired when the user taps Pin / Unpin from the long-press menu. */
-  onPin?: (message: Message) => void;
-  /** Whether this message is currently the pinned message in the chat. */
-  isPinned?: boolean;
+  /** Fired on long-press — opens the shared, screen-level action menu. */
+  onLongPress?: (message: Message) => void;
+  /** Fired when the reaction chip is tapped — opens the shared reactions sheet. */
+  onReactionsPress?: (message: Message) => void;
   /** Fired when the user swipes the message to reply/reference it. */
   onReply?: (message: Message) => void;
   /** Fired when the quoted reply preview is tapped (jump to original). */
@@ -121,22 +107,15 @@ function formatTime(dateString: string) {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-function reactionUserId(r: MessageReaction): string {
-  return typeof r.user === "string" ? r.user : r.user?._id;
-}
-
-export default function MessageBubble({
+function MessageBubble({
   message,
   isOwnMessage,
   isGroup = false,
   showSender = false,
   currentUserId,
   onImagePress,
-  onReactionsChanged,
-  onEdit,
-  onDelete,
-  onPin,
-  isPinned = false,
+  onLongPress,
+  onReactionsPress,
   onReply,
   onReplyPress,
   onMentionPress,
@@ -144,47 +123,25 @@ export default function MessageBubble({
   isHighlighted = false,
 }: MessageBubbleProps) {
   const router = useRouter();
-  const [pickerVisible, setPickerVisible] = useState(false);
-  // Tapping a reaction pill opens a sheet listing who reacted.
-  const [reactionsSheetVisible, setReactionsSheetVisible] = useState(false);
-  // Long-press menu has two stages: the action list, then the emoji picker.
-  const [menuMode, setMenuMode] = useState<"actions" | "react">("actions");
 
-  // System messages render as centered pill
-  if (message.type === "system") {
-    return (
-      <View style={styles.systemContainer}>
-        <View style={styles.systemBubble}>
-          <Text style={styles.systemText}>{message.content}</Text>
-        </View>
-      </View>
-    );
-  }
+  // NOTE: all hooks must run unconditionally (no early return before them) —
+  // FlashList recycles cell instances, so a system message and a text message
+  // can share one instance; a differing hook count would crash. The
+  // system-message branch is taken at the end, after every hook has run.
 
-  const reactions = message.reactions || [];
+  // Group reactions by emoji for the in-bubble chip (and so a tap can open the
+  // shared "who reacted" sheet). Cheap when there are no reactions.
+  const groupedReactions = useMemo(
+    () => groupReactions(message.reactions, currentUserId),
+    [message.reactions, currentUserId]
+  );
 
-  // Group reactions by emoji, keeping the list of who reacted so we can show a
-  // "reacted by" sheet.
-  const groupedReactions = useMemo(() => {
-    const map: Record<
-      string,
-      {
-        emoji: string;
-        count: number;
-        mine: boolean;
-        users: { _id: string; username?: string; profilePicture?: string }[];
-      }
-    > = {};
-    for (const r of reactions) {
-      const uid = reactionUserId(r);
-      const u = typeof r.user === "string" ? { _id: r.user } : r.user;
-      if (!map[r.emoji]) map[r.emoji] = { emoji: r.emoji, count: 0, mine: false, users: [] };
-      map[r.emoji].count += 1;
-      map[r.emoji].users.push(u);
-      if (uid && uid === currentUserId) map[r.emoji].mine = true;
-    }
-    return Object.values(map);
-  }, [reactions, currentUserId]);
+  // Parse links / @mentions once per content change, not on every render — this
+  // was a measurable cost across dozens of visible bubbles.
+  const textSegments = useMemo(
+    () => parseMessageSegments(message.content || "", mentionUsernames),
+    [message.content, mentionUsernames]
+  );
 
   // ---- Swipe-to-reply (WhatsApp-style) -------------------------------------
   // A short right-swipe slides the bubble and, past a threshold, fires onReply.
@@ -260,67 +217,29 @@ export default function MessageBubble({
     opacity: highlightOpacity.value,
   }));
 
+  // System messages render as a centered pill. This branch is taken only after
+  // every hook above has run (required for FlashList cell recycling).
+  if (message.type === "system") {
+    return (
+      <View style={styles.systemContainer}>
+        <View style={styles.systemBubble}>
+          <Text style={styles.systemText}>{message.content}</Text>
+        </View>
+      </View>
+    );
+  }
+
   const senderName = message.sender?.username || "";
   const senderInitial = senderName.charAt(0).toUpperCase() || "?";
   const senderTint = senderColor(message.sender?._id || senderName);
 
-  // A pending (temp) message has no server id yet — no actions until it lands.
+  // A pending (temp) message has no server id yet — no menu until it lands.
   const isTemp = message._id.startsWith("temp_");
-  const withinEditWindow =
-    Date.now() - new Date(message.createdAt).getTime() <= EDIT_WINDOW_MS;
-  const canEdit =
-    isOwnMessage && !isTemp && message.type === "text" && withinEditWindow;
-  const canDelete = isOwnMessage && !isTemp;
-  const canCopy = !isTemp && message.type === "text" && !!message.content;
 
+  // Long-press opens the single, screen-level action menu (see MessageActionSheet).
   const handleLongPress = () => {
     if (isTemp) return;
-    setMenuMode(canEdit || canDelete || canCopy || !!onPin ? "actions" : "react");
-    setPickerVisible(true);
-  };
-
-  const handlePin = () => {
-    setPickerVisible(false);
-    onPin?.(message);
-  };
-
-  const handleCopy = async () => {
-    setPickerVisible(false);
-    try {
-      await Clipboard.setStringAsync(message.content || "");
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
-        () => {}
-      );
-    } catch {
-      // Clipboard write failed (rare) — nothing useful to surface.
-    }
-  };
-
-  const handleToggleReaction = async (emoji: string) => {
-    setPickerVisible(false);
-    try {
-      const updated = await chatService.toggleReaction(message._id, emoji);
-      onReactionsChanged?.(message._id, updated.reactions || []);
-    } catch (err: any) {
-      Alert.alert("Error", err?.message || "Couldn't react");
-    }
-  };
-
-  const handleEdit = () => {
-    setPickerVisible(false);
-    onEdit?.(message);
-  };
-
-  const handleDelete = () => {
-    setPickerVisible(false);
-    Alert.alert(
-      "Delete message",
-      "This message will be removed for everyone. This can't be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: () => onDelete?.(message) },
-      ]
-    );
+    onLongPress?.(message);
   };
 
   const handleEventPress = () => {
@@ -572,7 +491,7 @@ export default function MessageBubble({
               );
             })()}
             <Text style={[styles.messageText, isOwnMessage ? styles.ownText : styles.otherText]}>
-              {parseMessageSegments(message.content || "", mentionUsernames).map((seg, i) => {
+              {textSegments.map((seg, i) => {
                 if (seg.kind === "link") {
                   return (
                     <Text
@@ -712,7 +631,7 @@ export default function MessageBubble({
                     {groupedReactions.map((r) => (
                       <TouchableOpacity
                         key={r.emoji}
-                        onPress={() => setReactionsSheetVisible(true)}
+                        onPress={() => onReactionsPress?.(message)}
                         activeOpacity={0.7}
                         style={styles.reactionItem}
                       >
@@ -755,146 +674,17 @@ export default function MessageBubble({
                 )}
               </View>
             </View>
-
-            {/* Long-press menu — actions first, then the emoji picker */}
-            <Modal
-              visible={pickerVisible}
-              transparent
-              animationType="fade"
-              onRequestClose={() => setPickerVisible(false)}
-            >
-              <Pressable style={styles.pickerOverlay} onPress={() => setPickerVisible(false)}>
-                {menuMode === "react" ? (
-                  <View style={styles.pickerPill}>
-                    {QUICK_REACTIONS.map((e) => (
-                      <TouchableOpacity
-                        key={e}
-                        style={styles.pickerEmoji}
-                        onPress={() => handleToggleReaction(e)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.pickerEmojiText}>{e}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ) : (
-                  <View style={styles.actionMenu}>
-                    {canEdit && (
-                      <>
-                        <TouchableOpacity
-                          style={styles.actionRow}
-                          onPress={handleEdit}
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons name="create-outline" size={18} color={CH_TEXT} />
-                          <Text style={styles.actionLabel}>Edit</Text>
-                        </TouchableOpacity>
-                        <View style={styles.actionDivider} />
-                      </>
-                    )}
-
-                    {canCopy && (
-                      <>
-                        <TouchableOpacity
-                          style={styles.actionRow}
-                          onPress={handleCopy}
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons name="copy-outline" size={18} color={CH_TEXT} />
-                          <Text style={styles.actionLabel}>Copy</Text>
-                        </TouchableOpacity>
-                        <View style={styles.actionDivider} />
-                      </>
-                    )}
-
-                    <TouchableOpacity
-                      style={styles.actionRow}
-                      onPress={() => setMenuMode("react")}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="happy-outline" size={18} color={CH_TEXT} />
-                      <Text style={styles.actionLabel}>React</Text>
-                    </TouchableOpacity>
-
-                    {onPin && (
-                      <>
-                        <View style={styles.actionDivider} />
-                        <TouchableOpacity
-                          style={styles.actionRow}
-                          onPress={handlePin}
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons
-                            name={isPinned ? "pin" : "pin-outline"}
-                            size={18}
-                            color={isPinned ? "#a855f7" : CH_TEXT}
-                          />
-                          <Text style={[styles.actionLabel, isPinned && { color: "#a855f7" }]}>
-                            {isPinned ? "Unpin" : "Pin"}
-                          </Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-
-                    {canDelete && (
-                      <>
-                        <View style={styles.actionDivider} />
-                        <TouchableOpacity
-                          style={styles.actionRow}
-                          onPress={handleDelete}
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                          <Text style={[styles.actionLabel, styles.actionLabelDanger]}>
-                            Delete
-                          </Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </View>
-                )}
-              </Pressable>
-            </Modal>
-
-            {/* Who-reacted sheet */}
-            <BottomSheetModal
-              visible={reactionsSheetVisible}
-              onClose={() => setReactionsSheetVisible(false)}
-              title="Reactions"
-              maxHeight="60%"
-            >
-              {groupedReactions.map((g) => (
-                <View key={g.emoji} style={styles.reactSheetGroup}>
-                  {g.users.map((u, idx) => {
-                    const isMe = !!currentUserId && u._id === currentUserId;
-                    return (
-                      <TouchableOpacity
-                        key={`${g.emoji}-${u._id}-${idx}`}
-                        style={styles.reactSheetRow}
-                        activeOpacity={0.7}
-                        onPress={() => {
-                          setReactionsSheetVisible(false);
-                          if (isMe) handleToggleReaction(g.emoji);
-                          else openUserProfile(u._id);
-                        }}
-                      >
-                        <Avatar uri={u.profilePicture} name={u.username} size={38} />
-                        <Text style={styles.reactSheetName} numberOfLines={1}>
-                          {isMe ? "You · tap to remove" : u.username || "User"}
-                        </Text>
-                        <Text style={styles.reactSheetEmoji}>{g.emoji}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              ))}
-            </BottomSheetModal>
           </View>
         </Animated.View>
       </View>
     </GestureDetector>
   );
 }
+
+// Memoized: with hundreds of messages in a list, re-rendering every bubble on
+// each parent state change (scroll, typing, etc.) is what makes the chat jank.
+// A stable `message` reference + stable callbacks let most bubbles bail out.
+export default React.memo(MessageBubble);
 
 const styles = StyleSheet.create({
   swipeWrap: {
@@ -1153,24 +943,6 @@ const styles = StyleSheet.create({
   },
 
   // Reactions
-  reactSheetGroup: {
-    marginBottom: 4,
-  },
-  reactSheetRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 8,
-  },
-  reactSheetName: {
-    flex: 1,
-    fontFamily: "Outfit_600SemiBold",
-    fontSize: 15,
-    color: "#fff",
-  },
-  reactSheetEmoji: {
-    fontSize: 20,
-  },
   reactionsChip: {
     position: "absolute",
     bottom: -10,
@@ -1240,71 +1012,6 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: CH_TEXT_DIM,
     textAlign: "center",
-  },
-
-  // Reaction picker
-  pickerOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  pickerPill: {
-    flexDirection: "row",
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: "rgba(26,16,48,0.98)",
-    borderWidth: 1,
-    borderColor: CH_STROKE_HI,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-  },
-  pickerEmoji: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pickerEmojiText: {
-    fontSize: 26,
-  },
-
-  // Long-press action menu (Edit / React / Delete)
-  actionMenu: {
-    minWidth: 230,
-    borderRadius: 16,
-    backgroundColor: "rgba(26,16,48,0.98)",
-    borderWidth: 1,
-    borderColor: CH_STROKE_HI,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-  },
-  actionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-  },
-  actionLabel: {
-    fontFamily: "Outfit_600SemiBold",
-    fontSize: 15,
-    color: CH_TEXT,
-  },
-  actionLabelDanger: {
-    color: "#ef4444",
-  },
-  actionDivider: {
-    height: 1,
-    backgroundColor: CH_STROKE,
   },
 });
 

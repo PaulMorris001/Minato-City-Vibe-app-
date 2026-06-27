@@ -13,6 +13,7 @@ import { setCache, getCache, invalidateCache, invalidateCachePattern } from "../
 import { areMutualFollows } from "../utils/followCheck.js";
 import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean, assertMeaningful } from "../utils/contentFilter.js";
+import { hasPayoutOnboarding, currencyForUser } from "../services/payments/resolveProvider.js";
 import { exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { issueEventPass } from "../services/pass.service.js";
 import config from "../config/env.js";
@@ -54,6 +55,10 @@ export const createEvent = async (req, res) => {
       { field: "Address", value: address },
     ]);
 
+    // Ticket currency defaults to the organizer's local currency (set below for
+    // paid events once we've loaded the organizer).
+    let ticketCurrency = "USD";
+
     // Validate pricing options for public paid events
     if (isPublic && isPaid) {
       if (!ticketPrice || ticketPrice <= 0) {
@@ -69,11 +74,11 @@ export const createEvent = async (req, res) => {
       }
 
       // Trust gates for sellers: must have verified their email AND submitted ID
-      // AND completed Stripe Connect onboarding (so ticket revenue has a payout
-      // destination). Without the Stripe gate, the failure surfaces to the
-      // *buyer* at checkout time — which is the wrong layer to fail on.
+      // AND completed payout onboarding (Stripe for US sellers, Flutterwave for
+      // African sellers) so ticket revenue has a payout destination. Without this
+      // gate, the failure surfaces to the *buyer* at checkout — the wrong layer.
       const organizer = await User.findById(userId).select(
-        "verified paidEventsApproved paidEventsCount emailVerifiedAt stripeAccountId stripeOnboardingComplete"
+        "verified paidEventsApproved paidEventsCount emailVerifiedAt location stripeAccountId stripeOnboardingComplete flutterwaveOnboardingComplete"
       );
       if (!organizer?.emailVerifiedAt) {
         return res.status(403).json({
@@ -87,13 +92,15 @@ export const createEvent = async (req, res) => {
             "Identity verification is required before you can sell tickets. Submit your ID in Settings → Identity Verification.",
         });
       }
-      if (!organizer?.stripeAccountId || !organizer?.stripeOnboardingComplete) {
+      if (!hasPayoutOnboarding(organizer)) {
         return res.status(403).json({
           message:
-            "Connect your payout account before selling tickets. Open Settings → Payouts to finish Stripe onboarding.",
+            "Connect your payout account before selling tickets. Open Settings → Payouts to finish onboarding.",
           code: "payout_setup_required",
         });
       }
+
+      ticketCurrency = req.body.currency || currencyForUser(organizer);
 
       // New-organizer caps — until the user has had `newOrganizerThreshold`
       // approved paid events, ticket price and guest count are capped.
@@ -185,6 +192,7 @@ export const createEvent = async (req, res) => {
       isPublic: isPublic || false,
       isPaid: isPublic && isPaid ? isPaid : false,
       ticketPrice: isPublic && isPaid ? ticketPrice : 0,
+      currency: ticketCurrency,
       maxGuests: isPublic && isPaid ? maxGuests : 0,
       venueProofImage: venueProofUrl,
       approvalStatus,
@@ -429,7 +437,7 @@ export const getEventById = async (req, res) => {
     // auto-routes to `/event/[id]`) resolve correctly without bouncing the
     // user through a 404 alert.
     const POPULATIONS = [
-      ['createdBy', 'username email profilePicture verified stripeAccountId stripeOnboardingComplete'],
+      ['createdBy', 'username email profilePicture verified location stripeAccountId stripeOnboardingComplete flutterwaveOnboardingComplete'],
       ['cohosts', 'username email profilePicture'],
       ['invitedUsers', 'username email profilePicture'],
       ['pendingInvites', 'username email profilePicture'],
@@ -548,23 +556,23 @@ export const getEventById = async (req, res) => {
     });
 
     // Derived: is this paid event actually purchasable right now? Folds the
-    // approval gate AND the organizer's Stripe Connect status into one flag so
-    // the client can show a graceful "tickets not on sale yet" state instead
-    // of letting the user tap "Buy" and bounce off a Stripe error.
+    // approval gate AND the organizer's payout-onboarding status into one flag
+    // (Stripe for US sellers, Flutterwave for African sellers) so the client can
+    // show a graceful "tickets not on sale yet" state instead of letting the
+    // user tap "Buy" and bounce off a provider error.
     if (event.isPaid) {
-      const seller = event.createdBy;
       eventObj.ticketingReady =
-        event.approvalStatus === "approved" &&
-        !!seller?.stripeAccountId &&
-        !!seller?.stripeOnboardingComplete;
+        event.approvalStatus === "approved" && hasPayoutOnboarding(event.createdBy);
     } else {
       eventObj.ticketingReady = true;
     }
 
-    // Never leak the organizer's Stripe IDs to the client.
+    // Never leak the organizer's payout IDs/status to the client.
     if (eventObj.createdBy) {
       delete eventObj.createdBy.stripeAccountId;
       delete eventObj.createdBy.stripeOnboardingComplete;
+      delete eventObj.createdBy.flutterwaveOnboardingComplete;
+      delete eventObj.createdBy.location;
     }
 
     // For anon viewers, strip lists that could leak who's been invited.

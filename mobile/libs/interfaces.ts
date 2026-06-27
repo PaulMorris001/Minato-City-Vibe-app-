@@ -119,6 +119,7 @@ export interface Guide {
   authorName: string;
   description: string;
   price: number;
+  currency?: string; // Selling currency (defaults to USD for legacy guides)
   city: string; // City name
   cityState: string; // State / region name
   country?: string; // Country name (defaults to United States for legacy guides)

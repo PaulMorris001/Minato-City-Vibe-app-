@@ -25,10 +25,23 @@ const ticketSchema = mongoose.Schema({
   // Unique ticket code for verification
   ticketCode: { type: String, unique: true, sparse: true },
 
+  // Which provider collected this payment. Drives how the payout job transfers
+  // the seller's share and how refunds are issued.
+  provider: { type: String, enum: ["stripe", "flutterwave"], default: "stripe" },
+
   // Stripe payment tracking
   stripePaymentIntentId: { type: String },
 
-  // Platform-charge / delayed-payout accounting (cents).
+  // Flutterwave payment tracking. amounts below are interpreted in the ticket's
+  // `currency` major units for Flutterwave (whole NGN, not kobo), and in cents
+  // for Stripe — `currency` disambiguates.
+  flutterwaveTxId: { type: String },
+  flutterwaveTransferId: { type: String },
+  flutterwaveRefundId: { type: String },
+  currency: { type: String, default: "usd" },
+
+  // Platform-charge / delayed-payout accounting.
+  // Stripe: cents. Flutterwave: major currency units.
   // Set when the ticket is created so the payout job knows what to transfer.
   platformFeeCents: { type: Number, default: 0 },
   sellerNetCents: { type: Number, default: 0 },

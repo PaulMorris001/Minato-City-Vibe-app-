@@ -519,6 +519,7 @@ export default function Home() {
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
     if (!(await ensureAuth("buy a ticket"))) return;
+    // The hook runs checkout AND confirms server-side before returning.
     const result = await payForTicket(eventId);
     if (!result.success) {
       if (result.error) Alert.alert("Payment Failed", result.error);
@@ -526,25 +527,14 @@ export default function Home() {
     }
 
     const token = await SecureStore.getItemAsync("token");
-    const confirmRes = await fetch(`${BASE_URL}/stripe/confirm/ticket/${eventId}`, {
+    trackEvent("ticket_purchased", { eventId, eventTitle });
+    Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
+    fetch(`${BASE_URL}/notifications/sold`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ paymentIntentId: result.paymentIntentId }),
-    });
-
-    if (confirmRes.ok) {
-      trackEvent("ticket_purchased", { eventId, eventTitle });
-      Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
-      fetch(`${BASE_URL}/notifications/sold`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "ticket", id: eventId }),
-      }).catch(() => {});
-      fetchPublicEvents();
-    } else {
-      const d = await confirmRes.json();
-      Alert.alert("Error", d.message || "Payment succeeded but ticket could not be issued. Please contact Support@nvibez.com.");
-    }
+      body: JSON.stringify({ type: "ticket", id: eventId }),
+    }).catch(() => {});
+    fetchPublicEvents();
   };
 
   const handleRsvp = async (eventId: string, action: "accept" | "decline") => {

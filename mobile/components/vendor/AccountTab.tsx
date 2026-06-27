@@ -18,6 +18,7 @@ import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { useRouter } from "expo-router";
 import { BASE_URL } from "@/constants/constants";
+import { payoutProviderForCountry } from "@/constants/payments";
 import { fetchVendorTypes } from "@/libs/api";
 import { VendorType, LocationSelection } from "@/libs/interfaces";
 import { LocationPicker, ImagePickerButton } from "@/components/shared";
@@ -71,14 +72,20 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
   useEffect(() => {
     fetchProfile();
     loadVendorTypes();
-    fetchStripeStatus();
     fetchStats();
   }, []);
 
-  const fetchStripeStatus = async () => {
+  // Check the right provider's payout status for this vendor's country (Stripe
+  // for US, Flutterwave for African vendors). Called once the country is known.
+  const fetchPayoutStatus = async (country: string) => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      const res = await axios.get(`${BASE_URL}/stripe/connect/status`, {
+      const provider = payoutProviderForCountry(country);
+      const path =
+        provider === "flutterwave"
+          ? "/flutterwave/connect/status"
+          : "/stripe/connect/status";
+      const res = await axios.get(`${BASE_URL}${path}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setStripeOnboardingComplete(res.data.onboardingComplete ?? false);
@@ -138,6 +145,7 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
       });
       setBusinessPicture(user.businessPicture || "");
       setProfilePicture(user.profilePicture || "");
+      fetchPayoutStatus(user.location?.country || "");
     } catch (error: any) {
       console.error("Error fetching profile:", error);
       Alert.alert("Error", "Failed to load profile");

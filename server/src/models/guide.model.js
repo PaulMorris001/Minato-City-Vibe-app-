@@ -46,6 +46,9 @@ const guideSchema = mongoose.Schema({
       },
       message: "A guide must not cost more than 100$"
     } },
+  // Currency the author prices the guide in (USD for Stripe sellers, e.g. NGN
+  // for Flutterwave sellers). The max-100 cap above is a USD-era constraint.
+  currency: { type: String, default: "USD" },
   city: { type: String, required: true },
   cityState: { type: String, required: true },
   country: { type: String, default: "United States" },

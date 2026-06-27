@@ -266,25 +266,15 @@ export default function EventsPage() {
   };
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
+    // The hook runs checkout AND confirms server-side before returning.
     const result = await payForTicket(eventId);
     if (!result.success) {
       if (result.error) Alert.alert("Payment Failed", result.error);
       return;
     }
-    const token = await SecureStore.getItemAsync("token");
-    const confirmRes = await fetch(`${BASE_URL}/stripe/confirm/ticket/${eventId}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ paymentIntentId: result.paymentIntentId }),
-    });
-    if (confirmRes.ok) {
-      trackAnalyticsEvent("ticket_purchased", { eventId, eventTitle });
-      Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
-      fetchDiscoverEvents(1, discoverLoc, true);
-    } else {
-      const d = await confirmRes.json();
-      Alert.alert("Error", d.message || "Payment succeeded but ticket could not be issued.");
-    }
+    trackAnalyticsEvent("ticket_purchased", { eventId, eventTitle });
+    Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
+    fetchDiscoverEvents(1, discoverLoc, true);
   };
 
   const handleJoinFreeEvent = async (eventId: string, eventTitle: string) => {

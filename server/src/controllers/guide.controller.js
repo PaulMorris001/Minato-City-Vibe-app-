@@ -3,6 +3,7 @@ import Guide, { guideTopicsList } from "../models/guide.model.js";
 import User from "../models/user.model.js";
 import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean } from "../utils/contentFilter.js";
+import { currencyForUser } from "../services/payments/resolveProvider.js";
 
 // Get all topics
 export const getTopics = async (req, res) => {
@@ -97,6 +98,9 @@ export const createGuide = async (req, res) => {
       authorName: user.username,
       description,
       price: parseFloat(price),
+      // Price in the author's local currency (NGN for Nigerian vendors, etc.)
+      // unless explicitly provided. Drives the provider charge currency.
+      currency: req.body.currency || currencyForUser(user),
       city,
       cityState,
       country: country || "United States",

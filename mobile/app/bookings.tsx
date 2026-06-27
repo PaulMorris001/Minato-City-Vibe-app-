@@ -18,6 +18,7 @@ import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import TicketCardSkeleton from "@/components/skeletons/TicketCardSkeleton";
 import chatService from "@/services/chat.service";
+import { useStripePayment } from "@/hooks/useStripePayment";
 
 const TK_BG = "#0B0613";
 const TK_SURFACE = "rgba(26,16,48,0.7)";
@@ -33,6 +34,7 @@ interface ClientBooking {
   vendor: { _id: string; username: string; profilePicture?: string };
   preferredDate: string;
   status: "pending" | "confirmed" | "rejected" | "cancelled";
+  paymentStatus?: "unpaid" | "paid" | "refunded";
   priceSnapshot?: { amount: number; currency: string };
 }
 
@@ -49,6 +51,23 @@ export default function BookingsScreen() {
   const [bookingsLoading, setBookingsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [chattingWith, setChattingWith] = useState<string | null>(null);
+  const [payingFor, setPayingFor] = useState<string | null>(null);
+  const { payForBooking } = useStripePayment();
+
+  const handlePayBooking = async (bookingId: string) => {
+    setPayingFor(bookingId);
+    try {
+      const result = await payForBooking(bookingId);
+      if (!result.success) {
+        if (result.error) Alert.alert("Payment Failed", result.error);
+        return;
+      }
+      Alert.alert("Payment complete", "Your booking is paid. The vendor has been notified.");
+      fetchBookings();
+    } finally {
+      setPayingFor(null);
+    }
+  };
 
   const fetchBookings = async () => {
     try {
@@ -186,6 +205,35 @@ export default function BookingsScreen() {
                       </Text>
                     </View>
                   )}
+                  {booking.status === "confirmed" &&
+                    booking.paymentStatus !== "paid" && (
+                      <TouchableOpacity
+                        style={styles.payButton}
+                        onPress={() => handlePayBooking(booking._id)}
+                        disabled={payingFor === booking._id}
+                        activeOpacity={0.85}
+                      >
+                        {payingFor === booking._id ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <>
+                            <Ionicons name="card-outline" size={16} color="#fff" />
+                            <Text style={styles.payButtonText}>
+                              Pay {booking.priceSnapshot?.currency || ""}{" "}
+                              {booking.priceSnapshot?.amount?.toLocaleString() || ""}
+                            </Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    )}
+
+                  {booking.paymentStatus === "paid" && (
+                    <View style={styles.paidBadge}>
+                      <Ionicons name="checkmark-circle" size={16} color="#6EE7B7" />
+                      <Text style={styles.paidBadgeText}>Paid</Text>
+                    </View>
+                  )}
+
                   {booking.status === "confirmed" && (
                     <TouchableOpacity
                       style={styles.chatVendorButton}
@@ -408,5 +456,34 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: TK_PURPLE_SOFT,
     letterSpacing: 0.1,
+  },
+  payButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: "#A855F7",
+  },
+  payButtonText: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 14,
+    color: "#fff",
+    letterSpacing: 0.1,
+  },
+  paidBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 12,
+    paddingVertical: 8,
+  },
+  paidBadgeText: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 13,
+    color: "#6EE7B7",
   },
 });

@@ -52,9 +52,19 @@ const userSchema = mongoose.Schema({
   },
   verified: { type: Boolean, default: false },
 
-  // Stripe Connect fields (for sellers receiving payouts)
+  // Stripe Connect fields (for US sellers receiving payouts)
   stripeAccountId: { type: String },
   stripeOnboardingComplete: { type: Boolean, default: false },
+
+  // Flutterwave payout fields (for African sellers who can't use Stripe Connect).
+  // Collected during vendor onboarding; transfers are sent directly to this bank.
+  flutterwaveBank: {
+    accountNumber: { type: String },
+    bankCode: { type: String },
+    bankName: { type: String },
+    accountName: { type: String },
+  },
+  flutterwaveOnboardingComplete: { type: Boolean, default: false },
 
   // Paid-event organizer trust: false until an admin approves their first paid event.
   // After approval, subsequent paid events skip the approval queue.

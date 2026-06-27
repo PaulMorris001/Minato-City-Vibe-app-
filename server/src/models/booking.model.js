@@ -35,6 +35,23 @@ const bookingSchema = new mongoose.Schema(
       amount: { type: Number },
       currency: { type: String },
     },
+
+    // Payment is collected only after the vendor confirms the booking.
+    paymentStatus: {
+      type: String,
+      enum: ["unpaid", "paid", "refunded"],
+      default: "unpaid",
+    },
+    // Which provider collected the payment + accounting (interpreted in
+    // priceSnapshot.currency major units for Flutterwave, cents for Stripe).
+    provider: { type: String, enum: ["stripe", "flutterwave"] },
+    platformFee: { type: Number, default: 0 },
+    vendorNet: { type: Number, default: 0 },
+    // Provider references for the charge / payout / refund.
+    paymentRef: { type: String },
+    transferRef: { type: String },
+    refundRef: { type: String },
+    paidAt: { type: Date },
   },
   { timestamps: true }
 );

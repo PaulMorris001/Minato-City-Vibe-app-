@@ -18,6 +18,9 @@ import {
   Keyboard,
 } from "react-native";
 import { Image } from "expo-image";
+import { FlashList, type FlashListRef } from "@shopify/flash-list";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -26,6 +29,8 @@ import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { BASE_URL } from "@/constants/constants";
 import MessageBubble from "@/components/chat/MessageBubble";
+import MessageActionSheet from "@/components/chat/MessageActionSheet";
+import ReactionsListSheet from "@/components/chat/ReactionsListSheet";
 import ChatInput from "@/components/chat/ChatInput";
 import { Avatar } from "@/components/shared/Avatar";
 import chatService, { Message, Chat, MessageReaction } from "@/services/chat.service";
@@ -64,7 +69,11 @@ export default function ChatScreen() {
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [showScrollDown, setShowScrollDown] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
+  // Long-press action menu + reactions sheet are single, screen-level instances
+  // (not one per bubble) — opened for whichever message the user targeted.
+  const [menuMessage, setMenuMessage] = useState<Message | null>(null);
+  const [reactionsMessage, setReactionsMessage] = useState<Message | null>(null);
+  const flatListRef = useRef<FlashListRef<MessageSection>>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Older-message pagination. We load the most recent page first, then fetch
@@ -72,10 +81,6 @@ export default function ChatScreen() {
   const [page, setPage] = useState(1);
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  // Whether the user is near the bottom — only auto-scroll there when true.
-  const isNearBottomRef = useRef(true);
-  // True while the initial batch of messages is being laid out for the first time.
-  const initialScrollDoneRef = useRef(false);
 
   // Add-members (group invite) modal
   const [addMembersVisible, setAddMembersVisible] = useState(false);
@@ -118,7 +123,6 @@ export default function ChatScreen() {
   const loadChatAndMessages = useCallback(async () => {
     try {
       setLoading(true);
-      initialScrollDoneRef.current = false;
       const c = await chatService.getChatById(id);
       setChat(c);
       const messagesData = await chatService.getChatMessages(id, 1);
@@ -349,36 +353,71 @@ export default function ChatScreen() {
     }
   };
 
-  const handleReactionsChanged = (messageId: string, reactions: MessageReaction[]) => {
-    setMessages((prev) =>
-      prev.map((m) => (m._id === messageId ? { ...m, reactions } : m))
-    );
-  };
+  const handleReactionsChanged = useCallback(
+    (messageId: string, reactions: MessageReaction[]) => {
+      setMessages((prev) =>
+        prev.map((m) => (m._id === messageId ? { ...m, reactions } : m))
+      );
+    },
+    []
+  );
+
+  // Copy a message's text (from the shared action menu).
+  const handleCopyMessage = useCallback(async (message: Message) => {
+    try {
+      await Clipboard.setStringAsync(message.content || "");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    } catch {
+      // Clipboard write failed (rare) — nothing useful to surface.
+    }
+  }, []);
+
+  // Toggle a reaction (from the shared action menu's emoji row or the reactions
+  // sheet's "tap to remove"). Reconciles via handleReactionsChanged + socket.
+  const handleQuickReact = useCallback(
+    async (message: Message, emoji: string) => {
+      try {
+        const updated = await chatService.toggleReaction(message._id, emoji);
+        handleReactionsChanged(message._id, updated.reactions || []);
+      } catch (err: any) {
+        Alert.alert("Error", err?.message || "Couldn't react");
+      }
+    },
+    [handleReactionsChanged]
+  );
 
   // Enter edit mode for one of the user's own messages. Clears any reply draft
   // so the two composer modes never overlap.
-  const handleEditMessage = (message: Message) => {
+  const handleEditMessage = useCallback((message: Message) => {
     setReplyingTo(null);
     setEditingMessage(message);
-  };
+  }, []);
 
   // Delete a message for everyone (sender only). Optimistically remove it; the
   // socket broadcast keeps every other participant in sync.
-  const handleDeleteMessage = async (message: Message) => {
-    if (editingMessage?._id === message._id) setEditingMessage(null);
-    const snapshot = messages;
-    setMessages((prev) => prev.filter((m) => m._id !== message._id));
-    try {
-      await chatService.deleteMessage(message._id);
-      trackEvent("message_deleted", { chatId: id });
-    } catch (error: any) {
-      console.error("Error deleting message:", error);
-      setMessages(snapshot); // restore on failure
-      Alert.alert("Couldn't delete", error?.message || "Please try again.");
-    }
-  };
+  const handleDeleteMessage = useCallback(
+    async (message: Message) => {
+      setEditingMessage((cur) => (cur?._id === message._id ? null : cur));
+      // Snapshot inside the updater so this callback doesn't depend on (and get
+      // recreated by) every `messages` change — keeping it stable for memo.
+      let snapshot: Message[] = [];
+      setMessages((prev) => {
+        snapshot = prev;
+        return prev.filter((m) => m._id !== message._id);
+      });
+      try {
+        await chatService.deleteMessage(message._id);
+        trackEvent("message_deleted", { chatId: id });
+      } catch (error: any) {
+        console.error("Error deleting message:", error);
+        setMessages(snapshot); // restore on failure
+        Alert.alert("Couldn't delete", error?.message || "Please try again.");
+      }
+    },
+    [id]
+  );
 
-  const handlePinMessage = async (message: Message) => {
+  const handlePinMessage = useCallback(async (message: Message) => {
     if (!chat) return;
     const isPinned = (chat.pinnedMessage as any)?._id === message._id;
     const newMessageId = isPinned ? null : message._id;
@@ -391,7 +430,7 @@ export default function ChatScreen() {
     } finally {
       setPinning(false);
     }
-  };
+  }, [chat]);
 
   // Save an edit. Optimistically update content, then reconcile with the server.
   const handleSubmitEdit = async (message: Message, content: string) => {
@@ -660,11 +699,13 @@ export default function ChatScreen() {
     return otherParticipant?.profilePicture || null;
   };
 
-  type MessageSection = Message | { type: "date"; label: string; _id: string };
+  type MessageItem = Message & { showSender: boolean };
+  type MessageSection = MessageItem | { type: "date"; label: string; _id: string };
 
   const buildMessageSections = (msgs: Message[]): MessageSection[] => {
     const sections: MessageSection[] = [];
     let lastDateLabel = "";
+    let lastSenderId: string | null = null;
     msgs.forEach((msg) => {
       const msgDate = new Date(msg.createdAt);
       const today = new Date();
@@ -686,12 +727,16 @@ export default function ChatScreen() {
         lastDateLabel = label;
         sections.push({ type: "date", label, _id: `date-${msg._id}` });
       }
-      sections.push(msg);
+      // showSender: first message in a contiguous run from the same sender.
+      // Computed here (not per-row by index) so it's stable under FlashList
+      // cell recycling.
+      const showSender = lastSenderId !== msg.sender._id;
+      lastSenderId = msg.sender._id;
+      sections.push({ ...msg, showSender });
     });
     return sections;
   };
 
-  const messageSections = buildMessageSections(messages);
   const isGroup = chat?.type === "group";
   // Usernames in this chat, used so multi-word @mentions ("@setemi Loye") get
   // tagged and highlighted in full rather than just the first word.
@@ -854,6 +899,18 @@ export default function ChatScreen() {
     [messagesById, chat]
   );
 
+  // Build the rendered list (messages + date separators) with reply previews
+  // pre-hydrated, memoized so it only recomputes when the data actually
+  // changes. This keeps each item's object reference stable across scroll /
+  // typing re-renders, which is what lets MessageBubble's React.memo bail out.
+  const messageSections = useMemo<MessageSection[]>(() => {
+    return buildMessageSections(messages).map((it) =>
+      "type" in it && it.type === "date"
+        ? it
+        : (hydrateReply(it as MessageItem) as MessageItem)
+    );
+  }, [messages, hydrateReply]);
+
   // Tap a quoted reply → scroll to (and briefly highlight) the original message.
   const handleReplyPress = useCallback(
     (messageId: string) => {
@@ -878,13 +935,15 @@ export default function ChatScreen() {
     const distanceFromBottom =
       contentSize.height - (contentOffset.y + layoutMeasurement.height);
     const nearBottom = distanceFromBottom < 240;
-    isNearBottomRef.current = nearBottom;
-    setShowScrollDown(!nearBottom);
+    // Only flip state when it actually changes — otherwise this fires a full
+    // screen re-render on every scroll frame (scrollEventThrottle=16 ≈ 60fps),
+    // re-rendering every message bubble and causing jank.
+    setShowScrollDown((prev) => (prev === !nearBottom ? prev : !nearBottom));
   };
 
   const scrollToBottom = () => {
-    flatListRef.current?.scrollToEnd({ animated: true });
     setShowScrollDown(false);
+    flatListRef.current?.scrollToEnd({ animated: true });
   };
 
   // Fetch the next page of older messages and prepend them. Guarded so the
@@ -912,55 +971,67 @@ export default function ChatScreen() {
     }
   }, [id, page, hasMoreOlder, loadingOlder]);
 
-  const renderMessage = ({ item, index }: { item: MessageSection; index: number }) => {
-    if ("type" in item && item.type === "date") {
-      return (
-        <View style={styles.dateSeparatorContainer}>
-          <View style={styles.dateSeparatorLine} />
-          <View style={styles.dateSeparatorPill}>
-            <Text style={styles.dateSeparatorText}>
-              {String(item.label).toUpperCase()}
-            </Text>
-          </View>
-          <View style={styles.dateSeparatorLine} />
-        </View>
+  // Stable callbacks so MessageBubble's React.memo isn't defeated by a fresh
+  // arrow function on every render.
+  const handleImagePress = useCallback((url: string) => setSelectedImage(url), []);
+  const handleMentionPress = useCallback(
+    (username: string) => {
+      const p = chat?.participants.find(
+        (pp) => pp.username?.toLowerCase() === username.toLowerCase()
       );
-    }
-    const msg = item as Message;
-    const isOwnMessage = msg.sender._id === currentUserId;
-    let prevMsg: Message | null = null;
-    for (let i = index - 1; i >= 0; i--) {
-      const prev = messageSections[i];
-      if (!("type" in prev)) { prevMsg = prev as Message; break; }
-    }
-    const showSender = !prevMsg || prevMsg.sender._id !== msg.sender._id;
+      if (p) openUserProfile(p._id);
+    },
+    [chat?.participants]
+  );
 
-    return (
-      <MessageBubble
-        message={hydrateReply(msg)}
-        isOwnMessage={isOwnMessage}
-        isGroup={!!isGroup}
-        showSender={showSender}
-        currentUserId={currentUserId}
-        isHighlighted={highlightedId === msg._id}
-        onImagePress={(url) => setSelectedImage(url)}
-        onReactionsChanged={handleReactionsChanged}
-        onEdit={handleEditMessage}
-        onDelete={handleDeleteMessage}
-        onPin={handlePinMessage}
-        isPinned={(chat?.pinnedMessage as any)?._id === msg._id}
-        onReply={setReplyingTo}
-        onReplyPress={handleReplyPress}
-        onMentionPress={(username) => {
-          const p = chat?.participants.find(
-            (pp) => pp.username?.toLowerCase() === username.toLowerCase()
-          );
-          if (p) openUserProfile(p._id);
-        }}
-        mentionUsernames={participantUsernames}
-      />
-    );
-  };
+  const pinnedMessageId = (chat?.pinnedMessage as any)?._id;
+
+  const renderMessage = useCallback(
+    ({ item }: { item: MessageSection }) => {
+      if ("type" in item && item.type === "date") {
+        return (
+          <View style={styles.dateSeparatorContainer}>
+            <View style={styles.dateSeparatorLine} />
+            <View style={styles.dateSeparatorPill}>
+              <Text style={styles.dateSeparatorText}>
+                {String(item.label).toUpperCase()}
+              </Text>
+            </View>
+            <View style={styles.dateSeparatorLine} />
+          </View>
+        );
+      }
+      const msg = item as MessageItem;
+      const isOwnMessage = msg.sender._id === currentUserId;
+
+      return (
+        <MessageBubble
+          message={msg}
+          isOwnMessage={isOwnMessage}
+          isGroup={!!isGroup}
+          showSender={msg.showSender}
+          currentUserId={currentUserId}
+          isHighlighted={highlightedId === msg._id}
+          onImagePress={handleImagePress}
+          onLongPress={setMenuMessage}
+          onReactionsPress={setReactionsMessage}
+          onReply={setReplyingTo}
+          onReplyPress={handleReplyPress}
+          onMentionPress={handleMentionPress}
+          mentionUsernames={participantUsernames}
+        />
+      );
+    },
+    [
+      currentUserId,
+      isGroup,
+      highlightedId,
+      participantUsernames,
+      handleImagePress,
+      handleMentionPress,
+      handleReplyPress,
+    ]
+  );
 
   // Compute typing indicator label
   const typingLabel = (() => {
@@ -1118,19 +1189,32 @@ export default function ChatScreen() {
 
           {/* Messages */}
           <View style={styles.listWrap}>
-          <FlatList
+          <FlashList
             ref={flatListRef}
             data={messageSections}
             renderItem={renderMessage}
             keyExtractor={(item) => item._id}
-            style={styles.messagesFlat}
+            extraData={highlightedId}
+            getItemType={(item) =>
+              "type" in item && item.type === "date"
+                ? "date"
+                : item.type === "system"
+                ? "system"
+                : "message"
+            }
             contentContainerStyle={styles.messagesList}
             showsVerticalScrollIndicator={false}
             onScroll={handleMessagesScroll}
             scrollEventThrottle={16}
             onStartReached={loadOlderMessages}
             onStartReachedThreshold={0.15}
-            maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
+            // FlashList v2 anchors at the bottom and follows new messages when
+            // near the bottom — this replaces all the manual scrollToEnd /
+            // onContentSizeChange machinery the FlatList needed.
+            maintainVisibleContentPosition={{
+              startRenderingFromBottom: true,
+              autoscrollToBottomThreshold: 0.2,
+            }}
             ListHeaderComponent={
               hasMoreOlder ? (
                 <TouchableOpacity
@@ -1147,33 +1231,6 @@ export default function ChatScreen() {
                 </TouchableOpacity>
               ) : null
             }
-            onContentSizeChange={() => {
-              // Force scroll to bottom on the very first render so the chat
-              // always opens at the latest message. After that, only follow
-              // the user to the bottom when they're already near it.
-              if (!initialScrollDoneRef.current) {
-                initialScrollDoneRef.current = true;
-                flatListRef.current?.scrollToEnd({ animated: false });
-                return;
-              }
-              if (!isNearBottomRef.current) return;
-              flatListRef.current?.scrollToEnd({ animated: false });
-            }}
-            onScrollToIndexFailed={(info) => {
-              // Rows have variable heights and no getItemLayout, so a target
-              // that isn't measured yet can fail — approximate, then retry.
-              flatListRef.current?.scrollToOffset({
-                offset: info.averageItemLength * info.index,
-                animated: true,
-              });
-              setTimeout(() => {
-                flatListRef.current?.scrollToIndex({
-                  index: info.index,
-                  animated: true,
-                  viewPosition: 0.4,
-                });
-              }, 250);
-            }}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyEmoji}>👋</Text>
@@ -1256,6 +1313,27 @@ export default function ChatScreen() {
           )}
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      {/* Single, screen-level long-press menu + reactions sheet (opened for the
+          targeted message) — replaces the per-bubble modals. */}
+      <MessageActionSheet
+        message={menuMessage}
+        currentUserId={currentUserId}
+        isPinned={!!menuMessage && pinnedMessageId === menuMessage._id}
+        canPin
+        onClose={() => setMenuMessage(null)}
+        onEdit={handleEditMessage}
+        onDelete={handleDeleteMessage}
+        onCopy={handleCopyMessage}
+        onPin={handlePinMessage}
+        onReact={handleQuickReact}
+      />
+      <ReactionsListSheet
+        message={reactionsMessage}
+        currentUserId={currentUserId}
+        onClose={() => setReactionsMessage(null)}
+        onReact={handleQuickReact}
+      />
 
       {/* Full-screen image viewer */}
       <Modal
@@ -1833,9 +1911,6 @@ const styles = StyleSheet.create({
   listWrap: {
     flex: 1,
   },
-  messagesFlat: {
-    flex: 1,
-  },
   scrollDownFab: {
     position: "absolute",
     right: 16,
@@ -1857,7 +1932,6 @@ const styles = StyleSheet.create({
   messagesList: {
     paddingVertical: 12,
     paddingBottom: 8,
-    flexGrow: 1,
   },
   emptyContainer: {
     flex: 1,

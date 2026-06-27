@@ -30,6 +30,7 @@ import { trackEvent } from "@/utils/analytics";
 import { createEventShareLink } from "@/utils/shareLinks";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { useStripePayment } from "@/hooks/useStripePayment";
+import { currencyPrefix } from "@/constants/payments";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
@@ -89,6 +90,7 @@ interface Event {
   isPublic: boolean;
   isPaid: boolean;
   ticketPrice?: number;
+  currency?: string;
   maxGuests?: number;
   ticketsSold?: number;
   ticketsRemaining?: number;
@@ -608,27 +610,15 @@ export default function EventDetailsPage() {
     if (!requireAuth("purchase a ticket")) return;
     setPurchasing(true);
     try {
+      // The hook runs the provider checkout AND confirms server-side (issuing
+      // the ticket) before returning, so success here means the ticket is ready.
       const result = await payForTicket(event._id);
       if (!result.success) {
         if (result.error) showError(result.error, "Payment Failed");
         return;
       }
-      const token = await authToken();
-      const confirmRes = await fetch(`${BASE_URL}/stripe/confirm/ticket/${event._id}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentIntentId: result.paymentIntentId }),
-      });
-      if (confirmRes.ok) {
-        showSuccess(`Your ticket to "${event.title}" is ready.`, "You're in! 🎉");
-        fetchEventDetails();
-      } else {
-        const d = await confirmRes.json();
-        showError(
-          d.message ||
-            "Payment succeeded but the ticket could not be issued. Please contact Support@nvibez.com."
-        );
-      }
+      showSuccess(`Your ticket to "${event.title}" is ready.`, "You're in! 🎉");
+      fetchEventDetails();
     } finally {
       setPurchasing(false);
     }
@@ -957,7 +947,7 @@ export default function EventDetailsPage() {
             {event.isPaid && (
               <View style={[styles.chip, styles.chipDark]}>
                 <Text style={[styles.chipText, { color: AU.text }]}>
-                  TICKETED · ${event.ticketPrice?.toFixed(0) ?? "—"}
+                  TICKETED · {currencyPrefix(event.currency)}{event.ticketPrice?.toFixed(0) ?? "—"}
                 </Text>
               </View>
             )}
@@ -2138,7 +2128,7 @@ function PriceBlock({ event }: { event: Event }) {
     <View style={styles.priceBlock}>
       <Text style={styles.priceLabel}>{event.isPaid ? "TICKET" : "FREE"}</Text>
       {event.isPaid && (
-        <Text style={styles.priceValue}>${event.ticketPrice?.toFixed(0) ?? "—"}</Text>
+        <Text style={styles.priceValue}>{currencyPrefix(event.currency)}{event.ticketPrice?.toFixed(0) ?? "—"}</Text>
       )}
     </View>
   );

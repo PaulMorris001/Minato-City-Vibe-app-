@@ -3,6 +3,48 @@ import Event from "../models/event.model.js";
 import Ticket from "../models/ticket.model.js";
 import User from "../models/user.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
+import { getPayoutProvider, hasPayoutOnboarding } from "../services/payments/resolveProvider.js";
+import { createFlutterwaveTransfer } from "../controllers/flutterwave.controller.js";
+
+/**
+ * Transfer one ticket's seller-net share via the provider that collected it.
+ * Returns the transfer id. Throws on failure (caught per-ticket by the caller).
+ */
+async function transferTicketPayout(ticket, evt, seller) {
+  if (ticket.provider === "flutterwave") {
+    const transfer = await createFlutterwaveTransfer({
+      bank: seller.flutterwaveBank,
+      amount: ticket.sellerNetCents, // major units for Flutterwave
+      currency: ticket.currency || "NGN",
+      reference: `ticket_transfer_${ticket._id}`,
+      narration: `Payout for ${evt.title}`,
+    });
+    return transfer.id;
+  }
+
+  // Stripe: look up the charge so the transfer tracks against the original
+  // payment via source_transaction.
+  const pi = await stripe.paymentIntents.retrieve(ticket.stripePaymentIntentId);
+  const chargeId = pi.latest_charge;
+  if (!chargeId) throw new Error(`PaymentIntent ${pi.id} has no charge`);
+
+  const transfer = await stripe.transfers.create(
+    {
+      amount: ticket.sellerNetCents,
+      currency: "usd",
+      destination: seller.stripeAccountId,
+      source_transaction: chargeId,
+      transfer_group: `event_${evt._id}`,
+      metadata: {
+        ticketId: ticket._id.toString(),
+        eventId: evt._id.toString(),
+        sellerId: seller._id.toString(),
+      },
+    },
+    { idempotencyKey: `ticket_transfer_${ticket._id}` }
+  );
+  return transfer.id;
+}
 
 /**
  * Delayed-payout job.
@@ -40,15 +82,15 @@ async function releaseDuePayouts() {
   for (const evt of due) {
     try {
       const seller = await User.findById(evt.createdBy).select(
-        "stripeAccountId stripeOnboardingComplete fcmToken username"
+        "location stripeAccountId stripeOnboardingComplete flutterwaveBank flutterwaveOnboardingComplete fcmToken username"
       );
 
-      if (!seller?.stripeAccountId || !seller.stripeOnboardingComplete) {
+      if (!hasPayoutOnboarding(seller)) {
         await Event.updateOne(
           { _id: evt._id },
           {
             payoutStatus: "failed",
-            payoutError: "Organizer has no completed Stripe Connect account",
+            payoutError: "Organizer has no completed payout account",
           }
         );
         console.warn(
@@ -56,6 +98,8 @@ async function releaseDuePayouts() {
         );
         continue;
       }
+
+      const sellerProvider = getPayoutProvider(seller);
 
       // Find tickets that still need to be transferred
       const unsettled = await Ticket.find({
@@ -75,45 +119,20 @@ async function releaseDuePayouts() {
       }
 
       const transferIds = [];
-      let totalCents = 0;
+      let totalNet = 0;
       let anyFailed = false;
 
       for (const ticket of unsettled) {
         try {
-          // Look up the PaymentIntent to grab the underlying charge id, which
-          // lets Stripe automatically track this transfer against the original
-          // payment (`source_transaction`).
-          const pi = await stripe.paymentIntents.retrieve(
-            ticket.stripePaymentIntentId
-          );
-          const chargeId = pi.latest_charge;
-          if (!chargeId) {
-            throw new Error(`PaymentIntent ${pi.id} has no charge`);
-          }
-
-          const transfer = await stripe.transfers.create(
-            {
-              amount: ticket.sellerNetCents,
-              currency: "usd",
-              destination: seller.stripeAccountId,
-              source_transaction: chargeId,
-              transfer_group: `event_${evt._id}`,
-              metadata: {
-                ticketId: ticket._id.toString(),
-                eventId: evt._id.toString(),
-                sellerId: seller._id.toString(),
-              },
-            },
-            // Idempotency: one transfer per ticket, ever.
-            { idempotencyKey: `ticket_transfer_${ticket._id}` }
-          );
+          const transferId = await transferTicketPayout(ticket, evt, seller);
 
           ticket.transferred = true;
-          ticket.transferId = transfer.id;
+          ticket.transferId = transferId;
+          if (ticket.provider === "flutterwave") ticket.flutterwaveTransferId = transferId;
           await ticket.save();
 
-          transferIds.push(transfer.id);
-          totalCents += ticket.sellerNetCents;
+          transferIds.push(transferId);
+          totalNet += ticket.sellerNetCents;
         } catch (ticketErr) {
           anyFailed = true;
           console.error(
@@ -138,19 +157,24 @@ async function releaseDuePayouts() {
 
       await Event.updateOne({ _id: evt._id }, update);
 
+      // Stripe nets are in cents; Flutterwave nets are already major units.
+      const isFlw = sellerProvider === "flutterwave";
+      const totalMajor = isFlw ? totalNet : totalNet / 100;
+      const amountLabel = isFlw
+        ? `${unsettled[0]?.currency?.toUpperCase() || "NGN"} ${totalMajor.toFixed(2)}`
+        : `$${totalMajor.toFixed(2)}`;
+
       if (transferIds.length > 0 && seller.fcmToken && !anyFailed) {
         await sendPushNotification(
           seller.fcmToken,
           "💸 Payout released",
-          `Your payout for "${evt.title}" ($${(totalCents / 100).toFixed(
-            2
-          )}) is on its way.`,
+          `Your payout for "${evt.title}" (${amountLabel}) is on its way.`,
           { type: "payout_released", eventId: String(evt._id) }
         );
       }
 
       console.log(
-        `[PayoutRelease] Event ${evt._id} — ${transferIds.length}/${unsettled.length} transfers, $${(totalCents / 100).toFixed(2)} released`
+        `[PayoutRelease] Event ${evt._id} — ${transferIds.length}/${unsettled.length} transfers, ${amountLabel} released`
       );
     } catch (err) {
       console.error(

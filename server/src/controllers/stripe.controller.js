@@ -5,8 +5,8 @@ import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
 import Ticket from "../models/ticket.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
-import { issueEventPass } from "../services/pass.service.js";
-import { invalidateCachePattern } from "../utils/cache.js";
+import { fulfillTicket, fulfillGuide } from "../services/payments/fulfillment.js";
+import { refundFlutterwaveCharge } from "./flutterwave.controller.js";
 
 const PLATFORM_FEE_PERCENT = config.stripe.platformFeePercent; // e.g. 10
 
@@ -390,23 +390,7 @@ export const confirmGuidePurchase = async (req, res) => {
       return res.status(403).json({ message: "PaymentIntent does not match this purchase" });
     }
 
-    const guide = await Guide.findById(guideId);
-    if (!guide) return res.status(404).json({ message: "Guide not found" });
-
-    if (!guide.purchasedBy.includes(userId)) {
-      guide.purchasedBy.push(userId);
-      await guide.save();
-    }
-
-    // Notify the guide author
-    const buyer = await User.findById(userId).select("username");
-    const author = await User.findById(guide.author._id).select("fcmToken");
-    await sendPushNotification(
-      author?.fcmToken,
-      "📖 Guide Purchased!",
-      `${buyer.username} just bought your guide "${guide.title}"`,
-      { type: "guide_sold", guideId }
-    );
+    await fulfillGuide({ guideId, userId });
 
     res.status(200).json({ message: "Guide purchase confirmed", hasPurchased: true });
   } catch (error) {
@@ -441,68 +425,22 @@ export const confirmTicketPurchase = async (req, res) => {
       return res.status(403).json({ message: "PaymentIntent does not match this purchase" });
     }
 
-    // Idempotency — don't create duplicate tickets
-    const existing = await Ticket.findOne({ event: eventId, user: userId, isValid: true });
-    if (existing) {
-      return res.status(200).json({ message: "Ticket already exists", ticket: existing });
-    }
-
-    const event = await Event.findById(eventId);
-    if (!event) return res.status(404).json({ message: "Event not found" });
-
     const platformFeeCents = Number(paymentIntent.metadata?.platformFeeCents || 0);
     const sellerNetCents = Number(paymentIntent.metadata?.sellerNetCents || 0);
 
-    const ticket = await Ticket.create({
-      event: eventId,
-      user: userId,
-      ticketPrice: event.ticketPrice,
-      stripePaymentIntentId: paymentIntentId,
+    const { ticket, alreadyExisted } = await fulfillTicket({
+      eventId,
+      userId,
+      provider: "stripe",
+      paymentRef: paymentIntentId,
+      currency: "usd",
       platformFeeCents,
       sellerNetCents,
     });
 
-    // Issue the attendance pass + email the QR ticket (fire-and-forget).
-    issueEventPass({ userId, eventId, type: "ticket", ticketId: ticket._id }).catch(
-      (e) => console.error("issueEventPass (stripe confirm) failed:", e)
-    );
-
-    // Surface the buyer as a confirmed attendee so the event's going-count,
-    // capacity % and friends-going stats reflect reality immediately.
-    let listsChanged = false;
-    if (!event.rsvpUsers.some((id) => id.toString() === userId)) {
-      event.rsvpUsers.push(userId);
-      listsChanged = true;
-    }
-    if (!event.invitedUsers.some((id) => id.toString() === userId)) {
-      event.invitedUsers.push(userId);
-      listsChanged = true;
-    }
-    if (listsChanged) {
-      await event.save();
-    }
-
-    // Blow away the event detail cache for every viewer so ticketsRemaining /
-    // ticketsSold reflect the just-confirmed purchase on the next read.
-    invalidateCachePattern(`event_detail_${eventId}_`);
-    invalidateCachePattern("public_events_");
-    invalidateCachePattern("event_highlights_");
-
-    const populated = await Ticket.findById(ticket._id)
-      .populate("event", "title date location image")
-      .populate("user", "username email profilePicture");
-
-    // Notify the event creator
-    const buyer = await User.findById(userId).select("username");
-    const creator = await User.findById(event.createdBy).select("fcmToken");
-    await sendPushNotification(
-      creator?.fcmToken,
-      "🎟️ New Ticket Sold!",
-      `${buyer.username} just bought a ticket to "${event.title}"`,
-      { type: "ticket_sold", eventId }
-    );
-
-    res.status(201).json({ message: "Ticket confirmed", ticket: populated });
+    res
+      .status(alreadyExisted ? 200 : 201)
+      .json({ message: alreadyExisted ? "Ticket already exists" : "Ticket confirmed", ticket });
   } catch (error) {
     console.error("Confirm ticket purchase error:", error);
     res.status(500).json({ message: "Failed to confirm ticket" });
@@ -524,6 +462,20 @@ async function refundTicket(ticket, { reason } = {}) {
         "Payout for this ticket has already been released to the organizer. Contact support to coordinate a refund.",
     };
   }
+  // Flutterwave tickets refund through the Flutterwave API instead of Stripe.
+  if (ticket.provider === "flutterwave") {
+    if (!ticket.flutterwaveTxId) {
+      return { ok: false, message: "No payment record found for this ticket." };
+    }
+    const refund = await refundFlutterwaveCharge({ transactionId: ticket.flutterwaveTxId });
+    ticket.refunded = true;
+    ticket.refundedAt = new Date();
+    ticket.flutterwaveRefundId = refund.id;
+    ticket.isValid = false;
+    await ticket.save();
+    return { ok: true, refund };
+  }
+
   if (!ticket.stripePaymentIntentId) {
     return { ok: false, message: "No payment record found for this ticket." };
   }
@@ -712,64 +664,22 @@ export const stripeWebhook = async (req, res) => {
     const { type, eventId, guideId, buyerId } = paymentIntent.metadata;
 
     try {
+      // Webhook acts as a fallback if the app's confirm call never lands. The
+      // shared helpers are idempotent, so a double-fire is harmless.
       if (type === "ticket" && eventId && buyerId) {
-        // Check idempotency — don't create duplicate tickets
-        const existing = await Ticket.findOne({ event: eventId, user: buyerId, isValid: true });
-        if (!existing) {
-          const evt = await Event.findById(eventId);
-          if (evt) {
-            const webhookTicket = await Ticket.create({
-              event: eventId,
-              user: buyerId,
-              ticketPrice: evt.ticketPrice,
-              stripePaymentIntentId: paymentIntent.id,
-              platformFeeCents: Number(paymentIntent.metadata?.platformFeeCents || 0),
-              sellerNetCents: Number(paymentIntent.metadata?.sellerNetCents || 0),
-            });
-
-            // Issue the attendance pass + email the QR ticket (fire-and-forget).
-            issueEventPass({
-              userId: buyerId,
-              eventId,
-              type: "ticket",
-              ticketId: webhookTicket._id,
-            }).catch((e) =>
-              console.error("issueEventPass (stripe webhook) failed:", e)
-            );
-
-            let listsChanged = false;
-            if (!evt.rsvpUsers.some((id) => id.toString() === buyerId)) {
-              evt.rsvpUsers.push(buyerId);
-              listsChanged = true;
-            }
-            if (!evt.invitedUsers.some((id) => id.toString() === buyerId)) {
-              evt.invitedUsers.push(buyerId);
-              listsChanged = true;
-            }
-            if (listsChanged) {
-              await evt.save();
-            }
-
-            invalidateCachePattern(`event_detail_${eventId}_`);
-            invalidateCachePattern("public_events_");
-            invalidateCachePattern("event_highlights_");
-          }
-        }
+        await fulfillTicket({
+          eventId,
+          userId: buyerId,
+          provider: "stripe",
+          paymentRef: paymentIntent.id,
+          currency: "usd",
+          platformFeeCents: Number(paymentIntent.metadata?.platformFeeCents || 0),
+          sellerNetCents: Number(paymentIntent.metadata?.sellerNetCents || 0),
+        });
       }
 
       if (type === "guide" && guideId && buyerId) {
-        const guide = await Guide.findById(guideId);
-        if (guide && !guide.purchasedBy.includes(buyerId)) {
-          guide.purchasedBy.push(buyerId);
-          await guide.save();
-        }
-      }
-
-      if (type === "ticket" || type === "guide") {
-        const seller = await User.findById(paymentIntent.metadata.sellerId);
-        if (seller && seller.stripeAccountId && seller.stripeOnboardingComplete) {
-          // Earnings tracked via Stripe dashboard + Connect account
-        }
+        await fulfillGuide({ guideId, userId: buyerId });
       }
     } catch (fulfillErr) {
       console.error("Fulfillment error after payment:", fulfillErr);

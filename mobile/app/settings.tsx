@@ -18,6 +18,7 @@ import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
+import { FLUTTERWAVE_COUNTRIES } from "@/constants/payments";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { ImagePickerButton } from "@/components/shared";
 import { Fonts } from "@/constants/fonts";
@@ -37,6 +38,7 @@ export default function SettingsScreen() {
     email: "",
     isVendor: false,
     emailVerifiedAt: null as string | null,
+    country: "",
   });
   const [verificationStatus, setVerificationStatus] = useState<"none" | "pending" | "approved" | "rejected">("none");
   const [verificationNotes, setVerificationNotes] = useState("");
@@ -74,6 +76,7 @@ export default function SettingsScreen() {
         email: userData.email || "",
         isVendor: userData.isVendor || false,
         emailVerifiedAt: userData.emailVerifiedAt || null,
+        country: userData.location?.country || "",
       });
       setProfilePicture(userData.profilePicture || "");
       setBio(userData.bio || "");
@@ -361,7 +364,13 @@ export default function SettingsScreen() {
 
         <TouchableOpacity
           style={styles.preferenceItem}
-          onPress={() => router.push("/stripe-onboarding")}
+          onPress={() =>
+            router.push(
+              FLUTTERWAVE_COUNTRIES.has(user.country.trim().toLowerCase())
+                ? "/flutterwave-onboarding"
+                : "/stripe-onboarding"
+            )
+          }
         >
           <View style={styles.preferenceLeft}>
             <Ionicons name="cash-outline" size={22} color={Colors.primary} />

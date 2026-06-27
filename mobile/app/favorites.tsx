@@ -57,24 +57,14 @@ export default function FavoritesPage() {
   useFocusEffect(useCallback(() => { fetchFavorites(); }, []));
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
+    // The hook runs checkout AND confirms server-side before returning.
     const result = await payForTicket(eventId);
     if (!result.success) {
       if (result.error) Alert.alert("Payment Failed", result.error);
       return;
     }
-    const token = await SecureStore.getItemAsync("token");
-    const confirmRes = await fetch(`${BASE_URL}/stripe/confirm/ticket/${eventId}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ paymentIntentId: result.paymentIntentId }),
-    });
-    if (confirmRes.ok) {
-      Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
-      fetchFavorites();
-    } else {
-      const d = await confirmRes.json();
-      Alert.alert("Error", d.message || "Payment succeeded but ticket could not be issued.");
-    }
+    Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
+    fetchFavorites();
   };
 
   const handleJoinFreeEvent = async (eventId: string, eventTitle: string) => {
