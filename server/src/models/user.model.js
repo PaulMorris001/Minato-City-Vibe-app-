@@ -66,6 +66,13 @@ const userSchema = mongoose.Schema({
   },
   flutterwaveOnboardingComplete: { type: Boolean, default: false },
 
+  // Wise payout fields (for international vendors outside the Stripe/Flutterwave
+  // footprint). These vendors collect via Stripe (USD) but settle via Wise: the
+  // recipient account is created once during onboarding and reused for transfers.
+  wiseRecipientId: { type: String },
+  wiseRecipientCurrency: { type: String },
+  wiseOnboardingComplete: { type: Boolean, default: false },
+
   // Paid-event organizer trust: false until an admin approves their first paid event.
   // After approval, subsequent paid events skip the approval queue.
   paidEventsApproved: { type: Boolean, default: false },

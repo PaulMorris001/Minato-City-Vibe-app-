@@ -51,3 +51,30 @@ export async function registerForPushNotifications() {
     console.log("[PushNotif] Skipped backend save — authToken:", !!authToken, "token:", !!token);
   }
 }
+
+/**
+ * Remove this device's push token from the currently logged-in account.
+ * Must be called BEFORE the auth token is cleared on logout, otherwise the
+ * request is unauthenticated. Without this, the same device token stays
+ * attached to every account that has ever logged in on it, so a single push
+ * gets delivered once per account (e.g. duplicate messages in a shared group).
+ */
+export async function unregisterForPushNotifications() {
+  const authToken = await SecureStore.getItemAsync("token");
+  if (!authToken) {
+    console.log("[PushNotif] Skipped unregister — no auth token");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${BASE_URL}/notifications/token`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+    console.log("[PushNotif] FCM token removed from backend, status:", res.status);
+  } catch (err) {
+    console.error("[PushNotif] Failed to remove token from backend:", err);
+  }
+}

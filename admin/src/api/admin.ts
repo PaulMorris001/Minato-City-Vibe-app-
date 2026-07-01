@@ -95,6 +95,17 @@ export const adminApi = {
   rejectPaidEvent: (id: string, reason: string) =>
     client.patch<{ status: string }>(`/admin/paid-events/${id}/reject`, { reason }),
 
+  // Payout Approval Queue — release held vendor funds
+  getPayouts: (params?: { status?: string; page?: number; limit?: number }) =>
+    client.get<{
+      payouts: AdminPayout[];
+      pagination: { page: number; limit: number; total: number; totalPages: number };
+    }>("/admin/payouts", { params }),
+  approvePayout: (id: string) =>
+    client.post<{ message: string; payout: AdminPayout }>(`/admin/payouts/${id}/approve`, {}),
+  rejectPayout: (id: string, reason: string) =>
+    client.post<{ message: string; payout: AdminPayout }>(`/admin/payouts/${id}/reject`, { reason }),
+
   // Analytics (shorter TTL — data changes frequently)
   getAnalyticsSummary: () =>
     cachedGet<AnalyticsSummary>("/admin/analytics/summary", { ttl: 30_000 }),
@@ -131,4 +142,30 @@ export interface AdminReport {
   action?: string | null;
   createdAt: string;
   resolvedAt?: string;
+}
+
+export interface AdminPayout {
+  _id: string;
+  vendor?: {
+    _id: string;
+    username?: string;
+    email?: string;
+    businessName?: string;
+    location?: { country?: string };
+  };
+  relatedType: "ticket" | "guide" | "booking";
+  relatedId: string;
+  provider: "stripe" | "flutterwave" | "wise";
+  amount: number;
+  currency: string;
+  displayAmount?: number;
+  displayCurrency?: string;
+  status: "awaiting_approval" | "processing" | "paid" | "failed" | "rejected";
+  reference: string;
+  transferId?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectedReason?: string;
+  error?: string;
+  createdAt: string;
 }

@@ -34,6 +34,8 @@ import { SocialAuthButtons } from "@/components/auth/SocialAuthButtons";
 
 type StepKey = "username" | "email" | "password" | "confirm";
 
+type AvailStatus = "idle" | "checking" | "available" | "taken" | "error";
+
 type StepDef = {
   key: StepKey;
   question: string;
@@ -109,6 +111,13 @@ export default function Signup() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  // Live uniqueness state for the username/email steps. "idle" = nothing to
+  // show (empty or locally invalid), "checking" = request in flight, then the
+  // server's verdict. "error" is non-blocking — /register does the final say.
+  const [avail, setAvail] = useState<{ username: AvailStatus; email: AvailStatus }>({
+    username: "idle",
+    email: "idle",
+  });
 
   const current = STEPS[step];
   const value = values[current.key];
@@ -131,6 +140,52 @@ export default function Signup() {
     () => computePasswordStrength(values.password),
     [values.password]
   );
+
+  // One network call for a single field's availability. Format is assumed
+  // already valid (callers gate on the local regexes first).
+  const runAvailabilityCheck = async (
+    key: "username" | "email",
+    raw: string
+  ): Promise<AvailStatus> => {
+    try {
+      const res = await axios.get(`${BASE_URL}/auth/check-availability`, {
+        params: { [key]: raw },
+      });
+      const info = res.data?.[key];
+      if (!info) return "error";
+      return info.available ? "available" : "taken";
+    } catch {
+      // Network / rate-limit hiccup — don't block the user here; the final
+      // /register call is authoritative and will surface a clear 409.
+      return "error";
+    }
+  };
+
+  // Debounced live check as the user types on the username / email steps.
+  useEffect(() => {
+    const key = current.key;
+    if (key !== "username" && key !== "email") return;
+
+    const raw = values[key].trim();
+    const validLocal =
+      key === "username" ? USERNAME_RE.test(raw) : EMAIL_RE.test(raw);
+    if (!validLocal) {
+      setAvail((a) => ({ ...a, [key]: "idle" }));
+      return;
+    }
+
+    setAvail((a) => ({ ...a, [key]: "checking" }));
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const status = await runAvailabilityCheck(key, raw);
+      if (!cancelled) setAvail((a) => ({ ...a, [key]: status }));
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [values.username, values.email, current.key]);
 
   const validateCurrent = (): string | null => {
     const v = values[current.key].trim();
@@ -237,12 +292,36 @@ export default function Signup() {
     }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     const err = validateCurrent();
     if (err) {
       Alert.alert("Hold up", err);
       return;
     }
+
+    // Block advancing past a username/email that's already taken. If the
+    // debounce hasn't settled yet, run a blocking check now so the user never
+    // reaches the next step on a stale/unknown value.
+    const key = current.key;
+    if (key === "username" || key === "email") {
+      const raw = values[key].trim();
+      let status = avail[key];
+      if (status === "idle" || status === "checking") {
+        setAvail((a) => ({ ...a, [key]: "checking" }));
+        status = await runAvailabilityCheck(key, raw);
+        setAvail((a) => ({ ...a, [key]: status }));
+      }
+      if (status === "taken") {
+        Alert.alert(
+          "Hold up",
+          key === "username"
+            ? "That username is already taken. Please choose another."
+            : "An account with that email already exists. Try logging in."
+        );
+        return;
+      }
+    }
+
     if (step < STEPS.length - 1) {
       setStep((s) => s + 1);
     } else {
@@ -358,13 +437,12 @@ export default function Signup() {
               </View>
 
               {/* Per-step status affordance */}
-              {current.key === "username" && !!value && (
-                <View style={styles.usernameRow}>
-                  <View style={[styles.chip, styles.chipGreen]}>
-                    <Text style={styles.chipGreenText}>✓ AVAILABLE</Text>
-                  </View>
-                  <Text style={styles.suggestion}>also try @{value}_nyc</Text>
-                </View>
+              {(current.key === "username" || current.key === "email") && (
+                <AvailabilityChip
+                  stepKey={current.key}
+                  value={value}
+                  status={avail[current.key]}
+                />
               )}
 
               {current.key === "password" && !!value && (
@@ -456,6 +534,52 @@ export default function Signup() {
   );
 }
 
+function AvailabilityChip({
+  stepKey,
+  value,
+  status,
+}: {
+  stepKey: "username" | "email";
+  value: string;
+  status: AvailStatus;
+}) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const noun = stepKey === "username" ? "Username" : "Email";
+  const validLocal =
+    stepKey === "username" ? USERNAME_RE.test(trimmed) : EMAIL_RE.test(trimmed);
+
+  // Keep quiet until the field is at least locally valid — the field's own
+  // validation message covers malformed input on Next.
+  if (!validLocal) return null;
+
+  if (status === "checking") {
+    return (
+      <View style={[styles.chip, styles.chipNeutral, styles.chipStandalone]}>
+        <Text style={styles.chipNeutralText}>CHECKING…</Text>
+      </View>
+    );
+  }
+  if (status === "available") {
+    return (
+      <View style={[styles.chip, styles.chipGreen, styles.chipStandalone]}>
+        <Text style={styles.chipGreenText}>✓ AVAILABLE</Text>
+      </View>
+    );
+  }
+  if (status === "taken") {
+    return (
+      <View style={[styles.chip, styles.chipPink, styles.chipStandalone]}>
+        <Text style={styles.chipPinkText}>
+          ✗ {noun.toUpperCase()} TAKEN
+        </Text>
+      </View>
+    );
+  }
+  return null;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: AU.bg },
   scrollContent: { flexGrow: 1, paddingBottom: 24 },
@@ -527,17 +651,18 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   underlineFill: { height: 2, borderRadius: 2 },
-  usernameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 14,
-    flexWrap: "wrap",
-  },
   chip: {
     paddingVertical: 5,
     paddingHorizontal: 11,
     borderRadius: 999,
+  },
+  chipStandalone: { alignSelf: "flex-start", marginTop: 14 },
+  chipNeutral: { backgroundColor: "rgba(255,255,255,0.08)" },
+  chipNeutralText: {
+    color: AU.textMute,
+    fontFamily: "Outfit_700Bold",
+    fontSize: 10.5,
+    letterSpacing: 0.5,
   },
   chipGreen: { backgroundColor: "rgba(52,211,153,0.16)" },
   chipGreenText: {
@@ -552,11 +677,6 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit_700Bold",
     fontSize: 11,
     letterSpacing: 0.44,
-  },
-  suggestion: {
-    fontFamily: "Outfit_500Medium",
-    fontSize: 11,
-    color: AU.textMute,
   },
   strengthBlock: { marginTop: 14, gap: 8 },
   strengthRow: { flexDirection: "row", gap: 4 },

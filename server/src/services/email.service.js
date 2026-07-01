@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { config } from "../config/env.js";
 
 /**
  * Email service for sending OTP and other emails
@@ -78,9 +79,14 @@ const createTransporter = () => {
 };
 
 /**
- * Generate a 6-digit OTP
+ * Generate a 6-digit OTP.
+ *
+ * In dev (config.dev.fixedOtp) this always returns "000000" so you can sign up
+ * with any email and verify without waiting for a real code. Production always
+ * gets a random code.
  */
 export const generateOTP = () => {
+  if (config.dev.fixedOtp) return "000000";
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 

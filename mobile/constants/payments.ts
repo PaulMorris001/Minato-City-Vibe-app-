@@ -18,10 +18,30 @@ export const FLUTTERWAVE_COUNTRY_CODES: Record<string, string> = {
 
 export const FLUTTERWAVE_COUNTRIES = new Set(Object.keys(FLUTTERWAVE_COUNTRY_CODES));
 
-/** Which payout provider a vendor in `country` uses. */
-export function payoutProviderForCountry(country?: string): "stripe" | "flutterwave" {
+// US vendors settle through Stripe Connect.
+const US_COUNTRIES = new Set(["united states", "united states of america", "usa", "us"]);
+
+// Flutterwave temporarily hidden (Wise-first rollout) — mirrors the server's
+// FLUTTERWAVE_ENABLED flag. Flip to `true` to bring the Flutterwave screen back.
+const FLUTTERWAVE_ENABLED = false;
+
+/**
+ * Which payout provider a vendor in `country` uses. Mirrors the server's
+ * getSettlementProvider. With Flutterwave hidden: US → Stripe, everyone else → Wise.
+ */
+export function payoutProviderForCountry(country?: string): "stripe" | "flutterwave" | "wise" {
   const c = (country || "").trim().toLowerCase();
-  return FLUTTERWAVE_COUNTRIES.has(c) ? "flutterwave" : "stripe";
+  if (FLUTTERWAVE_ENABLED && FLUTTERWAVE_COUNTRIES.has(c)) return "flutterwave";
+  if (US_COUNTRIES.has(c)) return "stripe";
+  return "wise";
+}
+
+/** Onboarding screen route for a vendor in `country`. */
+export function payoutOnboardingRoute(country?: string): string {
+  const provider = payoutProviderForCountry(country);
+  if (provider === "flutterwave") return "/flutterwave-onboarding";
+  if (provider === "wise") return "/wise-onboarding";
+  return "/stripe-onboarding";
 }
 
 // Display symbols for the currencies we support. Unknown codes fall back to the

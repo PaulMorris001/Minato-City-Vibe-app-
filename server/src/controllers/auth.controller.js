@@ -177,6 +177,70 @@ export async function register(req, res) {
   }
 }
 
+/**
+ * Lightweight availability check used by the signup wizard to tell the user a
+ * username/email is taken *before* they advance to the next step (instead of
+ * only finding out at the final /register call). Accepts either or both of
+ * `username` and `email` as query params and reports each independently.
+ *
+ * Deliberately mirrors register's normalization + uniqueness logic so the two
+ * never disagree: same case-insensitive username match and lowercased email.
+ */
+export async function checkAvailability(req, res) {
+  try {
+    const rawUsername = typeof req.query.username === "string" ? req.query.username : null;
+    const rawEmail = typeof req.query.email === "string" ? req.query.email : null;
+
+    if (rawUsername == null && rawEmail == null) {
+      return res
+        .status(400)
+        .json({ message: "Provide a username and/or email to check." });
+    }
+
+    const result = {};
+
+    if (rawUsername != null) {
+      const normalizedUsername = rawUsername.trim();
+      // Match register's format guard (2–30 chars). Anything malformed is
+      // reported as unavailable with a reason so the client can distinguish
+      // "taken" from "invalid" if it wants to.
+      const validFormat =
+        normalizedUsername.length >= 2 && normalizedUsername.length <= 30;
+      if (!validFormat) {
+        result.username = { value: rawUsername, available: false, reason: "invalid" };
+      } else {
+        const taken = await User.exists({
+          username: exactCaseInsensitive(normalizedUsername),
+        });
+        result.username = {
+          value: rawUsername,
+          available: !taken,
+          ...(taken ? { reason: "taken" } : {}),
+        };
+      }
+    }
+
+    if (rawEmail != null) {
+      const normalizedEmail = rawEmail.toLowerCase().trim();
+      if (!isValidEmail(normalizedEmail)) {
+        result.email = { value: rawEmail, available: false, reason: "invalid" };
+      } else {
+        const taken = await User.exists({ email: normalizedEmail });
+        result.email = {
+          value: rawEmail,
+          available: !taken,
+          ...(taken ? { reason: "taken" } : {}),
+        };
+      }
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error("check-availability error:", error?.message ?? error);
+    res.status(500).json({ message: "Could not check availability." });
+  }
+}
+
 export async function login(req, res) {
   // Wrapped in try/catch: previously an unexpected throw here (DB hiccup, or a
   // non-string email reaching .toLowerCase()) sent no response at all, leaving

@@ -2,6 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import Event from '../models/event.model.js';
 import Guide from '../models/guide.model.js';
+import User from '../models/user.model.js';
 
 const router = express.Router();
 
@@ -103,7 +104,7 @@ router.get('/.well-known/apple-app-site-association', (req, res) => {
       details: [
         {
           appID: '3UZH9FGG9Q.com.obito.cityvibe',
-          paths: ['/event/*', '/guide/*'],
+          paths: ['/event/*', '/guide/*', '/user/*'],
         },
       ],
     },
@@ -453,6 +454,73 @@ router.get('/guide/:id', async (req, res) => {
       title: guide.title || 'CityVibe Guide',
       description,
       imageUrl: null,
+      canonicalUrl,
+      appDeepLink,
+      body,
+    }));
+});
+
+// ─── Profile landing page ─────────────────────────────────────────────────────
+
+router.get('/user/:id', async (req, res) => {
+  const { id } = req.params;
+  const appDeepLink = `mobile://user/${id}`;
+  const canonicalUrl = `${SITE_BASE}/user/${id}`;
+
+  let user = null;
+  try {
+    if (mongoose.isValidObjectId(id)) {
+      user = await User.findById(id)
+        .select('username profilePicture bio isVendor businessName verified')
+        .lean();
+    }
+  } catch (err) {
+    console.error('User lookup for share landing failed:', err);
+  }
+
+  if (!user) {
+    return res
+      .setHeader('Content-Type', 'text/html')
+      .send(buildLandingPage({
+        title: 'CityVibe Profile',
+        description: BRAND_TAGLINE,
+        imageUrl: null,
+        canonicalUrl,
+        appDeepLink,
+        body: `
+          <div class="kicker">Profile</div>
+          <h1>Join them on CityVibe.</h1>
+          <p class="meta">Open CityVibe to view this profile.</p>
+        `,
+      }));
+  }
+
+  const displayName = user.isVendor && user.businessName ? user.businessName : user.username;
+  const kicker = user.isVendor ? 'Vendor' : 'Profile';
+  const description = truncate(
+    user.bio || `${displayName} is on CityVibe. Follow them for events and city guides.`,
+    180
+  );
+  const previewImage = toSocialPreviewImage(user.profilePicture);
+
+  const body = `
+    ${user.profilePicture
+      ? `<div class="cover" style="background-image: url('${escapeHtml(user.profilePicture)}');"></div>`
+      : `<div class="cover"></div>`}
+    <div class="kicker">${escapeHtml(kicker)}</div>
+    <h1>${escapeHtml(displayName || 'CityVibe Member')}</h1>
+    <div class="meta">
+      ${user.bio ? `<div class="meta-row">${escapeHtml(truncate(user.bio, 140))}</div>` : ''}
+    </div>
+  `;
+
+  res
+    .setHeader('Content-Type', 'text/html')
+    .setHeader('Cache-Control', 'public, max-age=300')
+    .send(buildLandingPage({
+      title: `${displayName || 'CityVibe Member'} — CityVibe`,
+      description,
+      imageUrl: previewImage,
       canonicalUrl,
       appDeepLink,
       body,

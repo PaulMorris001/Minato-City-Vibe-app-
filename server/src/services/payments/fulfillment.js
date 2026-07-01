@@ -34,6 +34,7 @@ export async function fulfillTicket({
   eventId,
   userId,
   provider,
+  payoutProvider,
   paymentRef,
   currency,
   platformFeeCents = 0,
@@ -50,6 +51,8 @@ export async function fulfillTicket({
     user: userId,
     ticketPrice: event.ticketPrice,
     provider,
+    // Defaults to the collection provider; differs only for Wise vendors.
+    payoutProvider: payoutProvider || provider,
     currency: currency || event.currency || "usd",
     platformFeeCents,
     sellerNetCents,
@@ -143,6 +146,7 @@ export async function fulfillGuide({ guideId, userId }) {
 export async function fulfillBooking({
   bookingId,
   provider,
+  payoutProvider,
   paymentRef,
   platformFee = 0,
   vendorNet = 0,
@@ -153,6 +157,7 @@ export async function fulfillBooking({
 
   booking.paymentStatus = "paid";
   booking.provider = provider;
+  booking.payoutProvider = payoutProvider || provider;
   booking.paymentRef = paymentRef;
   booking.platformFee = platformFee;
   booking.vendorNet = vendorNet;

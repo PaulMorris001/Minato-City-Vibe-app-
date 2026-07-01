@@ -8,9 +8,11 @@
  * Recognized URLs:
  *   https://api.ourcityvibe.com/event/<x>   → /event/[id]   (id = x)
  *   https://api.ourcityvibe.com/guide/<x>   → /guide/[id]   (id = x)
+ *   https://api.ourcityvibe.com/user/<x>    → /user/[id]    (id = x)
  *   https://api.ourcityvibe.com/share/<t>   → /share/[token] (token = t)
  *   mobile://event/<x>                          → /event/[id]
  *   mobile://guide/<x>                          → /guide/[id]
+ *   mobile://user/<x>                           → /user/[id]
  *   mobile://share/<t>                          → /share/[token]
  *
  * Everything else (other hosts, other schemes, unknown kinds, empty segments,
@@ -20,6 +22,7 @@
 export type DeepLinkPathname =
   | "/event/[id]"
   | "/guide/[id]"
+  | "/user/[id]"
   | "/share/[token]";
 
 export interface ParsedDeepLink {
@@ -44,6 +47,7 @@ const KIND_TO_ROUTE: Record<
 > = {
   event: { pathname: "/event/[id]", paramName: "id" },
   guide: { pathname: "/guide/[id]", paramName: "id" },
+  user: { pathname: "/user/[id]", paramName: "id" },
   share: { pathname: "/share/[token]", paramName: "token" },
 };
 

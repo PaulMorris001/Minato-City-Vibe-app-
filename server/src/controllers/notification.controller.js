@@ -11,6 +11,14 @@ export const savePushToken = async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ message: "token is required" });
 
+    // A device has exactly one FCM token. If other accounts were previously
+    // logged in on this device and still hold this token, detach it from them
+    // so a single push isn't delivered once per stale account.
+    await User.updateMany(
+      { _id: { $ne: req.user.id }, fcmToken: token },
+      { fcmToken: null }
+    );
+
     await User.findByIdAndUpdate(req.user.id, { fcmToken: token });
     res.status(200).json({ message: "Push token saved" });
   } catch (error) {

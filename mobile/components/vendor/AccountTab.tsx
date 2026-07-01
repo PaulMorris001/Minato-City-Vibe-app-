@@ -15,6 +15,7 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as SecureStore from "expo-secure-store";
+import { unregisterForPushNotifications } from "@/utils/pushNotifications";
 import axios from "axios";
 import { useRouter } from "expo-router";
 import { BASE_URL } from "@/constants/constants";
@@ -84,6 +85,8 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
       const path =
         provider === "flutterwave"
           ? "/flutterwave/connect/status"
+          : provider === "wise"
+          ? "/wise/connect/status"
           : "/stripe/connect/status";
       const res = await axios.get(`${BASE_URL}${path}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -234,6 +237,7 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
         style: "destructive",
         onPress: async () => {
           try {
+            await unregisterForPushNotifications();
             await SecureStore.deleteItemAsync("user");
             await SecureStore.deleteItemAsync("token");
             await SecureStore.deleteItemAsync("activeAccount");

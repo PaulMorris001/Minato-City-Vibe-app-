@@ -25,9 +25,13 @@ const ticketSchema = mongoose.Schema({
   // Unique ticket code for verification
   ticketCode: { type: String, unique: true, sparse: true },
 
-  // Which provider collected this payment. Drives how the payout job transfers
-  // the seller's share and how refunds are issued.
+  // Which provider collected this payment. Drives how refunds are issued.
   provider: { type: String, enum: ["stripe", "flutterwave"], default: "stripe" },
+
+  // Which provider settles the seller's share — usually the same as `provider`,
+  // but Wise vendors collect via Stripe and settle via Wise, so the two differ.
+  // Drives the payout job's transfer branch.
+  payoutProvider: { type: String, enum: ["stripe", "flutterwave", "wise"], default: "stripe" },
 
   // Stripe payment tracking
   stripePaymentIntentId: { type: String },

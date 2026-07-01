@@ -17,6 +17,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
 import * as SecureStore from "expo-secure-store";
+import { unregisterForPushNotifications } from "@/utils/pushNotifications";
 import axios, { AxiosError } from "axios";
 import { capitalize } from "@/libs/helpers";
 import { remoteLog } from "@/utils/remoteLog";
@@ -154,6 +155,7 @@ export default function TabsLayout() {
 
   const handleLogout = async () => {
     try {
+      await unregisterForPushNotifications();
       await SecureStore.deleteItemAsync("user");
       await SecureStore.deleteItemAsync("token");
       await SecureStore.deleteItemAsync("activeAccount");

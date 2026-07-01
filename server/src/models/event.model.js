@@ -132,9 +132,11 @@ const eventSchema = mongoose.Schema({
   // Delayed-payout tracking. For paid events we charge the platform account
   // first and transfer to the seller's Connect account `payoutDelayHours`
   // after `date` via a scheduled job.
+  // "awaiting_approval" = the hold window elapsed and a Payout record was created
+  // for an admin to review; "released" = admin approved and the transfer ran.
   payoutStatus: {
     type: String,
-    enum: ["none", "pending", "released", "failed"],
+    enum: ["none", "pending", "awaiting_approval", "released", "failed"],
     default: "none",
   },
   payoutDelayHours: { type: Number, default: 48 },

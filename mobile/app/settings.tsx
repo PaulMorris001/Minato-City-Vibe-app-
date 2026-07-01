@@ -18,7 +18,7 @@ import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
-import { FLUTTERWAVE_COUNTRIES } from "@/constants/payments";
+import { payoutOnboardingRoute } from "@/constants/payments";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { ImagePickerButton } from "@/components/shared";
 import { Fonts } from "@/constants/fonts";
@@ -364,13 +364,7 @@ export default function SettingsScreen() {
 
         <TouchableOpacity
           style={styles.preferenceItem}
-          onPress={() =>
-            router.push(
-              FLUTTERWAVE_COUNTRIES.has(user.country.trim().toLowerCase())
-                ? "/flutterwave-onboarding"
-                : "/stripe-onboarding"
-            )
-          }
+          onPress={() => router.push(payoutOnboardingRoute(user.country) as any)}
         >
           <View style={styles.preferenceLeft}>
             <Ionicons name="cash-outline" size={22} color={Colors.primary} />

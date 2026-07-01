@@ -37,6 +37,17 @@ export const config = {
     env: process.env.NODE_ENV || "development",
   },
 
+  // Dev conveniences. These MUST never activate in production — each is gated
+  // on NODE_ENV so a stray env var on Render can't turn them on.
+  dev: {
+    // When true, every signup/reset OTP is "000000" so you can create accounts
+    // with any (even fake) email locally without waiting for a real code.
+    // On by default outside production; set DEV_FIXED_OTP=false to opt out.
+    fixedOtp:
+      (process.env.NODE_ENV || "development") !== "production" &&
+      process.env.DEV_FIXED_OTP !== "false",
+  },
+
   // Database Configuration
   database: {
     uri: process.env.MONGO_URI,
@@ -125,6 +136,26 @@ export const config = {
     // Shared secret set in the Flutterwave dashboard; compared against the
     // `verif-hash` header on incoming webhooks.
     secretHash: process.env.FLW_SECRET_HASH || "",
+  },
+
+  // Wise (Wise Platform Payouts API) — third settlement rail for international
+  // vendors outside the Stripe/Flutterwave footprint. Payout-only: these vendors
+  // still COLLECT via Stripe (USD into the platform balance); Wise then settles
+  // their net to a local bank in ~40 currencies.
+  wise: {
+    apiToken: process.env.WISE_API_TOKEN || "",
+    profileId: process.env.WISE_PROFILE_ID || "",
+    // PEM public key from the Wise dashboard, used to verify webhook signatures.
+    webhookPublicKey: process.env.WISE_WEBHOOK_PUBLIC_KEY || "",
+    // Sandbox: https://api.sandbox.transferwise.tech — Prod: https://api.transferwise.com
+    baseUrl: process.env.WISE_BASE_URL || "https://api.sandbox.transferwise.tech",
+    // Currency the platform balance is funded in / quotes source from.
+    sourceCurrency: (process.env.WISE_SOURCE_CURRENCY || "USD").toUpperCase(),
+    // Comma-separated country names/ISO codes routed to Wise (lowercased on use).
+    countries: (process.env.WISE_COUNTRIES || "")
+      .split(",")
+      .map((c) => c.trim().toLowerCase())
+      .filter(Boolean),
   },
 
   // Sign in with Apple. For native iOS sign-in, the identity token's `aud`

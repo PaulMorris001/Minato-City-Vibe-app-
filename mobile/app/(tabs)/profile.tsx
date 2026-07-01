@@ -4,6 +4,7 @@ import {
   Easing,
   FlatList,
   RefreshControl,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -23,6 +24,7 @@ import { AU } from "@/components/auth/tokens";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { heroEmojiFor } from "@/utils/eventDetails";
+import { createUserShareLink } from "@/utils/shareLinks";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { Guide } from "@/libs/interfaces";
 
@@ -202,19 +204,44 @@ function Header({
   setTab: (t: TabKey) => void;
   loading: boolean;
 }) {
+  const handleShareProfile = async () => {
+    if (!user?._id) return;
+    try {
+      const url = createUserShareLink(user._id);
+      await Share.share({
+        message: `Check out my profile on CityVibe\n${url}`,
+        url, // iOS uses this for richer share targets; Android ignores it.
+        title: user.username,
+      });
+    } catch (err) {
+      console.error("Share profile failed:", err);
+    }
+  };
+
   return (
     <View>
       {/* Top row */}
       <View style={styles.topRow}>
         <Text style={styles.kicker}>PROFILE</Text>
-        <TouchableOpacity
-          onPress={() => router.push("/settings")}
-          activeOpacity={0.7}
-          style={styles.settingsBtn}
-          accessibilityLabel="Settings"
-        >
-          <Ionicons name="settings-outline" size={16} color={AU.text} />
-        </TouchableOpacity>
+        <View style={styles.topActions}>
+          <TouchableOpacity
+            onPress={handleShareProfile}
+            activeOpacity={0.7}
+            style={styles.settingsBtn}
+            accessibilityLabel="Share profile"
+            disabled={!user?._id}
+          >
+            <Ionicons name="share-outline" size={16} color={AU.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push("/settings")}
+            activeOpacity={0.7}
+            style={styles.settingsBtn}
+            accessibilityLabel="Settings"
+          >
+            <Ionicons name="settings-outline" size={16} color={AU.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Hero (avatar + name) */}
@@ -603,6 +630,7 @@ const styles = StyleSheet.create({
     color: AU.textDim,
     letterSpacing: 2.34,
   },
+  topActions: { flexDirection: "row", alignItems: "center", gap: 10 },
   settingsBtn: {
     width: 36,
     height: 36,

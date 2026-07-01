@@ -7,6 +7,7 @@ import {
   FlatList,
   Alert,
   RefreshControl,
+  Share,
 } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -18,6 +19,7 @@ import { goBack } from "@/utils/navigation";
 import { BASE_URL } from "@/constants/constants";
 import { scaleFontSize } from "@/utils/responsive";
 import { capitalize } from "@/libs/helpers";
+import { createUserShareLink } from "@/utils/shareLinks";
 import { Guide } from "@/libs/interfaces";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import * as SecureStore from "expo-secure-store";
@@ -132,6 +134,21 @@ export default function UserProfileScreen() {
     setIsFollowing(newIsFollowing);
     setIsMutual(newIsMutual);
     setFollowersCount((prev) => prev + (newIsFollowing ? 1 : -1));
+  };
+
+  const handleShareProfile = async () => {
+    if (!userId) return;
+    try {
+      const url = createUserShareLink(userId);
+      const name = capitalize(user?.username || "this profile");
+      await Share.share({
+        message: `Check out ${name} on CityVibe\n${url}`,
+        url, // iOS uses this for richer share targets; Android ignores it.
+        title: user?.username,
+      });
+    } catch (err) {
+      console.error("Share profile failed:", err);
+    }
   };
 
   const handleMessage = async () => {
@@ -329,18 +346,28 @@ export default function UserProfileScreen() {
           <Text style={styles.headerTitle} numberOfLines={1}>
             {capitalize(user?.username || "")}
           </Text>
-          {userId && currentUserId && userId !== currentUserId ? (
-            <TouchableOpacity
-              onPress={() => setReportSheetVisible(true)}
-              style={styles.backButton}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityLabel="Report or block user"
-            >
-              <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
-            </TouchableOpacity>
-          ) : (
-            <View style={{ width: 40 }} />
-          )}
+          <View style={styles.headerActions}>
+            {userId ? (
+              <TouchableOpacity
+                onPress={handleShareProfile}
+                style={styles.headerAction}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Share profile"
+              >
+                <Ionicons name="share-outline" size={22} color="#fff" />
+              </TouchableOpacity>
+            ) : null}
+            {userId && currentUserId && userId !== currentUserId ? (
+              <TouchableOpacity
+                onPress={() => setReportSheetVisible(true)}
+                style={styles.headerAction}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Report or block user"
+              >
+                <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
 
         <FlatList
@@ -396,6 +423,8 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   backButton: { marginRight: 16 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
+  headerAction: { width: 36, height: 36, justifyContent: "center", alignItems: "center" },
   headerTitle: {
     flex: 1,
     fontSize: scaleFontSize(20),

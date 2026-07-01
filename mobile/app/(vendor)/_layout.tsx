@@ -14,6 +14,7 @@ import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as SecureStore from "expo-secure-store";
+import { unregisterForPushNotifications } from "@/utils/pushNotifications";
 import axios from "axios";
 import { capitalize } from "@/libs/helpers";
 import { Fonts } from "@/constants/fonts";
@@ -91,6 +92,7 @@ export default function VendorLayout() {
 
   const handleLogout = async () => {
     try {
+      await unregisterForPushNotifications();
       await SecureStore.deleteItemAsync("user");
       await SecureStore.deleteItemAsync("token");
       await SecureStore.deleteItemAsync("activeAccount");

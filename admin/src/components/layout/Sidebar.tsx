@@ -9,6 +9,7 @@ const navItems = [
   { to: "/vendors", label: "Vendors", icon: "🏪" },
   { to: "/verifications", label: "Verifications", icon: "✓" },
   { to: "/paid-events", label: "Paid Events", icon: "💸" },
+  { to: "/payouts", label: "Payouts", icon: "💰" },
   { to: "/reports", label: "Reports", icon: "🚩" },
   { to: "/cities", label: "Cities", icon: "📍" },
   { to: "/vendor-types", label: "Vendor Types", icon: "🏷️" },

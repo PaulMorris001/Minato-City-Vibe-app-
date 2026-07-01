@@ -17,14 +17,18 @@ import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
 import Ticket from "../models/ticket.model.js";
 import { Booking } from "../models/booking.model.js";
-import { getPayoutProvider } from "../services/payments/resolveProvider.js";
+import {
+  getPayoutProvider,
+  getSettlementProvider,
+  hasPayoutOnboarding,
+} from "../services/payments/resolveProvider.js";
 import { fulfillTicket, fulfillGuide, fulfillBooking } from "../services/payments/fulfillment.js";
 import {
   computeSplit,
   buildFlutterwaveInit,
   verifyFlutterwaveCharge,
-  createFlutterwaveTransfer,
 } from "./flutterwave.controller.js";
+import { createPayout } from "../services/payments/payout.service.js";
 
 const PLATFORM_FEE_PERCENT = config.stripe.platformFeePercent;
 const TYPES = new Set(["ticket", "guide", "booking"]);
@@ -117,13 +121,18 @@ export const initPayment = async (req, res) => {
       return res.status(200).json(init);
     }
 
-    // Stripe branch — charge to the platform account, in cents.
+    // Stripe branch — always charge to the PLATFORM account (no transfer_data /
+    // application_fee). Every sale's funds are held in the platform balance and
+    // only leave once an admin approves the resulting Payout. This applies to
+    // Stripe-Connect (US) and Wise (international) vendors alike.
+    const settlement = getSettlementProvider(seller); // "stripe" | "wise" (here)
     const amountCents = Math.round(amount * 100);
     const feeCents = Math.round(amountCents * (PLATFORM_FEE_PERCENT / 100));
     const sellerNetCents = amountCents - feeCents;
-    const sellerOnboarded = seller.stripeAccountId && seller.stripeOnboardingComplete;
 
-    if (type === "ticket" && !sellerOnboarded) {
+    // Tickets still require the seller to have a working payout account so the
+    // approved payout can actually be sent later.
+    if (type === "ticket" && !hasPayoutOnboarding(seller)) {
       return res.status(409).json({ message: "Tickets aren't on sale yet — check back soon." });
     }
 
@@ -136,24 +145,16 @@ export const initPayment = async (req, res) => {
         sellerId: seller._id.toString(),
         platformFeeCents: feeCents.toString(),
         sellerNetCents: sellerNetCents.toString(),
+        payoutProvider: settlement,
       },
     };
     if (type === "ticket") {
-      // Delayed payout: no transfer_data; the payout job transfers later.
       params.metadata.eventId = id.toString();
       params.transfer_group = `event_${id}`;
     } else if (type === "guide") {
       params.metadata.guideId = id.toString();
-      if (sellerOnboarded) {
-        params.application_fee_amount = feeCents;
-        params.transfer_data = { destination: seller.stripeAccountId };
-      }
     } else if (type === "booking") {
       params.metadata.bookingId = id.toString();
-      if (sellerOnboarded) {
-        params.application_fee_amount = feeCents;
-        params.transfer_data = { destination: seller.stripeAccountId };
-      }
     }
 
     const paymentIntent = await stripe.paymentIntents.create(params);
@@ -197,6 +198,15 @@ async function confirmStripe(type, id, paymentIntentId, userId, res) {
     return res.status(403).json({ message: "Payment does not match this purchase" });
   }
 
+  // Settlement rail recorded at init ("stripe" or "wise"). The seller's net
+  // stays in the platform balance; a Payout(awaiting_approval) is created for an
+  // admin to release. Net is USD cents for Stripe collection.
+  const settlement = pi.metadata?.payoutProvider || "stripe";
+  const sellerNetCents = Number(pi.metadata?.sellerNetCents || 0);
+  // Stripe settles in cents; Wise sources in major USD.
+  const payoutAmount = settlement === "wise" ? sellerNetCents / 100 : sellerNetCents;
+  const payoutCurrency = "USD";
+
   if (type === "ticket") {
     if (pi.metadata?.eventId !== id) {
       return res.status(403).json({ message: "Payment does not match this event" });
@@ -205,10 +215,11 @@ async function confirmStripe(type, id, paymentIntentId, userId, res) {
       eventId: id,
       userId,
       provider: "stripe",
+      payoutProvider: settlement, // ticket payouts are batched by the job after the hold window
       paymentRef: paymentIntentId,
       currency: "usd",
       platformFeeCents: Number(pi.metadata?.platformFeeCents || 0),
-      sellerNetCents: Number(pi.metadata?.sellerNetCents || 0),
+      sellerNetCents,
     });
     return res.status(alreadyExisted ? 200 : 201).json({ message: "Ticket confirmed", ticket });
   }
@@ -217,7 +228,20 @@ async function confirmStripe(type, id, paymentIntentId, userId, res) {
     if (pi.metadata?.guideId !== id) {
       return res.status(403).json({ message: "Payment does not match this guide" });
     }
-    await fulfillGuide({ guideId: id, userId });
+    const { alreadyPurchased } = await fulfillGuide({ guideId: id, userId });
+    if (!alreadyPurchased) {
+      await createPayout({
+        vendor: pi.metadata?.sellerId,
+        relatedType: "guide",
+        relatedId: id,
+        provider: settlement,
+        amount: payoutAmount,
+        currency: payoutCurrency,
+        reference: `guide_${id}_${userId}`,
+        buyer: userId,
+        stripePaymentIntentId: paymentIntentId,
+      });
+    }
     return res.status(200).json({ message: "Guide purchase confirmed", hasPurchased: true });
   }
 
@@ -225,15 +249,27 @@ async function confirmStripe(type, id, paymentIntentId, userId, res) {
     if (pi.metadata?.bookingId !== id) {
       return res.status(403).json({ message: "Payment does not match this booking" });
     }
-    // Stripe pays the vendor immediately via transfer_data (when onboarded), so
-    // there's no separate transfer to make here.
-    const { booking } = await fulfillBooking({
+    const { booking, alreadyPaid } = await fulfillBooking({
       bookingId: id,
       provider: "stripe",
+      payoutProvider: settlement,
       paymentRef: paymentIntentId,
       platformFee: Number(pi.metadata?.platformFeeCents || 0),
-      vendorNet: Number(pi.metadata?.sellerNetCents || 0),
+      vendorNet: sellerNetCents,
     });
+    if (!alreadyPaid) {
+      await createPayout({
+        vendor: pi.metadata?.sellerId,
+        relatedType: "booking",
+        relatedId: id,
+        provider: settlement,
+        amount: payoutAmount,
+        currency: payoutCurrency,
+        reference: `booking_${id}`,
+        buyer: userId,
+        stripePaymentIntentId: paymentIntentId,
+      });
+    }
     return res.status(200).json({ message: "Booking paid", booking });
   }
 }
@@ -269,7 +305,16 @@ async function confirmFlutterwave(type, id, transactionId, userId, res) {
   if (type === "guide") {
     const { alreadyPurchased } = await fulfillGuide({ guideId: id, userId });
     if (!alreadyPurchased) {
-      await payoutImmediately({ seller, amount: sellerNet, currency, ref: `guide_${id}_${userId}` });
+      await createPayout({
+        vendor: seller._id,
+        relatedType: "guide",
+        relatedId: id,
+        provider: "flutterwave",
+        amount: sellerNet, // major units
+        currency,
+        reference: `guide_${id}_${userId}`,
+        buyer: userId,
+      });
     }
     return res.status(200).json({ message: "Guide purchase confirmed", hasPurchased: true });
   }
@@ -283,39 +328,18 @@ async function confirmFlutterwave(type, id, transactionId, userId, res) {
       vendorNet: sellerNet,
     });
     if (!alreadyPaid) {
-      const transfer = await payoutImmediately({
-        seller,
-        amount: sellerNet,
+      await createPayout({
+        vendor: seller._id,
+        relatedType: "booking",
+        relatedId: id,
+        provider: "flutterwave",
+        amount: sellerNet, // major units
         currency,
-        ref: `booking_${id}`,
+        reference: `booking_${id}`,
+        buyer: userId,
       });
-      if (transfer?.id) {
-        booking.transferRef = transfer.id;
-        await booking.save();
-      }
     }
     return res.status(200).json({ message: "Booking paid", booking });
-  }
-}
-
-/**
- * Pay a Flutterwave seller their net share immediately (guides + bookings).
- * Failures are logged but don't fail the buyer's confirm — the funds are in the
- * platform balance and can be retried.
- */
-async function payoutImmediately({ seller, amount, currency, ref }) {
-  try {
-    if (!seller?.flutterwaveBank?.accountNumber) return null;
-    return await createFlutterwaveTransfer({
-      bank: seller.flutterwaveBank,
-      amount,
-      currency,
-      reference: ref,
-      narration: "CityVibe payout",
-    });
-  } catch (error) {
-    console.error("Immediate Flutterwave payout failed:", error.message);
-    return null;
   }
 }
 

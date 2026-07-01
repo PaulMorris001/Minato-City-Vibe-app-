@@ -23,6 +23,21 @@ export const authLimiter = rateLimit({
 });
 
 /**
+ * Lenient limiter for read-only availability lookups (signup username/email
+ * checks). These are called as the user types (debounced), so the budget is
+ * higher than the credential endpoints — but still capped to blunt scripted
+ * user-enumeration.
+ */
+export const lookupLimiter = rateLimit({
+  ...base,
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 100,
+  message: {
+    message: "Too many requests. Please wait a moment and try again.",
+  },
+});
+
+/**
  * Stricter limiter for one-time-code endpoints (password reset, OTP resend,
  * email verification). These send email and are the prime target for spam, so
  * they get a tighter budget.

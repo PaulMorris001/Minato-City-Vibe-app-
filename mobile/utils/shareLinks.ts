@@ -11,3 +11,11 @@ export function createEventShareLink(shareTokenOrId: string): string {
 export function createGuideShareLink(guideId: string): string {
   return `${BASE}/guide/${guideId}`;
 }
+
+/**
+ * Build a share URL for a user's public profile. Opens the app straight onto
+ * that profile via the `/user/<id>` universal link.
+ */
+export function createUserShareLink(userId: string): string {
+  return `${BASE}/user/${userId}`;
+}

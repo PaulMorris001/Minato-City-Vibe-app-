@@ -13,6 +13,7 @@ import Guides from "./pages/Guides";
 import Analytics from "./pages/Analytics";
 import Verifications from "./pages/Verifications";
 import PaidEvents from "./pages/PaidEvents";
+import Payouts from "./pages/Payouts";
 import Reports from "./pages/Reports";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -42,6 +43,7 @@ function AppRoutes() {
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/verifications" element={<Verifications />} />
                 <Route path="/paid-events" element={<PaidEvents />} />
+                <Route path="/payouts" element={<Payouts />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

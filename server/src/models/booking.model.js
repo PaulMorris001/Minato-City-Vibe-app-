@@ -45,6 +45,9 @@ const bookingSchema = new mongoose.Schema(
     // Which provider collected the payment + accounting (interpreted in
     // priceSnapshot.currency major units for Flutterwave, cents for Stripe).
     provider: { type: String, enum: ["stripe", "flutterwave"] },
+    // Which provider settled the vendor's net — usually equals `provider`, but
+    // Wise vendors collect via Stripe and settle via Wise.
+    payoutProvider: { type: String, enum: ["stripe", "flutterwave", "wise"] },
     platformFee: { type: Number, default: 0 },
     vendorNet: { type: Number, default: 0 },
     // Provider references for the charge / payout / refund.

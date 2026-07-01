@@ -325,6 +325,8 @@ export default Sentry.wrap(function RootLayout() {
       if (token) link = { kind: "event", token };
     } else if (parsed.pathname === "/guide/[id]") {
       if (parsed.params.id) link = { kind: "guide", token: parsed.params.id };
+    } else if (parsed.pathname === "/user/[id]") {
+      if (parsed.params.id) link = { kind: "user", userId: parsed.params.id };
     }
     if (link) setPendingDeepLink(link);
   }, []);

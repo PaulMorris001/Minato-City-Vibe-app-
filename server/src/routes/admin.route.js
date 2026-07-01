@@ -32,6 +32,11 @@ import {
   approvePaidEvent,
   rejectPaidEvent,
 } from "../controllers/admin.controller.js";
+import {
+  getPayouts,
+  approvePayout,
+  rejectPayout,
+} from "../controllers/payoutAdmin.controller.js";
 
 const router = express.Router();
 
@@ -77,6 +82,11 @@ router.get("/admin/analytics/events", authenticateAdmin, getAnalyticsEvents);
 router.get("/admin/verifications", authenticateAdmin, getVerifications);
 router.patch("/admin/verifications/:id/approve", authenticateAdmin, approveVerification);
 router.patch("/admin/verifications/:id/reject", authenticateAdmin, rejectVerification);
+
+// Vendor payout approval queue — review and release held funds
+router.get("/admin/payouts", authenticateAdmin, getPayouts);
+router.post("/admin/payouts/:id/approve", authenticateAdmin, approvePayout);
+router.post("/admin/payouts/:id/reject", authenticateAdmin, rejectPayout);
 
 // Paid event approval queue (trust system)
 router.get("/admin/paid-events", authenticateAdmin, getPendingPaidEvents);

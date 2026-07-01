@@ -19,7 +19,7 @@ interface PaidEvent {
   approvalStatus: "pending" | "approved" | "rejected";
   approvalReviewedAt?: string;
   approvalRejectReason?: string;
-  payoutStatus?: "none" | "pending" | "released" | "failed";
+  payoutStatus?: "none" | "pending" | "awaiting_approval" | "released" | "failed";
   payoutDelayHours?: number;
   payoutReleasedAt?: string;
   fraudReportCount?: number;
@@ -46,6 +46,7 @@ const statusColor: Record<string, string> = {
 
 const payoutColor: Record<string, string> = {
   pending: "#f59e0b",
+  awaiting_approval: "#f59e0b",
   released: "#22c55e",
   failed: "#ef4444",
   none: "#9ca3af",

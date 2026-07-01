@@ -22,6 +22,7 @@ import uploadRoutes from "./routes/upload.route.js";
 import logRoutes from "./routes/log.route.js";
 import stripeRoutes from "./routes/stripe.route.js";
 import flutterwaveRoutes from "./routes/flutterwave.route.js";
+import wiseRoutes from "./routes/wise.route.js";
 import paymentsRoutes from "./routes/payments.route.js";
 import notificationRoutes from "./routes/notification.route.js";
 import favoritesRoutes from "./routes/favorites.route.js";
@@ -64,8 +65,10 @@ app.use(
 app.use(cors(config.cors));
 app.options(/(.*)/, cors(config.cors));
 
-// Stripe webhook needs raw body — must be registered BEFORE express.json()
+// Stripe + Wise webhooks need the raw body for signature verification — must be
+// registered BEFORE express.json()
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+app.use('/api/wise/webhook', express.raw({ type: 'application/json' }));
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -99,6 +102,7 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/", logRoutes);
 app.use("/api/", stripeRoutes);
 app.use("/api/", flutterwaveRoutes);
+app.use("/api/", wiseRoutes);
 app.use("/api/", paymentsRoutes);
 app.use("/api/", notificationRoutes);
 app.use("/api/", favoritesRoutes);
