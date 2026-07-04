@@ -56,7 +56,7 @@ module.exports = {
     },
   },
   android: {
-    package: "com.obito.cityvibe",
+    package: "com.ourcityvibe.app",
     intentFilters: [
       {
         action: "VIEW",

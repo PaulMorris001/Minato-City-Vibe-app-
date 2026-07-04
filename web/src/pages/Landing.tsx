@@ -327,7 +327,7 @@ const html = `
       </a>
       <a
         class="btn btn-ghost"
-        href="https://play.google.com/store/apps/details?id=com.obito.cityvibe"
+        href="https://play.google.com/store/apps/details?id=com.ourcityvibe.app"
         target="_blank"
         rel="noopener"
       >

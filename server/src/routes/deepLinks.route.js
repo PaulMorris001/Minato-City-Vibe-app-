@@ -6,7 +6,7 @@ import User from '../models/user.model.js';
 
 const router = express.Router();
 
-const PLAY_STORE = 'https://play.google.com/store/apps/details?id=com.obito.cityvibe';
+const PLAY_STORE = 'https://play.google.com/store/apps/details?id=com.ourcityvibe.app';
 // Flip to true (and set APP_STORE / APP_STORE_ID) once the new App Store
 // listing is live. Until then we hide the App Store button + smart-app-banner
 // so users don't get sent to a "no longer available" page from the takedown.
@@ -80,13 +80,13 @@ router.get('/.well-known/assetlinks.json', (req, res) => {
       ],
       target: {
         namespace: 'android_app',
-        package_name: 'com.obito.cityvibe',
+        package_name: 'com.ourcityvibe.app',
         sha256_cert_fingerprints: [
           // EAS-generated upload key (signs APKs/AABs before Play). Required
           // for internal-distribution APKs and pre-Play-Signing installs.
           'D5:F1:BD:BE:91:6D:53:14:0C:74:52:97:E3:A0:8E:2C:FE:36:8A:10:B4:F0:DD:41:09:55:5E:FD:18:B9:E0:79',
           // TODO: add the Play app-signing key SHA-256 here once the app is
-          // uploaded to Play Console under com.obito.cityvibe — Play will
+          // uploaded to Play Console under com.ourcityvibe.app — Play will
           // show it under Setup → App integrity → App signing. Without this
           // line, Play-installed users won't get App Link verification.
         ],

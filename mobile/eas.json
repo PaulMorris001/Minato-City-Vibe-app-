@@ -28,7 +28,7 @@
       "env": {
         "SENTRY_SKIP_AUTO_RELEASE": "true",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "254041426547-p1frm03n7076anms84tgbht35pnvsju0.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "254041426547-rtrktn1a7ipqg12bhac41e75af387iit.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "254041426547-74i2daj22h5ri0sfnl8u7nnah7d235g1.apps.googleusercontent.com",
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51TeGgCPA0vusRaHhJTB3viTgFZrhX9bhT61U8c3KBOUwh4RDHqhipLYYJgrIbRwD0z6x5WL1mqyOk7Vo5UCtmGYN00fTHPFk6h"
       }
     },
@@ -43,12 +43,18 @@
       },
       "env": {
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "254041426547-p1frm03n7076anms84tgbht35pnvsju0.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "254041426547-rtrktn1a7ipqg12bhac41e75af387iit.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "254041426547-74i2daj22h5ri0sfnl8u7nnah7d235g1.apps.googleusercontent.com",
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_live_51TeGgCPA0vusRaHh3sQb6wFrcyBHg0WrmPiG1cUP0NPS2OxORLpKYKVPs0gkoUkGf6jKj9Amrxbt7peEYquej2bf00Pd2pHZ7A"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "appleId": "ogabuj@gmail.com",
+        "appleTeamId": "43ZU3Q3SD7",
+        "ascAppId": "6787367889"
+      }
+    }
   }
 }
