@@ -103,7 +103,9 @@ router.get('/.well-known/apple-app-site-association', (req, res) => {
       apps: [],
       details: [
         {
-          appID: '3UZH9FGG9Q.com.obito.cityvibe',
+          // TODO: replace REPLACE_WITH_NEW_TEAM_ID with the new Apple Developer
+          // account's Team ID (Membership page). Format: <TeamID>.<bundleId>.
+          appID: '43ZU3Q3SD7.com.ourcityvibe.app',
           paths: ['/event/*', '/guide/*', '/user/*'],
         },
       ],

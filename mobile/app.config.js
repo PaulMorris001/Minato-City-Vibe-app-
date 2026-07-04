@@ -35,7 +35,7 @@ module.exports = {
   },
   ios: {
     supportsTablet: true,
-    bundleIdentifier: "com.obito.cityvibe",
+    bundleIdentifier: "com.ourcityvibe.app",
     usesAppleSignIn: true,
     // New canonical host first; legacy Render host kept so older share links
     // still open the app until everyone has updated.
