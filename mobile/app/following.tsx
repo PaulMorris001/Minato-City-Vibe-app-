@@ -17,6 +17,7 @@ import { goBack } from "@/utils/navigation";
 import { scaleFontSize } from "@/utils/responsive";
 import { capitalize } from "@/libs/helpers";
 import followService, { FollowUser } from "@/services/follow.service";
+import { displayName } from "@/utils/displayName";
 import FollowButton from "@/components/shared/FollowButton";
 import { Avatar } from "@/components/shared/Avatar";
 import UserListItemSkeleton from "@/components/skeletons/UserListItemSkeleton";
@@ -76,9 +77,9 @@ export default function FollowingScreen() {
       }
       activeOpacity={0.7}
     >
-      <Avatar uri={item.profilePicture} name={item.username} size={48} />
+      <Avatar uri={item.profilePicture} name={displayName(item)} size={48} />
       <View style={styles.userInfo}>
-        <Text style={styles.userName}>{capitalize(item.username)}</Text>
+        <Text style={styles.userName}>{capitalize(displayName(item))}</Text>
         {item.isMutual && (
           <Text style={styles.mutualLabel}>Follows you back</Text>
         )}

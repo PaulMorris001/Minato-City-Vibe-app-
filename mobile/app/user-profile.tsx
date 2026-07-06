@@ -30,6 +30,8 @@ import chatService from "@/services/chat.service";
 import ProfileHeaderSkeleton from "@/components/skeletons/ProfileHeaderSkeleton";
 import FollowButton from "@/components/shared/FollowButton";
 import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
+import ImageViewerModal from "@/components/shared/ImageViewerModal";
+import { displayName } from "@/utils/displayName";
 
 interface UserData {
   _id: string;
@@ -65,6 +67,7 @@ export default function UserProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [reportSheetVisible, setReportSheetVisible] = useState(false);
+  const [avatarViewerVisible, setAvatarViewerVisible] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
@@ -140,11 +143,11 @@ export default function UserProfileScreen() {
     if (!userId) return;
     try {
       const url = createUserShareLink(userId);
-      const name = capitalize(user?.username || "this profile");
+      const name = capitalize(displayName(user) || "this profile");
       await Share.share({
         message: `Check out ${name} on CityVibe\n${url}`,
         url, // iOS uses this for richer share targets; Android ignores it.
-        title: user?.username,
+        title: displayName(user),
       });
     } catch (err) {
       console.error("Share profile failed:", err);
@@ -180,11 +183,17 @@ export default function UserProfileScreen() {
     <View>
       {/* Profile Header — horizontal layout */}
       <View style={styles.profileHeader}>
-        <Avatar uri={user?.profilePicture} name={user?.username} size={80} />
+        <TouchableOpacity
+          activeOpacity={0.8}
+          disabled={!user?.profilePicture}
+          onPress={() => setAvatarViewerVisible(true)}
+        >
+          <Avatar uri={user?.profilePicture} name={displayName(user)} size={80} />
+        </TouchableOpacity>
         <View style={styles.profileInfo}>
           <View style={styles.usernameRow}>
             <Text style={styles.username} numberOfLines={1}>
-              {capitalize(user?.username || "")}
+              {capitalize(displayName(user))}
             </Text>
             {user?.verified && (
               <Ionicons name="checkmark-circle" size={18} color="#3b82f6" />
@@ -401,6 +410,13 @@ export default function UserProfileScreen() {
           targetUsername={user?.username}
           currentUserId={currentUserId}
           onBlocked={() => goBack()}
+        />
+      ) : null}
+      {user?.profilePicture ? (
+        <ImageViewerModal
+          visible={avatarViewerVisible}
+          images={[user.profilePicture]}
+          onClose={() => setAvatarViewerVisible(false)}
         />
       ) : null}
     </LinearGradient>

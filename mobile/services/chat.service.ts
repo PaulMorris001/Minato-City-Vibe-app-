@@ -45,6 +45,8 @@ export interface User {
   username: string;
   email: string;
   profilePicture?: string;
+  isVendor?: boolean;
+  businessName?: string;
 }
 
 export interface Message {

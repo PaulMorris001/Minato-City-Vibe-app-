@@ -23,6 +23,7 @@ import chatService, { Chat } from "@/services/chat.service";
 import followService, { FollowUser } from "@/services/follow.service";
 import * as SecureStore from "expo-secure-store";
 import { capitalize } from "@/libs/helpers";
+import { displayName } from "@/utils/displayName";
 import socketService from "@/services/socket.service";
 import ChatListItemSkeleton from "@/components/skeletons/ChatListItemSkeleton";
 
@@ -241,7 +242,7 @@ export default function MessagesScreen() {
           const otherUser = chat.participants.find((p) => p._id !== currentUserId);
           const name = chat.type === "group"
             ? (chat.name || "")
-            : (otherUser?.username || "");
+            : (displayName(otherUser) || "");
           return name.toLowerCase().includes(q);
         })
       );
@@ -570,13 +571,13 @@ export default function MessagesScreen() {
                   onPress={() => handleUserSelect(item)}
                   activeOpacity={0.8}
                 >
-                  <Avatar uri={item.profilePicture} name={item.username} size={44} />
+                  <Avatar uri={item.profilePicture} name={displayName(item)} size={44} />
                   <View style={styles.userInfo}>
                     <Text style={styles.userName}>
-                      {capitalize(item.username)}
+                      {capitalize(displayName(item))}
                     </Text>
                     <Text style={styles.userEmail}>
-                      {item.isVendor && item.businessName ? item.businessName : item.email}
+                      {item.isVendor && item.businessName ? `@${item.username}` : item.email}
                     </Text>
                   </View>
                   <View style={styles.mutualBadge}>
@@ -654,12 +655,12 @@ export default function MessagesScreen() {
                     onPress={() => toggleSelectUser(item)}
                     activeOpacity={0.8}
                   >
-                    <Avatar uri={item.profilePicture} name={item.username} size={44} />
+                    <Avatar uri={item.profilePicture} name={displayName(item)} size={44} />
                     <View style={styles.selectedRemove}>
                       <Ionicons name="close" size={11} color="#fff" />
                     </View>
                     <Text style={styles.selectedChipText} numberOfLines={1}>
-                      {capitalize(item.username)}
+                      {capitalize(displayName(item))}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -697,11 +698,11 @@ export default function MessagesScreen() {
                     onPress={() => toggleSelectUser(item)}
                     activeOpacity={0.8}
                   >
-                    <Avatar uri={item.profilePicture} name={item.username} size={44} />
+                    <Avatar uri={item.profilePicture} name={displayName(item)} size={44} />
                     <View style={styles.userInfo}>
-                      <Text style={styles.userName}>{capitalize(item.username)}</Text>
+                      <Text style={styles.userName}>{capitalize(displayName(item))}</Text>
                       <Text style={styles.userEmail}>
-                        {item.isVendor && item.businessName ? item.businessName : item.email}
+                        {item.isVendor && item.businessName ? `@${item.username}` : item.email}
                       </Text>
                     </View>
                     <View style={[styles.checkCircle, selected && styles.checkCircleOn]}>

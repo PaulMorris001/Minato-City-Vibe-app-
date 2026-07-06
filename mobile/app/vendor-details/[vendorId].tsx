@@ -18,7 +18,7 @@ import {
   Linking,
 } from "react-native";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
-import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { DateTimeDropdown } from "@/components/shared";
 import { Service } from "@/libs/interfaces";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "@/constants/colors";
@@ -82,8 +82,6 @@ export default function VendorDetails() {
   const [bookingService, setBookingService] = useState<Service | null>(null);
   const [bookingMessage, setBookingMessage] = useState("");
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Reviews + Rating
@@ -262,35 +260,6 @@ export default function VendorDetails() {
       setSubmittingRating(false);
     }
   };
-
-  const onDateChange = (event: DateTimePickerEvent, date?: Date) => {
-    if (Platform.OS === "android") {
-      setShowDatePicker(false);
-      if (event.type === "set" && date) {
-        const updated = new Date(date);
-        updated.setHours(selectedDate.getHours(), selectedDate.getMinutes());
-        setSelectedDate(updated);
-        setShowTimePicker(true);
-      }
-    } else {
-      if (date) setSelectedDate(date);
-    }
-  };
-
-  const onTimeChange = (event: DateTimePickerEvent, date?: Date) => {
-    setShowTimePicker(false);
-    if (event.type === "set" && date) setSelectedDate(date);
-  };
-
-  const formatSelectedDate = (date: Date) =>
-    date.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
 
   const handleBookService = async () => {
     if (selectedDate <= new Date()) {
@@ -595,42 +564,11 @@ export default function VendorDetails() {
             <Text style={styles.modalServiceName}>{bookingService?.name}</Text>
 
             <Text style={styles.inputLabel}>Preferred Date & Time</Text>
-            <TouchableOpacity
-              style={styles.datePickerButton}
-              onPress={() => setShowDatePicker(true)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="calendar-outline" size={18} color="#a855f7" />
-              <Text style={styles.datePickerText}>{formatSelectedDate(selectedDate)}</Text>
-              <Ionicons name="chevron-down" size={16} color="#6b7280" />
-            </TouchableOpacity>
-
-            {showDatePicker && Platform.OS === "ios" && (
-              <DateTimePicker
-                value={selectedDate}
-                mode="datetime"
-                display="spinner"
-                onChange={onDateChange}
-                minimumDate={new Date()}
-                themeVariant="dark"
-              />
-            )}
-            {showDatePicker && Platform.OS === "android" && (
-              <DateTimePicker
-                value={selectedDate}
-                mode="date"
-                onChange={onDateChange}
-                minimumDate={new Date()}
-              />
-            )}
-            {showTimePicker && Platform.OS === "android" && (
-              <DateTimePicker
-                value={selectedDate}
-                mode="time"
-                onChange={onTimeChange}
-                is24Hour={false}
-              />
-            )}
+            <DateTimeDropdown
+              value={selectedDate}
+              onChange={setSelectedDate}
+              minimumDate={new Date()}
+            />
 
             <Text style={styles.inputLabel}>Message (optional)</Text>
             <TextInput

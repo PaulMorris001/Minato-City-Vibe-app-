@@ -15,7 +15,6 @@ import {
   KeyboardAvoidingView,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -23,7 +22,7 @@ import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
 import { Colors } from "@/constants/colors";
 import { Fonts } from "@/constants/fonts";
-import { ImagePickerButton, LocationPicker, MultiImagePicker } from "@/components/shared";
+import { DateTimeDropdown, ImagePickerButton, LocationPicker, MultiImagePicker } from "@/components/shared";
 import { uploadImage, resolveImageUrls } from "@/utils/imageUpload";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import { LocationSelection } from "@/libs/interfaces";
@@ -58,9 +57,6 @@ export default function CreateEventModal({
   });
   const [eventImages, setEventImages] = useState<string[]>([]);
   const [venueProofImage, setVenueProofImage] = useState("");
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(new Date());
 
   useEffect(() => {
     if (visible) {
@@ -94,45 +90,6 @@ export default function CreateEventModal({
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const onDateChange = (event: any, date?: Date) => {
-    if (Platform.OS === "android") {
-      setShowDatePicker(false);
-      if (event.type === "dismissed" || !date) return;
-      setSelectedDate(date);
-      // Show time picker after date selection on Android
-      setShowTimePicker(true);
-      return;
-    }
-    // iOS handles date and time together
-    if (date) {
-      setSelectedDate(date);
-      setFormData((prev) => ({ ...prev, date: date.toISOString() }));
-    }
-  };
-
-  const onTimeChange = (event: any, date?: Date) => {
-    setShowTimePicker(false);
-    if (event.type === "dismissed" || !date) return;
-    // Combine selected date with new time
-    const updatedDate = new Date(selectedDate);
-    updatedDate.setHours(date.getHours());
-    updatedDate.setMinutes(date.getMinutes());
-    setSelectedDate(updatedDate);
-    setFormData((prev) => ({ ...prev, date: updatedDate.toISOString() }));
-  };
-
-  const formatDisplayDate = (dateString: string) => {
-    if (!dateString) return "Select date and time";
-    const date = new Date(dateString);
-    return date.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
   };
 
   const handleCreateEvent = async () => {
@@ -255,7 +212,20 @@ export default function CreateEventModal({
       console.error("Error creating event:", error);
       const errorMessage =
         error.response?.data?.message || "Failed to create event";
-      Alert.alert("Error", errorMessage);
+      if (/verif/i.test(errorMessage)) {
+        Alert.alert("Verification required", errorMessage, [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Get Verified",
+            onPress: () => {
+              onClose();
+              router.push("/settings" as any);
+            },
+          },
+        ]);
+      } else {
+        Alert.alert("Error", errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -269,18 +239,12 @@ export default function CreateEventModal({
     { label: "Tonight", offset: 0 },
     { label: "Tomorrow", offset: 1 },
     { label: "This Wknd", offset: 2 },
-    { label: "Custom", offset: -1 },
   ];
 
   const applyQuickDate = (offset: number) => {
-    if (offset === -1) {
-      setShowDatePicker(true);
-      return;
-    }
     const d = new Date();
     d.setDate(d.getDate() + offset);
     d.setHours(22, 0, 0, 0);
-    setSelectedDate(d);
     setFormData((prev) => ({ ...prev, date: d.toISOString() }));
   };
 
@@ -355,38 +319,16 @@ export default function CreateEventModal({
                   );
                 })}
               </View>
-              <TouchableOpacity style={styles.datePickerButton} onPress={() => setShowDatePicker(true)}>
-                <Ionicons name="calendar-outline" size={18} color="#a855f7" />
-                <Text style={styles.datePickerText}>
-                  {formData.date ? formatDisplayDate(formData.date) : "Pick date & time"}
-                </Text>
-              </TouchableOpacity>
-              {showDatePicker && Platform.OS === "ios" && (
-                <DateTimePicker
-                  value={selectedDate}
-                  mode="datetime"
-                  display="spinner"
-                  onChange={onDateChange}
+              <View style={{ paddingHorizontal: 20, marginBottom: 4 }}>
+                <DateTimeDropdown
+                  value={formData.date ? new Date(formData.date) : null}
+                  onChange={(d) =>
+                    setFormData((prev) => ({ ...prev, date: d.toISOString() }))
+                  }
                   minimumDate={new Date()}
-                  themeVariant="dark"
+                  defaultHour={22}
                 />
-              )}
-              {showDatePicker && Platform.OS === "android" && (
-                <DateTimePicker
-                  value={selectedDate}
-                  mode="date"
-                  onChange={onDateChange}
-                  minimumDate={new Date()}
-                />
-              )}
-              {showTimePicker && Platform.OS === "android" && (
-                <DateTimePicker
-                  value={selectedDate}
-                  mode="time"
-                  onChange={onTimeChange}
-                  is24Hour={false}
-                />
-              )}
+              </View>
 
               {/* Address — precise venue / street so guests know exactly where */}
               <Text style={styles.label}>Address</Text>
@@ -476,6 +418,22 @@ export default function CreateEventModal({
                   </Text>
                 </TouchableOpacity>
               </View>
+
+              {!isVerified && (
+                <TouchableOpacity
+                  style={styles.verifyLinkRow}
+                  onPress={() => {
+                    onClose();
+                    router.push("/settings" as any);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="shield-checkmark-outline" size={15} color="#A855F7" />
+                  <Text style={styles.verifyLinkText}>
+                    Get verified to host public events →
+                  </Text>
+                </TouchableOpacity>
+              )}
 
               {/* Sell tickets (only if public) */}
               {formData.isPublic && (
@@ -729,6 +687,18 @@ const styles = StyleSheet.create({
   },
   visibilityHintDisabled: {
     color: "rgba(244,238,255,0.2)",
+  },
+  verifyLinkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 20,
+    marginTop: 10,
+  },
+  verifyLinkText: {
+    fontFamily: Fonts.semiBold,
+    fontSize: 13,
+    color: "#A855F7",
   },
   checkboxContainer: {
     flexDirection: "row",

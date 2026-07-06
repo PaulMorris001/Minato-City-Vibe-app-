@@ -24,7 +24,7 @@ class ChatService {
       participants: { $all: [userId1, userId2], $size: 2 },
       isActive: true
     })
-      .populate('participants', 'username email profilePicture')
+      .populate('participants', 'username email profilePicture isVendor businessName')
       .populate({
         path: 'lastMessage',
         populate: { path: 'sender', select: 'username profilePicture' }
@@ -49,7 +49,7 @@ class ChatService {
       });
 
       await chat.save();
-      await chat.populate('participants', 'username email profilePicture');
+      await chat.populate('participants', 'username email profilePicture isVendor businessName');
     }
 
     return chat;
@@ -88,7 +88,7 @@ class ChatService {
     });
 
     await chat.save();
-    await chat.populate('participants', 'username email profilePicture');
+    await chat.populate('participants', 'username email profilePicture isVendor businessName');
     await chat.populate('admins', 'username email profilePicture');
     if (eventId) {
       await chat.populate('event', 'title date location image createdBy');
@@ -111,7 +111,7 @@ class ChatService {
       isActive: true,
       deletedFor: { $ne: userId }
     })
-      .populate('participants', 'username email profilePicture')
+      .populate('participants', 'username email profilePicture isVendor businessName')
       .populate('admins', 'username email profilePicture')
       .populate('pendingInvites.user', 'username email profilePicture')
       .populate('pendingInvites.invitedBy', 'username email profilePicture')
@@ -801,7 +801,7 @@ class ChatService {
     }
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture")
+      .populate("participants", "username email profilePicture isVendor businessName")
       .populate("admins", "username email profilePicture")
       .populate("pendingInvites.user", "username email profilePicture")
       .populate("pendingInvites.invitedBy", "username email profilePicture");
@@ -873,7 +873,7 @@ class ChatService {
     }
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture")
+      .populate("participants", "username email profilePicture isVendor businessName")
       .populate("admins", "username email profilePicture")
       .populate("pendingInvites.user", "username email profilePicture")
       .populate({
@@ -896,7 +896,7 @@ class ChatService {
         { name: { $regex: query, $options: 'i' } }
       ]
     })
-      .populate('participants', 'username email profilePicture')
+      .populate('participants', 'username email profilePicture isVendor businessName')
       .limit(10);
 
     // Search in messages

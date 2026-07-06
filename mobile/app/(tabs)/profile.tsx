@@ -20,6 +20,8 @@ import axios from "axios";
 
 import { Avatar } from "@/components/shared/Avatar";
 import GuestGate from "@/components/shared/GuestGate";
+import ImageViewerModal from "@/components/shared/ImageViewerModal";
+import { displayName } from "@/utils/displayName";
 import { AU } from "@/components/auth/tokens";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
@@ -34,6 +36,7 @@ interface UserProfile {
   profilePicture?: string;
   bio?: string;
   isVendor?: boolean;
+  businessName?: string;
   verified?: boolean;
   followersCount: number;
   followingCount: number;
@@ -59,6 +62,7 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<TabKey>("hosted");
   const [isGuest, setIsGuest] = useState(false);
+  const [avatarViewerVisible, setAvatarViewerVisible] = useState(false);
 
   const fetchProfile = async () => {
     try {
@@ -74,6 +78,7 @@ export default function ProfileScreen() {
         profilePicture: u.profilePicture || "",
         bio: u.bio || "",
         isVendor: u.isVendor,
+        businessName: u.businessName || "",
         verified: u.verified || false,
         followersCount: u.followersCount || 0,
         followingCount: u.followingCount || 0,
@@ -163,6 +168,7 @@ export default function ProfileScreen() {
               tab={tab}
               setTab={setTab}
               loading={loading}
+              onAvatarPress={() => setAvatarViewerVisible(true)}
             />
           }
           ListEmptyComponent={
@@ -184,6 +190,13 @@ export default function ProfileScreen() {
           showsVerticalScrollIndicator={false}
         />
       </SafeAreaView>
+      {user?.profilePicture ? (
+        <ImageViewerModal
+          visible={avatarViewerVisible}
+          images={[user.profilePicture]}
+          onClose={() => setAvatarViewerVisible(false)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -196,6 +209,7 @@ function Header({
   tab,
   setTab,
   loading,
+  onAvatarPress,
 }: {
   user: UserProfile | null;
   eventsTotal: number;
@@ -203,6 +217,7 @@ function Header({
   tab: TabKey;
   setTab: (t: TabKey) => void;
   loading: boolean;
+  onAvatarPress: () => void;
 }) {
   const handleShareProfile = async () => {
     if (!user?._id) return;
@@ -211,7 +226,7 @@ function Header({
       await Share.share({
         message: `Check out my profile on CityVibe\n${url}`,
         url, // iOS uses this for richer share targets; Android ignores it.
-        title: user.username,
+        title: displayName(user),
       });
     } catch (err) {
       console.error("Share profile failed:", err);
@@ -247,15 +262,21 @@ function Header({
       {/* Hero (avatar + name) */}
       <View style={styles.heroBlock}>
         <View style={styles.heroRow}>
-          <Avatar
-            uri={user?.profilePicture}
-            name={user?.username}
-            size={68}
-          />
+          <TouchableOpacity
+            activeOpacity={0.8}
+            disabled={!user?.profilePicture}
+            onPress={onAvatarPress}
+          >
+            <Avatar
+              uri={user?.profilePicture}
+              name={displayName(user)}
+              size={68}
+            />
+          </TouchableOpacity>
           <View style={{ flex: 1, minWidth: 0 }}>
             <View style={styles.nameRow}>
               <Text style={styles.name} numberOfLines={1}>
-                {user?.username || (loading ? "" : "—")}
+                {displayName(user) || (loading ? "" : "—")}
               </Text>
               {user?.verified && (
                 <Ionicons name="checkmark-circle" size={20} color="#3b82f6" />

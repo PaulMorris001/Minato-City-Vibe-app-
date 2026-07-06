@@ -24,7 +24,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import { DateTimeDropdown } from "@/components/shared";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import socketService from "@/services/socket.service";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
@@ -114,9 +114,6 @@ export default function EventsPage() {
   const [discoverLoc, setDiscoverLoc] = useState<Partial<LocationSelection> | null>(null);
   const [discoverPickerKey, setDiscoverPickerKey] = useState(0);
   const [inviteTab, setInviteTab] = useState<"people" | "vendors">("people");
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(new Date());
   const [respondingInvite, setRespondingInvite] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -372,7 +369,6 @@ export default function EventsPage() {
   const openEditModal = (event: Event) => {
     setSelectedEvent(event);
     const eventDate = new Date(event.date);
-    setSelectedDate(eventDate);
     setEditData({
       title: event.title,
       date: eventDate.toISOString(),
@@ -393,77 +389,6 @@ export default function EventsPage() {
         : null
     );
     setIsEditModalVisible(true);
-  };
-
-  const onDateChange = (event: any, date?: Date) => {
-    try {
-      // Handle dismissal on Android
-      if (Platform.OS === 'android') {
-        setShowDatePicker(false);
-
-        // If user cancelled or no date, don't update
-        if (!event || event.type === 'dismissed' || !date) {
-          return;
-        }
-
-        // On Android, after selecting date, show time picker
-        if (date) {
-          setSelectedDate(date);
-          setShowTimePicker(true);
-        }
-        return;
-      }
-
-      // On iOS, handle dismissal
-      if (event && event.type === 'dismissed') {
-        setShowDatePicker(false);
-        return;
-      }
-
-      // Update the selected date (iOS only - handles both date and time)
-      if (date) {
-        setSelectedDate(date);
-        setEditData({ ...editData, date: date.toISOString() });
-      }
-    } catch (error) {
-      console.error('Date picker error:', error);
-      setShowDatePicker(false);
-    }
-  };
-
-  const onTimeChange = (event: any, date?: Date) => {
-    try {
-      setShowTimePicker(false);
-
-      // If user cancelled or no date, don't update
-      if (!event || event.type === 'dismissed' || !date) {
-        return;
-      }
-
-      // Combine the selected date with the new time
-      if (date) {
-        const updatedDate = new Date(selectedDate);
-        updatedDate.setHours(date.getHours());
-        updatedDate.setMinutes(date.getMinutes());
-        setSelectedDate(updatedDate);
-        setEditData({ ...editData, date: updatedDate.toISOString() });
-      }
-    } catch (error) {
-      console.error('Time picker error:', error);
-      setShowTimePicker(false);
-    }
-  };
-
-  const formatDisplayDate = (dateString: string) => {
-    if (!dateString) return "Select date and time";
-    const date = new Date(dateString);
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
   };
 
   const openInviteModal = (event: Event) => {
@@ -1048,44 +973,13 @@ export default function EventsPage() {
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Date & Time *</Text>
-                <TouchableOpacity
-                  style={styles.datePickerButton}
-                  onPress={() => setShowDatePicker(true)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="calendar-outline" size={20} color="#a855f7" />
-                  <Text style={styles.datePickerText}>
-                    {formatDisplayDate(editData.date)}
-                  </Text>
-                </TouchableOpacity>
-                {showDatePicker && Platform.OS === 'ios' && (
-                  <DateTimePicker
-                    value={selectedDate}
-                    mode="datetime"
-                    display="spinner"
-                    onChange={onDateChange}
-                    minimumDate={new Date()}
-                    themeVariant="dark"
-                  />
-                )}
-                {showDatePicker && Platform.OS === 'android' && (
-                  <DateTimePicker
-                    value={selectedDate}
-                    mode="date"
-                    display="spinner"
-                    onChange={onDateChange}
-                    minimumDate={new Date()}
-                  />
-                )}
-                {showTimePicker && Platform.OS === 'android' && (
-                  <DateTimePicker
-                    value={selectedDate}
-                    mode="time"
-                    display="spinner"
-                    onChange={onTimeChange}
-                    is24Hour={false}
-                  />
-                )}
+                <DateTimeDropdown
+                  value={editData.date ? new Date(editData.date) : null}
+                  onChange={(d) =>
+                    setEditData((prev) => ({ ...prev, date: d.toISOString() }))
+                  }
+                  minimumDate={new Date()}
+                />
               </View>
 
               <View style={styles.inputGroup}>

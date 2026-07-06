@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import type { Chat } from "@/services/chat.service";
 import { capitalize } from "@/libs/helpers";
+import { displayName } from "@/utils/displayName";
 import { Avatar } from "@/components/shared/Avatar";
 
 const CH_TEXT = "#F4EEFF";
@@ -55,7 +56,7 @@ export default function ChatListItem({
     } else {
       const otherUser = chat.participants.find((p) => p._id !== currentUserId);
       return {
-        name: otherUser?.username || "Unknown User",
+        name: displayName(otherUser) || "Unknown User",
         image: otherUser?.profilePicture,
       };
     }

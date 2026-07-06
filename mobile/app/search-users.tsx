@@ -17,6 +17,7 @@ import { goBack } from "@/utils/navigation";
 import { BASE_URL } from "@/constants/constants";
 import { scaleFontSize } from "@/utils/responsive";
 import { capitalize } from "@/libs/helpers";
+import { displayName } from "@/utils/displayName";
 import * as SecureStore from "expo-secure-store";
 import FollowButton from "@/components/shared/FollowButton";
 import { Avatar } from "@/components/shared/Avatar";
@@ -86,11 +87,11 @@ export default function SearchUsersScreen() {
       }
       activeOpacity={0.7}
     >
-      <Avatar uri={item.profilePicture} name={item.username} size={48} />
+      <Avatar uri={item.profilePicture} name={displayName(item)} size={48} />
       <View style={styles.userInfo}>
-        <Text style={styles.userName}>{capitalize(item.username)}</Text>
+        <Text style={styles.userName}>{capitalize(displayName(item))}</Text>
         <Text style={styles.userSub}>
-          {item.isVendor && item.businessName ? item.businessName : item.email}
+          {item.isVendor && item.businessName ? `@${item.username}` : item.email}
         </Text>
         {item.isFollowedBy && !item.isFollowing && (
           <Text style={styles.followsYou}>Follows you</Text>

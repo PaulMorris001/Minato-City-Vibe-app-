@@ -101,7 +101,7 @@ export const getChatById = async (req, res) => {
     const { chatId } = req.params;
 
     const chat = await Chat.findById(chatId)
-      .populate('participants', 'username email profilePicture')
+      .populate('participants', 'username email profilePicture isVendor businessName')
       .populate('admins', 'username email profilePicture')
       .populate('pendingInvites.user', 'username email profilePicture')
       .populate('pendingInvites.invitedBy', 'username email profilePicture')
@@ -274,7 +274,7 @@ export const updateGroupChat = async (req, res) => {
     await chat.save();
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture")
+      .populate("participants", "username email profilePicture isVendor businessName")
       .populate("admins", "username email profilePicture");
 
     // Broadcast update to all participants via socket
@@ -320,7 +320,7 @@ export const removeParticipantFromGroup = async (req, res) => {
     await chat.save();
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture")
+      .populate("participants", "username email profilePicture isVendor businessName")
       .populate("admins", "username email profilePicture");
 
     // Notify the room (so the member list refreshes) and the removed user.
@@ -433,7 +433,7 @@ export const pinChatMessage = async (req, res) => {
     await chat.save();
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture")
+      .populate("participants", "username email profilePicture isVendor businessName")
       .populate("admins", "username email profilePicture")
       .populate({
         path: "pinnedMessage",
