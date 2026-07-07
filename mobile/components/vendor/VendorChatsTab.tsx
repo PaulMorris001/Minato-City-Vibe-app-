@@ -71,7 +71,11 @@ export default function VendorChatsTab() {
   }, [currentUserId]);
 
   useEffect(() => {
-    socketService.on({
+    socketService.on("vendor-chats-tab", {
+      // Fires on every (re)connect — refetch anything missed while offline.
+      onConnected: () => {
+        fetchChats();
+      },
       onNewMessage: (message) => {
         setChats((prev) =>
           prev.map((chat) => {
@@ -121,7 +125,7 @@ export default function VendorChatsTab() {
       },
     });
 
-    return () => socketService.off();
+    return () => socketService.off("vendor-chats-tab");
   }, [currentUserId]);
 
   const loadCurrentUser = async () => {

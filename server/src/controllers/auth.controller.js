@@ -736,7 +736,24 @@ export async function getUserById(req, res) {
 
     delete user.blockedUsers;
     delete user.isBanned;
-    res.json({ user: { ...user, id: user._id } });
+
+    // Resolve the vendor's public listing (if one exists) so the profile
+    // screen can link to /vendor-details. isVendor without a Vendor doc is
+    // possible (interrupted onboarding) — omit the fields in that case.
+    let vendorFields = {};
+    if (user.isVendor) {
+      const vendorDoc = await Vendor.findOne({ user: user._id })
+        .select("_id name")
+        .lean();
+      if (vendorDoc) {
+        vendorFields = {
+          vendorId: String(vendorDoc._id),
+          vendorName: vendorDoc.name || user.businessName || user.username,
+        };
+      }
+    }
+
+    res.json({ user: { ...user, id: user._id, ...vendorFields } });
   } catch (error) {
     res.status(400).json({ message: "Error fetching user", details: error.message });
   }

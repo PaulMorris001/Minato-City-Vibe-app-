@@ -120,6 +120,10 @@ export default function MessagesScreen() {
   // Socket: keep inbox in sync
   useEffect(() => {
     socketService.on("messages-screen", {
+      // Fires on every (re)connect — refetch anything missed while offline.
+      onConnected: () => {
+        fetchChats(true);
+      },
       onNewMessage: (message) => {
         setChats((prev) =>
           prev.map((chat) => {

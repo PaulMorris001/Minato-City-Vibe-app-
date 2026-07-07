@@ -18,6 +18,7 @@ import * as SecureStore from "expo-secure-store";
 import { unregisterForPushNotifications } from "@/utils/pushNotifications";
 import axios from "axios";
 import { useRouter } from "expo-router";
+import socketService from "@/services/socket.service";
 import { BASE_URL } from "@/constants/constants";
 import { payoutProviderForCountry } from "@/constants/payments";
 import { fetchVendorTypes } from "@/libs/api";
@@ -242,6 +243,7 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
             await SecureStore.deleteItemAsync("token");
             await SecureStore.deleteItemAsync("activeAccount");
           } catch {}
+          socketService.disconnect();
           router.replace("/login");
         },
       },

@@ -20,6 +20,7 @@ import { capitalize } from "@/libs/helpers";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useAccount } from "@/contexts/AccountContext";
+import socketService from "@/services/socket.service";
 
 export default function VendorLayout() {
   const { setActiveAccount } = useAccount();
@@ -72,6 +73,9 @@ export default function VendorLayout() {
   // it here — doing so was a side effect that raced with switching away.
   useEffect(() => {
     fetchUserProfile();
+    // Post-login entry point for vendor accounts — the root layout only
+    // connects the socket on cold start, before a fresh login has a token.
+    socketService.connect();
   }, []);
 
   useFocusEffect(
@@ -96,6 +100,7 @@ export default function VendorLayout() {
       await SecureStore.deleteItemAsync("user");
       await SecureStore.deleteItemAsync("token");
       await SecureStore.deleteItemAsync("activeAccount");
+      socketService.disconnect();
       router.replace("/login");
       setIsProfileModalVisible(false);
     } catch (error) {

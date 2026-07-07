@@ -7,6 +7,9 @@ import io, { Socket } from "socket.io-client";
 import { config } from "@/constants/constants";
 
 interface SocketEvents {
+  /** Fired on every (re)connect — do a silent catch-up refetch, anything
+   * emitted while the socket was down was never delivered. */
+  onConnected?: () => void;
   onNewMessage?: (message: any) => void;
   onMessageRead?: (data: any) => void;
   onMessageReaction?: (data: { chatId: string; messageId: string; reactions: any[] }) => void;
@@ -30,6 +33,15 @@ class SocketService {
   private socket: Socket | null = null;
   private connected = false;
 
+  // Token the current socket was authenticated with — lets connect() detect
+  // an account switch and rebuild instead of reusing a stale-auth socket.
+  private currentToken: string | null = null;
+
+  // Guards the async body of connect() so two rapid calls (e.g. layout mount
+  // + AppState "active") can't race past the SecureStore await and stack
+  // a second socket.
+  private connecting = false;
+
   // Multiple named listeners so screens don't overwrite each other
   private listeners: Map<string, SocketEvents> = new Map();
 
@@ -38,19 +50,37 @@ class SocketService {
 
   private notify(event: keyof SocketEvents, data: any) {
     this.listeners.forEach((handlers) => {
-      const fn = handlers[event] as ((d: any) => void) | undefined;
+      const fn = handlers?.[event] as ((d: any) => void) | undefined;
       fn?.(data);
     });
   }
 
   /**
-   * Initialize and connect to the socket server
+   * Initialize and connect to the socket server.
+   *
+   * Idempotent — safe to call from every post-auth layout mount and on app
+   * foreground: an existing same-token socket is just nudged back to life,
+   * a token change (account switch) tears down and rebuilds.
    */
   async connect() {
+    if (this.connecting) return;
+    this.connecting = true;
     try {
       const token = await SecureStore.getItemAsync("token");
       if (!token) return;
 
+      if (this.socket && this.currentToken === token) {
+        // Same session — reconnect immediately if the OS suspended us rather
+        // than waiting out socket.io's reconnection backoff.
+        if (!this.socket.connected) this.socket.connect();
+        return;
+      }
+
+      if (this.socket) {
+        this.disconnect();
+      }
+
+      this.currentToken = token;
       console.log("🔌 Connecting to socket server:", config.socketUrl);
 
       this.socket = io(config.socketUrl, {
@@ -75,6 +105,9 @@ class SocketService {
           this.socket?.emit("chat:join", chatId);
           console.log(`🔄 Re-joined chat room: ${chatId}`);
         });
+
+        // Let screens catch up on anything emitted while we were offline.
+        this.notify("onConnected", undefined);
       });
 
       this.socket.on("disconnect", () => {
@@ -160,6 +193,8 @@ class SocketService {
       });
     } catch (error) {
       console.error("Socket connection error:", error);
+    } finally {
+      this.connecting = false;
     }
   }
 
@@ -171,6 +206,9 @@ class SocketService {
       this.socket.disconnect();
       this.socket = null;
       this.connected = false;
+      this.currentToken = null;
+      // Keep `listeners` — mounted screens reuse their registrations when a
+      // new socket connects (e.g. after switching accounts).
       this.activeRooms.clear();
       console.log("🔌 Socket disconnected");
     }

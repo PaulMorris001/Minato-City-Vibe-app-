@@ -25,6 +25,7 @@ import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useAccount } from "@/contexts/AccountContext";
 import { useUnread } from "@/contexts/UnreadContext";
+import socketService from "@/services/socket.service";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "@/components/shared/Avatar";
 
@@ -62,6 +63,11 @@ export default function TabsLayout() {
       const token = await SecureStore.getItemAsync("token");
       setIsGuest(!token);
       setIsCheckingAuth(false);
+      // The root layout only connects the socket on cold start; after a fresh
+      // login there was no token yet, so (re)connect now that we have one.
+      if (token) {
+        socketService.connect();
+      }
     };
     checkAuth();
   }, []);
@@ -94,6 +100,7 @@ export default function TabsLayout() {
       // cached user instead.
       if (status === 401 || status === 403) {
         await SecureStore.deleteItemAsync("token");
+        socketService.disconnect();
         router.replace("/login");
         return;
       }
@@ -159,6 +166,7 @@ export default function TabsLayout() {
       await SecureStore.deleteItemAsync("user");
       await SecureStore.deleteItemAsync("token");
       await SecureStore.deleteItemAsync("activeAccount");
+      socketService.disconnect();
       router.replace("/login");
       setIsProfileModalVisible(false);
     } catch (error) {

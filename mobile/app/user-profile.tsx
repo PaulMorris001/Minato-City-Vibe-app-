@@ -42,6 +42,8 @@ interface UserData {
   isVendor?: boolean;
   businessName?: string;
   verified?: boolean;
+  vendorId?: string;
+  vendorName?: string;
 }
 
 interface UserEvent {
@@ -179,6 +181,17 @@ export default function UserProfileScreen() {
     });
   };
 
+  const openVendorPage = () => {
+    if (!user?.vendorId) return;
+    router.push({
+      pathname: "/vendor-details/[vendorId]",
+      params: {
+        vendorId: user.vendorId,
+        vendorName: user.vendorName || user.businessName || "",
+      },
+    } as any);
+  };
+
   const renderHeader = () => (
     <View>
       {/* Profile Header — horizontal layout */}
@@ -199,10 +212,15 @@ export default function UserProfileScreen() {
               <Ionicons name="checkmark-circle" size={18} color="#3b82f6" />
             )}
             {user?.isVendor && (
-              <View style={styles.vendorBadge}>
+              <TouchableOpacity
+                style={styles.vendorBadge}
+                onPress={openVendorPage}
+                disabled={!user?.vendorId}
+                activeOpacity={0.7}
+              >
                 <Ionicons name="briefcase" size={10} color="#fff" />
                 <Text style={styles.vendorBadgeText}>Vendor</Text>
-              </View>
+              </TouchableOpacity>
             )}
           </View>
           {/* Stats inline */}
@@ -237,6 +255,19 @@ export default function UserProfileScreen() {
       </View>
 
       {!!user?.bio && <Text style={styles.bio}>{user.bio}</Text>}
+
+      {/* Vendor page link */}
+      {user?.isVendor && !!user?.vendorId && (
+        <TouchableOpacity
+          style={styles.vendorLinkRow}
+          onPress={openVendorPage}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="storefront-outline" size={16} color="#a855f7" />
+          <Text style={styles.vendorLinkText}>View vendor page</Text>
+          <Ionicons name="chevron-forward" size={16} color="#a855f7" />
+        </TouchableOpacity>
+      )}
 
       {/* Action Buttons */}
       <View style={styles.actionRow}>
@@ -612,12 +643,29 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     backgroundColor: "rgba(168, 85, 247, 0.1)",
-    paddingVertical: 10,
+    height: 40,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: "rgba(168, 85, 247, 0.3)",
   },
   messageButtonText: {
+    fontSize: 14,
+    fontFamily: Fonts.semiBold,
+    color: "#a855f7",
+  },
+  vendorLinkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "rgba(168, 85, 247, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(168, 85, 247, 0.2)",
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  vendorLinkText: {
     fontSize: 14,
     fontFamily: Fonts.semiBold,
     color: "#a855f7",

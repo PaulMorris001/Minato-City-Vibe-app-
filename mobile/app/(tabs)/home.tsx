@@ -1223,21 +1223,26 @@ const styles = StyleSheet.create({
   },
   smallCardContent: {
     padding: 10,
+    flex: 1,
   },
   smallCardTitle: {
     fontFamily: Fonts.semiBold,
     fontSize: 13,
     color: C.text,
     lineHeight: 17,
+    // Reserve two lines so the date + action rows sit at the same height on
+    // every card, whether the title wraps or not.
+    minHeight: 34,
   },
   smallCardDate: {
     fontFamily: Fonts.regular,
     fontSize: 11,
     color: C.textMute,
     marginTop: 4,
+    marginBottom: 8,
   },
   smallCardAction: {
-    marginTop: 8,
+    marginTop: "auto",
     backgroundColor: "rgba(34,197,94,0.15)",
     borderWidth: 1,
     borderColor: "rgba(34,197,94,0.4)",
@@ -1258,7 +1263,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginTop: 8,
+    marginTop: "auto",
   },
   smallCardOwnedText: {
     fontFamily: Fonts.semiBold,

@@ -16,6 +16,7 @@ import {
   Switch,
   BackHandler,
   Keyboard,
+  AppState,
 } from "react-native";
 import { Image } from "expo-image";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
@@ -146,9 +147,114 @@ export default function ChatScreen() {
     }
   }, [id, currentUserId]);
 
+  // Mirror of `messages` for reads outside React's render cycle (state
+  // updaters run asynchronously, so code after a setMessages call can't
+  // rely on flags computed inside the updater).
+  const messagesRef = useRef<Message[]>([]);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  // Silent catch-up sync: refetch page 1 and merge by _id. Socket delivery is
+  // live-only — anything sent while we were disconnected (backgrounded app,
+  // network blip) was never delivered, so this runs on reconnect, on app
+  // foreground, and on a slow interval. Merging (not replacing) preserves
+  // older paginated pages and in-flight temp_ optimistic messages.
+  const refreshMessages = useCallback(async () => {
+    if (!id || pendingInviteeRef.current) return;
+    try {
+      const data = await chatService.getChatMessages(id, 1);
+      const fetched: Message[] = data?.messages ?? [];
+      if (!fetched.length) return;
+
+      const snapshot = messagesRef.current;
+      const knownIds = new Set(
+        snapshot.filter((m) => !m._id.startsWith("temp_")).map((m) => m._id)
+      );
+      const overlaps = knownIds.size === 0 || fetched.some((m) => knownIds.has(m._id));
+      const hasNewIncoming = fetched.some(
+        (m) => !knownIds.has(m._id) && m.sender._id !== currentUserId
+      );
+
+      if (!overlaps) {
+        // More than a full page arrived while we were offline. Merging would
+        // leave a silent gap in the middle of the list and break
+        // loadOlderMessages' "fetched pages are older than everything loaded"
+        // assumption, so start over from the newest page instead.
+        setMessages((prev) => [
+          ...fetched,
+          ...prev.filter((m) => m._id.startsWith("temp_")),
+        ]);
+        setPage(1);
+        setHasMoreOlder((data.pagination?.totalPages || 1) > 1);
+      } else {
+        setMessages((prev) => {
+          const byId = new Map(prev.map((m) => [m._id, m]));
+          let changed = false;
+          for (const msg of fetched) {
+            const existing = byId.get(msg._id);
+            if (existing) {
+              // Pick up edits/reactions/deletes that happened while offline,
+              // but keep the existing object when nothing changed so the
+              // list doesn't re-render on every silent poll.
+              if (
+                msg.updatedAt !== existing.updatedAt ||
+                msg.isDeleted !== existing.isDeleted ||
+                (msg.reactions?.length || 0) !== (existing.reactions?.length || 0)
+              ) {
+                byId.set(msg._id, { ...existing, ...msg });
+                changed = true;
+              }
+            } else {
+              // An own message we haven't seen resolve raced the send
+              // response — swap it in for the oldest optimistic bubble,
+              // same as the onNewMessage socket path.
+              if (msg.sender._id === currentUserId) {
+                const tempKey = [...byId.keys()].find((k) => k.startsWith("temp_"));
+                if (tempKey) byId.delete(tempKey);
+              }
+              byId.set(msg._id, msg);
+              changed = true;
+            }
+          }
+          if (!changed) return prev;
+          return [...byId.values()].sort(
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          );
+        });
+      }
+
+      if (hasNewIncoming && currentUserId) {
+        chatService.markMessagesAsRead(id);
+        socketService.markMessagesAsRead(id, currentUserId);
+      }
+    } catch {
+      // Best-effort background sync — never surface errors.
+    }
+  }, [id, currentUserId]);
+
   useEffect(() => {
     loadCurrentUser();
   }, []);
+
+  // Catch-up safety nets: sockets are suspended while the app is backgrounded,
+  // so refetch when it returns to the foreground (plus nudge the socket back
+  // instead of waiting out its reconnection backoff), and poll slowly as a
+  // last resort in case the server dropped our room membership silently.
+  useEffect(() => {
+    if (!id || !currentUserId) return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        socketService.connect();
+        refreshMessages();
+      }
+    });
+    const interval = setInterval(refreshMessages, 30000);
+    return () => {
+      sub.remove();
+      clearInterval(interval);
+    };
+  }, [id, currentUserId, refreshMessages]);
 
   // Leaving a chat should always land on the chats list. When the chat was
   // opened from a push notification (cold start), there's no back stack, so
@@ -178,6 +284,10 @@ export default function ChatScreen() {
     socketService.joinChat(id);
 
     socketService.on("chat-screen", {
+      // Fires on every (re)connect — pull whatever was sent while offline.
+      onConnected: () => {
+        refreshMessages();
+      },
       onNewMessage: (message: Message) => {
         // Don't surface live messages to a user who's only been invited.
         if (pendingInviteeRef.current) return;
@@ -257,7 +367,7 @@ export default function ChatScreen() {
       socketService.off("chat-screen-group");
       socketService.off("chat-screen-pinned");
     };
-  }, [id, currentUserId, loadChatAndMessages]);
+  }, [id, currentUserId, loadChatAndMessages, refreshMessages]);
 
   const handleSendMessage = async (content: string) => {
     if (!content.trim() || sending) return;

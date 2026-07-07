@@ -70,7 +70,7 @@ export default function FollowButton({
       <TouchableOpacity
         style={[
           styles.outlinedButton,
-          isSmall && styles.smallButton,
+          isSmall ? styles.smallButton : styles.mediumButton,
           isMutual && styles.mutualButton,
         ]}
         onPress={handlePress}
@@ -100,7 +100,7 @@ export default function FollowButton({
     <TouchableOpacity onPress={handlePress} activeOpacity={0.7}>
       <LinearGradient
         colors={["#a855f7", "#7c3aed"]}
-        style={[styles.gradientButton, isSmall && styles.smallButton]}
+        style={[styles.gradientButton, isSmall ? styles.smallButton : styles.mediumButton]}
       >
         <Text
           style={[
@@ -148,6 +148,12 @@ const styles = StyleSheet.create({
   mutualButton: {
     borderColor: "rgba(168, 85, 247, 0.3)",
     backgroundColor: "rgba(168, 85, 247, 0.08)",
+  },
+  // Fixed height so all medium states (Follow / Following / Mutual) match the
+  // profile screen's Message button exactly, border or no border.
+  mediumButton: {
+    height: 40,
+    paddingVertical: 0,
   },
   smallButton: {
     paddingHorizontal: 14,
