@@ -33,6 +33,7 @@ import MessageBubble from "@/components/chat/MessageBubble";
 import MessageActionSheet from "@/components/chat/MessageActionSheet";
 import ReactionsListSheet from "@/components/chat/ReactionsListSheet";
 import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
+import ZoomableImage from "@/components/shared/ZoomableImage";
 import ChatInput from "@/components/chat/ChatInput";
 import { Avatar } from "@/components/shared/Avatar";
 import chatService, { Message, Chat, MessageReaction } from "@/services/chat.service";
@@ -63,6 +64,8 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string>("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  // Camera shot / gallery pick awaiting Send-or-Cancel confirmation.
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [editGroupName, setEditGroupName] = useState("");
@@ -425,6 +428,42 @@ export default function ChatScreen() {
     }
   };
 
+  // Upload a confirmed local image and send it as an image message.
+  const sendImageMessage = async (localUri: string) => {
+    try {
+      setSending(true);
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) {
+        Alert.alert("Error", "Authentication token not found");
+        return;
+      }
+      try {
+        const uploadResult = await uploadImage(localUri, "chat_images", token);
+        const newImageMessage = await chatService.sendMessage(id, {
+          type: "image",
+          imageUrl: uploadResult.url,
+        });
+        setMessages((prev) => {
+          if (prev.some((m) => m._id === newImageMessage._id)) return prev;
+          return [...prev, newImageMessage];
+        });
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      } catch (uploadError: any) {
+        console.error("Error uploading image to Cloudinary:", uploadError);
+        Alert.alert("Upload Error", "Failed to upload image");
+      }
+    } catch (error: any) {
+      console.error("Error sending image:", error);
+      Alert.alert("Error", "Failed to send image");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Both gallery picks and camera shots land in `pendingImage`, which shows a
+  // confirm-before-send preview (Send / Cancel) instead of sending directly.
   const handleImagePick = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -433,37 +472,34 @@ export default function ChatScreen() {
         quality: 0.7,
       });
       if (!result.canceled && result.assets[0]) {
-        setSending(true);
-        const localUri = result.assets[0].uri;
-        const token = await SecureStore.getItemAsync("token");
-        if (!token) {
-          Alert.alert("Error", "Authentication token not found");
-          setSending(false);
-          return;
-        }
-        try {
-          const uploadResult = await uploadImage(localUri, "chat_images", token);
-          const newImageMessage = await chatService.sendMessage(id, {
-            type: "image",
-            imageUrl: uploadResult.url,
-          });
-          setMessages((prev) => {
-            if (prev.some((m) => m._id === newImageMessage._id)) return prev;
-            return [...prev, newImageMessage];
-          });
-          setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: true });
-          }, 100);
-        } catch (uploadError: any) {
-          console.error("Error uploading image to Cloudinary:", uploadError);
-          Alert.alert("Upload Error", "Failed to upload image");
-        }
+        setPendingImage(result.assets[0].uri);
       }
     } catch (error: any) {
-      console.error("Error sending image:", error);
-      Alert.alert("Error", "Failed to send image");
-    } finally {
-      setSending(false);
+      console.error("Error picking image:", error);
+      Alert.alert("Error", "Couldn't open your photo library");
+    }
+  };
+
+  const handleCameraCapture = async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(
+          "Camera access needed",
+          "Enable camera access for OurCityvibe in Settings to take photos."
+        );
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets[0]) {
+        setPendingImage(result.assets[0].uri);
+      }
+    } catch (error: any) {
+      console.error("Error capturing photo:", error);
+      Alert.alert("Error", "Couldn't open the camera");
     }
   };
 
@@ -1410,6 +1446,7 @@ export default function ChatScreen() {
             <ChatInput
               onSend={handleComposerSubmit}
               onImagePick={handleImagePick}
+              onCameraCapture={handleCameraCapture}
               onTypingChange={(isTyping) => socketService.sendTyping(id, isTyping)}
               disabled={sending}
               replyingTo={replyingTo}
@@ -1467,7 +1504,7 @@ export default function ChatScreen() {
         onReact={handleQuickReact}
       />
 
-      {/* Full-screen image viewer */}
+      {/* Full-screen image viewer — pinch, pan and double-tap to zoom */}
       <Modal
         visible={!!selectedImage}
         animationType="fade"
@@ -1475,15 +1512,11 @@ export default function ChatScreen() {
         onRequestClose={() => setSelectedImage(null)}
         statusBarTranslucent
       >
-        <Pressable
-          style={styles.imageViewerOverlay}
-          onPress={() => setSelectedImage(null)}
-        >
+        <View style={styles.imageViewerOverlay}>
           {selectedImage && (
-            <Image
-              source={{ uri: selectedImage }}
-              style={StyleSheet.absoluteFill}
-              contentFit="contain"
+            <ZoomableImage
+              uri={selectedImage}
+              onSingleTap={() => setSelectedImage(null)}
             />
           )}
           <TouchableOpacity
@@ -1493,7 +1526,63 @@ export default function ChatScreen() {
           >
             <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
-        </Pressable>
+        </View>
+      </Modal>
+
+      {/* Confirm-before-send preview for camera shots and gallery picks */}
+      <Modal
+        visible={!!pendingImage}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setPendingImage(null)}
+        statusBarTranslucent
+      >
+        <View style={styles.imagePreviewOverlay}>
+          {pendingImage && (
+            <Image
+              source={{ uri: pendingImage }}
+              style={styles.imagePreviewImage}
+              contentFit="contain"
+            />
+          )}
+          <TouchableOpacity
+            style={[styles.imageViewerClose, { top: insets.top + 8 }]}
+            onPress={() => setPendingImage(null)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons name="close" size={22} color="#fff" />
+          </TouchableOpacity>
+          <View
+            style={[styles.imagePreviewActions, { paddingBottom: insets.bottom + 16 }]}
+          >
+            <TouchableOpacity
+              style={styles.imagePreviewCancel}
+              onPress={() => setPendingImage(null)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.imagePreviewCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{ flex: 1 }}
+              activeOpacity={0.85}
+              onPress={() => {
+                const uri = pendingImage;
+                setPendingImage(null);
+                if (uri) sendImageMessage(uri);
+              }}
+            >
+              <LinearGradient
+                colors={["#A855F7", "#7C3AED"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.imagePreviewSend}
+              >
+                <Ionicons name="paper-plane" size={16} color="#fff" />
+                <Text style={styles.imagePreviewSendText}>Send</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       {/* Chat Settings Modal */}
@@ -2143,6 +2232,49 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     zIndex: 20,
+  },
+
+  // Confirm-before-send image preview
+  imagePreviewOverlay: {
+    flex: 1,
+    backgroundColor: "#0B0613",
+  },
+  imagePreviewImage: {
+    flex: 1,
+  },
+  imagePreviewActions: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+  imagePreviewCancel: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  imagePreviewCancelText: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 15,
+    color: CH_TEXT,
+  },
+  imagePreviewSend: {
+    height: 48,
+    borderRadius: 14,
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  imagePreviewSendText: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 15,
+    color: "#fff",
   },
 
   // Settings modal

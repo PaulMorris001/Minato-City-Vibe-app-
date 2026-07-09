@@ -9,9 +9,9 @@ import {
   Dimensions,
   StatusBar,
 } from "react-native";
-import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
+import ZoomableImage from "./ZoomableImage";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
@@ -23,8 +23,9 @@ interface ImageViewerModalProps {
 }
 
 /**
- * Full-screen, swipeable image viewer. Paged horizontally; tap the X (or the
- * background) to dismiss. Shows a "current / total" indicator.
+ * Full-screen, swipeable image viewer. Paged horizontally; pinch or
+ * double-tap to zoom; tap once (or the X) to dismiss. Shows a
+ * "current / total" indicator.
  */
 export default function ImageViewerModal({
   visible,
@@ -33,6 +34,9 @@ export default function ImageViewerModal({
   onClose,
 }: ImageViewerModalProps) {
   const [index, setIndex] = useState(initialIndex);
+  // Paging is disabled while an image is zoomed so panning the zoomed image
+  // doesn't fight the horizontal pager.
+  const [scrollEnabled, setScrollEnabled] = useState(true);
   const listRef = useRef<FlatList>(null);
 
   const onScroll = (e: any) => {
@@ -49,15 +53,20 @@ export default function ImageViewerModal({
           data={images}
           horizontal
           pagingEnabled
+          scrollEnabled={scrollEnabled}
           showsHorizontalScrollIndicator={false}
           keyExtractor={(item, i) => `${item}-${i}`}
           initialScrollIndex={initialIndex}
           getItemLayout={(_, i) => ({ length: SCREEN_W, offset: SCREEN_W * i, index: i })}
           onMomentumScrollEnd={onScroll}
           renderItem={({ item }) => (
-            <TouchableOpacity activeOpacity={1} onPress={onClose} style={styles.page}>
-              <Image source={{ uri: item }} style={styles.image} contentFit="contain" />
-            </TouchableOpacity>
+            <View style={styles.page}>
+              <ZoomableImage
+                uri={item}
+                onSingleTap={onClose}
+                onZoomChange={(zoomed) => setScrollEnabled(!zoomed)}
+              />
+            </View>
           )}
         />
 

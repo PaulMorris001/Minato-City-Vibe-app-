@@ -15,6 +15,8 @@ const CH_STROKE = "rgba(255,255,255,0.08)";
 interface ChatInputProps {
   onSend: (message: string) => void;
   onImagePick?: () => void;
+  /** Take a live photo with the camera and send it (after confirmation). */
+  onCameraCapture?: () => void;
   onTypingChange?: (isTyping: boolean) => void;
   placeholder?: string;
   disabled?: boolean;
@@ -32,6 +34,7 @@ interface ChatInputProps {
 export default function ChatInput({
   onSend,
   onImagePick,
+  onCameraCapture,
   onTypingChange,
   placeholder = "Type a message…",
   disabled = false,
@@ -204,6 +207,17 @@ export default function ChatInput({
             maxLength={1000}
             editable={!disabled}
           />
+          {onCameraCapture && (
+            <TouchableOpacity
+              style={styles.paperclipBtn}
+              onPress={onCameraCapture}
+              disabled={disabled}
+              activeOpacity={0.7}
+              hitSlop={6}
+            >
+              <Ionicons name="camera-outline" size={20} color={CH_PURPLE_SOFT} />
+            </TouchableOpacity>
+          )}
           {onImagePick && (
             <TouchableOpacity
               style={styles.paperclipBtn}
