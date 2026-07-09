@@ -147,7 +147,7 @@ export default function UserProfileScreen() {
       const url = createUserShareLink(userId);
       const name = capitalize(displayName(user) || "this profile");
       await Share.share({
-        message: `Check out ${name} on CityVibe\n${url}`,
+        message: `Check out ${name} on OurCityvibe\n${url}`,
         url, // iOS uses this for richer share targets; Android ignores it.
         title: displayName(user),
       });

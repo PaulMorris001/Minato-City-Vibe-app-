@@ -22,7 +22,7 @@ const sections = [
   },
   {
     title: "How We Use Your Information",
-    body: "Your information is used to provide and improve CityVibe's services, personalise your experience, send you relevant notifications about events and ticket sales, and process payments securely through Stripe.",
+    body: "Your information is used to provide and improve OurCityvibe's services, personalise your experience, send you relevant notifications about events and ticket sales, and process payments securely through Stripe.",
   },
   {
     title: "Sharing Your Information",
@@ -30,7 +30,7 @@ const sections = [
   },
   {
     title: "Payments & Financial Data",
-    body: "All payment processing is handled by Stripe. CityVibe does not store your card details. For payout setup, Stripe collects and verifies your banking information in accordance with their privacy policy.",
+    body: "All payment processing is handled by Stripe. OurCityvibe does not store your card details. For payout setup, Stripe collects and verifies your banking information in accordance with their privacy policy.",
   },
   {
     title: "Push Notifications",
@@ -68,7 +68,7 @@ export default function PrivacyScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.intro}>
-          At CityVibe, we take your privacy seriously. This policy explains what data we collect, how we use it, and your rights.
+          At OurCityvibe, we take your privacy seriously. This policy explains what data we collect, how we use it, and your rights.
         </Text>
 
         {sections.map((section) => (

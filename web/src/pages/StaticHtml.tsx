@@ -6,7 +6,7 @@ import { Link } from "react-router-dom";
 // stay pixel-identical after moving off the API server. Sets the document
 // title per route since this is a client-rendered SPA with one shared <head>.
 //
-// `back` adds a floating "Back to CityVibe" link to the landing page — handy
+// `back` adds a floating "Back to OurCityvibe" link to the landing page — handy
 // on the legal pages, which are otherwise dead-ends when reached directly.
 export default function StaticHtml({
   title,
@@ -45,7 +45,7 @@ export default function StaticHtml({
             backdropFilter: "blur(6px)",
           }}
         >
-          ← Back to CityVibe
+          ← Back to OurCityvibe
         </Link>
       ) : null}
       <div dangerouslySetInnerHTML={{ __html: html }} />

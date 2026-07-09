@@ -54,7 +54,7 @@ const html = `
 <div class="container">
   <h1>Privacy Policy</h1>
   <p class="subtitle">Last updated March 2026</p>
-  <p class="intro">At CityVibe, we take your privacy seriously. This policy explains what data we collect, how we use it, and your rights.</p>
+  <p class="intro">At OurCityvibe, we take your privacy seriously. This policy explains what data we collect, how we use it, and your rights.</p>
 
   <div class="section">
     <h2>Information We Collect</h2>
@@ -63,7 +63,7 @@ const html = `
 
   <div class="section">
     <h2>How We Use Your Information</h2>
-    <p>Your information is used to provide and improve CityVibe's services, personalise your experience, send you relevant notifications about events and ticket sales, and process payments securely through Stripe.</p>
+    <p>Your information is used to provide and improve OurCityvibe's services, personalise your experience, send you relevant notifications about events and ticket sales, and process payments securely through Stripe.</p>
   </div>
 
   <div class="section">
@@ -73,7 +73,7 @@ const html = `
 
   <div class="section">
     <h2>Payments &amp; Financial Data</h2>
-    <p>All payment processing is handled by Stripe. CityVibe does not store your card details. For payout setup, Stripe collects and verifies your banking information in accordance with their privacy policy.</p>
+    <p>All payment processing is handled by Stripe. OurCityvibe does not store your card details. For payout setup, Stripe collects and verifies your banking information in accordance with their privacy policy.</p>
   </div>
 
   <div class="section">
@@ -99,5 +99,5 @@ const html = `
 `;
 
 export default function Privacy() {
-  return <StaticHtml title="Privacy Policy – CityVibe" html={html} back />;
+  return <StaticHtml title="Privacy Policy – OurCityvibe" html={html} back />;
 }

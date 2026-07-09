@@ -75,7 +75,7 @@ export async function addEventToCalendar(
       startDate: start,
       endDate: end,
       location: locationStr,
-      notes: `Open in CityVibe: ${url}`,
+      notes: `Open in OurCityvibe: ${url}`,
       url, // iOS renders this as a tappable link on the calendar event
       alarms: [{ relativeOffset: -60 }], // remind 1 hour before
     });

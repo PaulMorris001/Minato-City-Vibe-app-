@@ -3,11 +3,11 @@ import { BASE_URL } from "@/constants/constants";
 
 /**
  * Moderation API Service
- * Report content (events, guides, users) and block/unblock users.
+ * Report content (events, guides, users, chat messages) and block/unblock users.
  * Apple Guideline 1.2 compliance.
  */
 
-export type ReportTargetType = "user" | "event" | "guide";
+export type ReportTargetType = "user" | "event" | "guide" | "message";
 export type ReportReason =
   | "spam"
   | "harassment"

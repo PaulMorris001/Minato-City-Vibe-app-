@@ -24,7 +24,7 @@ type ScanResult =
 
 /**
  * Organizer-facing attendance scanner. Opened for a specific event; scans an
- * attendee's CityVibe pass QR and checks them in via POST /events/:id/check-in.
+ * attendee's OurCityvibe pass QR and checks them in via POST /events/:id/check-in.
  */
 export default function CheckInScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
@@ -37,13 +37,13 @@ export default function CheckInScreen() {
       if (busy || result) return;
       const value = (data || "").trim();
 
-      // Only react to CityVibe pass QRs; ignore event/guide links etc.
+      // Only react to OurCityvibe pass QRs; ignore event/guide links etc.
       const isPass =
         value.startsWith("cityvibe-pass:") || /^[a-f0-9]{32,}$/i.test(value);
       if (!isPass) {
         setResult({
           kind: "error",
-          message: "That's not a CityVibe pass QR code.",
+          message: "That's not a OurCityvibe pass QR code.",
         });
         return;
       }
@@ -96,7 +96,7 @@ export default function CheckInScreen() {
             <Ionicons name="qr-code-outline" size={56} color={Colors.primary} />
             <Text style={styles.permTitle}>Camera access needed</Text>
             <Text style={styles.permText}>
-              CityVibe uses the camera to scan attendee passes at the door.
+              OurCityvibe uses the camera to scan attendee passes at the door.
             </Text>
             {permission.canAskAgain ? (
               <TouchableOpacity style={styles.permBtn} onPress={requestPermission}>
@@ -122,7 +122,7 @@ export default function CheckInScreen() {
             <View style={styles.overlay}>
               <View style={styles.frame} />
               <Text style={styles.hint}>
-                Point at an attendee's CityVibe pass QR
+                Point at an attendee's OurCityvibe pass QR
               </Text>
             </View>
 

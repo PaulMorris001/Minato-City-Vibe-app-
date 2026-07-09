@@ -224,7 +224,7 @@ function Header({
     try {
       const url = createUserShareLink(user._id);
       await Share.share({
-        message: `Check out my profile on CityVibe\n${url}`,
+        message: `Check out my profile on OurCityvibe\n${url}`,
         url, // iOS uses this for richer share targets; Android ignores it.
         title: displayName(user),
       });

@@ -300,9 +300,9 @@ const html = `
 <div class="wrap">
   <header>
     <div class="brand">
-      <img class="dot" src="/logo.png" alt="CityVibe" />
+      <img class="dot" src="/logo.png" alt="OurCityvibe" />
       <span>
-        CityVibe
+        OurCityvibe
         <small>by Obito Ventures</small>
       </span>
     </div>
@@ -313,11 +313,11 @@ const html = `
     <span class="eyebrow"><span class="pulse"></span> AI-powered event discovery &amp; planning</span>
     <h1>Plan together.<br /><span class="gradient-text">Experience more.</span></h1>
     <p>
-      CityVibe is your AI-powered guide to the best events, venues, and experiences in
+      OurCityvibe is your AI-powered guide to the best events, venues, and experiences in
       your city — designed to help you discover, coordinate, and book everything in one place.
     </p>
     <p class="support">
-      Stop jumping between apps and group chats just to make plans. CityVibe brings your
+      Stop jumping between apps and group chats just to make plans. OurCityvibe brings your
       friends, your city, and your next experience together — with personalized
       recommendations that get smarter every time you use it.
     </p>
@@ -344,7 +344,7 @@ const html = `
   </div>
 
   <section id="what">
-    <div class="section-label">What CityVibe does</div>
+    <div class="section-label">What OurCityvibe does</div>
     <h2>Everything you need to plan a night out — in one place.</h2>
     <p class="lead">
       A single feed for what's happening tonight and this weekend, tuned to your
@@ -371,7 +371,7 @@ const html = `
         <div class="ico">🎟️</div>
         <h3>Get tickets</h3>
         <p>
-          Buy tickets to CityVibe events with secure in-app checkout — and for events
+          Buy tickets to OurCityvibe events with secure in-app checkout — and for events
           from partners like Ticketmaster, we link you straight to their official page.
         </p>
       </div>
@@ -381,23 +381,23 @@ const html = `
   <section id="tickets">
     <div class="panel">
       <div class="section-label">Tickets &amp; discovery</div>
-      <h2>Buy tickets in CityVibe — and discover everything else, too.</h2>
+      <h2>Buy tickets in OurCityvibe — and discover everything else, too.</h2>
       <p class="lead">
-        For events on CityVibe, you buy your ticket right in the app with secure
+        For events on OurCityvibe, you buy your ticket right in the app with secure
         checkout — fast, simple, all in one place. We also bring in live events from
         trusted partners like <strong>Ticketmaster</strong>, so your feed shows
         everything happening around you; for those, we link you straight to the partner
         to finish the purchase on their official page.
       </p>
       <div class="flow">
-        <div class="flow-step"><span class="n">1</span> Discover an event in CityVibe</div>
+        <div class="flow-step"><span class="n">1</span> Discover an event in OurCityvibe</div>
         <span class="arrow">→</span>
         <div class="flow-step"><span class="n">2</span> Tap “Get Tickets”</div>
         <span class="arrow">→</span>
         <div class="flow-step"><span class="n">3</span> Pay in-app, or finish on the partner's site</div>
       </div>
       <p class="note">
-        Tickets for CityVibe events are sold and processed securely in the app. External
+        Tickets for OurCityvibe events are sold and processed securely in the app. External
         events appear right alongside them in your feed, and their “Get Tickets” action
         opens the partner's official event page to complete the purchase there.
       </p>
@@ -407,8 +407,8 @@ const html = `
   <footer>
     <div class="foot-row">
       <div class="brand">
-        <img class="dot" src="/logo.png" alt="CityVibe" />
-        <span>CityVibe<small>by Obito Ventures Inc.</small></span>
+        <img class="dot" src="/logo.png" alt="OurCityvibe" />
+        <span>OurCityvibe<small>by Obito Ventures Inc.</small></span>
       </div>
       <div class="foot-links">
         <a href="#what">What's inside</a>
@@ -419,7 +419,7 @@ const html = `
       </div>
     </div>
     <p class="copyright" style="margin-top: 24px;">
-      © 2026 Obito Ventures Inc. CityVibe is an independent event-discovery platform.
+      © 2026 Obito Ventures Inc. OurCityvibe is an independent event-discovery platform.
       All brand names are the property of their respective owners.
     </p>
   </footer>
@@ -427,5 +427,5 @@ const html = `
 `;
 
 export default function Landing() {
-  return <StaticHtml title="CityVibe — Plan together. Experience more." html={html} />;
+  return <StaticHtml title="OurCityvibe — Plan together. Experience more." html={html} />;
 }

@@ -5,7 +5,7 @@ const reportSchema = mongoose.Schema(
     reporter: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true },
     targetType: {
       type: String,
-      enum: ["user", "event", "guide"],
+      enum: ["user", "event", "guide", "message"],
       required: true,
     },
     targetId: { type: mongoose.Schema.Types.ObjectId, required: true },

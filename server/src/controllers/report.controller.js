@@ -3,8 +3,9 @@ import Report from "../models/report.model.js";
 import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
 import User from "../models/user.model.js";
+import Message from "../models/message.model.js";
 
-const VALID_TYPES = ["user", "event", "guide"];
+const VALID_TYPES = ["user", "event", "guide", "message"];
 const VALID_REASONS = [
   "spam",
   "harassment",
@@ -43,6 +44,10 @@ export const createReport = async (req, res) => {
       const g = await Guide.findById(targetId).select("author");
       if (!g) return res.status(404).json({ message: "Guide not found" });
       targetUser = g.author;
+    } else if (targetType === "message") {
+      const m = await Message.findById(targetId).select("sender");
+      if (!m) return res.status(404).json({ message: "Message not found" });
+      targetUser = m.sender;
     }
 
     if (String(targetUser) === String(req.user.id)) {

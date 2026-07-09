@@ -34,6 +34,8 @@ interface MessageActionSheetProps {
   onCopy: (message: Message) => void;
   onPin: (message: Message) => void;
   onReact: (message: Message, emoji: string) => void;
+  /** Report someone else's message as objectionable (Apple Guideline 1.2). */
+  onReport?: (message: Message) => void;
 }
 
 /**
@@ -52,6 +54,7 @@ export default function MessageActionSheet({
   onCopy,
   onPin,
   onReact,
+  onReport,
 }: MessageActionSheetProps) {
   const [menuMode, setMenuMode] = useState<"actions" | "react">("actions");
 
@@ -62,13 +65,14 @@ export default function MessageActionSheet({
   const canEdit = isOwnMessage && !isTemp && message?.type === "text" && withinEditWindow;
   const canDelete = isOwnMessage && !isTemp;
   const canCopy = !isTemp && message?.type === "text" && !!message?.content;
+  const canReport = !isOwnMessage && !isTemp && !!onReport;
 
   // Open on the action list, unless there are no actions at all (e.g. someone
   // else's image with no pin) — then jump straight to the emoji picker.
   useEffect(() => {
     if (!message) return;
-    setMenuMode(canEdit || canDelete || canCopy || canPin ? "actions" : "react");
-  }, [message, canEdit, canDelete, canCopy, canPin]);
+    setMenuMode(canEdit || canDelete || canCopy || canPin || canReport ? "actions" : "react");
+  }, [message, canEdit, canDelete, canCopy, canPin, canReport]);
 
   const handleDelete = () => {
     if (!message) return;
@@ -170,6 +174,25 @@ export default function MessageActionSheet({
                   />
                   <Text style={[styles.actionLabel, isPinned && { color: "#a855f7" }]}>
                     {isPinned ? "Unpin" : "Pin"}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {canReport && (
+              <>
+                <View style={styles.actionDivider} />
+                <TouchableOpacity
+                  style={styles.actionRow}
+                  onPress={() => {
+                    if (message) onReport?.(message);
+                    onClose();
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="flag-outline" size={18} color="#ef4444" />
+                  <Text style={[styles.actionLabel, styles.actionLabelDanger]}>
+                    Report
                   </Text>
                 </TouchableOpacity>
               </>

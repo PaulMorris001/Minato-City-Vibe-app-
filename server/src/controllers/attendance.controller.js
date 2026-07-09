@@ -20,7 +20,7 @@ export const checkInAttendee = async (req, res) => {
 
     const code = parsePassCode(rawCode);
     if (!code) {
-      return res.status(400).json({ message: "That's not a valid CityVibe pass code." });
+      return res.status(400).json({ message: "That's not a valid OurCityvibe pass code." });
     }
 
     const event = await Event.findById(eventId).select("createdBy title");

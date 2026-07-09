@@ -98,9 +98,9 @@ export const sendPasswordResetOTP = async (email, otp, username) => {
     const transporter = createTransporter();
 
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"CityVibe" <Support@nvibez.com>',
+      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
       to: email,
-      subject: 'Password Reset - CityVibe',
+      subject: 'Password Reset - OurCityvibe',
       html: `
         <!DOCTYPE html>
         <html>
@@ -206,7 +206,7 @@ export const sendPasswordResetOTP = async (email, otp, username) => {
         <body>
           <div class="container">
             <div class="header">
-              <h1>🌙 CityVibe</h1>
+              <h1>🌙 OurCityvibe</h1>
             </div>
 
             <div class="content">
@@ -236,11 +236,11 @@ export const sendPasswordResetOTP = async (email, otp, username) => {
 
             <div class="footer">
               <p>
-                This is an automated message from CityVibe.<br>
+                This is an automated message from OurCityvibe.<br>
                 Need help? Contact us at <a href="mailto:Support@nvibez.com">Support@nvibez.com</a>
               </p>
               <p style="margin-top: 10px;">
-                © ${new Date().getFullYear()} CityVibe. All rights reserved.
+                © ${new Date().getFullYear()} OurCityvibe. All rights reserved.
               </p>
             </div>
           </div>
@@ -261,7 +261,7 @@ If you didn't request a password reset, please ignore this email.
 For your security, do not share this code with anyone.
 
 Best regards,
-The CityVibe Team
+The OurCityvibe Team
       `,
     };
 
@@ -293,9 +293,9 @@ export const sendSignupVerificationOTP = async (email, otp, username) => {
   try {
     const transporter = createTransporter();
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"CityVibe" <Support@nvibez.com>',
+      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
       to: email,
-      subject: "Verify your email - CityVibe",
+      subject: "Verify your email - OurCityvibe",
       html: `
         <!DOCTYPE html>
         <html>
@@ -315,22 +315,22 @@ export const sendSignupVerificationOTP = async (email, otp, username) => {
         </head>
         <body>
           <div class="container">
-            <div class="header"><h1>🌙 CityVibe</h1></div>
+            <div class="header"><h1>🌙 OurCityvibe</h1></div>
             <div class="content">
               <p>Hi ${username || "there"},</p>
-              <p>Welcome to CityVibe! Confirm your email to finish setting up your account.</p>
+              <p>Welcome to OurCityvibe! Confirm your email to finish setting up your account.</p>
               <div class="otp-container">
                 <div class="otp-label">Your verification code</div>
                 <div class="otp-code">${otp}</div>
               </div>
               <p class="hint">This code expires in 10 minutes. If you didn't sign up, you can safely ignore this email.</p>
-              <p>— The CityVibe Team</p>
+              <p>— The OurCityvibe Team</p>
             </div>
           </div>
         </body>
         </html>
       `,
-      text: `Hi ${username || "there"},\n\nWelcome to CityVibe. Your verification code is ${otp}. It expires in 10 minutes.\n\n— The CityVibe Team`,
+      text: `Hi ${username || "there"},\n\nWelcome to OurCityvibe. Your verification code is ${otp}. It expires in 10 minutes.\n\n— The OurCityvibe Team`,
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -342,7 +342,7 @@ export const sendSignupVerificationOTP = async (email, otp, username) => {
 };
 
 /**
- * Send an event pass with an embedded CityVibe-styled QR code. Issued when a
+ * Send an event pass with an embedded OurCityvibe-styled QR code. Issued when a
  * user RSVPs to a free event or buys a ticket. The QR is attached inline (cid)
  * so it renders in the email body; the organizer scans it at the door to mark
  * the holder as attended.
@@ -366,7 +366,7 @@ export const sendEventPassEmail = async (
     const subject = `${passLabel} — ${eventTitle}`;
 
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"CityVibe" <Support@nvibez.com>',
+      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
       to: email,
       subject,
       attachments: [
@@ -400,14 +400,14 @@ export const sendEventPassEmail = async (
         </head>
         <body>
           <div class="container">
-            <div class="header"><h1>🌙 CityVibe</h1></div>
+            <div class="header"><h1>🌙 OurCityvibe</h1></div>
             <div class="content">
               <div class="badge">${passLabel}</div>
               <p class="event-title">${eventTitle}</p>
               ${eventDateText ? `<p class="event-meta">📅 ${eventDateText}</p>` : ""}
               ${eventLocation ? `<p class="event-meta">📍 ${eventLocation}</p>` : ""}
               <div class="qr-wrap">
-                <img src="cid:passqr@cityvibe" alt="Your CityVibe pass QR code" />
+                <img src="cid:passqr@cityvibe" alt="Your OurCityvibe pass QR code" />
               </div>
               <p class="hint">
                 Show this QR code at the entrance. The organizer will scan it to
@@ -417,7 +417,7 @@ export const sendEventPassEmail = async (
             <div class="footer">
               <p>See you there, ${username || "friend"}! 🎉</p>
               <p>Need help? <a href="mailto:Support@nvibez.com">Support@nvibez.com</a></p>
-              <p style="margin-top: 8px;">© ${new Date().getFullYear()} CityVibe. All rights reserved.</p>
+              <p style="margin-top: 8px;">© ${new Date().getFullYear()} OurCityvibe. All rights reserved.</p>
             </div>
           </div>
         </body>
@@ -425,7 +425,7 @@ export const sendEventPassEmail = async (
       `,
       text: `${passLabel} for ${eventTitle}\n${eventDateText || ""}${
         eventLocation ? `\n${eventLocation}` : ""
-      }\n\nYour pass QR code is attached. Show it at the entrance to be checked in. Keep it private.\n\n— The CityVibe Team`,
+      }\n\nYour pass QR code is attached. Show it at the entrance to be checked in. Keep it private.\n\n— The OurCityvibe Team`,
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -445,9 +445,9 @@ export const sendPasswordResetSuccessEmail = async (email, username) => {
     const transporter = createTransporter();
 
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"CityVibe" <Support@nvibez.com>',
+      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
       to: email,
-      subject: 'Password Reset Successful - CityVibe',
+      subject: 'Password Reset Successful - OurCityvibe',
       html: `
         <!DOCTYPE html>
         <html>
@@ -464,14 +464,14 @@ export const sendPasswordResetSuccessEmail = async (email, username) => {
         <body>
           <div class="container">
             <div class="header">
-              <h1>🌙 CityVibe</h1>
+              <h1>🌙 OurCityvibe</h1>
             </div>
             <div class="content">
               <h2 style="text-align: center; color: #10b981;">Password Reset Successful!</h2>
               <p>Hello ${username || 'there'},</p>
-              <p>Your password has been successfully reset. You can now log in to your CityVibe account with your new password.</p>
+              <p>Your password has been successfully reset. You can now log in to your OurCityvibe account with your new password.</p>
               <p>If you did not perform this action, please contact our support team immediately.</p>
-              <p>Best regards,<br>The CityVibe Team</p>
+              <p>Best regards,<br>The OurCityvibe Team</p>
             </div>
           </div>
         </body>
@@ -480,12 +480,12 @@ export const sendPasswordResetSuccessEmail = async (email, username) => {
       text: `
 Hello ${username || 'there'},
 
-Your password has been successfully reset. You can now log in to your CityVibe account with your new password.
+Your password has been successfully reset. You can now log in to your OurCityvibe account with your new password.
 
 If you did not perform this action, please contact our support team immediately.
 
 Best regards,
-The CityVibe Team
+The OurCityvibe Team
       `,
     };
 

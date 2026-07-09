@@ -156,9 +156,9 @@ export async function buildFlutterwaveInit({ type, id, amount, currency, buyer }
       redirect_url: redirectUrl,
       customer: {
         email: buyer.email || `${buyer._id}@cityvibe.app`,
-        name: buyer.username || "CityVibe User",
+        name: buyer.username || "OurCityvibe User",
       },
-      customizations: { title: "CityVibe" },
+      customizations: { title: "OurCityvibe" },
       meta: { type, id: id.toString(), buyerId: buyer._id.toString() },
     },
   });
@@ -181,7 +181,7 @@ export const flutterwaveReturn = async (req, res) => {
     .status(200)
     .send(
       "<html><body style='font-family:sans-serif;text-align:center;padding-top:40px'>" +
-        "<h3>Payment complete</h3><p>You can return to the CityVibe app.</p></body></html>"
+        "<h3>Payment complete</h3><p>You can return to the OurCityvibe app.</p></body></html>"
     );
 };
 
@@ -241,7 +241,7 @@ export async function createFlutterwaveTransfer({ bank, amount, currency, refere
       account_number: bank.accountNumber,
       amount,
       currency: (currency || "NGN").toUpperCase(),
-      narration: narration || "CityVibe payout",
+      narration: narration || "OurCityvibe payout",
       reference,
       debit_currency: (currency || "NGN").toUpperCase(),
     },

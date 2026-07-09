@@ -53,21 +53,21 @@ const html = `
 <div class="container">
   <h1>Child Safety Policy</h1>
   <p class="subtitle">Last updated April 2026</p>
-  <p class="intro">CityVibe is committed to the safety and protection of children. This policy outlines our zero-tolerance stance against child sexual abuse and exploitation (CSAE) on our platform.</p>
+  <p class="intro">OurCityvibe is committed to the safety and protection of children. This policy outlines our zero-tolerance stance against child sexual abuse and exploitation (CSAE) on our platform.</p>
 
   <div class="section">
     <h2>Zero Tolerance</h2>
-    <p>CityVibe has a strict zero-tolerance policy against any content, behavior, or material that sexually exploits or abuses minors. This includes child sexual abuse material (CSAM) and any content that sexualizes, grooms, exploits, or endangers children in any way.</p>
+    <p>OurCityvibe has a strict zero-tolerance policy against any content, behavior, or material that sexually exploits or abuses minors. This includes child sexual abuse material (CSAM) and any content that sexualizes, grooms, exploits, or endangers children in any way.</p>
   </div>
 
   <div class="section">
     <h2>Platform Age Requirement</h2>
-    <p>CityVibe is intended for users aged 18 and older. Our platform is designed for adults to discover nightlife events and venues. Users who are found to be under 18 will have their accounts terminated immediately.</p>
+    <p>OurCityvibe is intended for users aged 18 and older. Our platform is designed for adults to discover nightlife events and venues. Users who are found to be under 18 will have their accounts terminated immediately.</p>
   </div>
 
   <div class="section">
     <h2>Prohibited Content and Behavior</h2>
-    <p>The following are strictly prohibited on CityVibe and will result in immediate account termination and reporting to relevant authorities:</p>
+    <p>The following are strictly prohibited on OurCityvibe and will result in immediate account termination and reporting to relevant authorities:</p>
     <ul style="margin-top: 10px; padding-left: 20px; color: #9ca3af; font-size: 14px; line-height: 2;">
       <li>Any content that sexually depicts, exploits, or abuses minors</li>
       <li>Grooming behaviors targeting minors</li>
@@ -83,7 +83,7 @@ const html = `
 
   <div class="section">
     <h2>Enforcement</h2>
-    <p>Violations of this policy will result in immediate account suspension or permanent termination, removal of all associated content, and reporting to law enforcement and the appropriate authorities. CityVibe cooperates fully with law enforcement investigations related to child safety.</p>
+    <p>Violations of this policy will result in immediate account suspension or permanent termination, removal of all associated content, and reporting to law enforcement and the appropriate authorities. OurCityvibe cooperates fully with law enforcement investigations related to child safety.</p>
   </div>
 
   <div class="section">
@@ -94,5 +94,5 @@ const html = `
 `;
 
 export default function Csae() {
-  return <StaticHtml title="Child Safety Policy – CityVibe" html={html} back />;
+  return <StaticHtml title="Child Safety Policy – OurCityvibe" html={html} back />;
 }

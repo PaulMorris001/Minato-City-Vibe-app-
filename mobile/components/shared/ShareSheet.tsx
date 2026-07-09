@@ -97,8 +97,8 @@ export default function ShareSheet({ visible, onClose, target }: ShareSheetProps
       try {
         const headline =
           target.kind === "event"
-            ? `Check out this event on CityVibe: ${target.title}`
-            : `Check out this CityVibe guide: ${target.title}`;
+            ? `Check out this event on OurCityvibe: ${target.title}`
+            : `Check out this OurCityvibe guide: ${target.title}`;
         await Share.share({
           message: `${headline}\n${target.externalUrl}`,
           title: target.title,

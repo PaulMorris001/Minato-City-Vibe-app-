@@ -135,7 +135,7 @@ export default function VendorDetails() {
           <View style={styles.unverifiedBanner}>
             <Ionicons name="warning-outline" size={16} color="#f59e0b" />
             <Text style={styles.unverifiedText}>
-              This vendor is not yet verified by CityVibe. Proceed with caution.
+              This vendor is not yet verified by OurCityvibe. Proceed with caution.
             </Text>
           </View>
         )}

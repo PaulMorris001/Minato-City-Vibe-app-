@@ -7,7 +7,7 @@ const html = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Privacy Policy – CityVibe</title>
+  <title>Privacy Policy – OurCityvibe</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -62,7 +62,7 @@ const html = `<!DOCTYPE html>
   <div class="container">
     <h1>Privacy Policy</h1>
     <p class="subtitle">Last updated March 2026</p>
-    <p class="intro">At CityVibe, we take your privacy seriously. This policy explains what data we collect, how we use it, and your rights.</p>
+    <p class="intro">At OurCityvibe, we take your privacy seriously. This policy explains what data we collect, how we use it, and your rights.</p>
 
     <div class="section">
       <h2>Information We Collect</h2>
@@ -71,7 +71,7 @@ const html = `<!DOCTYPE html>
 
     <div class="section">
       <h2>How We Use Your Information</h2>
-      <p>Your information is used to provide and improve CityVibe's services, personalise your experience, send you relevant notifications about events and ticket sales, and process payments securely through Stripe.</p>
+      <p>Your information is used to provide and improve OurCityvibe's services, personalise your experience, send you relevant notifications about events and ticket sales, and process payments securely through Stripe.</p>
     </div>
 
     <div class="section">
@@ -81,7 +81,7 @@ const html = `<!DOCTYPE html>
 
     <div class="section">
       <h2>Payments &amp; Financial Data</h2>
-      <p>All payment processing is handled by Stripe. CityVibe does not store your card details. For payout setup, Stripe collects and verifies your banking information in accordance with their privacy policy.</p>
+      <p>All payment processing is handled by Stripe. OurCityvibe does not store your card details. For payout setup, Stripe collects and verifies your banking information in accordance with their privacy policy.</p>
     </div>
 
     <div class="section">

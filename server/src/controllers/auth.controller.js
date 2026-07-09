@@ -1038,7 +1038,7 @@ function buildGoogleWebClient() {
 // Safari shows a permission prompt), so meta-refresh + JS + a visible link
 // covers every case. The page never paints for more than a frame in the
 // happy path — openAuthSessionAsync dismisses as soon as it sees the URL.
-function buildAppReturnHtml(params, message = "Returning to Cityvibe…") {
+function buildAppReturnHtml(params, message = "Returning to OurCityvibe…") {
   const qs = Object.entries(params)
     .filter(([, v]) => v != null && v !== "")
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
@@ -1049,7 +1049,7 @@ function buildAppReturnHtml(params, message = "Returning to Cityvibe…") {
 <html><head>
   <meta charset="utf-8" />
   <meta http-equiv="refresh" content="0;url=${safe}" />
-  <title>Cityvibe</title>
+  <title>OurCityvibe</title>
   <style>
     body { font-family: -apple-system, system-ui, sans-serif; background:#0f0a1f;
            color:#eee; display:flex; align-items:center; justify-content:center;
@@ -1059,7 +1059,7 @@ function buildAppReturnHtml(params, message = "Returning to Cityvibe…") {
 </head><body>
   <div>
     <p>${message}</p>
-    <p><a href="${safe}">Tap here if Cityvibe doesn't reopen automatically.</a></p>
+    <p><a href="${safe}">Tap here if OurCityvibe doesn't reopen automatically.</a></p>
   </div>
   <script>setTimeout(function(){ window.location.replace("${safe}"); }, 50);</script>
 </body></html>`;

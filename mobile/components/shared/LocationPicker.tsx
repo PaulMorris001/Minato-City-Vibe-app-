@@ -125,7 +125,7 @@ export default function LocationPicker({
       if (status !== "granted") {
         Alert.alert(
           "Location access needed",
-          "Enable location so CityVibe can fill in your city automatically.",
+          "Enable location so OurCityvibe can fill in your city automatically.",
           canAskAgain
             ? [{ text: "OK" }]
             : [

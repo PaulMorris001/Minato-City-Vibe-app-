@@ -1,10 +1,10 @@
 import QRCode from "qrcode";
 
-// Prefix that marks a QR as a CityVibe attendance pass, so the in-app scanner
+// Prefix that marks a QR as a OurCityvibe attendance pass, so the in-app scanner
 // can tell it apart from event/guide deep-link QRs.
 export const PASS_QR_PREFIX = "cityvibe-pass:";
 
-// CityVibe brand purple on white. High error-correction ("H") so the code still
+// OurCityvibe brand purple on white. High error-correction ("H") so the code still
 // scans if the email client compresses or slightly crops the image.
 const QR_OPTIONS = {
   errorCorrectionLevel: "H",

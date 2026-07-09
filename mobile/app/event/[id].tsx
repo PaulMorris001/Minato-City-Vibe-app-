@@ -1090,7 +1090,7 @@ export default function EventDetailsPage() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.bannerTitle}>Payout held</Text>
                   <Text style={styles.bannerBody}>
-                    Ticket revenue is held by CityVibe and released to your Stripe
+                    Ticket revenue is held by OurCityvibe and released to your Stripe
                     account 48h after the event ends.
                   </Text>
                 </View>
@@ -1603,10 +1603,10 @@ export default function EventDetailsPage() {
             />
             <SheetAction
               icon="qr-code-outline"
-              label="Scan a CityVibe code"
+              label="Scan a OurCityvibe code"
               onPress={() => {
                 setActionSheetVisible(false);
-                // The scanner reads CityVibe event/guide QR codes and opens
+                // The scanner reads OurCityvibe event/guide QR codes and opens
                 // them in the app. Lives here (in the event action sheet) so its
                 // purpose is clear, rather than as a stray button on Home.
                 setTimeout(() => router.push("/scan" as any), 320);
@@ -1625,7 +1625,7 @@ export default function EventDetailsPage() {
                   if (res.ok) {
                     showSuccess("Added with a 1-hour reminder.", "Added to calendar");
                   } else if (res.error === "permission") {
-                    showInfo("Enable calendar access for CityVibe in Settings.", "Calendar access needed");
+                    showInfo("Enable calendar access for OurCityvibe in Settings.", "Calendar access needed");
                   } else if (res.error === "no_calendar") {
                     showError("This device doesn't have a calendar we can write to.");
                   } else if (res.error === "unavailable") {

@@ -144,7 +144,7 @@ async function runTransfer(payout, vendor) {
       amount: payout.amount, // major units
       currency: payout.currency,
       reference: payout.reference,
-      narration: "CityVibe payout",
+      narration: "OurCityvibe payout",
     });
     return t.id;
   }

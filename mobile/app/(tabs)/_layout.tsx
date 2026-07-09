@@ -335,7 +335,7 @@ export default function TabsLayout() {
       <StatusBar barStyle="light-content" />
       {currentTab === "home" && (
         <View style={styles.navbar}>
-          <Text style={styles.logoText}>CityVibe</Text>
+          <Text style={styles.logoText}>OurCityvibe</Text>
           <View style={styles.navbarActions}>
             {isGuest ? (
               <TouchableOpacity

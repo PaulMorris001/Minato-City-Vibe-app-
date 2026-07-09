@@ -12,7 +12,7 @@ export default function DeleteAccount() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    document.title = "Delete Account – CityVibe";
+    document.title = "Delete Account – OurCityvibe";
   }, []);
 
   async function handleSubmit(e: FormEvent) {
@@ -47,7 +47,7 @@ export default function DeleteAccount() {
             <div className="icon">✓</div>
             <h1>Account Deleted</h1>
             <p>
-              Your CityVibe account and all associated data have been permanently
+              Your OurCityvibe account and all associated data have been permanently
               deleted. We're sorry to see you go.
             </p>
           </div>
@@ -55,7 +55,7 @@ export default function DeleteAccount() {
           <>
             <h1>Delete Account</h1>
             <p>
-              Permanently delete your CityVibe account and all associated data. This
+              Permanently delete your OurCityvibe account and all associated data. This
               action cannot be undone.
             </p>
             {error ? <div className="message">{error}</div> : null}

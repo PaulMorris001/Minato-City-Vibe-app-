@@ -32,6 +32,7 @@ import { BASE_URL } from "@/constants/constants";
 import MessageBubble from "@/components/chat/MessageBubble";
 import MessageActionSheet from "@/components/chat/MessageActionSheet";
 import ReactionsListSheet from "@/components/chat/ReactionsListSheet";
+import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 import ChatInput from "@/components/chat/ChatInput";
 import { Avatar } from "@/components/shared/Avatar";
 import chatService, { Message, Chat, MessageReaction } from "@/services/chat.service";
@@ -75,6 +76,8 @@ export default function ChatScreen() {
   // (not one per bubble) — opened for whichever message the user targeted.
   const [menuMessage, setMenuMessage] = useState<Message | null>(null);
   const [reactionsMessage, setReactionsMessage] = useState<Message | null>(null);
+  // Message being reported as objectionable (Apple Guideline 1.2).
+  const [reportMessage, setReportMessage] = useState<Message | null>(null);
   const flatListRef = useRef<FlashListRef<MessageSection>>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1438,6 +1441,24 @@ export default function ChatScreen() {
         onCopy={handleCopyMessage}
         onPin={handlePinMessage}
         onReact={handleQuickReact}
+        onReport={(m) => setReportMessage(m)}
+      />
+      {/* Report / block flow for objectionable messages (Apple Guideline 1.2) */}
+      <ReportBlockSheet
+        visible={!!reportMessage}
+        onClose={() => setReportMessage(null)}
+        targetType="message"
+        targetId={reportMessage?._id ?? ""}
+        targetUserId={reportMessage?.sender?._id}
+        targetUsername={reportMessage?.sender?.username}
+        currentUserId={currentUserId}
+        onBlocked={() => {
+          // A blocked 1:1 conversation is over — return to the inbox. In a
+          // group, stay: only the blocked member's content disappears.
+          if (chat?.type !== "group") {
+            handleBack();
+          }
+        }}
       />
       <ReactionsListSheet
         message={reactionsMessage}

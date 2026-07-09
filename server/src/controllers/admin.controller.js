@@ -11,6 +11,7 @@ import Notification from "../models/notification.model.js";
 import Report from "../models/report.model.js";
 import Message from "../models/message.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
+import { getSocketInstance } from "../services/socket.service.js";
 
 export async function adminLogin(req, res) {
   const { username, password } = req.body;
@@ -727,6 +728,23 @@ export async function resolveReport(req, res) {
         await Event.findByIdAndUpdate(report.targetId, { isActive: false });
       } else if (report.targetType === "guide") {
         await Guide.findByIdAndUpdate(report.targetId, { isActive: false });
+      } else if (report.targetType === "message") {
+        // Same soft-delete the sender's own delete uses, so open chats get the
+        // standard message:deleted socket event and hide it immediately.
+        const msg = await Message.findByIdAndUpdate(
+          report.targetId,
+          { isDeleted: true },
+          { new: true }
+        );
+        if (msg) {
+          const io = getSocketInstance();
+          if (io) {
+            io.to(`chat:${msg.chat.toString()}`).emit("message:deleted", {
+              chatId: msg.chat.toString(),
+              messageId: msg._id.toString(),
+            });
+          }
+        }
       } else if (report.targetType === "user") {
         // For user-target reports, remove_content = soft-disable all their content
         await Event.updateMany({ createdBy: report.targetId }, { isActive: false });
@@ -784,6 +802,10 @@ export async function getReportTarget(req, res) {
     } else if (report.targetType === "user") {
       target = await User.findById(report.targetId)
         .select("-password -resetPasswordOTP -resetPasswordToken")
+        .lean();
+    } else if (report.targetType === "message") {
+      target = await Message.findById(report.targetId)
+        .populate("sender", "username email profilePicture")
         .lean();
     }
 

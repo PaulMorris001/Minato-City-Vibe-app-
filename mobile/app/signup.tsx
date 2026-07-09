@@ -3,6 +3,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -111,6 +112,9 @@ export default function Signup() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  // Explicit terms/EULA consent — required before an account can be created
+  // (Apple Guideline 1.2). Gates both email signup and the social buttons.
+  const [agreedTerms, setAgreedTerms] = useState(false);
   // Live uniqueness state for the username/email steps. "idle" = nothing to
   // show (empty or locally invalid), "checking" = request in flight, then the
   // server's verdict. "error" is non-blocking — /register does the final say.
@@ -214,7 +218,7 @@ export default function Signup() {
         username: values.username,
         email: values.email,
         password: values.password,
-        termsAccepted: true,
+        termsAccepted: agreedTerms,
       });
 
       const user = res.data.user;
@@ -296,6 +300,14 @@ export default function Signup() {
     const err = validateCurrent();
     if (err) {
       Alert.alert("Hold up", err);
+      return;
+    }
+
+    if (step === 0 && !agreedTerms) {
+      Alert.alert(
+        "One more thing",
+        "Please agree to the Terms of Service and Privacy Policy to create an account."
+      );
       return;
     }
 
@@ -486,6 +498,40 @@ export default function Signup() {
 
             {/* CTA + dots + footer */}
             <View style={styles.bottomBlock}>
+              {step === 0 && (
+                <TouchableOpacity
+                  style={styles.consentRow}
+                  onPress={() => setAgreedTerms((v) => !v)}
+                  activeOpacity={0.7}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: agreedTerms }}
+                >
+                  <View style={[styles.consentBox, agreedTerms && styles.consentBoxOn]}>
+                    {agreedTerms && (
+                      <Ionicons name="checkmark" size={14} color="#fff" />
+                    )}
+                  </View>
+                  <Text style={styles.consentText}>
+                    I agree to the{" "}
+                    <Text
+                      style={styles.consentLink}
+                      onPress={() => router.push("/terms" as any)}
+                    >
+                      Terms of Service
+                    </Text>{" "}
+                    and{" "}
+                    <Text
+                      style={styles.consentLink}
+                      onPress={() => router.push("/privacy" as any)}
+                    >
+                      Privacy Policy
+                    </Text>
+                    , including zero tolerance for objectionable content or
+                    abusive behavior.
+                  </Text>
+                </TouchableOpacity>
+              )}
+
               <PrimaryCTA
                 label={ctaLabel}
                 onPress={handleNext}
@@ -513,12 +559,29 @@ export default function Signup() {
 
               {step === 0 && (
                 <View style={styles.socialWrap}>
-                  <SocialAuthButtons />
+                  <View
+                    pointerEvents={agreedTerms ? "auto" : "none"}
+                    style={!agreedTerms && { opacity: 0.45 }}
+                  >
+                    <SocialAuthButtons />
+                  </View>
+                  {/* Social signup also creates an account — same consent gate. */}
+                  {!agreedTerms && (
+                    <Pressable
+                      style={StyleSheet.absoluteFill}
+                      onPress={() =>
+                        Alert.alert(
+                          "One more thing",
+                          "Please agree to the Terms of Service and Privacy Policy to create an account."
+                        )
+                      }
+                    />
+                  )}
                 </View>
               )}
 
               <Text style={styles.footerText}>
-                Already on CityVibe?{" "}
+                Already on OurCityvibe?{" "}
                 <Text
                   style={styles.footerLink}
                   onPress={() => router.push("/login" as any)}
@@ -689,6 +752,38 @@ const styles = StyleSheet.create({
   },
   bottomBlock: { paddingHorizontal: 22, paddingBottom: 0 },
   socialWrap: { marginTop: 18, gap: 10 },
+  consentRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginBottom: 14,
+  },
+  consentBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  consentBoxOn: {
+    backgroundColor: AU.purple,
+    borderColor: AU.purple,
+  },
+  consentText: {
+    flex: 1,
+    fontFamily: "Outfit_400Regular",
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: AU.textMute,
+  },
+  consentLink: {
+    color: AU.purpleSoft,
+    fontFamily: "Outfit_600SemiBold",
+    textDecorationLine: "underline",
+  },
   dotsRow: {
     flexDirection: "row",
     justifyContent: "center",

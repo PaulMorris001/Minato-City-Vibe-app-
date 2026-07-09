@@ -30,7 +30,7 @@ export default function ScanScreen() {
 
     const value = (data || "").trim();
 
-    // Match a CityVibe event/guide link, e.g.
+    // Match a OurCityvibe event/guide link, e.g.
     // https://api.ourcityvibe.com/event/<id>  or  /guide/<id>
     const eventMatch = value.match(/\/event\/([^/?#\s]+)/i);
     const guideMatch = value.match(/\/guide\/([^/?#\s]+)/i);
@@ -52,8 +52,8 @@ export default function ScanScreen() {
       ]);
     } else {
       Alert.alert(
-        "Not a CityVibe code",
-        "This QR code isn't a CityVibe event or guide.",
+        "Not a OurCityvibe code",
+        "This QR code isn't a OurCityvibe event or guide.",
         [{ text: "Scan again", onPress: () => setScanned(false) }]
       );
     }
@@ -77,7 +77,7 @@ export default function ScanScreen() {
             <Ionicons name="qr-code-outline" size={56} color={Colors.primary} />
             <Text style={styles.permTitle}>Camera access needed</Text>
             <Text style={styles.permText}>
-              CityVibe uses the camera to scan event and guide QR codes.
+              OurCityvibe uses the camera to scan event and guide QR codes.
             </Text>
             {permission.canAskAgain ? (
               <TouchableOpacity style={styles.permBtn} onPress={requestPermission}>
@@ -103,7 +103,7 @@ export default function ScanScreen() {
             <View style={styles.overlay}>
               <View style={styles.frame} />
               <Text style={styles.hint}>
-                Point at a CityVibe event or guide QR code
+                Point at a OurCityvibe event or guide QR code
               </Text>
             </View>
           </View>

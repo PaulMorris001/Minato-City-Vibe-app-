@@ -222,6 +222,26 @@ export default function Login() {
                   </View>
                 </View>
 
+                {/* EULA presented before logging in (Apple Guideline 1.2) */}
+                <Text style={styles.consentText}>
+                  By continuing, you agree to our{" "}
+                  <Text
+                    style={styles.consentLink}
+                    onPress={() => router.push("/terms" as any)}
+                  >
+                    Terms of Service
+                  </Text>{" "}
+                  and{" "}
+                  <Text
+                    style={styles.consentLink}
+                    onPress={() => router.push("/privacy" as any)}
+                  >
+                    Privacy Policy
+                  </Text>
+                  . We have zero tolerance for objectionable content or abusive
+                  behavior.
+                </Text>
+
                 <PrimaryCTA
                   label="Log in"
                   onPress={handleLogin}
@@ -245,7 +265,7 @@ export default function Login() {
               </View>
 
               <Text style={styles.footerText}>
-                New to CityVibe?{" "}
+                New to OurCityvibe?{" "}
                 <Text
                   style={styles.footerLink}
                   onPress={() => router.replace("/signup")}
@@ -414,6 +434,19 @@ const styles = StyleSheet.create({
     color: AU.textDim,
   },
   footerLink: { color: AU.purpleSoft, fontFamily: "Outfit_700Bold" },
+  consentText: {
+    fontFamily: "Outfit_400Regular",
+    fontSize: 12,
+    lineHeight: 17,
+    color: AU.textMute,
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  consentLink: {
+    color: AU.purpleSoft,
+    fontFamily: "Outfit_600SemiBold",
+    textDecorationLine: "underline",
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.85)",
