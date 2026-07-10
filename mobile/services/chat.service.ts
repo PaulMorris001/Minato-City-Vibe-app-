@@ -15,9 +15,15 @@ export interface ChatEventRef {
   createdBy?: string | User;
 }
 
+export type ChatContextType = "personal" | "vendor";
+
 export interface Chat {
   _id: string;
   type: "direct" | "group";
+  // 'vendor' = a client↔business conversation; vendorUser is the participant
+  // acting as the business. Missing/'personal' = regular chat.
+  contextType?: ChatContextType;
+  vendorUser?: string | User | null;
   name?: string;
   groupImage?: string;
   participants: User[];
@@ -96,12 +102,16 @@ class ChatService {
   }
 
   /**
-   * Get all chats for the user
+   * Get all chats for the user.
+   * mode 'client' = personal chats + inquiries the user sent to vendors;
+   * mode 'vendor' = chats where the user is contacted as a business;
+   * omitted = all chats.
    */
-  async getUserChats(): Promise<Chat[]> {
+  async getUserChats(mode?: "client" | "vendor"): Promise<Chat[]> {
     try {
       const headers = await this.getAuthHeader();
-      const response = await fetch(`${BASE_URL}/chats`, { headers });
+      const query = mode ? `?mode=${mode}` : "";
+      const response = await fetch(`${BASE_URL}/chats${query}`, { headers });
 
       if (!response.ok) {
         throw new Error("Failed to fetch chats");
@@ -116,19 +126,30 @@ class ChatService {
   }
 
   /**
-   * Get or create a direct chat with another user
+   * Get or create a direct chat with another user.
+   * Pass { context: 'vendor', vendorUserId } for client↔business conversations —
+   * vendorUserId is whichever participant is acting as the business.
    */
-  async getOrCreateDirectChat(otherUserId: string): Promise<Chat> {
+  async getOrCreateDirectChat(
+    otherUserId: string,
+    opts?: { context?: ChatContextType; vendorUserId?: string }
+  ): Promise<Chat> {
     try {
       const headers = await this.getAuthHeader();
       const response = await fetch(`${BASE_URL}/chats/direct`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ otherUserId }),
+        body: JSON.stringify({
+          otherUserId,
+          ...(opts?.context === "vendor"
+            ? { context: "vendor", vendorUserId: opts.vendorUserId }
+            : {}),
+        }),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to create/get chat");
+        const err = await response.json().catch(() => null);
+        throw new Error(err?.message || "Failed to create/get chat");
       }
 
       const data = await response.json();

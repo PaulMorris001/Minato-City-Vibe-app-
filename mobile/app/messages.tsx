@@ -77,7 +77,8 @@ export default function MessagesScreen() {
 
   const fetchChats = async (silent = false) => {
     try {
-      const list = await chatService.getUserChats();
+      // Client inbox: personal chats + inquiries this user sent to vendors
+      const list = await chatService.getUserChats("client");
       setChats(list);
     } catch (error: any) {
       console.error("Error fetching chats:", error);

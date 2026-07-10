@@ -15,6 +15,24 @@ const chatSchema = mongoose.Schema({
     required: true
   }],
 
+  // Whether this direct chat is a personal conversation or a client↔business
+  // conversation. Group chats are always 'personal'. Legacy docs lack this
+  // field, so queries must treat missing as personal (contextType: { $ne: 'vendor' }).
+  contextType: {
+    type: String,
+    enum: ['personal', 'vendor'],
+    default: 'personal'
+  },
+
+  // For contextType='vendor': the participant being contacted as a business.
+  // Their vendor dashboard shows this chat; the other participant sees it in
+  // their client inbox.
+  vendorUser: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "user",
+    default: null
+  },
+
   // Group chat specific fields
   name: {
     type: String,
@@ -121,6 +139,7 @@ const chatSchema = mongoose.Schema({
 
 // Index for faster queries
 chatSchema.index({ participants: 1 });
+chatSchema.index({ participants: 1, contextType: 1, vendorUser: 1 });
 chatSchema.index({ type: 1 });
 chatSchema.index({ updatedAt: -1 });
 chatSchema.index({ "pendingInvites.user": 1 });

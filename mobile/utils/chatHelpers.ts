@@ -11,12 +11,12 @@ import { Alert } from "react-native";
 export async function startChatWithUser(userId: string) {
   try {
     // Create or get existing direct chat
-    const response = await chatService.getOrCreateDirectChat(userId);
+    const chat = await chatService.getOrCreateDirectChat(userId);
 
     // Navigate to the chat screen
     router.push({
       pathname: "/chat/[id]",
-      params: { id: response.data._id },
+      params: { id: chat._id },
     });
   } catch (error) {
     console.error("Error starting chat:", error);

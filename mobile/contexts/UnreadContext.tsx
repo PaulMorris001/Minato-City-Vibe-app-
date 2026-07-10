@@ -6,8 +6,10 @@ import { BASE_URL } from "@/constants/constants";
 import socketService from "@/services/socket.service";
 
 interface UnreadContextType {
-  /** Unread chat messages — drives the chat tab badge. */
+  /** Unread client-mode chat messages — drives the chat tab badge. */
   totalUnread: number;
+  /** Unread vendor-mode chat messages — drives the vendor dashboard badge. */
+  vendorUnread: number;
   /** Unread in-app notifications — drives the notifications surfaces. */
   notifUnread: number;
   /** Force a re-fetch of both counts (call after marking things read). */
@@ -16,12 +18,14 @@ interface UnreadContextType {
 
 const UnreadContext = createContext<UnreadContextType>({
   totalUnread: 0,
+  vendorUnread: 0,
   notifUnread: 0,
   refreshUnread: () => {},
 });
 
 export function UnreadProvider({ children }: { children: React.ReactNode }) {
   const [chatUnread, setChatUnread] = useState(0);
+  const [vendorUnread, setVendorUnread] = useState(0);
   const [notifUnread, setNotifUnread] = useState(0);
   const currentUserIdRef = useRef<string | null>(null);
   const chatTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,11 +51,23 @@ export function UnreadProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) return;
       const data = await res.json();
       const chats: any[] = data.chats || [];
-      const total = chats.reduce((sum, chat) => {
+      // One no-mode fetch returns everything; split client vs vendor locally.
+      // A chat counts as "vendor" for this user only when they are the business
+      // side of it — their own inquiries to vendors stay in the client bucket.
+      let clientTotal = 0;
+      let vendorTotal = 0;
+      for (const chat of chats) {
         const unreadObj = (chat.unreadCount as Record<string, number>) || {};
-        return sum + (unreadObj[auth.userId] || 0);
-      }, 0);
-      setChatUnread(total);
+        const count = unreadObj[auth.userId] || 0;
+        const vendorUserId = chat.vendorUser?._id || chat.vendorUser;
+        if (chat.contextType === "vendor" && vendorUserId === auth.userId) {
+          vendorTotal += count;
+        } else {
+          clientTotal += count;
+        }
+      }
+      setChatUnread(clientTotal);
+      setVendorUnread(vendorTotal);
     } catch {}
   }, [getAuth]);
 
@@ -80,11 +96,12 @@ export function UnreadProvider({ children }: { children: React.ReactNode }) {
     chatTimer.current = setTimeout(refreshChats, 600);
   }, [refreshChats]);
 
-  // App icon badge = unread chats + unread notifications. This context is the
-  // single writer so the badge can't be left stale by an individual screen.
+  // App icon badge = unread chats (both modes) + unread notifications. This
+  // context is the single writer so the badge can't be left stale by an
+  // individual screen.
   useEffect(() => {
-    Notifications.setBadgeCountAsync(chatUnread + notifUnread).catch(() => {});
-  }, [chatUnread, notifUnread]);
+    Notifications.setBadgeCountAsync(chatUnread + vendorUnread + notifUnread).catch(() => {});
+  }, [chatUnread, vendorUnread, notifUnread]);
 
   useEffect(() => {
     refreshUnread();
@@ -115,7 +132,7 @@ export function UnreadProvider({ children }: { children: React.ReactNode }) {
   }, [refreshUnread, refreshNotifs, scheduleChatRefresh]);
 
   return (
-    <UnreadContext.Provider value={{ totalUnread: chatUnread, notifUnread, refreshUnread }}>
+    <UnreadContext.Provider value={{ totalUnread: chatUnread, vendorUnread, notifUnread, refreshUnread }}>
       {children}
     </UnreadContext.Provider>
   );

@@ -15,14 +15,25 @@ import { areMutualFollows } from "../utils/followCheck.js";
 
 class ChatService {
   /**
-   * Create or get existing direct chat between two users
+   * Create or get existing direct chat between two users.
+   *
+   * context 'personal' (default) is a regular user-to-user chat.
+   * context 'vendor' is a client↔business conversation: vendorUserId is the
+   * participant acting as the business. The same pair of users can hold one
+   * personal chat and one vendor chat — they are separate conversations.
    */
-  async getOrCreateDirectChat(userId1, userId2) {
-    // Check if chat already exists
+  async getOrCreateDirectChat(userId1, userId2, { context = 'personal', vendorUserId = null } = {}) {
+    const isVendorContext = context === 'vendor';
+
+    // Check if chat already exists. Legacy docs have no contextType, so
+    // personal lookups match on "not vendor" rather than an exact value.
     let chat = await Chat.findOne({
       type: 'direct',
       participants: { $all: [userId1, userId2], $size: 2 },
-      isActive: true
+      isActive: true,
+      ...(isVendorContext
+        ? { contextType: 'vendor', vendorUser: vendorUserId }
+        : { contextType: { $ne: 'vendor' } })
     })
       .populate('participants', 'username email profilePicture isVendor businessName')
       .populate({
@@ -31,10 +42,34 @@ class ChatService {
       });
 
     if (!chat) {
-      // Only mutual follows can start new direct chats
-      const isMutual = await areMutualFollows(userId1, userId2);
-      if (!isMutual) {
-        const error = new Error("You can only chat with mutual follows. Both users must follow each other.");
+      let allowed = false;
+      let denialMessage = "You can only chat with mutual follows. Both users must follow each other.";
+
+      if (isVendorContext && vendorUserId.toString() === userId2.toString()) {
+        // Initiator is contacting a business — no follow relationship required,
+        // but the target must actually be a vendor.
+        const vendor = await User.findById(vendorUserId).select('isVendor');
+        allowed = !!vendor?.isVendor;
+        denialMessage = "This user is not a vendor.";
+      } else if (isVendorContext) {
+        // Business reaching out to a user: allowed if they share a booking,
+        // otherwise fall back to the mutual-follows rule (anti-spam).
+        const { default: Booking } = await import("../models/booking.model.js");
+        const hasBooking = await Booking.exists({
+          $or: [
+            { client: userId2, vendor: userId1 },
+            { client: userId1, vendor: userId2 }
+          ]
+        });
+        allowed = !!hasBooking || await areMutualFollows(userId1, userId2);
+        denialMessage = "You can message clients who have booked with you or mutual follows.";
+      } else {
+        // Only mutual follows can start new personal direct chats
+        allowed = await areMutualFollows(userId1, userId2);
+      }
+
+      if (!allowed) {
+        const error = new Error(denialMessage);
         error.statusCode = 403;
         throw error;
       }
@@ -42,6 +77,8 @@ class ChatService {
       // Create new chat
       chat = new Chat({
         type: 'direct',
+        contextType: isVendorContext ? 'vendor' : 'personal',
+        vendorUser: isVendorContext ? vendorUserId : null,
         participants: [userId1, userId2],
         unreadCount: new Map([[userId1.toString(), 0], [userId2.toString(), 0]]),
         isArchived: new Map([[userId1.toString(), false], [userId2.toString(), false]]),
@@ -98,15 +135,32 @@ class ChatService {
   }
 
   /**
-   * Get all chats for a user
+   * Get all chats for a user.
+   *
+   * mode 'client': everything except chats where the user is the business side
+   *   (their inquiries TO vendors stay in their client inbox).
+   * mode 'vendor': only chats where the user is being contacted as a business.
+   * mode absent: all chats (legacy app behavior).
    */
-  async getUserChats(userId) {
+  async getUserChats(userId, mode) {
+    const modeFilter =
+      mode === 'vendor'
+        ? { contextType: 'vendor', vendorUser: userId }
+        : mode === 'client'
+          ? { $or: [{ contextType: { $ne: 'vendor' } }, { vendorUser: { $ne: userId } }] }
+          : {};
+
     const chats = await Chat.find({
-      // Include groups the user has only been invited to (not yet a participant)
-      // so the pending invite surfaces in their inbox where they can respond.
-      $or: [
-        { participants: userId },
-        { "pendingInvites.user": userId }
+      $and: [
+        {
+          // Include groups the user has only been invited to (not yet a participant)
+          // so the pending invite surfaces in their inbox where they can respond.
+          $or: [
+            { participants: userId },
+            { "pendingInvites.user": userId }
+          ]
+        },
+        modeFilter
       ],
       isActive: true,
       deletedFor: { $ne: userId }

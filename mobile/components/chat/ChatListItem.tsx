@@ -55,8 +55,12 @@ export default function ChatListItem({
       };
     } else {
       const otherUser = chat.participants.find((p) => p._id !== currentUserId);
+      // Business name only when the other user is the business side of a
+      // vendor-context chat; personal chats always show the username.
+      const vendorUserId = (chat.vendorUser as any)?._id || chat.vendorUser;
+      const asBusiness = chat.contextType === "vendor" && otherUser?._id === vendorUserId;
       return {
-        name: displayName(otherUser) || "Unknown User",
+        name: (asBusiness ? displayName(otherUser) : otherUser?.username) || "Unknown User",
         image: otherUser?.profilePicture,
       };
     }
