@@ -153,7 +153,14 @@ export default function BookingsTab() {
   const handleChatWithClient = async (clientId: string, bookingId: string) => {
     setChattingWith(bookingId);
     try {
-      const chat = await chatService.getOrCreateDirectChat(clientId);
+      // Business → client conversation: shows in this vendor's dashboard chats
+      // and in the client's regular inbox
+      const userJson = await SecureStore.getItemAsync("user");
+      const currentUserId = userJson ? JSON.parse(userJson).id : undefined;
+      const chat = await chatService.getOrCreateDirectChat(clientId, {
+        context: "vendor",
+        vendorUserId: currentUserId,
+      });
       router.push(`/chat/${chat._id}` as any);
     } catch {
       Alert.alert("Error", "Could not open chat");

@@ -17,6 +17,18 @@ import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "@/constants/colors";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
+// External (Yelp / Google) results are mixed into this list by the server
+type ListVendor = Vendor & {
+  source?: "internal" | "yelp" | "google";
+  phone?: string;
+  website?: string;
+};
+
+const SOURCE_BADGES: Record<string, { label: string; color: string }> = {
+  yelp: { label: "Yelp", color: "#d32323" },
+  google: { label: "Google", color: "#4285F4" },
+};
+
 export default function VendorsList() {
   const { cityId, typeId } = useLocalSearchParams();
   const router = useRouter();
@@ -95,18 +107,25 @@ export default function VendorsList() {
     }
   };
 
-  const renderVendorCard = ({ item }: { item: Vendor }) => (
+  const renderVendorCard = ({ item }: { item: ListVendor }) => {
+    const isExternal = item.source === "yelp" || item.source === "google";
+    const badge = isExternal ? SOURCE_BADGES[item.source as string] : undefined;
+    const phone = item.contact?.phone || item.phone;
+    const website = item.contact?.website || item.website;
+    return (
     <TouchableOpacity
       style={styles.card}
       activeOpacity={0.8}
       onPress={() =>
-        router.push({
-          pathname: "/vendor-details/[vendorId]",
-          params: {
-            vendorId: item._id,
-            vendorName: item.name,
-          },
-        })
+        isExternal
+          ? router.push({ pathname: "/external-vendor/[id]", params: { id: item._id } } as any)
+          : router.push({
+              pathname: "/vendor-details/[vendorId]",
+              params: {
+                vendorId: item._id,
+                vendorName: item.name,
+              },
+            })
       }
     >
       {item.images && item.images.length > 0 && (
@@ -115,6 +134,11 @@ export default function VendorsList() {
       <View style={styles.cardContent}>
         <View style={styles.cardHeader}>
           <Text style={styles.vendorName}>{item.name}</Text>
+          {badge && (
+            <View style={[styles.sourceBadge, { backgroundColor: badge.color }]}>
+              <Text style={styles.sourceBadgeText}>{badge.label}</Text>
+            </View>
+          )}
           {item.verified && (
             <View style={styles.verifiedBadge}>
               <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
@@ -133,12 +157,12 @@ export default function VendorsList() {
         </View>
 
         <View style={styles.contactRow}>
-          {item.contact?.phone && (
+          {phone && (
             <TouchableOpacity
               style={styles.contactButton}
               onPress={(e) => {
                 e.stopPropagation();
-                handleContact("phone", item.contact.phone);
+                handleContact("phone", phone);
               }}
             >
               <Ionicons name="call-outline" size={18} color={Colors.primary} />
@@ -155,12 +179,12 @@ export default function VendorsList() {
               <Ionicons name="logo-instagram" size={18} color={Colors.primary} />
             </TouchableOpacity>
           )}
-          {item.contact?.website && (
+          {website && (
             <TouchableOpacity
               style={styles.contactButton}
               onPress={(e) => {
                 e.stopPropagation();
-                handleContact("website", item.contact.website);
+                handleContact("website", website);
               }}
             >
               <Ionicons name="globe-outline" size={18} color={Colors.primary} />
@@ -169,7 +193,8 @@ export default function VendorsList() {
         </View>
       </View>
     </TouchableOpacity>
-  );
+    );
+  };
 
   if (loading) {
     return (
@@ -272,6 +297,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
+  },
+  sourceBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  sourceBadgeText: {
+    color: "#fff",
+    fontSize: scaleFontSize(11),
+    fontWeight: "600",
   },
   verifiedText: {
     color: "#22c55e",

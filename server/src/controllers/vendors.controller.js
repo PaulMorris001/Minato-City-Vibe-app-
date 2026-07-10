@@ -1,7 +1,33 @@
 import { City, VendorType, Vendor } from "../models/vendor.model.js";
 import Review from "../models/review.model.js";
+import ExternalVendor from "../models/externalVendor.model.js";
+import {
+  ensureFreshExternalVendors,
+  ensureFreshExternalVendorsForCity,
+  getCachedExternalVendors,
+  dedupeExternalVendors,
+} from "../services/externalVendors.service.js";
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Shape a cached externalVendor doc like a browse/list vendor so the mobile
+// screens can render both through one code path.
+function toBrowseShape(ext) {
+  return {
+    _id: ext._id,
+    name: ext.name,
+    description: ext.description,
+    images: ext.images,
+    priceRange: ext.priceRange,
+    rating: ext.rating,
+    reviewCount: ext.reviewCount,
+    verified: false,
+    source: ext.source,
+    externalUrl: ext.externalUrl,
+    vendorType: ext.vendorType,
+    city: { name: ext.city, state: ext.state, country: ext.country },
+  };
+}
 
 /**
  * Resolve a City document from a picker selection, creating it on first use.
@@ -52,7 +78,7 @@ export async function getVendorTypesByCity(req, res) {
 // The client groups the result into per-vendor-type carousels.
 export async function browseVendors(req, res) {
   try {
-    const { country, state, city } = req.query;
+    const { country, state, city, includeExternal } = req.query;
 
     const vendorQuery = {};
     if (country || state || city) {
@@ -64,10 +90,28 @@ export async function browseVendors(req, res) {
       vendorQuery.city = { $in: matchingCities.map((c) => c._id) };
     }
 
-    const vendors = await Vendor.find(vendorQuery)
+    const internal = await Vendor.find(vendorQuery)
       .populate("city", "name state country")
       .populate("vendorType", "name icon")
-      .sort({ verified: -1, rating: -1 });
+      .sort({ verified: -1, rating: -1 })
+      .lean();
+
+    // Opt-in external results (Yelp / Google Places), only meaningful when a
+    // specific city is browsed. Old app builds never send includeExternal, so
+    // their responses are unchanged.
+    let external = [];
+    if (includeExternal === "true" && city) {
+      // Stale-while-revalidate: never block the request on provider APIs —
+      // fresh data lands in the cache for the next load / pull-to-refresh.
+      void ensureFreshExternalVendorsForCity({ city, state, country }).catch(() => {});
+      const cached = await getCachedExternalVendors({ city });
+      external = dedupeExternalVendors(cached).map(toBrowseShape);
+    }
+
+    const vendors = [
+      ...internal.map((v) => ({ ...v, source: "internal" })),
+      ...external,
+    ];
 
     res.json({ vendors });
   } catch (error) {
@@ -78,11 +122,40 @@ export async function browseVendors(req, res) {
 export async function getVendorsByCityAndType(req, res) {
   try {
     const { cityId, vendorTypeId } = req.params;
-    const vendors = await Vendor.find({ city: cityId, vendorType: vendorTypeId })
+    const { includeExternal } = req.query;
+
+    const internal = await Vendor.find({ city: cityId, vendorType: vendorTypeId })
       .populate("city", "name state")
       .populate("vendorType", "name icon")
-      .sort({ verified: -1, rating: -1 });
-    res.status(200).json(vendors);
+      .sort({ verified: -1, rating: -1 })
+      .lean();
+
+    let external = [];
+    if (includeExternal === "true") {
+      const [cityDoc, typeDoc] = await Promise.all([
+        City.findById(cityId).lean(),
+        VendorType.findById(vendorTypeId).lean(),
+      ]);
+      if (cityDoc && typeDoc) {
+        void ensureFreshExternalVendors({
+          city: cityDoc.name,
+          state: cityDoc.state,
+          country: cityDoc.country,
+          vendorTypeId: typeDoc._id,
+          vendorTypeName: typeDoc.name,
+        }).catch(() => {});
+        const cached = await getCachedExternalVendors({
+          city: cityDoc.name,
+          vendorTypeId: typeDoc._id,
+        });
+        external = dedupeExternalVendors(cached).map(toBrowseShape);
+      }
+    }
+
+    res.status(200).json([
+      ...internal.map((v) => ({ ...v, source: "internal" })),
+      ...external,
+    ]);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -161,12 +234,12 @@ export async function getVendorReviews(req, res) {
 
 export async function searchVendors(req, res) {
   try {
-    const { query } = req.query;
+    const { query, city, includeExternal } = req.query;
     if (!query || query.trim().length < 2) {
       return res.json({ vendors: [] });
     }
     const results = await Vendor.find({
-      name: { $regex: query.trim(), $options: "i" },
+      name: { $regex: escapeRegex(query.trim()), $options: "i" },
     })
       .populate("city", "name")
       .populate("vendorType", "name")
@@ -181,9 +254,52 @@ export async function searchVendors(req, res) {
       description: v.description,
       verified: v.verified,
       rating: v.rating,
+      source: "internal",
     }));
 
+    // Cached external matches only — search never spends provider quota.
+    if (includeExternal === "true" && city) {
+      const externalResults = await ExternalVendor.find({
+        name: { $regex: escapeRegex(query.trim()), $options: "i" },
+        city: new RegExp(`^${escapeRegex(city)}$`, "i"),
+        isActive: true,
+      })
+        .populate("vendorType", "name")
+        .limit(20)
+        .lean();
+
+      for (const v of dedupeExternalVendors(externalResults)) {
+        vendors.push({
+          _id: v._id,
+          name: v.name,
+          vendorType: v.vendorType?.name || "",
+          location: { city: v.city || "" },
+          images: v.images,
+          description: v.description,
+          verified: false,
+          rating: v.rating,
+          source: v.source,
+          externalUrl: v.externalUrl,
+        });
+      }
+    }
+
     res.json({ vendors });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// Fetch a single external (Yelp / Google) vendor for its detail screen
+export async function getExternalVendorById(req, res) {
+  try {
+    const vendor = await ExternalVendor.findById(req.params.id)
+      .populate("vendorType", "name icon")
+      .lean();
+    if (!vendor || !vendor.isActive) {
+      return res.status(404).json({ message: "Vendor not found" });
+    }
+    res.json(vendor);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

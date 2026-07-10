@@ -55,9 +55,11 @@ function locationQueryString(params: LocationQuery) {
   return qs.toString();
 }
 
-// Vendors for the carousel browse view (flat, populated, optional location filter)
+// Vendors for the carousel browse view (flat, populated, optional location filter).
+// includeExternal merges cached Yelp/Google listings when a city is selected.
 export async function fetchVendorsBrowse(params: LocationQuery = {}) {
-  const res = await fetch(`${BASE_URL}/vendors/browse?${locationQueryString(params)}`, {
+  const qs = locationQueryString(params);
+  const res = await fetch(`${BASE_URL}/vendors/browse?${qs}${qs ? "&" : ""}includeExternal=true`, {
     headers: await authHeaders(),
   });
   const data = await res.json();
@@ -98,9 +100,18 @@ export async function fetchVendorTypes() {
 
 export async function fetchVendors(cityId: string, vendorTypeId: string) {
   const res = await fetch(
-    `${BASE_URL}/cities/${cityId}/vendors/${vendorTypeId}`,
+    `${BASE_URL}/cities/${cityId}/vendors/${vendorTypeId}?includeExternal=true`,
     { headers: await authHeaders() }
   );
+  return res.json();
+}
+
+// A single external (Yelp / Google Places) vendor for its detail screen
+export async function fetchExternalVendorById(id: string) {
+  const res = await fetch(`${BASE_URL}/external-vendors/${id}`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error("Vendor not found");
   return res.json();
 }
 

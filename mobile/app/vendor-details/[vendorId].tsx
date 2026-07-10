@@ -29,6 +29,7 @@ import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import { openUserProfile } from "@/utils/userNavigation";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
+import chatService from "@/services/chat.service";
 
 interface Review {
   _id: string;
@@ -125,6 +126,28 @@ export default function VendorDetails() {
     { key: "phone", icon: "call-outline", color: "#22c55e" },
   ];
 
+  const [openingChat, setOpeningChat] = useState(false);
+
+  // Only vendors linked to an app account can be messaged in-app. This opens a
+  // vendor-context chat: it lands in the vendor's dashboard inbox, not their
+  // personal one, and doesn't require mutual follows.
+  const handleMessageVendor = async () => {
+    if (!vendor?.user || openingChat) return;
+    setOpeningChat(true);
+    try {
+      const vendorUserId = typeof vendor.user === "string" ? vendor.user : vendor.user._id;
+      const chat = await chatService.getOrCreateDirectChat(vendorUserId, {
+        context: "vendor",
+        vendorUserId,
+      });
+      router.push(`/chat/${chat._id}` as any);
+    } catch (e: any) {
+      showError(e?.message || "Could not open chat");
+    } finally {
+      setOpeningChat(false);
+    }
+  };
+
   const renderVendorHeader = () => {
     const contact = vendor?.contact || {};
     const links = SOCIALS.map((s) => ({ ...s, url: socialUrl(s.key, contact[s.key]) })).filter((s) => s.url);
@@ -165,6 +188,23 @@ export default function VendorDetails() {
               </View>
             )}
           </View>
+        )}
+        {!!vendor?.user && (
+          <TouchableOpacity
+            style={styles.messageVendorButton}
+            onPress={handleMessageVendor}
+            disabled={openingChat}
+            activeOpacity={0.8}
+          >
+            {openingChat ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="chatbubble-outline" size={18} color="#fff" />
+                <Text style={styles.messageVendorText}>Message Vendor</Text>
+              </>
+            )}
+          </TouchableOpacity>
         )}
       </View>
     );
@@ -978,6 +1018,21 @@ const styles = StyleSheet.create({
     borderColor: "#374151",
     alignItems: "center",
     justifyContent: "center",
+  },
+  messageVendorButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingVertical: 13,
+    marginBottom: 16,
+  },
+  messageVendorText: {
+    fontSize: 15,
+    fontFamily: Fonts.semiBold,
+    color: "#fff",
   },
   // Reviews section
   reviewsSection: {

@@ -81,6 +81,17 @@ export default function ZoomableImage({ uri, onSingleTap, onZoomChange }: Zoomab
     });
 
   const pan = Gesture.Pan()
+    // Only claim the touch while zoomed — otherwise a swipe over the image
+    // must stay with the surrounding pager/scroll view. An always-active pan
+    // would win the gesture race and block page swiping even when unzoomed.
+    .manualActivation(true)
+    .onTouchesMove((_e, state) => {
+      if (savedScale.value > 1) {
+        state.activate();
+      } else {
+        state.fail();
+      }
+    })
     .onUpdate((e) => {
       if (savedScale.value <= 1) return;
       translateX.value = clampTranslation(

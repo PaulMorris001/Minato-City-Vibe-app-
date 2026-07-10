@@ -35,7 +35,15 @@ interface BrowseVendor {
   verified?: boolean;
   vendorType?: { _id: string; name: string; icon: string };
   city?: { name: string; state: string; country?: string };
+  // 'yelp' | 'google' = external listing (opens the external detail screen)
+  source?: "internal" | "yelp" | "google";
+  externalUrl?: string;
 }
+
+const SOURCE_BADGES: Record<string, { label: string; color: string }> = {
+  yelp: { label: "Yelp", color: "#d32323" },
+  google: { label: "Google", color: "#4285F4" },
+};
 
 export default function VendorsPage() {
   const router = useRouter();
@@ -112,8 +120,12 @@ export default function VendorsPage() {
     try {
       setSearching(true);
       const token = await SecureStore.getItemAsync("token");
+      // Include cached external results when a city filter is active
+      const cityParam = locFilter?.city
+        ? `&city=${encodeURIComponent(locFilter.city)}&includeExternal=true`
+        : "";
       const response = await axios.get(
-        `${BASE_URL}/vendors/search?query=${encodeURIComponent(query)}`,
+        `${BASE_URL}/vendors/search?query=${encodeURIComponent(query)}${cityParam}`,
         { headers: token ? { Authorization: `Bearer ${token}` } : {} }
       );
       setSearchResults(response.data.vendors || []);
@@ -146,11 +158,34 @@ export default function VendorsPage() {
     return Array.from(map.values()).sort((a, b) => a.type.name.localeCompare(b.type.name));
   }, [vendors]);
 
-  const openVendor = (v: { _id: string; name: string }) =>
+  const openVendor = (v: { _id: string; name: string; source?: string }) => {
+    if (v.source === "yelp" || v.source === "google") {
+      router.push({
+        pathname: "/external-vendor/[id]",
+        params: { id: v._id },
+      } as any);
+      return;
+    }
     router.push({
       pathname: "/vendor-details/[vendorId]",
       params: { vendorId: v._id, vendorName: v.name },
     });
+  };
+
+  const renderSourceBadge = (source?: string, inline = false) => {
+    const badge = source ? SOURCE_BADGES[source] : undefined;
+    if (!badge) return null;
+    return (
+      <View
+        style={[
+          inline ? styles.sourceBadgeInline : styles.sourceBadge,
+          { backgroundColor: badge.color },
+        ]}
+      >
+        <Text style={styles.sourceBadgeText}>{badge.label}</Text>
+      </View>
+    );
+  };
 
   const renderVendorCard = (item: BrowseVendor) => (
     <TouchableOpacity style={styles.card} activeOpacity={0.85} onPress={() => openVendor(item)}>
@@ -161,6 +196,7 @@ export default function VendorsPage() {
           <Ionicons name="business" size={26} color="#6b7280" />
         </View>
       )}
+      {renderSourceBadge(item.source)}
       <View style={styles.cardBody}>
         <View style={styles.cardNameRow}>
           <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
@@ -243,7 +279,10 @@ export default function VendorsPage() {
                     </View>
                   )}
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.cardName}>{item.name}</Text>
+                    <View style={styles.searchNameRow}>
+                      <Text style={styles.cardName}>{item.name}</Text>
+                      {renderSourceBadge(item.source, true)}
+                    </View>
                     <Text style={styles.cardType}>{item.vendorType || "Vendor"}</Text>
                     {item.location?.city && <Text style={styles.cardLocation}>{item.location.city}</Text>}
                   </View>
@@ -455,6 +494,29 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 8,
+  },
+  searchNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  sourceBadge: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  sourceBadgeInline: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  sourceBadgeText: {
+    fontSize: 10,
+    fontFamily: Fonts.semiBold,
+    color: "#fff",
   },
   listContent: {
     paddingBottom: 40,

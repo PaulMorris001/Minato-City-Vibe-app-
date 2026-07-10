@@ -29,6 +29,10 @@ const router = express.Router();
 // Get all chats for user
 router.get("/chats", authenticate, getUserChats);
 
+// Search chats and messages — must be registered before /chats/:chatId or
+// Express matches "search" as a chatId and the request 500s on the ObjectId cast
+router.get("/chats/search", authenticate, searchChatsAndMessages);
+
 // Get or create direct chat
 router.post("/chats/direct", authenticate, getOrCreateDirectChat);
 
@@ -49,9 +53,6 @@ router.post("/chats/:chatId/invite", authenticate, inviteUsersToGroup);
 
 // Respond to a pending group invite (accept / decline)
 router.post("/chats/:chatId/invite/respond", authenticate, respondToGroupInvite);
-
-// Search chats and messages
-router.get("/chats/search", authenticate, searchChatsAndMessages);
 
 // ============ Message Routes ============
 

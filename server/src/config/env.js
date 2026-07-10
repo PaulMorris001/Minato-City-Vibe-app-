@@ -114,6 +114,17 @@ export const config = {
     baseUrl: process.env.CSC_BASE_URL || "https://api.countrystatecity.in/v1",
   },
 
+  // Yelp Fusion API (external vendor discovery). Missing key = source skipped.
+  yelp: {
+    apiKey: process.env.YELP_API_KEY || "",
+  },
+
+  // Google Places API (New) — must be the New Places API, the legacy one is
+  // not enableable on new GCP projects. Missing key = source skipped.
+  googlePlaces: {
+    apiKey: process.env.GOOGLE_PLACES_API_KEY || "",
+  },
+
   // Stripe Configuration
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY || "",

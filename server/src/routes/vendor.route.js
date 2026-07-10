@@ -9,6 +9,7 @@ import {
   searchVendors,
   rateVendor,
   getVendorReviews,
+  getExternalVendorById,
 } from "../controllers/vendors.controller.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 
@@ -20,6 +21,7 @@ router.get("/cities/:cityId/vendor-types", getVendorTypesByCity);
 router.get("/cities/:cityId/vendors/:vendorTypeId", getVendorsByCityAndType);
 router.get("/vendors/search", searchVendors);
 router.get("/vendors/browse", browseVendors);
+router.get("/external-vendors/:id", getExternalVendorById);
 router.get("/vendors/:vendorId", getVendorById);
 router.post("/vendors/:vendorId/rate", authenticate, rateVendor);
 router.get("/vendors/:vendorId/reviews", authenticate, getVendorReviews);

@@ -48,7 +48,8 @@ export default function VendorChatsTab() {
 
   const fetchChats = async () => {
     try {
-      const chats = await chatService.getUserChats();
+      // Vendor inbox: only chats where this user is contacted as the business
+      const chats = await chatService.getUserChats("vendor");
       setChats(chats);
       setFilteredChats(chats);
     } catch (error: any) {
@@ -201,15 +202,20 @@ export default function VendorChatsTab() {
       setUserSearchQuery("");
       setSearchedUsers([]);
 
-      const chat = await chatService.getOrCreateDirectChat(user.id);
+      // Started from the vendor dashboard, so this is a business conversation
+      // with the current user as the vendor side
+      const chat = await chatService.getOrCreateDirectChat(user.id, {
+        context: "vendor",
+        vendorUserId: currentUserId,
+      });
 
       router.push({
         pathname: "/chat/[id]",
         params: { id: chat._id },
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating chat:", error);
-      Alert.alert("Error", "Failed to start chat");
+      Alert.alert("Error", error?.message || "Failed to start chat");
     }
   };
 
