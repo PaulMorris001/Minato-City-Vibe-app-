@@ -11,7 +11,7 @@ import { setCache, getCache, invalidateCache, invalidateCachePattern } from "../
 export const getOrCreateDirectChat = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { otherUserId } = req.body;
+    const { otherUserId, context, vendorUserId } = req.body;
 
     if (!otherUserId) {
       return res.status(400).json({ message: "Other user ID is required" });
@@ -21,17 +21,27 @@ export const getOrCreateDirectChat = async (req, res) => {
       return res.status(400).json({ message: "Cannot create chat with yourself" });
     }
 
+    if (context === 'vendor') {
+      // vendorUserId marks which participant is acting as the business
+      if (!vendorUserId || (vendorUserId !== userId && vendorUserId !== otherUserId)) {
+        return res.status(400).json({ message: "vendorUserId must be one of the chat participants" });
+      }
+    }
+
     // Verify other user exists
     const otherUser = await User.findById(otherUserId);
     if (!otherUser) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const chat = await ChatService.getOrCreateDirectChat(userId, otherUserId);
+    const chat = await ChatService.getOrCreateDirectChat(userId, otherUserId, {
+      context: context === 'vendor' ? 'vendor' : 'personal',
+      vendorUserId: context === 'vendor' ? vendorUserId : null
+    });
 
-    // Invalidate both users' chat lists in case a new chat was created
-    invalidateCache(`user_chats_${userId}`);
-    invalidateCache(`user_chats_${otherUserId}`);
+    // Invalidate both users' chat lists (all mode variants) in case a new chat was created
+    invalidateCachePattern(`user_chats_${userId}`);
+    invalidateCachePattern(`user_chats_${otherUserId}`);
     res.status(200).json({
       message: "Chat retrieved successfully",
       chat
@@ -78,12 +88,14 @@ export const createGroupChat = async (req, res) => {
 export const getUserChats = async (req, res) => {
   try {
     const userId = req.user.id;
+    // Optional ?mode=client|vendor filters by conversation context; absent = all (legacy apps)
+    const mode = ['client', 'vendor'].includes(req.query.mode) ? req.query.mode : undefined;
 
-    const cacheKey = `user_chats_${userId}`;
+    const cacheKey = `user_chats_${userId}_${mode || 'all'}`;
     const cached = getCache(cacheKey);
     if (cached) return res.status(200).json(cached);
 
-    const chats = await ChatService.getUserChats(userId);
+    const chats = await ChatService.getUserChats(userId, mode);
 
     const response = { chats, count: chats.length };
     setCache(cacheKey, response, 30); // 30s TTL
@@ -146,7 +158,7 @@ export const sendMessage = async (req, res) => {
     const message = await ChatService.sendMessage(chatId, userId, messageData);
 
     // Only invalidate sender's cache — recipients get real-time updates via socket
-    invalidateCache(`user_chats_${userId}`);
+    invalidateCachePattern(`user_chats_${userId}`);
     res.status(201).json({
       message: "Message sent successfully",
       data: message
@@ -182,7 +194,7 @@ export const markMessagesAsRead = async (req, res) => {
 
     await ChatService.markMessagesAsRead(chatId, userId);
 
-    invalidateCache(`user_chats_${userId}`);
+    invalidateCachePattern(`user_chats_${userId}`);
     res.status(200).json({ message: "Messages marked as read" });
   } catch (error) {
     console.error("Mark as read error:", error);
@@ -234,7 +246,7 @@ export const deleteChat = async (req, res) => {
 
     await ChatService.deleteChatForUser(chatId, userId);
 
-    invalidateCache(`user_chats_${userId}`);
+    invalidateCachePattern(`user_chats_${userId}`);
     res.status(200).json({ message: "Conversation deleted" });
   } catch (error) {
     console.error("Delete chat error:", error);
@@ -407,7 +419,7 @@ export const setChatPinned = async (req, res) => {
     const { pinned } = req.body;
 
     const chat = await ChatService.setChatPinned(chatId, userId, !!pinned);
-    invalidateCache(`user_chats_${userId}`);
+    invalidateCachePattern(`user_chats_${userId}`);
     res.status(200).json({ message: "Chat pin updated", chat });
   } catch (error) {
     console.error("Pin chat error:", error);
@@ -464,7 +476,7 @@ export const setChatMuted = async (req, res) => {
     const { muted } = req.body;
 
     const chat = await ChatService.setChatMuted(chatId, userId, !!muted);
-    invalidateCache(`user_chats_${userId}`);
+    invalidateCachePattern(`user_chats_${userId}`);
     res.status(200).json({ message: "Chat mute updated", chat });
   } catch (error) {
     console.error("Mute chat error:", error);

@@ -12,6 +12,7 @@ import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
 import { VendorStats, Service } from "@/libs/interfaces";
+import { useUnread } from "@/contexts/UnreadContext";
 
 // Import tab components
 import DashboardTab from "@/components/vendor/DashboardTab";
@@ -29,6 +30,7 @@ export default function VendorDashboard() {
   const [services, setServices] = useState<Service[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [pendingBookingsCount, setPendingBookingsCount] = useState(0);
+  const { vendorUnread } = useUnread();
 
   useEffect(() => {
     loadInitialData();
@@ -156,7 +158,7 @@ export default function VendorDashboard() {
         {renderTabButton("dashboard", "grid", "grid-outline", "Dashboard")}
         {renderTabButton("services", "briefcase", "briefcase-outline", "Services")}
         {renderTabButton("bookings", "calendar", "calendar-outline", "Bookings", pendingBookingsCount)}
-        {renderTabButton("chats", "chatbubbles", "chatbubbles-outline", "Chats")}
+        {renderTabButton("chats", "chatbubbles", "chatbubbles-outline", "Chats", vendorUnread)}
         {renderTabButton("account", "person", "person-outline", "Account")}
       </View>
     </View>

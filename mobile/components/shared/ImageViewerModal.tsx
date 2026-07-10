@@ -10,6 +10,7 @@ import {
   StatusBar,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Fonts } from "@/constants/fonts";
 import ZoomableImage from "./ZoomableImage";
 
@@ -47,7 +48,10 @@ export default function ImageViewerModal({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <StatusBar hidden />
-      <View style={styles.container}>
+      {/* Android renders Modals in their own native root, outside the app's
+          GestureHandlerRootView — without this nested root, pinch/pan/tap
+          gestures inside the modal never fire. */}
+      <GestureHandlerRootView style={styles.container}>
         <FlatList
           ref={listRef}
           data={images}
@@ -79,7 +83,7 @@ export default function ImageViewerModal({
             <Text style={styles.counterText}>{index + 1} / {images.length}</Text>
           </View>
         )}
-      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }

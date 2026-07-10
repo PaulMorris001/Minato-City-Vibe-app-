@@ -34,6 +34,7 @@ import MessageActionSheet from "@/components/chat/MessageActionSheet";
 import ReactionsListSheet from "@/components/chat/ReactionsListSheet";
 import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 import ZoomableImage from "@/components/shared/ZoomableImage";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import ChatInput from "@/components/chat/ChatInput";
 import { Avatar } from "@/components/shared/Avatar";
 import chatService, { Message, Chat, MessageReaction } from "@/services/chat.service";
@@ -66,6 +67,9 @@ export default function ChatScreen() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   // Camera shot / gallery pick awaiting Send-or-Cancel confirmation.
   const [pendingImage, setPendingImage] = useState<string | null>(null);
+  // One-shot latch so a double-tap on Send can't upload the photo twice
+  // (state updates land too late to guard same-frame taps).
+  const sendingImageRef = useRef(false);
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [editGroupName, setEditGroupName] = useState("");
@@ -839,7 +843,11 @@ export default function ChatScreen() {
     if (!chat) return "";
     if (chat.type === "group") return chat.name || "Group Chat";
     const otherParticipant = chat.participants.find((p) => p._id !== currentUserId);
-    return displayName(otherParticipant) || "User";
+    // Business name only when the other user is the business side of a
+    // vendor-context chat; personal chats always show the username.
+    const vendorUserId = (chat.vendorUser as any)?._id || chat.vendorUser;
+    const asBusiness = chat.contextType === "vendor" && otherParticipant?._id === vendorUserId;
+    return (asBusiness ? displayName(otherParticipant) : otherParticipant?.username) || "User";
   };
 
   const getChatAvatar = () => {
@@ -1512,7 +1520,9 @@ export default function ChatScreen() {
         onRequestClose={() => setSelectedImage(null)}
         statusBarTranslucent
       >
-        <View style={styles.imageViewerOverlay}>
+        {/* Android Modals live outside the app-level GestureHandlerRootView,
+            so the zoom gestures need their own root inside the modal. */}
+        <GestureHandlerRootView style={styles.imageViewerOverlay}>
           {selectedImage && (
             <ZoomableImage
               uri={selectedImage}
@@ -1526,7 +1536,7 @@ export default function ChatScreen() {
           >
             <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
-        </View>
+        </GestureHandlerRootView>
       </Modal>
 
       {/* Confirm-before-send preview for camera shots and gallery picks */}
@@ -1567,8 +1577,12 @@ export default function ChatScreen() {
               activeOpacity={0.85}
               onPress={() => {
                 const uri = pendingImage;
+                if (!uri || sendingImageRef.current) return;
+                sendingImageRef.current = true;
                 setPendingImage(null);
-                if (uri) sendImageMessage(uri);
+                sendImageMessage(uri).finally(() => {
+                  sendingImageRef.current = false;
+                });
               }}
             >
               <LinearGradient

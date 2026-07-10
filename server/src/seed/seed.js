@@ -18,7 +18,7 @@ const cities = [
   { _id: "691660f69fce6d48f9f04ca2", name: "San Francisco", state: "California" },
 ];
 
-const vendorTypes = [
+export const vendorTypes = [
   { _id: "691660f69fce6d48f9f04ca4", name: "Chefs", icon: "restaurant" },
   { _id: "691660f69fce6d48f9f04ca5", name: "Restaurants", icon: "fast-food" },
   { _id: "691660f69fce6d48f9f04ca6", name: "Music and Bands", icon: "musical-notes" },
@@ -33,6 +33,12 @@ const vendorTypes = [
   { _id: "691660f69fce6d48f9f04caf", name: "Desserts", icon: "ice-cream" },
   { _id: "691660f69fce6d48f9f04cb0", name: "Beverages", icon: "wine" },
   { _id: "691660f69fce6d48f9f04cb1", name: "Other", icon: "ellipsis-horizontal" },
+  { _id: "691660f69fce6d48f9f04cb2", name: "DJs", icon: "disc" },
+  { _id: "691660f69fce6d48f9f04cb3", name: "Photographers", icon: "camera" },
+  { _id: "691660f69fce6d48f9f04cb4", name: "Makeup Artists", icon: "brush" },
+  { _id: "691660f69fce6d48f9f04cb5", name: "Event Planners", icon: "clipboard" },
+  { _id: "691660f69fce6d48f9f04cb6", name: "Security", icon: "shield-checkmark" },
+  { _id: "691660f69fce6d48f9f04cb7", name: "Caterers", icon: "restaurant-outline" },
 ];
 
 // Vendor name templates by type
@@ -167,6 +173,11 @@ function randomNumber(min, max) {
 
 function generateVendorName(vendorType) {
   const templates = vendorTemplates[vendorType];
+  // Types without name templates (e.g. the external-discovery ones) get a
+  // generic "<Name>'s <Type>" so re-running the seed never crashes.
+  if (!templates || templates.length === 0) {
+    return `${randomElement(names)}'s ${vendorType}`;
+  }
   const template = randomElement(templates);
   return template
     .replace("{name}", randomElement(names))
