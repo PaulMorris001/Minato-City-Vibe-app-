@@ -102,7 +102,8 @@ export default function BestsPage() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    // Top edge only — content should run under the floating tab bar on iOS.
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <Animated.View style={[styles.fixedHeader, { opacity: headerAnim }]}>
         <View style={styles.headerRow}>
           <Text style={styles.title}>Best of Your City</Text>
@@ -129,6 +130,7 @@ export default function BestsPage() {
       <ScrollView
         style={styles.list}
         showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
       >

@@ -177,6 +177,7 @@ export default function ProfileScreen() {
           ListFooterComponent={
             loading ? null : <GuidesSection guides={guides} />
           }
+          contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
           refreshControl={

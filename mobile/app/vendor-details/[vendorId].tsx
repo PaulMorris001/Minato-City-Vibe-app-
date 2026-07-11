@@ -517,6 +517,7 @@ export default function VendorDetails() {
         data={services}
         keyExtractor={(item) => item._id}
         renderItem={renderServiceCard}
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={renderVendorHeader()}
@@ -724,7 +725,9 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
-    paddingBottom: 100,
+    // iOS gets its bottom clearance from the automatic content inset; Android
+    // keeps the old fixed padding for the system nav area.
+    paddingBottom: Platform.OS === "ios" ? 24 : 100,
   },
   serviceCard: {
     backgroundColor: "#1f1f2e",
