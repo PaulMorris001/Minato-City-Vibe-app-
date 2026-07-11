@@ -1,57 +1,25 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
+  Platform,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { useRouter, useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
-import { VendorStats, Service } from "@/libs/interfaces";
-
-// Import tab components
+import { VENDOR_NAVBAR_HEIGHT } from "@/constants/vendorChrome";
+import { VendorStats } from "@/libs/interfaces";
 import DashboardTab from "@/components/vendor/DashboardTab";
-import ServicesTab from "@/components/vendor/ServicesTab";
-import AccountTab from "@/components/vendor/AccountTab";
-import VendorChatsTab from "@/components/vendor/VendorChatsTab";
-import BookingsTab from "@/components/vendor/BookingsTab";
-
-type TabType = "dashboard" | "services" | "bookings" | "chats" | "account";
 
 export default function VendorDashboard() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabType>("dashboard");
   const [stats, setStats] = useState<VendorStats | null>(null);
-  const [services, setServices] = useState<Service[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [pendingBookingsCount, setPendingBookingsCount] = useState(0);
-
-  useEffect(() => {
-    loadInitialData();
-  }, []);
-
-  const loadInitialData = async () => {
-    setLoading(true);
-    await Promise.all([fetchStats(), fetchServices(), fetchPendingCount()]);
-    setLoading(false);
-  };
-
-  const fetchPendingCount = async () => {
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      const res = await fetch(`${BASE_URL}/bookings/vendor?status=pending`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setPendingBookingsCount(Array.isArray(data) ? data.length : 0);
-      }
-    } catch {}
-  };
 
   const fetchStats = async () => {
     try {
@@ -65,55 +33,27 @@ export default function VendorDashboard() {
     }
   };
 
-  const fetchServices = async () => {
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      const res = await axios.get(`${BASE_URL}/vendor/services`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setServices(res.data);
-    } catch (error: any) {
-      console.error("Error fetching services:", error);
-    }
-  };
+  useEffect(() => {
+    fetchStats().finally(() => setLoading(false));
+  }, []);
+
+  // Stats change from actions on the other tabs (new service, booking
+  // updates, account edits), so refetch whenever this tab regains focus.
+  useFocusEffect(
+    useCallback(() => {
+      fetchStats();
+    }, [])
+  );
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    if (activeTab === "dashboard") {
-      await fetchStats();
-    } else if (activeTab === "services") {
-      await fetchServices();
-    }
+    await fetchStats();
     setRefreshing(false);
-  };
-
-  const renderTabButton = (
-    tab: TabType,
-    activeIcon: keyof typeof Ionicons.glyphMap,
-    inactiveIcon: keyof typeof Ionicons.glyphMap,
-    label: string,
-    badgeCount?: number
-  ) => {
-    const isActive = activeTab === tab;
-    const color = isActive ? "#A855F7" : "rgba(244,238,255,0.38)";
-    return (
-      <TouchableOpacity style={styles.tabButton} onPress={() => setActiveTab(tab)} activeOpacity={0.7}>
-        <View style={{ position: "relative" }}>
-          <Ionicons name={isActive ? activeIcon : inactiveIcon} size={23} color={color} />
-          {badgeCount != null && badgeCount > 0 && (
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>{badgeCount > 99 ? "99+" : badgeCount}</Text>
-            </View>
-          )}
-        </View>
-        <Text style={[styles.tabLabel, { color, fontWeight: isActive ? "700" : "500" }]}>{label}</Text>
-      </TouchableOpacity>
-    );
   };
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.screen, styles.loadingContainer]}>
         <ActivityIndicator size="large" color={Colors.primary} />
         <Text style={styles.loadingText}>Loading dashboard...</Text>
       </View>
@@ -121,102 +61,33 @@ export default function VendorDashboard() {
   }
 
   return (
-    <View style={styles.container}>
-      {/* Tab Content */}
-      <View style={styles.content}>
-        {activeTab === "dashboard" && (
-          <DashboardTab
-            stats={stats}
-            onRefresh={handleRefresh}
-            refreshing={refreshing}
-            onGoToServices={() => setActiveTab("services")}
-            onGoToAccount={() => setActiveTab("account")}
-          />
-        )}
-        {activeTab === "services" && (
-          <ServicesTab
-            services={services}
-            onRefresh={fetchServices}
-            refreshing={refreshing}
-          />
-        )}
-        {activeTab === "bookings" && (
-          <BookingsTab />
-        )}
-        {activeTab === "chats" && (
-          <VendorChatsTab />
-        )}
-        {activeTab === "account" && (
-          <AccountTab onRefresh={handleRefresh} />
-        )}
-      </View>
-
-      {/* Bottom Tab Navigation */}
-      <View style={styles.tabContainer}>
-        {renderTabButton("dashboard", "grid", "grid-outline", "Dashboard")}
-        {renderTabButton("services", "briefcase", "briefcase-outline", "Services")}
-        {renderTabButton("bookings", "calendar", "calendar-outline", "Bookings", pendingBookingsCount)}
-        {renderTabButton("chats", "chatbubbles", "chatbubbles-outline", "Chats")}
-        {renderTabButton("account", "person", "person-outline", "Account")}
-      </View>
+    <View style={styles.screen}>
+      <DashboardTab
+        stats={stats}
+        onRefresh={handleRefresh}
+        refreshing={refreshing}
+        onGoToServices={() => router.push("/(vendor)/services" as any)}
+        onGoToAccount={() => router.push("/(vendor)/account" as any)}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
     backgroundColor: "#0B0613",
+    // The vendor navbar overlays the tab host on iOS; pad below it. On
+    // Android the navbar sits in normal flow above the tabs.
+    paddingTop: Platform.OS === "ios" ? VENDOR_NAVBAR_HEIGHT : 0,
   },
   loadingContainer: {
-    flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#0B0613",
   },
   loadingText: {
     marginTop: 12,
     fontSize: 16,
     color: "#9ca3af",
-  },
-  tabContainer: {
-    flexDirection: "row",
-    backgroundColor: "#0B0613",
-    justifyContent: "space-around",
-    alignItems: "center",
-    paddingTop: 10,
-    paddingBottom: 26,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.08)",
-  },
-  tabButton: {
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 4,
-    paddingVertical: 4,
-  },
-  tabLabel: {
-    fontSize: 10.5,
-  },
-  tabBadge: {
-    position: "absolute",
-    top: -4,
-    right: -6,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: "#EC4899",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 2,
-  },
-  tabBadgeText: {
-    color: "#fff",
-    fontSize: 9,
-    fontWeight: "700",
-    lineHeight: 11,
-  },
-  content: {
-    flex: 1,
   },
 });

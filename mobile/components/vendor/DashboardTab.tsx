@@ -115,6 +115,9 @@ export default function DashboardTab({
   return (
     <ScrollView
       style={styles.container}
+      // Content scrolls under the floating native tab bar on iOS; the system
+      // inset keeps the last item reachable above it.
+      contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{ paddingBottom: 24 }}
       showsVerticalScrollIndicator={false}
       refreshControl={

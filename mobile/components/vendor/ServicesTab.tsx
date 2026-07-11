@@ -195,6 +195,7 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
         renderItem={renderCard}
         keyExtractor={(item) => item._id}
         showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={VN.purple} />}
         ListHeaderComponent={
