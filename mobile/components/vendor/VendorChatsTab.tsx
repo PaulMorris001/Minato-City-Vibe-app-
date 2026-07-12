@@ -297,6 +297,7 @@ export default function VendorChatsTab() {
         data={filteredChats || []}
         renderItem={renderChatItem}
         keyExtractor={(item) => item._id}
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={[
           styles.listContent,
           (!filteredChats || filteredChats.length === 0) &&

@@ -329,6 +329,7 @@ export default function BookingsTab() {
           data={bookings}
           keyExtractor={(item) => item._id}
           renderItem={renderBookingCard}
+          contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           refreshControl={

@@ -12,10 +12,11 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { Tabs, useRouter, useSegments } from "expo-router";
+import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
-import { isLiquidGlassAvailable } from "expo-glass-effect";
+import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import * as SecureStore from "expo-secure-store";
 import { unregisterForPushNotifications } from "@/utils/pushNotifications";
 import axios, { AxiosError } from "axios";
@@ -29,10 +30,41 @@ import socketService from "@/services/socket.service";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "@/components/shared/Avatar";
 
+// Circular navbar action surface. On iOS 26 this is real Liquid Glass;
+// everywhere else it keeps the original gradient fill.
+function PillSurface({
+  glass,
+  tintColor,
+  gradientColors,
+  children,
+}: {
+  glass: boolean;
+  tintColor?: string;
+  gradientColors: [string, string];
+  children: React.ReactNode;
+}) {
+  if (glass) {
+    return (
+      <GlassView style={styles.ticketGlass} tintColor={tintColor} isInteractive>
+        {children}
+      </GlassView>
+    );
+  }
+  return (
+    <LinearGradient colors={gradientColors} style={styles.ticketGradient}>
+      {children}
+    </LinearGradient>
+  );
+}
+
 export default function TabsLayout() {
   const { activeAccount } = useAccount();
   const { totalUnread, notifUnread } = useUnread();
   const isGlassAvailable = Platform.OS === "ios" && isLiquidGlassAvailable();
+  // The profile modal sits on a translucent surface on any iOS (real glass on
+  // 26+, blur below), so the brighter text palette applies to both. Android
+  // keeps the solid card.
+  const isTranslucentModal = Platform.OS === "ios";
   const segments = useSegments();
   const currentTab = segments[1]; // Gets the current tab name (home, vendors, bests, etc.)
   const insets = useSafeAreaInsets();
@@ -183,16 +215,16 @@ export default function TabsLayout() {
         <Ionicons
           name="close"
           size={24}
-          color={isGlassAvailable ? "#fff" : "#9ca3af"}
+          color={isTranslucentModal ? "#fff" : "#9ca3af"}
         />
       </TouchableOpacity>
 
       <View style={styles.profileHeader}>
         <Avatar uri={user.profilePicture} name={user.username} size={80} />
-        <Text style={[styles.usernameText, isGlassAvailable && styles.glassText]}>
+        <Text style={[styles.usernameText, isTranslucentModal && styles.glassText]}>
           {capitalize(user.username)}
         </Text>
-        <Text style={[styles.emailText, isGlassAvailable && styles.glassTextSecondary]}>
+        <Text style={[styles.emailText, isTranslucentModal && styles.glassTextSecondary]}>
           {user.email}
         </Text>
         <LinearGradient
@@ -211,7 +243,7 @@ export default function TabsLayout() {
         </LinearGradient>
       </View>
 
-      <View style={[styles.divider, isGlassAvailable && styles.glassDivider]} />
+      <View style={[styles.divider, isTranslucentModal && styles.glassDivider]} />
 
       <TouchableOpacity
         style={styles.menuItem}
@@ -223,13 +255,13 @@ export default function TabsLayout() {
         <View style={styles.menuIconContainer}>
           <Ionicons name="chatbubbles-outline" size={20} color="#a855f7" />
         </View>
-        <Text style={[styles.menuItemText, isGlassAvailable && styles.glassText]}>
+        <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
           Messages
         </Text>
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isGlassAvailable ? "#fff" : "#4b5563"}
+          color={isTranslucentModal ? "#fff" : "#4b5563"}
         />
       </TouchableOpacity>
 
@@ -243,13 +275,13 @@ export default function TabsLayout() {
         <View style={styles.menuIconContainer}>
           <Ionicons name="calendar-outline" size={20} color="#a855f7" />
         </View>
-        <Text style={[styles.menuItemText, isGlassAvailable && styles.glassText]}>
+        <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
           My Events
         </Text>
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isGlassAvailable ? "#fff" : "#4b5563"}
+          color={isTranslucentModal ? "#fff" : "#4b5563"}
         />
       </TouchableOpacity>
 
@@ -263,13 +295,13 @@ export default function TabsLayout() {
         <View style={styles.menuIconContainer}>
           <Ionicons name="heart-outline" size={20} color="#a855f7" />
         </View>
-        <Text style={[styles.menuItemText, isGlassAvailable && styles.glassText]}>
+        <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
           Favorites
         </Text>
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isGlassAvailable ? "#fff" : "#4b5563"}
+          color={isTranslucentModal ? "#fff" : "#4b5563"}
         />
       </TouchableOpacity>
 
@@ -283,13 +315,13 @@ export default function TabsLayout() {
         <View style={styles.menuIconContainer}>
           <Ionicons name="settings-outline" size={20} color="#a855f7" />
         </View>
-        <Text style={[styles.menuItemText, isGlassAvailable && styles.glassText]}>
+        <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
           Settings
         </Text>
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isGlassAvailable ? "#fff" : "#4b5563"}
+          color={isTranslucentModal ? "#fff" : "#4b5563"}
         />
       </TouchableOpacity>
 
@@ -307,17 +339,17 @@ export default function TabsLayout() {
         <View style={styles.menuIconContainer}>
           <Ionicons name="help-circle-outline" size={20} color="#a855f7" />
         </View>
-        <Text style={[styles.menuItemText, isGlassAvailable && styles.glassText]}>
+        <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
           Help & Support
         </Text>
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isGlassAvailable ? "#fff" : "#4b5563"}
+          color={isTranslucentModal ? "#fff" : "#4b5563"}
         />
       </TouchableOpacity>
 
-      <View style={[styles.divider, isGlassAvailable && styles.glassDivider]} />
+      <View style={[styles.divider, isTranslucentModal && styles.glassDivider]} />
 
       <TouchableOpacity
         style={styles.logoutButton}
@@ -334,7 +366,7 @@ export default function TabsLayout() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       {currentTab === "home" && (
-        <View style={styles.navbar}>
+        <View style={[styles.navbar, Platform.OS === "ios" && styles.navbarOverlay]}>
           <Text style={styles.logoText}>OurCityvibe</Text>
           <View style={styles.navbarActions}>
             {isGuest ? (
@@ -353,10 +385,7 @@ export default function TabsLayout() {
               style={styles.ticketButton}
               activeOpacity={0.7}
             >
-              <LinearGradient
-                colors={["#374151", "#1f2937"]}
-                style={styles.ticketGradient}
-              >
+              <PillSurface glass={isGlassAvailable} gradientColors={["#374151", "#1f2937"]}>
                 <Ionicons name="notifications-outline" size={20} color="#fff" />
                 {notifUnread > 0 && (
                   <View style={styles.unreadBadge}>
@@ -365,17 +394,14 @@ export default function TabsLayout() {
                     </Text>
                   </View>
                 )}
-              </LinearGradient>
+              </PillSurface>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => router.push("/messages" as any)}
               style={styles.ticketButton}
               activeOpacity={0.7}
             >
-              <LinearGradient
-                colors={["#374151", "#1f2937"]}
-                style={styles.ticketGradient}
-              >
+              <PillSurface glass={isGlassAvailable} gradientColors={["#374151", "#1f2937"]}>
                 <Ionicons name="chatbubbles-outline" size={20} color="#fff" />
                 {totalUnread > 0 && (
                   <View style={styles.unreadBadge}>
@@ -384,19 +410,20 @@ export default function TabsLayout() {
                     </Text>
                   </View>
                 )}
-              </LinearGradient>
+              </PillSurface>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => router.push("/passes" as any)}
               style={styles.ticketButton}
               activeOpacity={0.7}
             >
-              <LinearGradient
-                colors={["#a855f7", "#7c3aed"]}
-                style={styles.ticketGradient}
+              <PillSurface
+                glass={isGlassAvailable}
+                tintColor="#a855f7"
+                gradientColors={["#a855f7", "#7c3aed"]}
               >
                 <Ionicons name="qr-code" size={20} color="#fff" />
-              </LinearGradient>
+              </PillSurface>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleProfilePress}
@@ -419,6 +446,10 @@ export default function TabsLayout() {
       >
         <View style={styles.modalOverlay}>
           {isGlassAvailable ? (
+            <GlassView style={[styles.modalContent, styles.glassModalContent]}>
+              {renderModalContent()}
+            </GlassView>
+          ) : Platform.OS === "ios" ? (
             <BlurView
               intensity={80}
               tint="dark"
@@ -432,116 +463,123 @@ export default function TabsLayout() {
         </View>
       </Modal>
 
-      <Tabs
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: "#a855f7",
-          tabBarInactiveTintColor: "#6b7280",
-          tabBarStyle: {
-            backgroundColor: Platform.OS === "ios" ? "rgba(31, 31, 46, 0.95)" : "#1f1f2e",
-            paddingBottom: Platform.OS === "ios" ? Math.max(insets.bottom, 24) : insets.bottom + 8,
-            paddingTop: 8,
-            borderTopWidth: 0.5,
-            borderTopColor: "rgba(168, 85, 247, 0.2)",
-            height: Platform.OS === "ios" ? 90 : 60 + insets.bottom + 8,
-            shadowColor: "#000",
-            shadowOffset: {
-              width: 0,
-              height: -2,
+      {Platform.OS === "ios" ? (
+        // Real UITabBarController tab bar. The bar is deliberately left
+        // unstyled — no background, height or border — so iOS 26 renders the
+        // floating Liquid Glass capsule (older iOS gets the standard system
+        // bar). Route names match the old <Tabs.Screen> entries exactly.
+        <NativeTabs tintColor="#a855f7" minimizeBehavior="onScrollDown">
+          <NativeTabs.Trigger name="home">
+            <Label>Home</Label>
+            <Icon sf={{ default: "house", selected: "house.fill" }} />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="vendors">
+            <Label>Vendors</Label>
+            <Icon sf={{ default: "safari", selected: "safari.fill" }} />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="bests">
+            <Label>Best Of Lists</Label>
+            <Icon sf={{ default: "trophy", selected: "trophy.fill" }} />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="events">
+            <Label>Events</Label>
+            <Icon sf="calendar" />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="profile">
+            <Label>Profile</Label>
+            <Icon sf={{ default: "person", selected: "person.fill" }} />
+          </NativeTabs.Trigger>
+        </NativeTabs>
+      ) : (
+        // Android keeps the existing JS tab bar (dark surface, purple tint) so
+        // nothing regresses there.
+        <Tabs
+          screenOptions={{
+            headerShown: false,
+            tabBarActiveTintColor: "#a855f7",
+            tabBarInactiveTintColor: "#6b7280",
+            tabBarStyle: {
+              backgroundColor: "#1f1f2e",
+              paddingBottom: insets.bottom + 8,
+              paddingTop: 8,
+              borderTopWidth: 0.5,
+              borderTopColor: "rgba(168, 85, 247, 0.2)",
+              height: 60 + insets.bottom + 8,
+              elevation: 5,
             },
-            shadowOpacity: 0.25,
-            shadowRadius: 3.84,
-            elevation: 5,
-          },
-          tabBarLabelStyle: {
-            fontSize: 11,
-            fontFamily: Fonts.semiBold,
-          },
-          tabBarBackground: () =>
-            isGlassAvailable ? (
-              <BlurView
-                intensity={80}
-                tint="dark"
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  backgroundColor: "transparent",
-                  borderTopWidth: 0.5,
-                  borderTopColor: "rgba(168, 85, 247, 0.3)",
-                }}
-              />
-            ) : null,
-        }}
-      >
-        <Tabs.Screen
-          name="home"
-          options={{
-            title: "Home",
-            tabBarIcon: ({ focused, color }) => (
-              <Ionicons
-                name={focused ? "home" : "home-outline"}
-                size={20}
-                color={color}
-              />
-            ),
+            tabBarLabelStyle: {
+              fontSize: 11,
+              fontFamily: Fonts.semiBold,
+            },
           }}
-        />
-        <Tabs.Screen
-          name="vendors"
-          options={{
-            title: "Vendors",
-            tabBarIcon: ({ focused, color }) => (
-              <Ionicons
-                name={focused ? "compass" : "compass-outline"}
-                size={20}
-                color={color}
-              />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="bests"
-          options={{
-            title: "Best Of Lists",
-            tabBarIcon: ({ focused, color }) => (
-              <Ionicons
-                name={focused ? "trophy" : "trophy-outline"}
-                size={20}
-                color={color}
-              />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="events"
-          options={{
-            title: "Events",
-            tabBarIcon: ({ focused, color }) => (
-              <Ionicons
-                name={focused ? "calendar" : "calendar-outline"}
-                size={20}
-                color={color}
-              />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="profile"
-          options={{
-            title: "Profile",
-            tabBarIcon: ({ focused, color }) => (
-              <Ionicons
-                name={focused ? "person" : "person-outline"}
-                size={20}
-                color={color}
-              />
-            ),
-          }}
-        />
-      </Tabs>
+        >
+          <Tabs.Screen
+            name="home"
+            options={{
+              title: "Home",
+              tabBarIcon: ({ focused, color }) => (
+                <Ionicons
+                  name={focused ? "home" : "home-outline"}
+                  size={20}
+                  color={color}
+                />
+              ),
+            }}
+          />
+          <Tabs.Screen
+            name="vendors"
+            options={{
+              title: "Vendors",
+              tabBarIcon: ({ focused, color }) => (
+                <Ionicons
+                  name={focused ? "compass" : "compass-outline"}
+                  size={20}
+                  color={color}
+                />
+              ),
+            }}
+          />
+          <Tabs.Screen
+            name="bests"
+            options={{
+              title: "Best Of Lists",
+              tabBarIcon: ({ focused, color }) => (
+                <Ionicons
+                  name={focused ? "trophy" : "trophy-outline"}
+                  size={20}
+                  color={color}
+                />
+              ),
+            }}
+          />
+          <Tabs.Screen
+            name="events"
+            options={{
+              title: "Events",
+              tabBarIcon: ({ focused, color }) => (
+                <Ionicons
+                  name={focused ? "calendar" : "calendar-outline"}
+                  size={20}
+                  color={color}
+                />
+              ),
+            }}
+          />
+          <Tabs.Screen
+            name="profile"
+            options={{
+              title: "Profile",
+              tabBarIcon: ({ focused, color }) => (
+                <Ionicons
+                  name={focused ? "person" : "person-outline"}
+                  size={20}
+                  color={color}
+                />
+              ),
+            }}
+          />
+        </Tabs>
+      )}
     </View>
   );
 }
@@ -569,6 +607,17 @@ const styles = StyleSheet.create({
     textShadowColor: "rgba(168, 85, 247, 0.3)",
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 8,
+  },
+  // iOS only: the navbar must float over the native tab host instead of
+  // sitting above it in the flex column — if the host is pushed down by a
+  // sibling, iOS 26 refuses to render the floating Liquid Glass tab bar.
+  // Home compensates with matching top padding on its scroll content.
+  navbarOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
   navbarActions: {
     flexDirection: "row",
@@ -601,6 +650,15 @@ const styles = StyleSheet.create({
   ticketGradient: {
     width: 40,
     height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  // Same footprint as ticketGradient; the radius lives on the glass view so
+  // the material itself is circular, not just clipped by the wrapper.
+  ticketGlass: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
   },

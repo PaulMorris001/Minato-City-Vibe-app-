@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Image,
   Linking,
+  Platform,
 } from "react-native";
 import { Vendor } from "@/libs/interfaces";
 import { Ionicons } from "@expo/vector-icons";
@@ -192,6 +193,7 @@ export default function VendorsList() {
         data={vendors}
         keyExtractor={(item) => item._id}
         renderItem={renderVendorCard}
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
@@ -237,7 +239,9 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: getResponsivePadding(),
-    paddingBottom: 100,
+    // iOS gets its bottom clearance from the automatic content inset; Android
+    // keeps the old fixed padding for the system nav area.
+    paddingBottom: Platform.OS === "ios" ? 24 : 100,
   },
   card: {
     backgroundColor: "#1f1f2e",

@@ -182,7 +182,8 @@ export default function VendorsPage() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    // Top edge only — content should run under the floating tab bar on iOS.
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <Animated.View
         style={[
           styles.headerContainer,
@@ -251,6 +252,7 @@ export default function VendorsPage() {
                 </TouchableOpacity>
               )}
               showsVerticalScrollIndicator={false}
+              contentInsetAdjustmentBehavior="automatic"
               contentContainerStyle={styles.listContent}
             />
           )}
@@ -266,6 +268,7 @@ export default function VendorsPage() {
         /* Browse mode — location filter + per-type carousels */
         <ScrollView
           showsVerticalScrollIndicator={false}
+          contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
         >

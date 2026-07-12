@@ -304,7 +304,12 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={styles.container}
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={{ paddingBottom: 28 }}
+      showsVerticalScrollIndicator={false}
+    >
       {/* Business-card hero */}
       <View style={styles.heroWrap}>
         <View style={styles.heroCard}>

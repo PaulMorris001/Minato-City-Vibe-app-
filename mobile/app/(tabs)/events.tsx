@@ -698,7 +698,8 @@ export default function EventsPage() {
   return (
     <>
       <LinearGradient colors={["#0f0f1a", "#1a1a2e"]} style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
+        {/* Top edge only — content should run under the floating tab bar on iOS. */}
+        <SafeAreaView style={styles.safeArea} edges={["top"]}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Events</Text>
           </View>
@@ -725,6 +726,7 @@ export default function EventsPage() {
 
         <ScrollView
           style={styles.scrollView}
+          contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={styles.scrollContent}
           refreshControl={
             <RefreshControl

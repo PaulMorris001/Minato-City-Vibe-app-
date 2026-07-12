@@ -10,7 +10,9 @@ import {
   AppState,
   FlatList,
   Animated,
+  Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
@@ -139,6 +141,12 @@ const TOPIC_EMOJI: Record<string, string> = {
   "Hair and Nail Salons": "💅",
   "Barber Shops": "💈",
 };
+
+// Height of the tab layout's home navbar (paddingTop 50 + 40pt row + 16).
+// On iOS the navbar overlays this screen (see navbarOverlay in the tab
+// layout), so the scroll content pads itself below it; the automatic content
+// inset already contributes the top safe area, hence the subtraction.
+const NAVBAR_OVERLAY_HEIGHT = 106;
 
 const QUICK_ACTIONS = [
   { icon: "home-outline" as const, label: "House Party", color: C.purple },
@@ -350,6 +358,7 @@ function GuideCardSkeleton() {
 
 export default function Home() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { payForTicket } = useStripePayment();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
@@ -628,10 +637,18 @@ export default function Home() {
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
+        // Let content run under the floating native tab bar on iOS; the system
+        // inset keeps the last item scrollable above it.
+        contentInsetAdjustmentBehavior="automatic"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.purple} colors={[C.purple]} />
         }
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          Platform.OS === "ios" && {
+            paddingTop: Math.max(0, NAVBAR_OVERLAY_HEIGHT - insets.top),
+          },
+        ]}
       >
         {/* Greeting */}
         <View style={styles.greetingSection}>
@@ -982,12 +999,16 @@ export default function Home() {
           </View>
         )}
 
-        <View style={{ height: 80 }} />
       </ScrollView>
 
       {/* FAB */}
       <TouchableOpacity
-        style={styles.fab}
+        // On iOS the screen extends under the floating tab bar, so lift the
+        // FAB above it; on Android the JS bar still takes layout space.
+        style={[
+          styles.fab,
+          Platform.OS === "ios" && { bottom: insets.bottom + 60 },
+        ]}
         onPress={async () => {
           if (!(await ensureAuth("create an event"))) return;
           setIsModalVisible(true);
@@ -1015,7 +1036,9 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 20,
+    // Clearance for the FAB, not the tab bar — bar clearance comes from the
+    // iOS content inset / the Android JS bar's layout space.
+    paddingBottom: 96,
   },
   greetingSection: {
     flexDirection: "row",
