@@ -10,6 +10,10 @@ const eventSchema = mongoose.Schema({
   city: { type: String },
   state: { type: String },
   country: { type: String },
+  // Virtual events have no physical venue; location is stored as "Online".
+  isVirtual: { type: Boolean, default: false },
+  // Optional meeting URL (Zoom/Meet/etc). Only returned to attendees.
+  meetingLink: { type: String, default: "" },
   image: { type: String, default: "" }, // primary/cover image (first of images)
   images: { type: [String], default: [] }, // gallery — all event photos
   description: { type: String, default: "" },

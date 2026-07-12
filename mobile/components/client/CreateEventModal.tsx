@@ -50,6 +50,8 @@ export default function CreateEventModal({
     location: "",
     address: "",
     description: "",
+    isVirtual: false,
+    meetingLink: "",
     isPublic: false,
     isPaid: false,
     ticketPrice: "",
@@ -102,8 +104,12 @@ export default function CreateEventModal({
       Alert.alert("Validation Error", "Please select an event date and time");
       return;
     }
-    if (!eventLocation?.city || !eventLocation?.state) {
+    if (!formData.isVirtual && (!eventLocation?.city || !eventLocation?.state)) {
       Alert.alert("Validation Error", "Please select your country, state, and city");
+      return;
+    }
+    if (formData.isVirtual && formData.meetingLink.trim() && !/^https?:\/\//i.test(formData.meetingLink.trim())) {
+      Alert.alert("Validation Error", "Event link must start with http:// or https://");
       return;
     }
 
@@ -116,7 +122,7 @@ export default function CreateEventModal({
         Alert.alert("Validation Error", "Please enter maximum number of guests");
         return;
       }
-      if (!venueProofImage) {
+      if (!venueProofImage && !formData.isVirtual) {
         Alert.alert(
           "Venue proof required",
           "Upload a photo of your venue booking — confirmation email, signed contract, or reservation screenshot."
@@ -169,11 +175,13 @@ export default function CreateEventModal({
       const eventData = {
         title: formData.title.trim(),
         date: formData.date.trim(),
-        location: formatLocation(eventLocation),
-        address: formData.address.trim(),
-        city: eventLocation.city,
-        state: eventLocation.state,
-        country: eventLocation.country,
+        location: formData.isVirtual ? "Online" : formatLocation(eventLocation!),
+        address: formData.isVirtual ? "" : formData.address.trim(),
+        city: formData.isVirtual ? "" : eventLocation!.city,
+        state: formData.isVirtual ? "" : eventLocation!.state,
+        country: formData.isVirtual ? "" : eventLocation!.country,
+        isVirtual: formData.isVirtual,
+        meetingLink: formData.isVirtual ? formData.meetingLink.trim() : "",
         description: formData.description.trim(),
         images: eventImageUrls,
         isPublic: formData.isPublic,
@@ -196,6 +204,8 @@ export default function CreateEventModal({
         location: "",
         address: "",
         description: "",
+        isVirtual: false,
+        meetingLink: "",
         isPublic: false,
         isPaid: false,
         ticketPrice: "",
@@ -233,7 +243,8 @@ export default function CreateEventModal({
   
   
 
-  const isSubmitEnabled = !!formData.title.trim() && !!formData.date && !!eventLocation?.city;
+  const isSubmitEnabled =
+    !!formData.title.trim() && !!formData.date && (formData.isVirtual || !!eventLocation?.city);
 
   const quickDates = [
     { label: "Tonight", offset: 0 },
@@ -330,25 +341,67 @@ export default function CreateEventModal({
                 />
               </View>
 
-              {/* Address — precise venue / street so guests know exactly where */}
-              <Text style={styles.label}>Address</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., 123 Main St, Rooftop Lounge"
-                placeholderTextColor="rgba(244,238,255,0.3)"
-                value={formData.address}
-                onChangeText={(value) => handleInputChange("address", value)}
-              />
-
-              {/* Location (Country → State → City) */}
-              <View style={{ paddingHorizontal: 20, marginTop: 4 }}>
-                <LocationPicker
-                  value={eventLocation ?? undefined}
-                  onChange={setEventLocation}
-                  label="Location"
-                  required
-                />
+              {/* Where is it held — in person vs virtual */}
+              <Text style={styles.label}>Where is it held</Text>
+              <View style={styles.visibilityRow}>
+                <TouchableOpacity
+                  style={[styles.visibilityCard, !formData.isVirtual && styles.visibilityCardActive]}
+                  onPress={() => handleInputChange("isVirtual", false)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.visibilityEmoji}>📍</Text>
+                  <Text style={[styles.visibilityLabel, !formData.isVirtual && styles.visibilityLabelActive]}>In person</Text>
+                  <Text style={styles.visibilityHint}>Physical venue</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.visibilityCard, formData.isVirtual && styles.visibilityCardActive]}
+                  onPress={() => handleInputChange("isVirtual", true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.visibilityEmoji}>🎥</Text>
+                  <Text style={[styles.visibilityLabel, formData.isVirtual && styles.visibilityLabelActive]}>Virtual</Text>
+                  <Text style={styles.visibilityHint}>Online event</Text>
+                </TouchableOpacity>
               </View>
+
+              {formData.isVirtual ? (
+                <>
+                  {/* Meeting URL — optional, shared with attendees only */}
+                  <Text style={styles.label}>Event link</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="https://zoom.us/j/... (optional)"
+                    placeholderTextColor="rgba(244,238,255,0.3)"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    value={formData.meetingLink}
+                    onChangeText={(value) => handleInputChange("meetingLink", value)}
+                  />
+                </>
+              ) : (
+                <>
+                  {/* Address — precise venue / street so guests know exactly where */}
+                  <Text style={styles.label}>Address</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., 123 Main St, Rooftop Lounge"
+                    placeholderTextColor="rgba(244,238,255,0.3)"
+                    value={formData.address}
+                    onChangeText={(value) => handleInputChange("address", value)}
+                  />
+
+                  {/* Location (Country → State → City) */}
+                  <View style={{ paddingHorizontal: 20, marginTop: 4 }}>
+                    <LocationPicker
+                      value={eventLocation ?? undefined}
+                      onChange={setEventLocation}
+                      label="Location"
+                      required
+                    />
+                  </View>
+                </>
+              )}
 
               {/* Description */}
               <Text style={styles.label}>The vibe</Text>
@@ -469,26 +522,30 @@ export default function CreateEventModal({
                         onChangeText={(value) => handleInputChange("maxGuests", value)}
                       />
 
-                      <Text style={styles.label}>Venue Proof *</Text>
-                      <Text
-                        style={{
-                          color: "rgba(244,238,255,0.55)",
-                          fontSize: 12,
-                          marginBottom: 8,
-                          lineHeight: 16,
-                        }}
-                      >
-                        Upload a photo of your venue booking — confirmation email,
-                        signed contract, or reservation screenshot. Admins review
-                        this before your event goes on sale.
-                      </Text>
-                      <ImagePickerButton
-                        imageUri={venueProofImage}
-                        onImageSelected={setVenueProofImage}
-                        label="Booking / Contract"
-                        size={120}
-                        shape="square"
-                      />
+                      {!formData.isVirtual && (
+                        <>
+                          <Text style={styles.label}>Venue Proof *</Text>
+                          <Text
+                            style={{
+                              color: "rgba(244,238,255,0.55)",
+                              fontSize: 12,
+                              marginBottom: 8,
+                              lineHeight: 16,
+                            }}
+                          >
+                            Upload a photo of your venue booking — confirmation email,
+                            signed contract, or reservation screenshot. Admins review
+                            this before your event goes on sale.
+                          </Text>
+                          <ImagePickerButton
+                            imageUri={venueProofImage}
+                            onImageSelected={setVenueProofImage}
+                            label="Booking / Contract"
+                            size={120}
+                            shape="square"
+                          />
+                        </>
+                      )}
                     </>
                   )}
                 </>
@@ -513,7 +570,11 @@ export default function CreateEventModal({
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
                     <Text style={styles.createButtonText}>
-                      {isSubmitEnabled ? "Create event →" : "Add name, date & place"}
+                      {isSubmitEnabled
+                        ? "Create event →"
+                        : formData.isVirtual
+                          ? "Add name & date"
+                          : "Add name, date & place"}
                     </Text>
                   )}
                 </LinearGradient>

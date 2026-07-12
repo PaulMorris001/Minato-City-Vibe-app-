@@ -20,6 +20,7 @@ export interface PublicEvent {
   title: string;
   date: string;
   location: string;
+  isVirtual?: boolean;
   image?: string;
   description?: string;
   isPublic: boolean;
@@ -123,7 +124,7 @@ export default function PublicEventCard({
             </Text>
 
             <View style={styles.eventCardDetail}>
-              <Ionicons name="location" size={14} color="#a855f7" />
+              <Ionicons name={event.isVirtual ? "videocam" : "location"} size={14} color="#a855f7" />
               <Text style={styles.eventCardDetailText} numberOfLines={1}>
                 {event.location}
               </Text>

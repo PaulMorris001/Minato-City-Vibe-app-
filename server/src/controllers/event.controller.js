@@ -18,6 +18,17 @@ import { exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { issueEventPass } from "../services/pass.service.js";
 import config from "../config/env.js";
 
+// Meeting links are validated as URLs, not run through the profanity filter
+// (URLs aren't prose).
+const isValidMeetingLink = (value) => {
+  try {
+    const u = new URL(value);
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch {
+    return false;
+  }
+};
+
 // Create a new event
 export const createEvent = async (req, res) => {
   try {
@@ -37,11 +48,17 @@ export const createEvent = async (req, res) => {
       ticketPrice,
       maxGuests,
       venueProofImage,
+      isVirtual,
+      meetingLink,
     } = req.body;
     const userId = req.user.id;
+    const virtual = Boolean(isVirtual);
 
-    if (!title || !date || !location) {
+    if (!title || !date || (!virtual && !location)) {
       return res.status(400).json({ message: "Title, date, and location are required" });
+    }
+    if (meetingLink && !isValidMeetingLink(meetingLink)) {
+      return res.status(400).json({ message: "Event link must be a valid URL (https://...)" });
     }
 
     // Reject JSON/operator payloads and symbol-soup titles before they're stored
@@ -67,7 +84,9 @@ export const createEvent = async (req, res) => {
       if (!maxGuests || maxGuests <= 0) {
         return res.status(400).json({ message: "Max guests must be specified for paid events" });
       }
-      if (!venueProofImage) {
+      // Virtual events have no venue to prove; they still pass through the
+      // first-paid-event admin approval queue below.
+      if (!venueProofImage && !virtual) {
         return res.status(400).json({
           message: "A photo of your venue booking (confirmation, contract, or reservation) is required for paid events.",
         });
@@ -180,11 +199,13 @@ export const createEvent = async (req, res) => {
     const event = new Event({
       title,
       date: new Date(date),
-      location,
-      address: address || "",
-      city: city || "",
-      state: state || "",
-      country: country || "",
+      location: virtual ? "Online" : location,
+      address: virtual ? "" : (address || ""),
+      city: virtual ? "" : (city || ""),
+      state: virtual ? "" : (state || ""),
+      country: virtual ? "" : (country || ""),
+      isVirtual: virtual,
+      meetingLink: virtual ? (meetingLink || "") : "",
       image: eventImageUrl,
       images: gallery,
       description: description || "",
@@ -229,10 +250,14 @@ export const createEventFromGroup = async (req, res) => {
   try {
     const userId = req.user.id;
     const { chatId } = req.params;
-    const { title, date, location, address, city, state, country, image, description } = req.body;
+    const { title, date, location, address, city, state, country, image, description, isVirtual, meetingLink } = req.body;
+    const virtual = Boolean(isVirtual);
 
-    if (!title || !date || !location) {
+    if (!title || !date || (!virtual && !location)) {
       return res.status(400).json({ message: "Title, date, and location are required" });
+    }
+    if (meetingLink && !isValidMeetingLink(meetingLink)) {
+      return res.status(400).json({ message: "Event link must be a valid URL (https://...)" });
     }
     assertMeaningful([{ field: "Title", value: title }]);
     assertClean([
@@ -278,11 +303,13 @@ export const createEventFromGroup = async (req, res) => {
     const event = new Event({
       title,
       date: new Date(date),
-      location,
-      address: address || "",
-      city: city || "",
-      state: state || "",
-      country: country || "",
+      location: virtual ? "Online" : location,
+      address: virtual ? "" : (address || ""),
+      city: virtual ? "" : (city || ""),
+      state: virtual ? "" : (state || ""),
+      country: virtual ? "" : (country || ""),
+      isVirtual: virtual,
+      meetingLink: virtual ? (meetingLink || "") : "",
       image: eventImageUrl,
       images: eventImageUrl ? [eventImageUrl] : [],
       description: description || "",
@@ -405,6 +432,11 @@ export const getUserEvents = async (req, res) => {
           eventObj.userStatus = 'none';
         }
 
+        // Meeting link is attendees-only; pending invitees haven't accepted yet.
+        if (eventObj.userStatus !== 'creator' && eventObj.userStatus !== 'accepted') {
+          delete eventObj.meetingLink;
+        }
+
         return eventObj;
       })
     );
@@ -470,6 +502,7 @@ export const getEventById = async (req, res) => {
 
     // User-relationship flags (all false for anon viewers).
     const isCreator = !!userId && event.createdBy._id.toString() === userId;
+    const isCohostViewer = !!userId && (event.cohosts || []).some(u => u._id.toString() === userId);
     const isInvited = !!userId && event.invitedUsers.some(u => u._id.toString() === userId);
     const isPending = !!userId && event.pendingInvites.some(u => u._id.toString() === userId);
     const hasRequested = !!userId && (event.joinRequests || []).some(u => u._id.toString() === userId);
@@ -507,6 +540,13 @@ export const getEventById = async (req, res) => {
     delete eventObj.viewedBy; // don't leak the viewer list
     eventObj.userRsvp = !!userId && event.rsvpUsers.some(u => u._id.toString() === userId);
     eventObj.rsvpCount = event.rsvpUsers.length;
+
+    // Meeting link is attendees-only: host, cohosts, accepted guests, RSVPs,
+    // ticket holders. Everyone else just learns a link exists.
+    const canSeeMeetingLink =
+      isCreator || isCohostViewer || isInvited || hasTicket || eventObj.userRsvp;
+    eventObj.hasMeetingLink = !!event.meetingLink;
+    if (!canSeeMeetingLink) delete eventObj.meetingLink;
 
     // Surface ticket info for paid events so the client can render the right CTA
     if (event.isPaid) {
@@ -624,7 +664,12 @@ export const getEventByShareToken = async (req, res) => {
       return res.status(410).json({ message: "This event is no longer available" });
     }
 
-    res.status(200).json({ event });
+    // Share links are unauthenticated — never leak the attendee-only meeting link.
+    const eventObj = event.toObject();
+    eventObj.hasMeetingLink = !!event.meetingLink;
+    delete eventObj.meetingLink;
+
+    res.status(200).json({ event: eventObj });
   } catch (error) {
     console.error("Get event by token error:", error);
     res.status(500).json({ message: "Error fetching event", error: error.message });
@@ -635,7 +680,7 @@ export const getEventByShareToken = async (req, res) => {
 export const updateEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { title, date, location, address, city, state, country, image, images, description, isPublic } = req.body;
+    const { title, date, location, address, city, state, country, image, images, description, isPublic, isVirtual, meetingLink } = req.body;
     const userId = req.user.id;
 
     const event = await Event.findById(eventId);
@@ -719,11 +764,36 @@ export const updateEvent = async (req, res) => {
     // Update fields
     if (title) event.title = title;
     if (date) event.date = new Date(date);
-    if (location) event.location = location;
-    if (address !== undefined) event.address = address;
-    if (city !== undefined) event.city = city;
-    if (state !== undefined) event.state = state;
-    if (country !== undefined) event.country = country;
+
+    // Resolve the target mode first and gate every location-family write on
+    // it, so a stale client payload can't resurrect the old address on a
+    // virtual event.
+    const willBeVirtual = isVirtual !== undefined ? Boolean(isVirtual) : Boolean(event.isVirtual);
+    if (willBeVirtual) {
+      event.isVirtual = true;
+      event.location = "Online";
+      event.address = "";
+      event.city = "";
+      event.state = "";
+      event.country = "";
+    } else {
+      // Switching virtual → physical requires a real location in the same request.
+      if (event.isVirtual && !location) {
+        return res.status(400).json({ message: "Add a location to make this an in-person event" });
+      }
+      event.isVirtual = false;
+      if (location) event.location = location;
+      if (address !== undefined) event.address = address;
+      if (city !== undefined) event.city = city;
+      if (state !== undefined) event.state = state;
+      if (country !== undefined) event.country = country;
+    }
+    if (meetingLink !== undefined) {
+      if (meetingLink && !isValidMeetingLink(meetingLink)) {
+        return res.status(400).json({ message: "Event link must be a valid URL (https://...)" });
+      }
+      event.meetingLink = willBeVirtual ? meetingLink : "";
+    }
     if (description !== undefined) event.description = description;
 
     await event.save();
@@ -735,6 +805,10 @@ export const updateEvent = async (req, res) => {
     }
 
     invalidateCachePattern(`event_detail_${eventId}_`);
+    // Toggling virtual (or editing location) changes which discover filters
+    // the event appears under — drop the feed caches too.
+    invalidateCachePattern('public_events_');
+    invalidateCachePattern('event_highlights_');
     const updatedEvent = await Event.findById(eventId)
       .populate('createdBy', 'username email profilePicture')
       .populate('invitedUsers', 'username email profilePicture');
@@ -1189,12 +1263,13 @@ export const joinFreePublicEvent = async (req, res) => {
 // Get public events for exploration
 export const getPublicEvents = async (req, res) => {
   try {
-    const { limit = 20, page = 1, city, state, country, date, sort } = req.query;
+    const { limit = 20, page = 1, city, state, country, date, sort, online } = req.query;
     // optionalAuth — userId is null for logged-out (guest) browsers.
     const userId = req.user?.id || null;
     const skip = (parseInt(page) - 1) * parseInt(limit);
+    const onlineOnly = online === "true";
 
-    const cacheKey = `public_events_${userId || 'guest'}_${page}_${limit}_${city || ''}_${state || ''}_${country || ''}_${date || ''}`;
+    const cacheKey = `public_events_${userId || 'guest'}_${page}_${limit}_${city || ''}_${state || ''}_${country || ''}_${date || ''}_${onlineOnly ? 'online' : ''}`;
     const cached = getCache(cacheKey);
     if (cached) return res.status(200).json(cached);
 
@@ -1215,7 +1290,7 @@ export const getPublicEvents = async (req, res) => {
 
     // City matches the structured field, falling back to the free-text
     // location string for legacy events created before structured fields.
-    if (city) {
+    if (city && !onlineOnly) {
       andConditions.push({
         $or: [
           { city: { $regex: new RegExp(`^${esc(city)}$`, "i") } },
@@ -1224,12 +1299,21 @@ export const getPublicEvents = async (req, res) => {
       });
     }
 
+    // Virtual events show under the dedicated Online filter and in the
+    // unfiltered feed — never under a specific place. ($ne matches legacy
+    // docs where isVirtual is undefined.)
+    if (onlineOnly) {
+      andConditions.push({ isVirtual: true });
+    } else if (city || state || country) {
+      andConditions.push({ isVirtual: { $ne: true } });
+    }
+
     const query = {
       isPublic: true,
       isActive: true,
       date: { $gte: new Date() },
-      ...(state ? { state: { $regex: new RegExp(`^${esc(state)}$`, "i") } } : {}),
-      ...(country ? { country: { $regex: new RegExp(`^${esc(country)}$`, "i") } } : {}),
+      ...(state && !onlineOnly ? { state: { $regex: new RegExp(`^${esc(state)}$`, "i") } } : {}),
+      ...(country && !onlineOnly ? { country: { $regex: new RegExp(`^${esc(country)}$`, "i") } } : {}),
       ...(blockedIds.length > 0 ? { createdBy: { $nin: blockedIds } } : {}),
       $and: andConditions,
     };
@@ -1254,6 +1338,8 @@ export const getPublicEvents = async (req, res) => {
     const eventsWithTicketInfo = await Promise.all(
       events.map(async (event) => {
         const eventObj = event.toObject();
+        // Attendee-only; fetched via the detail endpoint after joining.
+        delete eventObj.meetingLink;
 
         // Check if current user created this event
         eventObj.isCreator = !!userId && event.createdBy._id.toString() === userId;
@@ -1437,6 +1523,8 @@ export const getEventHighlights = async (req, res) => {
 
     const enrichEvent = async (event) => {
       const obj = event.toObject();
+      // Attendee-only; fetched via the detail endpoint after joining.
+      delete obj.meetingLink;
       obj.isCreator = !!userId && event.createdBy._id.toString() === userId;
       obj.rsvpCount = event.rsvpUsers?.length || 0;
       if (event.isPaid && event.maxGuests > 0) {

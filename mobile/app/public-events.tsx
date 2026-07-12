@@ -76,6 +76,7 @@ export default function PublicEventsPage() {
   const [totalEvents, setTotalEvents] = useState(0);
 
   const [discoverLoc, setDiscoverLoc] = useState<Partial<LocationSelection> | null>(null);
+  const [onlineOnly, setOnlineOnly] = useState(false);
   const [pickerKey, setPickerKey] = useState(0);
   const [activeCategory, setActiveCategory] = useState<Category>("All");
   const [sort, setSort] = useState<SortKey>("soonest");
@@ -87,7 +88,8 @@ export default function PublicEventsPage() {
   const fetchPublicEvents = async (
     pageNum: number,
     isRefresh = false,
-    loc: Partial<LocationSelection> | null = discoverLoc
+    loc: Partial<LocationSelection> | null = discoverLoc,
+    online = onlineOnly
   ) => {
     try {
       if (pageNum === 1) setLoading(true);
@@ -99,17 +101,22 @@ export default function PublicEventsPage() {
       }
 
       const params = new URLSearchParams({ page: String(pageNum), limit: String(EVENTS_PER_PAGE) });
-      if (loc?.city) params.append("city", loc.city);
-      if (loc?.state) params.append("state", loc.state);
-      if (loc?.country) params.append("country", loc.country);
+      if (online) {
+        params.append("online", "true");
+      } else {
+        if (loc?.city) params.append("city", loc.city);
+        if (loc?.state) params.append("state", loc.state);
+        if (loc?.country) params.append("country", loc.country);
+      }
 
       // Fetch native + external in parallel. External events only on page 1
       // (they're a fixed batch — pagination tied to the native page count).
+      // Skipped for the Online filter — Ticketmaster events are always physical.
       const [nativeRes, externalRes] = await Promise.allSettled([
         fetch(`${BASE_URL}/events/public/explore?${params.toString()}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        pageNum === 1
+        pageNum === 1 && !online
           ? externalEventService.explore({
               city: loc?.city || undefined,
               // ISO code matches what Ticketmaster stores; full country name
@@ -173,27 +180,38 @@ export default function PublicEventsPage() {
 
   const applyLocation = (loc: Partial<LocationSelection> | null) => {
     setDiscoverLoc(loc);
+    setOnlineOnly(false);
     setPage(1);
     setHasMore(true);
-    fetchPublicEvents(1, true, loc);
+    fetchPublicEvents(1, true, loc, false);
+  };
+
+  // Dedicated "Online" filter — virtual events only, no place selected.
+  const applyOnline = () => {
+    setOnlineOnly(true);
+    setDiscoverLoc(null);
+    setPickerKey((k) => k + 1);
+    setPage(1);
+    setHasMore(true);
+    fetchPublicEvents(1, true, null, true);
   };
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
     setPage(1);
     setHasMore(true);
-    fetchPublicEvents(1, true, discoverLoc);
+    fetchPublicEvents(1, true, discoverLoc, onlineOnly);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [discoverLoc]);
+  }, [discoverLoc, onlineOnly]);
 
   const handleLoadMore = useCallback(() => {
     if (!loading && hasMore) {
       const nextPage = page + 1;
       setPage(nextPage);
-      fetchPublicEvents(nextPage, false, discoverLoc);
+      fetchPublicEvents(nextPage, false, discoverLoc, onlineOnly);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, hasMore, page, discoverLoc]);
+  }, [loading, hasMore, page, discoverLoc, onlineOnly]);
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
     // The hook runs checkout AND confirms server-side before returning.
@@ -323,13 +341,16 @@ export default function PublicEventsPage() {
     return all;
   }, [publicEvents, externalEvents, activeCategory, sort]);
 
-  const locationLabel = discoverLoc?.city
+  const locationLabel = onlineOnly
+    ? "Online"
+    : discoverLoc?.city
     ? `${discoverLoc.city}${discoverLoc.state ? `, ${discoverLoc.state}` : ""}`
     : "All locations";
 
   const filtersActive =
     activeCategory !== "All" ||
     sort !== "soonest" ||
+    onlineOnly ||
     !!(discoverLoc?.city || discoverLoc?.state || discoverLoc?.country);
 
   // ─── Renderers ──────────────────────────────────────────────────────────
@@ -494,7 +515,7 @@ export default function PublicEventsPage() {
             <Ionicons name="calendar-outline" size={13} color={AU.textDim} />
             <Text style={styles.metaText}>{formatDate(item.date)}</Text>
             <View style={styles.metaDot} />
-            <Ionicons name="location-outline" size={14} color={AU.textDim} />
+            <Ionicons name={item.isVirtual ? "videocam-outline" : "location-outline"} size={14} color={AU.textDim} />
             <Text style={styles.metaText} numberOfLines={1}>
               {item.location}
             </Text>
@@ -702,13 +723,28 @@ export default function PublicEventsPage() {
                 <Ionicons name="close" size={22} color={AU.text} />
               </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              style={styles.sortOption}
+              onPress={() => {
+                applyOnline();
+                setLocationSheetOpen(false);
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ionicons name="videocam-outline" size={18} color={onlineOnly ? AU.purpleSoft : AU.textDim} />
+                <Text style={[styles.sortOptionText, onlineOnly && { color: AU.purpleSoft }]}>
+                  Online events
+                </Text>
+              </View>
+              {onlineOnly && <Ionicons name="checkmark" size={18} color={AU.purpleSoft} />}
+            </TouchableOpacity>
             <LocationPicker
               key={pickerKey}
               label=""
               value={discoverLoc ?? undefined}
               onChange={(sel) => applyLocation({ country: sel.country, state: sel.state, city: sel.city })}
             />
-            {(discoverLoc?.city || discoverLoc?.state || discoverLoc?.country) && (
+            {(discoverLoc?.city || discoverLoc?.state || discoverLoc?.country || onlineOnly) && (
               <TouchableOpacity
                 style={styles.sheetClearBtn}
                 onPress={() => {

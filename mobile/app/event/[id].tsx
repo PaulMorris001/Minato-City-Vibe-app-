@@ -7,6 +7,7 @@ import {
   Easing,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -82,6 +83,9 @@ interface Event {
   city?: string;
   state?: string;
   country?: string;
+  isVirtual?: boolean;
+  meetingLink?: string;
+  hasMeetingLink?: boolean;
   image?: string;
   images?: string[];
   description?: string;
@@ -1008,7 +1012,11 @@ export default function EventDetailsPage() {
               {!!neighborhood && (
                 <>
                   <View style={styles.metaDot} />
-                  <Ionicons name="location-outline" size={14} color={AU.purpleSoft} />
+                  <Ionicons
+                    name={event.isVirtual ? "videocam-outline" : "location-outline"}
+                    size={14}
+                    color={AU.purpleSoft}
+                  />
                   <Text style={styles.heroMetaText}>{neighborhood}</Text>
                 </>
               )}
@@ -1204,7 +1212,35 @@ export default function EventDetailsPage() {
           )}
 
           {/* Where */}
-          {(!!event.address || !!event.location) && (
+          {event.isVirtual ? (
+            <GlassCard>
+              <Text style={styles.microLabel}>WHERE</Text>
+              <View style={styles.whereRow}>
+                <Ionicons name="videocam-outline" size={15} color={AU.purpleSoft} />
+                <Text style={styles.whereCity}>Online event</Text>
+              </View>
+              {event.meetingLink ? (
+                <TouchableOpacity
+                  style={styles.whereRow}
+                  onPress={() => Linking.openURL(event.meetingLink!).catch(() => {})}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="link-outline" size={15} color={AU.purpleSoft} />
+                  <Text
+                    style={[styles.whereCity, { textDecorationLine: "underline" }]}
+                    numberOfLines={1}
+                  >
+                    {event.meetingLink}
+                  </Text>
+                </TouchableOpacity>
+              ) : event.hasMeetingLink ? (
+                // Server withholds the link from non-attendees.
+                <Text style={styles.aboutBody}>
+                  The meeting link is visible once you join this event
+                </Text>
+              ) : null}
+            </GlassCard>
+          ) : (!!event.address || !!event.location) && (
             <GlassCard>
               <Text style={styles.microLabel}>WHERE</Text>
               {!!event.address && <Text style={styles.aboutBody}>{event.address}</Text>}

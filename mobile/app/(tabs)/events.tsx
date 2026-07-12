@@ -50,6 +50,8 @@ interface Event {
   city?: string;
   state?: string;
   country?: string;
+  isVirtual?: boolean;
+  meetingLink?: string;
   image?: string;
   images?: string[];
   description?: string;
@@ -112,6 +114,7 @@ export default function EventsPage() {
   // events and merged into a single date-sorted feed below.
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
   const [discoverLoc, setDiscoverLoc] = useState<Partial<LocationSelection> | null>(null);
+  const [discoverOnline, setDiscoverOnline] = useState(false);
   const [discoverPickerKey, setDiscoverPickerKey] = useState(0);
   const [inviteTab, setInviteTab] = useState<"people" | "vendors">("people");
   const [respondingInvite, setRespondingInvite] = useState<string | null>(null);
@@ -127,6 +130,8 @@ export default function EventsPage() {
     city: "",
     state: "",
     country: "",
+    isVirtual: false,
+    meetingLink: "",
     images: [] as string[],
     description: "",
     isPublic: false,
@@ -188,7 +193,8 @@ export default function EventsPage() {
   const fetchDiscoverEvents = async (
     pageNum = 1,
     loc: Partial<LocationSelection> | null = discoverLoc,
-    isRefresh = false
+    isRefresh = false,
+    online = discoverOnline
   ) => {
     try {
       if (pageNum === 1) setDiscoverLoading(true);
@@ -201,19 +207,24 @@ export default function EventsPage() {
         page: String(pageNum),
         limit: String(DISCOVER_LIMIT),
       });
-      if (loc?.city) params.append("city", loc.city);
-      if (loc?.state) params.append("state", loc.state);
-      if (loc?.country) params.append("country", loc.country);
+      if (online) {
+        params.append("online", "true");
+      } else {
+        if (loc?.city) params.append("city", loc.city);
+        if (loc?.state) params.append("state", loc.state);
+        if (loc?.country) params.append("country", loc.country);
+      }
 
       // Fire both feeds in parallel. External events are only fetched on the
       // first page — they're upcoming events without pagination needs in v1.
       // Pagination through external events can be added later if the feed
-      // gets dense enough to need it.
+      // gets dense enough to need it. Skipped entirely for the Online filter:
+      // Ticketmaster events are always physical.
       const [nativeRes, externalRes] = await Promise.allSettled([
         fetch(`${BASE_URL}/events/public/explore?${params.toString()}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        pageNum === 1
+        pageNum === 1 && !online
           ? externalEventService.explore({
               city: loc?.city,
               // Send the ISO code (e.g. "NG"), NOT the display name
@@ -299,8 +310,9 @@ export default function EventsPage() {
       fetchEvents(1, true);
       // Each visit starts fresh — reset the location filter and the picker.
       setDiscoverLoc(null);
+      setDiscoverOnline(false);
       setDiscoverPickerKey((k) => k + 1);
-      fetchDiscoverEvents(1, null, true);
+      fetchDiscoverEvents(1, null, true, false);
     }, [])
   );
 
@@ -377,6 +389,8 @@ export default function EventsPage() {
       city: event.city || "",
       state: event.state || "",
       country: event.country || "",
+      isVirtual: !!event.isVirtual,
+      meetingLink: event.meetingLink || "",
       images: event.images && event.images.length > 0 ? event.images : event.image ? [event.image] : [],
       description: event.description || "",
       isPublic: event.isPublic,
@@ -452,8 +466,18 @@ export default function EventsPage() {
   const handleUpdateEvent = async () => {
     if (!selectedEvent) return;
 
-    if (!editData.title || !editData.date || !editData.location) {
+    if (!editData.title || !editData.date || (!editData.isVirtual && !editData.location)) {
       Alert.alert("Error", "Please fill in required fields");
+      return;
+    }
+    // A virtual event's seeded location is "Online" — switching it back to
+    // in-person needs a real pick, not the leftover placeholder.
+    if (!editData.isVirtual && selectedEvent.isVirtual && !editLocation?.city) {
+      Alert.alert("Error", "Pick a location for the in-person event");
+      return;
+    }
+    if (editData.isVirtual && editData.meetingLink.trim() && !/^https?:\/\//i.test(editData.meetingLink.trim())) {
+      Alert.alert("Error", "Event link must start with http:// or https://");
       return;
     }
 
@@ -472,7 +496,11 @@ export default function EventsPage() {
       // Visibility is immutable post-creation — don't send it on update so a
       // stale toggle in local state can't trip the server's guard.
       const { isPublic: _ignored, images: _imgs, ...rest } = editData;
-      const editablePayload = { ...rest, images: imageUrls };
+      // Virtual events carry no physical location; physical events carry no
+      // meeting link. Blank the other family so nothing stale is sent.
+      const editablePayload = editData.isVirtual
+        ? { ...rest, images: imageUrls, location: "Online", address: "", city: "", state: "", country: "", meetingLink: editData.meetingLink.trim() }
+        : { ...rest, images: imageUrls, meetingLink: "" };
       const response = await fetch(`${BASE_URL}/events/${selectedEvent._id}`, {
         method: "PUT",
         headers: {
@@ -615,7 +643,7 @@ export default function EventsPage() {
           </View>
 
           <View style={styles.eventDetail}>
-            <Ionicons name="location" size={16} color="#a855f7" />
+            <Ionicons name={event.isVirtual ? "videocam" : "location"} size={16} color="#a855f7" />
             <Text style={styles.eventDetailText}>{event.location}</Text>
           </View>
 
@@ -746,16 +774,37 @@ export default function EventsPage() {
                   onChange={(sel) => {
                     const next = { country: sel.country, state: sel.state, city: sel.city };
                     setDiscoverLoc(next);
-                    fetchDiscoverEvents(1, next, true);
+                    setDiscoverOnline(false);
+                    fetchDiscoverEvents(1, next, true, false);
                   }}
                 />
-                {discoverLoc?.city || discoverLoc?.state || discoverLoc?.country ? (
+                <TouchableOpacity
+                  style={[styles.onlineFilterBtn, discoverOnline && styles.onlineFilterBtnActive]}
+                  onPress={() => {
+                    const next = !discoverOnline;
+                    setDiscoverOnline(next);
+                    if (next) {
+                      setDiscoverLoc(null);
+                      setDiscoverPickerKey((k) => k + 1);
+                    }
+                    fetchDiscoverEvents(1, next ? null : discoverLoc, true, next);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="videocam-outline" size={15} color={discoverOnline ? "#fff" : "#9ca3af"} />
+                  <Text style={[styles.onlineFilterText, discoverOnline && styles.onlineFilterTextActive]}>
+                    Online events
+                  </Text>
+                  {discoverOnline && <Ionicons name="checkmark" size={15} color="#fff" />}
+                </TouchableOpacity>
+                {discoverLoc?.city || discoverLoc?.state || discoverLoc?.country || discoverOnline ? (
                   <TouchableOpacity
                     style={styles.clearLocationBtn}
                     onPress={() => {
                       setDiscoverLoc(null);
+                      setDiscoverOnline(false);
                       setDiscoverPickerKey((k) => k + 1);
-                      fetchDiscoverEvents(1, null, true);
+                      fetchDiscoverEvents(1, null, true, false);
                     }}
                     activeOpacity={0.7}
                   >
@@ -983,34 +1032,96 @@ export default function EventsPage() {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Address</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g., 123 Main St, Rooftop Lounge"
-                  placeholderTextColor="#6b7280"
-                  value={editData.address}
-                  onChangeText={(text) => setEditData({ ...editData, address: text })}
-                />
+                <Text style={styles.inputLabel}>Where is it held</Text>
+                <TouchableOpacity
+                  style={styles.visibilityToggle}
+                  onPress={() => setEditData((prev) => ({ ...prev, isVirtual: false }))}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.visibilityOption}>
+                    <View
+                      style={[
+                        styles.radioButton,
+                        !editData.isVirtual && styles.radioButtonSelected,
+                      ]}
+                    >
+                      {!editData.isVirtual && <View style={styles.radioButtonInner} />}
+                    </View>
+                    <View style={styles.visibilityTextContainer}>
+                      <Text style={styles.visibilityLabel}>In person</Text>
+                      <Text style={styles.visibilityHint}>Guests meet at a physical venue</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.visibilityToggle}
+                  onPress={() => setEditData((prev) => ({ ...prev, isVirtual: true }))}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.visibilityOption}>
+                    <View
+                      style={[
+                        styles.radioButton,
+                        editData.isVirtual && styles.radioButtonSelected,
+                      ]}
+                    >
+                      {editData.isVirtual && <View style={styles.radioButtonInner} />}
+                    </View>
+                    <View style={styles.visibilityTextContainer}>
+                      <Text style={styles.visibilityLabel}>Virtual</Text>
+                      <Text style={styles.visibilityHint}>Guests join online</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
               </View>
 
-              <View style={styles.inputGroup}>
-                <LocationPicker
-                  key={selectedEvent?._id || "edit"}
-                  label="Location"
-                  required
-                  value={editLocation ?? undefined}
-                  onChange={(sel) => {
-                    setEditLocation(sel);
-                    setEditData((prev) => ({
-                      ...prev,
-                      location: formatLocation(sel) || prev.location,
-                      city: sel.city,
-                      state: sel.state,
-                      country: sel.country,
-                    }));
-                  }}
-                />
-              </View>
+              {editData.isVirtual ? (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Event link</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="https://zoom.us/j/... (optional)"
+                    placeholderTextColor="#6b7280"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    value={editData.meetingLink}
+                    onChangeText={(text) => setEditData({ ...editData, meetingLink: text })}
+                  />
+                </View>
+              ) : (
+                <>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Address</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g., 123 Main St, Rooftop Lounge"
+                      placeholderTextColor="#6b7280"
+                      value={editData.address}
+                      onChangeText={(text) => setEditData({ ...editData, address: text })}
+                    />
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <LocationPicker
+                      key={selectedEvent?._id || "edit"}
+                      label="Location"
+                      required
+                      value={editLocation ?? undefined}
+                      onChange={(sel) => {
+                        setEditLocation(sel);
+                        setEditData((prev) => ({
+                          ...prev,
+                          location: formatLocation(sel) || prev.location,
+                          city: sel.city,
+                          state: sel.state,
+                          country: sel.country,
+                        }));
+                      }}
+                    />
+                  </View>
+                </>
+              )}
 
               <View style={styles.inputGroup}>
                 <MultiImagePicker
@@ -1487,6 +1598,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     marginBottom: 4,
+  },
+  onlineFilterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    marginBottom: 8,
+  },
+  onlineFilterBtnActive: {
+    backgroundColor: "#a855f7",
+    borderColor: "#a855f7",
+  },
+  onlineFilterText: {
+    fontSize: 13,
+    fontFamily: Fonts.medium,
+    color: "#9ca3af",
+  },
+  onlineFilterTextActive: {
+    color: "#fff",
   },
   clearLocationBtn: {
     flexDirection: "row",
