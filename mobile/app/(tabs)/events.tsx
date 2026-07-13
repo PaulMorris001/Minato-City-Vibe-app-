@@ -97,6 +97,7 @@ export default function EventsPage() {
 
   // Private events state
   const [events, setEvents] = useState<Event[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string>("");
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
@@ -332,6 +333,21 @@ export default function EventsPage() {
   useEffect(() => {
     if (isGuest) setActiveTab("discover");
   }, [isGuest]);
+
+  // Who's viewing — needed to show management actions only on own events.
+  useEffect(() => {
+    (async () => {
+      try {
+        const userJson = await SecureStore.getItemAsync("user");
+        if (userJson) {
+          const user = JSON.parse(userJson);
+          setCurrentUserId(user.id || user._id || "");
+        }
+      } catch (error) {
+        console.error("Error loading user:", error);
+      }
+    })();
+  }, []);
 
   // Re-fetch events immediately when this user receives a new invite via socket
   useEffect(() => {
@@ -623,6 +639,9 @@ export default function EventsPage() {
 
   const renderEvent = (event: Event) => {
     const eventDate = new Date(event.date);
+    // Invite/edit/delete are creator-only — this list also contains events the
+    // user is merely attending, and attendees must not see management actions.
+    const isCreator = !!currentUserId && event.createdBy._id === currentUserId;
 
     return (
       <TouchableOpacity
@@ -692,8 +711,8 @@ export default function EventsPage() {
               <Ionicons name="share-social" size={20} color={colors.primary} />
             </TouchableOpacity>
 
-            {/* Only show invite button for private events */}
-            {!event.isPublic && (
+            {/* Only show invite button for private events the viewer created */}
+            {!event.isPublic && isCreator && (
               <TouchableOpacity
                 style={styles.actionButton}
                 onPress={(e) => {
@@ -705,25 +724,29 @@ export default function EventsPage() {
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={(e) => {
-                e.stopPropagation();
-                openEditModal(event);
-              }}
-            >
-              <Ionicons name="create-outline" size={20} color={colors.primary} />
-            </TouchableOpacity>
+            {isCreator && (
+              <>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    openEditModal(event);
+                  }}
+                >
+                  <Ionicons name="create-outline" size={20} color={colors.primary} />
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={(e) => {
-                e.stopPropagation();
-                handleDeleteEvent(event._id);
-              }}
-            >
-              <Ionicons name="trash-outline" size={20} color={colors.error} />
-            </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleDeleteEvent(event._id);
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={20} color={colors.error} />
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
       </TouchableOpacity>

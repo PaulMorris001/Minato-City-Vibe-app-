@@ -235,7 +235,7 @@ const createStyles = (c: ThemeColors) =>
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: "rgba(26,16,48,0.98)",
+    backgroundColor: c.card,
     borderWidth: 1,
     borderColor: c.glassStrokeStrong,
     shadowColor: "#000",
@@ -256,7 +256,7 @@ const createStyles = (c: ThemeColors) =>
   actionMenu: {
     minWidth: 230,
     borderRadius: 16,
-    backgroundColor: "rgba(26,16,48,0.98)",
+    backgroundColor: c.card,
     borderWidth: 1,
     borderColor: c.glassStrokeStrong,
     overflow: "hidden",

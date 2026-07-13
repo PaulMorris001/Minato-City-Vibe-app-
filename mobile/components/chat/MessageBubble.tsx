@@ -469,17 +469,23 @@ function MessageBubble({
                   activeOpacity={0.7}
                   onPress={() => replyId && onReplyPress?.(replyId)}
                 >
-                  <View style={styles.replyBar} />
+                  <View style={[styles.replyBar, isOwnMessage && styles.replyBarOwn]} />
                   {/* flexShrink (not flex:1) so the quote sizes to its content
                       and widens the bubble — otherwise a short message text
                       collapses the quote to one char per line. */}
                   <View style={{ flexShrink: 1, minWidth: 0 }}>
                     {!!replyName && (
-                      <Text style={styles.replyUsername} numberOfLines={1}>
+                      <Text
+                        style={[styles.replyUsername, isOwnMessage && styles.replyUsernameOwn]}
+                        numberOfLines={1}
+                      >
                         {replyName}
                       </Text>
                     )}
-                    <Text style={styles.replyText} numberOfLines={2}>
+                    <Text
+                      style={[styles.replyText, isOwnMessage && styles.replyTextOwn]}
+                      numberOfLines={2}
+                    >
                       {replyPreviewLabel(message.replyTo)}
                     </Text>
                   </View>
@@ -764,7 +770,7 @@ const createStyles = (c: ThemeColors) =>
     elevation: 6,
   },
   otherBubble: {
-    backgroundColor: "rgba(255,255,255,0.07)",
+    backgroundColor: c.glassFill,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     borderBottomRightRadius: 18,
@@ -778,14 +784,16 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 13.5,
     lineHeight: 19,
   },
+  // Own-bubble content sits on the purple gradient in both schemes, so it uses
+  // fixed light colors (c.white / lavender), never scheme-flipping text tokens.
   ownText: {
-    color: c.text,
+    color: c.white,
   },
   otherText: {
     color: c.textBright,
   },
   linkOwn: {
-    color: c.text,
+    color: c.white,
     textDecorationLine: "underline",
   },
   linkOther: {
@@ -793,7 +801,7 @@ const createStyles = (c: ThemeColors) =>
     textDecorationLine: "underline",
   },
   mentionOwn: {
-    color: c.text,
+    color: c.white,
     fontFamily: "Outfit_700Bold",
   },
   mentionOther: {
@@ -835,7 +843,7 @@ const createStyles = (c: ThemeColors) =>
     paddingVertical: 8,
   },
   imageCaptionStripIncoming: {
-    backgroundColor: "rgba(26,16,48,0.85)",
+    backgroundColor: c.cardGlass,
   },
 
   // Replies
@@ -863,13 +871,24 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 12,
     color: c.textDim,
   },
+  // Quote variants for the own (gradient) bubble — fixed light colors, since
+  // the purple gradient doesn't flip with the scheme.
+  replyBarOwn: {
+    backgroundColor: "#E9D5FF",
+  },
+  replyUsernameOwn: {
+    color: "#F3E8FF",
+  },
+  replyTextOwn: {
+    color: "rgba(255,255,255,0.85)",
+  },
 
   // Event card (in-bubble)
   eventContainer: {
     width: 244,
     borderRadius: 16,
     overflow: "hidden",
-    backgroundColor: "rgba(26,16,48,0.95)",
+    backgroundColor: c.cardGlass,
     borderWidth: 1,
     borderColor: c.glassStrokeStrong,
     shadowColor: c.primaryDark,
@@ -949,7 +968,7 @@ const createStyles = (c: ThemeColors) =>
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 999,
-    backgroundColor: "rgba(11,6,19,0.95)",
+    backgroundColor: c.card,
     borderWidth: 1,
     borderColor: c.glassStrokeStrong,
     shadowColor: "#000",

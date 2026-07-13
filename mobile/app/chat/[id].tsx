@@ -1324,7 +1324,7 @@ export default function ChatScreen() {
                 hitSlop={8}
                 activeOpacity={0.7}
               >
-                <Ionicons name="close" size={16} color="rgba(244,238,255,0.4)" />
+                <Ionicons name="close" size={16} color={colors.textFaint} />
               </TouchableOpacity>
             </TouchableOpacity>
           )}
@@ -1540,7 +1540,7 @@ export default function ChatScreen() {
             onPress={() => setPendingImage(null)}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <Ionicons name="close" size={22} color="#fff" />
+            <Ionicons name="close" size={22} color={colors.textBright} />
           </TouchableOpacity>
           <View
             style={[styles.imagePreviewActions, { paddingBottom: insets.bottom + 16 }]}
@@ -2259,7 +2259,7 @@ const createStyles = (c: ThemeColors) =>
   imagePreviewSendText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 15,
-    color: c.text,
+    color: c.white,
   },
 
   // Settings modal
@@ -2270,7 +2270,7 @@ const createStyles = (c: ThemeColors) =>
   },
   settingsBackdrop: { flex: 1 },
   settingsSheet: {
-    backgroundColor: "#15101F",
+    backgroundColor: c.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: "85%",
@@ -2331,7 +2331,7 @@ const createStyles = (c: ThemeColors) =>
   groupImageOverlayText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 11,
-    color: c.text,
+    color: c.white,
   },
   settingsLabel: {
     fontFamily: "Outfit_700Bold",
@@ -2618,7 +2618,7 @@ const createStyles = (c: ThemeColors) =>
   inviteAcceptText: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 14,
-    color: c.text,
+    color: c.white,
   },
   // Add-members modal
   memberSearchInput: {

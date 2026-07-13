@@ -302,7 +302,7 @@ const createStyles = (c: ThemeColors) =>
     marginTop: 8,
     maxHeight: 200,
     borderRadius: 14,
-    backgroundColor: "rgba(20,12,38,0.96)",
+    backgroundColor: c.card,
     borderWidth: 1,
     borderColor: c.glassFill,
     overflow: "hidden",

@@ -1039,7 +1039,7 @@ const createStyles = (c: ThemeColors) =>
     justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: "#15101F",
+    backgroundColor: c.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 20,

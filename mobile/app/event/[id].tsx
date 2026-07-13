@@ -1669,16 +1669,20 @@ export default function EventDetailsPage() {
                 }, 320);
               }}
             />
+            {/* Pass scanning is for the event's hosts: the creator and any
+                invited co-hosts. Plain attendees never see this. */}
+            {isCreatorOrCohost && (
+              <SheetAction
+                icon="qr-code-outline"
+                label="Check in guests"
+                onPress={() => {
+                  setActionSheetVisible(false);
+                  router.push(`/check-in/${event._id}` as any);
+                }}
+              />
+            )}
             {isCreator && (
               <>
-                <SheetAction
-                  icon="qr-code-outline"
-                  label="Check in guests"
-                  onPress={() => {
-                    setActionSheetVisible(false);
-                    router.push(`/check-in/${event._id}` as any);
-                  }}
-                />
                 <SheetAction
                   icon="person-add-outline"
                   label="Invite people"
