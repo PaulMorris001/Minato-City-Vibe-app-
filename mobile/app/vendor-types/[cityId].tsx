@@ -15,7 +15,12 @@ import { Fonts } from "@/constants/fonts";
 import { AnimatedListCard, LoadingScreen } from "@/components/shared";
 import { fetchVendorTypes } from "@/libs/api";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function VendorTypesPage() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { cityId } = useLocalSearchParams();
   const router = useRouter();
   const [types, setTypes] = useState<VendorType[]>([]);
@@ -59,12 +64,7 @@ export default function VendorTypesPage() {
           },
         ]}
       >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        <GlassBackButton style={styles.backButton} />
         <Text style={styles.title}>Choose Vendor Type</Text>
         <Text style={styles.subtitle}>What are you looking for?</Text>
       </Animated.View>
@@ -85,7 +85,7 @@ export default function VendorTypesPage() {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="briefcase-outline" size={48} color="#4b5563" />
+            <Ionicons name="briefcase-outline" size={48} color={colors.borderMuted} />
             <Text style={styles.emptyText}>No vendor types available</Text>
           </View>
         }
@@ -94,10 +94,11 @@ export default function VendorTypesPage() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
     paddingHorizontal: 20,
     paddingTop: 60,
   },
@@ -110,13 +111,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   listContent: {
     paddingBottom: 30,
@@ -128,7 +129,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 12,
   },
 });

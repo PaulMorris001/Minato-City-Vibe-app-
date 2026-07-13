@@ -15,11 +15,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { Colors } from "@/constants/colors";
 
+import type { ThemeColors } from "@/constants/theme";
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 /**
  * QR scanner. Scans a NightVibe event/guide link and opens it in the app.
  * Uses the camera permission (justifies NSCameraUsageDescription).
  */
 export default function ScanScreen() {
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
@@ -63,9 +67,7 @@ export default function ScanScreen() {
     <View style={styles.container}>
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => goBack()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
+          <GlassBackButton style={styles.backBtn} />
           <Text style={styles.title}>Scan QR</Text>
           <View style={{ width: 40 }} />
         </View>
@@ -113,7 +115,8 @@ export default function ScanScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   safe: { flex: 1 },
   header: {
@@ -123,13 +126,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   backBtn: { width: 40 },
-  title: { flex: 1, textAlign: "center", fontSize: 18, fontFamily: Fonts.bold, color: "#fff" },
+  title: { flex: 1, textAlign: "center", fontSize: 18, fontFamily: Fonts.bold, color: c.text },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 12 },
-  permTitle: { fontSize: 20, fontFamily: Fonts.bold, color: "#fff", marginTop: 8 },
+  permTitle: { fontSize: 20, fontFamily: Fonts.bold, color: c.text, marginTop: 8 },
   permText: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     lineHeight: 20,
   },
@@ -140,7 +143,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
   },
-  permBtnText: { fontSize: 15, fontFamily: Fonts.semiBold, color: "#fff" },
+  permBtnText: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.white },
   cameraWrap: { flex: 1, overflow: "hidden" },
   overlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
   frame: {
@@ -155,7 +158,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
     fontSize: 14,
     fontFamily: Fonts.medium,
-    color: "#fff",
+    color: c.text,
     textAlign: "center",
     paddingHorizontal: 40,
   },

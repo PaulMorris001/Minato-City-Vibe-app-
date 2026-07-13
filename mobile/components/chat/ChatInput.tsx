@@ -6,11 +6,8 @@ import type { Message } from "@/services/chat.service";
 import { replyPreviewLabel } from "@/components/chat/MessageBubble";
 import { capitalize } from "@/libs/helpers";
 
-const CH_TEXT = "#F4EEFF";
-const CH_TEXT_DIM = "rgba(244,238,255,0.62)";
-const CH_TEXT_MUTE = "rgba(244,238,255,0.42)";
-const CH_PURPLE_SOFT = "#C084FC";
-const CH_STROKE = "rgba(255,255,255,0.08)";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -45,6 +42,8 @@ export default function ChatInput({
   currentUserId,
   mentionCandidates = [],
 }: ChatInputProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [message, setMessage] = useState("");
   const [mentionMatches, setMentionMatches] = useState<
     { _id: string; username: string }[]
@@ -124,7 +123,7 @@ export default function ChatInput({
     <View style={styles.outer}>
       {editingMessage && (
         <View style={styles.replyPreview}>
-          <Ionicons name="create-outline" size={16} color={CH_PURPLE_SOFT} />
+          <Ionicons name="create-outline" size={16} color={colors.primaryLight} />
           <View style={{ flex: 1 }}>
             <Text style={styles.replyName} numberOfLines={1}>
               Editing message
@@ -139,7 +138,7 @@ export default function ChatInput({
             activeOpacity={0.7}
             style={styles.replyClose}
           >
-            <Ionicons name="close" size={16} color={CH_TEXT_MUTE} />
+            <Ionicons name="close" size={16} color={colors.textFaint} />
           </TouchableOpacity>
         </View>
       )}
@@ -161,7 +160,7 @@ export default function ChatInput({
             activeOpacity={0.7}
             style={styles.replyClose}
           >
-            <Ionicons name="close" size={16} color={CH_TEXT_MUTE} />
+            <Ionicons name="close" size={16} color={colors.textFaint} />
           </TouchableOpacity>
         </View>
       )}
@@ -182,7 +181,7 @@ export default function ChatInput({
                 activeOpacity={0.7}
               >
                 <View style={[styles.mentionAvatar, isAll && styles.mentionAvatarAll]}>
-                  <Ionicons name={isAll ? "people" : "at"} size={14} color={isAll ? "#f59e0b" : CH_PURPLE_SOFT} />
+                  <Ionicons name={isAll ? "people" : "at"} size={14} color={isAll ? colors.warning : colors.primaryLight} />
                 </View>
                 <View>
                   <Text style={[styles.mentionUsername, isAll && styles.mentionUsernameAll]}>
@@ -202,7 +201,7 @@ export default function ChatInput({
             value={message}
             onChangeText={handleTextChange}
             placeholder={editingMessage ? "Edit message…" : placeholder}
-            placeholderTextColor={CH_TEXT_MUTE}
+            placeholderTextColor={colors.textFaint}
             multiline
             maxLength={1000}
             editable={!disabled}
@@ -215,7 +214,7 @@ export default function ChatInput({
               activeOpacity={0.7}
               hitSlop={6}
             >
-              <Ionicons name="camera-outline" size={20} color={CH_PURPLE_SOFT} />
+              <Ionicons name="camera-outline" size={20} color={colors.primaryLight} />
             </TouchableOpacity>
           )}
           {onImagePick && (
@@ -226,7 +225,7 @@ export default function ChatInput({
               activeOpacity={0.7}
               hitSlop={6}
             >
-              <Ionicons name="attach" size={20} color={CH_PURPLE_SOFT} />
+              <Ionicons name="attach" size={20} color={colors.primaryLight} />
             </TouchableOpacity>
           )}
         </View>
@@ -240,7 +239,7 @@ export default function ChatInput({
           <LinearGradient
             colors={
               message.trim() && !disabled
-                ? ["#A855F7", "#7C3AED"]
+                ? [colors.primary, colors.primaryDark]
                 : ["rgba(168,85,247,0.35)", "rgba(124,58,237,0.35)"]
             }
             start={{ x: 0, y: 0 }}
@@ -255,9 +254,10 @@ export default function ChatInput({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   outer: {
-    backgroundColor: "#0B0613",
+    backgroundColor: c.backgroundDeep,
   },
   replyPreview: {
     flexDirection: "row",
@@ -268,26 +268,26 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   replyBar: {
     width: 3,
     alignSelf: "stretch",
     borderRadius: 2,
-    backgroundColor: CH_PURPLE_SOFT,
+    backgroundColor: c.primaryLight,
   },
   replyName: {
     fontFamily: "Outfit_700Bold",
     fontSize: 11.5,
-    color: CH_PURPLE_SOFT,
+    color: c.primaryLight,
     marginBottom: 1,
   },
   replyText: {
     fontFamily: "Outfit_500Medium",
     fontSize: 12.5,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
   },
   replyClose: {
     width: 26,
@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: c.glassFillSubtle,
   },
   mentionList: {
     marginHorizontal: 14,
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: "rgba(20,12,38,0.96)",
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
     overflow: "hidden",
   },
   mentionRow: {
@@ -320,12 +320,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(168,85,247,0.16)",
+    backgroundColor: c.primaryFadedStrong,
   },
   mentionUsername: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 13.5,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   mentionRowAll: {
     backgroundColor: "rgba(245,158,11,0.06)",
@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(245,158,11,0.15)",
   },
   mentionUsernameAll: {
-    color: "#f59e0b",
+    color: c.warning,
   },
   mentionSubtext: {
     fontFamily: "Outfit_400Regular",
@@ -356,9 +356,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingLeft: 14,
     paddingRight: 6,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
     flexDirection: "row",
     alignItems: "center",
   },
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: "Outfit_500Medium",
     fontSize: 13.5,
-    color: CH_TEXT,
+    color: c.textBright,
     paddingVertical: Platform.OS === "ios" ? 10 : 6,
     maxHeight: 100,
   },
@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#A855F7",
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.45,
     shadowRadius: 16,

@@ -18,9 +18,14 @@ import { BASE_URL } from "@/constants/constants";
 import { FLUTTERWAVE_COUNTRY_CODES } from "@/constants/payments";
 import { Fonts } from "@/constants/fonts";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 type Bank = { code: string; name: string };
 
 export default function FlutterwaveOnboardingScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -140,7 +145,7 @@ export default function FlutterwaveOnboardingScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#a855f7" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -148,9 +153,7 @@ export default function FlutterwaveOnboardingScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        <GlassBackButton style={styles.backButton} />
         <Text style={styles.headerTitle}>Payouts Setup</Text>
       </View>
 
@@ -164,7 +167,7 @@ export default function FlutterwaveOnboardingScreen() {
           <Ionicons
             name={onboardingComplete ? "checkmark-circle" : "alert-circle"}
             size={40}
-            color={onboardingComplete ? "#10b981" : "#f59e0b"}
+            color={onboardingComplete ? colors.success : colors.warning}
           />
           <Text style={styles.statusTitle}>
             {onboardingComplete ? "Payouts Enabled" : "Add Your Bank"}
@@ -201,7 +204,7 @@ export default function FlutterwaveOnboardingScreen() {
             <Text style={[styles.selectText, !selectedBank && styles.selectPlaceholder]}>
               {selectedBank ? selectedBank.name : "Select your bank"}
             </Text>
-            <Ionicons name="chevron-down" size={18} color="#9ca3af" />
+            <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
           </TouchableOpacity>
 
           <Text style={styles.fieldLabel}>Account number</Text>
@@ -213,14 +216,14 @@ export default function FlutterwaveOnboardingScreen() {
               setAccountName("");
             }}
             placeholder="0123456789"
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={colors.textMuted}
             keyboardType="number-pad"
             maxLength={10}
           />
 
           {accountName ? (
             <View style={styles.resolvedBox}>
-              <Ionicons name="checkmark-circle" size={18} color="#10b981" />
+              <Ionicons name="checkmark-circle" size={18} color={colors.success} />
               <Text style={styles.resolvedText}>{accountName}</Text>
             </View>
           ) : (
@@ -230,7 +233,7 @@ export default function FlutterwaveOnboardingScreen() {
               disabled={resolving}
             >
               {resolving ? (
-                <ActivityIndicator size="small" color="#a855f7" />
+                <ActivityIndicator size="small" color={colors.primary} />
               ) : (
                 <Text style={styles.secondaryButtonText}>Verify account</Text>
               )}
@@ -252,14 +255,14 @@ export default function FlutterwaveOnboardingScreen() {
 
         <View style={styles.infoSection}>
           <View style={styles.infoRow}>
-            <Ionicons name="cash-outline" size={20} color="#a855f7" />
+            <Ionicons name="cash-outline" size={20} color={colors.primary} />
             <Text style={styles.infoText}>
               <Text style={styles.infoLabel}>Your cut: </Text>
               90% of every sale is paid to your bank
             </Text>
           </View>
           <View style={styles.infoRow}>
-            <Ionicons name="shield-checkmark-outline" size={20} color="#a855f7" />
+            <Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} />
             <Text style={styles.infoText}>
               <Text style={styles.infoLabel}>Powered by Flutterwave: </Text>
               Trusted across Africa
@@ -283,7 +286,7 @@ export default function FlutterwaveOnboardingScreen() {
               value={bankSearch}
               onChangeText={setBankSearch}
               placeholder="Search banks"
-              placeholderTextColor="#6b7280"
+              placeholderTextColor={colors.textMuted}
             />
             <FlatList
               data={filteredBanks}
@@ -301,7 +304,7 @@ export default function FlutterwaveOnboardingScreen() {
                 >
                   <Text style={styles.bankRowText}>{item.name}</Text>
                   {selectedBank?.code === item.code && (
-                    <Ionicons name="checkmark" size={18} color="#a855f7" />
+                    <Ionicons name="checkmark" size={18} color={colors.primary} />
                   )}
                 </TouchableOpacity>
               )}
@@ -316,9 +319,10 @@ export default function FlutterwaveOnboardingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f0f1a" },
-  centered: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#0f0f1a" },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
+  centered: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: c.background },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -326,45 +330,45 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   backButton: { marginRight: 16 },
-  headerTitle: { fontSize: 22, fontFamily: Fonts.bold, color: "#fff" },
+  headerTitle: { fontSize: 22, fontFamily: Fonts.bold, color: c.text },
   content: { padding: 20, paddingBottom: 40 },
   statusCard: { borderRadius: 16, padding: 24, alignItems: "center", marginBottom: 24, borderWidth: 1 },
   statusCardSuccess: { backgroundColor: "rgba(16, 185, 129, 0.08)", borderColor: "rgba(16, 185, 129, 0.3)" },
   statusCardWarning: { backgroundColor: "rgba(245, 158, 11, 0.08)", borderColor: "rgba(245, 158, 11, 0.3)" },
-  statusTitle: { fontSize: 20, fontFamily: Fonts.bold, color: "#fff", marginTop: 12, marginBottom: 8 },
-  statusSubtitle: { fontSize: 14, fontFamily: Fonts.regular, color: "#9ca3af", textAlign: "center", lineHeight: 22 },
-  detailsCard: { backgroundColor: "#1f1f2e", borderRadius: 12, padding: 16, marginBottom: 20 },
-  detailsTitle: { fontSize: 16, fontFamily: Fonts.semiBold, color: "#fff", marginBottom: 12 },
+  statusTitle: { fontSize: 20, fontFamily: Fonts.bold, color: c.text, marginTop: 12, marginBottom: 8 },
+  statusSubtitle: { fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary, textAlign: "center", lineHeight: 22 },
+  detailsCard: { backgroundColor: c.card, borderRadius: 12, padding: 16, marginBottom: 20 },
+  detailsTitle: { fontSize: 16, fontFamily: Fonts.semiBold, color: c.text, marginBottom: 12 },
   detailRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },
-  detailLabel: { fontSize: 14, fontFamily: Fonts.regular, color: "#9ca3af" },
-  detailValue: { fontSize: 14, fontFamily: Fonts.semiBold, color: "#fff" },
-  form: { backgroundColor: "#1f1f2e", borderRadius: 12, padding: 16, marginBottom: 20 },
-  fieldLabel: { fontSize: 13, fontFamily: Fonts.semiBold, color: "#9ca3af", marginBottom: 8, marginTop: 4 },
+  detailLabel: { fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary },
+  detailValue: { fontSize: 14, fontFamily: Fonts.semiBold, color: c.text },
+  form: { backgroundColor: c.card, borderRadius: 12, padding: 16, marginBottom: 20 },
+  fieldLabel: { fontSize: 13, fontFamily: Fonts.semiBold, color: c.textSecondary, marginBottom: 8, marginTop: 4 },
   select: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     marginBottom: 8,
   },
-  selectText: { fontSize: 15, fontFamily: Fonts.regular, color: "#fff" },
-  selectPlaceholder: { color: "#6b7280" },
+  selectText: { fontSize: 15, fontFamily: Fonts.regular, color: c.text },
+  selectPlaceholder: { color: c.textMuted },
   input: {
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: "#374151",
-    color: "#fff",
+    borderColor: c.border,
+    color: c.text,
     fontSize: 15,
     fontFamily: Fonts.regular,
     marginBottom: 12,
@@ -378,45 +382,45 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
   },
-  resolvedText: { fontSize: 14, fontFamily: Fonts.semiBold, color: "#10b981" },
+  resolvedText: { fontSize: 14, fontFamily: Fonts.semiBold, color: c.success },
   ctaButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     paddingVertical: 16,
     borderRadius: 12,
     gap: 8,
   },
-  ctaText: { fontSize: 16, fontFamily: Fonts.semiBold, color: "#fff" },
+  ctaText: { fontSize: 16, fontFamily: Fonts.semiBold, color: c.white },
   secondaryButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#a855f7",
+    borderColor: c.primary,
     paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
     marginBottom: 4,
   },
-  secondaryButtonText: { fontSize: 15, fontFamily: Fonts.semiBold, color: "#a855f7" },
-  infoSection: { backgroundColor: "#1f1f2e", borderRadius: 12, padding: 16, gap: 14 },
+  secondaryButtonText: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.primary },
+  infoSection: { backgroundColor: c.card, borderRadius: 12, padding: 16, gap: 14 },
   infoRow: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
-  infoText: { fontSize: 14, fontFamily: Fonts.regular, color: "#d1d5db", flex: 1, lineHeight: 20 },
-  infoLabel: { fontFamily: Fonts.semiBold, color: "#fff" },
+  infoText: { fontSize: 14, fontFamily: Fonts.regular, color: c.textTertiary, flex: 1, lineHeight: 20 },
+  infoLabel: { fontFamily: Fonts.semiBold, color: c.text },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
-  modalSheet: { backgroundColor: "#1f1f2e", borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 16, height: "75%" },
+  modalSheet: { backgroundColor: c.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 16, height: "75%" },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, marginBottom: 12 },
-  modalTitle: { fontSize: 18, fontFamily: Fonts.bold, color: "#fff" },
+  modalTitle: { fontSize: 18, fontFamily: Fonts.bold, color: c.text },
   searchInput: {
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginHorizontal: 20,
     marginBottom: 12,
-    color: "#fff",
+    color: c.text,
     fontFamily: Fonts.regular,
   },
   bankRow: {
@@ -428,6 +432,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#2a2a3a",
   },
-  bankRowText: { fontSize: 15, fontFamily: Fonts.regular, color: "#fff" },
-  emptyText: { textAlign: "center", color: "#6b7280", marginTop: 24, fontFamily: Fonts.regular },
+  bankRowText: { fontSize: 15, fontFamily: Fonts.regular, color: c.text },
+  emptyText: { textAlign: "center", color: c.textMuted, marginTop: 24, fontFamily: Fonts.regular },
 });

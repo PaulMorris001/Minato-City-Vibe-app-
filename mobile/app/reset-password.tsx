@@ -17,7 +17,12 @@ import { FormInput, PrimaryButton } from "@/components/shared";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import { passwordChecks, passwordError } from "@/utils/passwordPolicy";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function ResetPassword() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const { email, resetToken } = useLocalSearchParams();
   const [newPassword, setNewPassword] = useState("");
@@ -84,12 +89,10 @@ export default function ResetPassword() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <View style={styles.content}>
-        <TouchableOpacity onPress={() => goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        <GlassBackButton style={styles.backButton} />
         <View style={styles.header}>
           <View style={styles.iconContainer}>
-            <Ionicons name="key" size={48} color="#a855f7" />
+            <Ionicons name="key" size={48} color={colors.primary} />
           </View>
           <Text style={styles.title}>Create New Password</Text>
           <Text style={styles.subtitle}>
@@ -125,7 +128,7 @@ export default function ResetPassword() {
                 <Ionicons
                   name={c.met ? "checkmark-circle" : "ellipse-outline"}
                   size={16}
-                  color={c.met ? "#10b981" : "#6b7280"}
+                  color={c.met ? colors.success : colors.textMuted}
                 />
                 <Text style={[styles.requirementText, c.met && styles.requirementMet]}>
                   {c.label}
@@ -142,8 +145,8 @@ export default function ResetPassword() {
                 size={16}
                 color={
                   newPassword && confirmPassword && newPassword === confirmPassword
-                    ? "#10b981"
-                    : "#6b7280"
+                    ? colors.success
+                    : colors.textMuted
                 }
               />
               <Text
@@ -182,10 +185,11 @@ export default function ResetPassword() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
   },
   content: {
     flex: 1,
@@ -207,7 +211,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 24,
@@ -215,13 +219,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: scaleFontSize(28),
     fontWeight: "bold",
-    color: "#fff",
+    color: c.text,
     textAlign: "center",
     marginBottom: 12,
   },
   subtitle: {
     fontSize: scaleFontSize(15),
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     lineHeight: 22,
     paddingHorizontal: 20,
@@ -230,7 +234,7 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   passwordRequirements: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 16,
     marginTop: 16,
@@ -239,7 +243,7 @@ const styles = StyleSheet.create({
   requirementsTitle: {
     fontSize: scaleFontSize(14),
     fontWeight: "600",
-    color: "#e5e7eb",
+    color: c.textBody,
     marginBottom: 12,
   },
   requirementItem: {
@@ -250,10 +254,10 @@ const styles = StyleSheet.create({
   },
   requirementText: {
     fontSize: scaleFontSize(14),
-    color: "#6b7280",
+    color: c.textMuted,
   },
   requirementMet: {
-    color: "#10b981",
+    color: c.success,
   },
   resetButton: {
     marginTop: 10,
@@ -262,7 +266,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   link: {
-    color: "#a855f7",
+    color: c.primary,
     fontWeight: "600",
     fontSize: scaleFontSize(15),
   },

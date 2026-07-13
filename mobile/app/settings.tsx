@@ -25,7 +25,18 @@ import { Fonts } from "@/constants/fonts";
 import { useAccount } from "@/contexts/AccountContext";
 import { uploadImage } from "@/utils/imageUpload";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
+const THEME_OPTIONS = [
+  { value: "system", label: "System", icon: "phone-portrait-outline" },
+  { value: "light", label: "Light", icon: "sunny-outline" },
+  { value: "dark", label: "Dark", icon: "moon-outline" },
+] as const;
+
 export default function SettingsScreen() {
+  const { colors, preference, setPreference } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const navigation = useNavigation();
   const { activeAccount, switchAccount } = useAccount();
@@ -226,9 +237,7 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        <GlassBackButton style={styles.backButton} />
         <View>
           <Text style={styles.headerTitle}>Settings</Text>
           <Text style={styles.headerSubtitle}>Manage your account preferences</Text>
@@ -255,7 +264,7 @@ export default function SettingsScreen() {
         <TextInput
           style={styles.bioInput}
           placeholder="Tell people a bit about yourself..."
-          placeholderTextColor="#6b7280"
+          placeholderTextColor={colors.textMuted}
           value={bio}
           onChangeText={setBio}
           multiline
@@ -370,7 +379,7 @@ export default function SettingsScreen() {
             <Ionicons name="cash-outline" size={22} color={Colors.primary} />
             <Text style={styles.preferenceText}>Payout Setup</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
 
@@ -390,8 +399,8 @@ export default function SettingsScreen() {
         ) : (
           <>
             <View style={styles.verifStatusRow}>
-              <Ionicons name="alert-circle" size={22} color="#f59e0b" />
-              <Text style={[styles.verifStatusText, { color: "#f59e0b" }]}>
+              <Ionicons name="alert-circle" size={22} color={colors.warning} />
+              <Text style={[styles.verifStatusText, { color: colors.warning }]}>
                 Not verified
               </Text>
             </View>
@@ -424,16 +433,16 @@ export default function SettingsScreen() {
 
           {verificationStatus === "pending" && (
             <View style={styles.verifStatusRow}>
-              <Ionicons name="time-outline" size={22} color="#f59e0b" />
-              <Text style={[styles.verifStatusText, { color: "#f59e0b" }]}>Under Review</Text>
+              <Ionicons name="time-outline" size={22} color={colors.warning} />
+              <Text style={[styles.verifStatusText, { color: colors.warning }]}>Under Review</Text>
             </View>
           )}
 
           {verificationStatus === "rejected" && (
             <>
               <View style={styles.verifStatusRow}>
-                <Ionicons name="close-circle" size={22} color="#ef4444" />
-                <Text style={[styles.verifStatusText, { color: "#ef4444" }]}>Not Approved</Text>
+                <Ionicons name="close-circle" size={22} color={colors.error} />
+                <Text style={[styles.verifStatusText, { color: colors.error }]}>Not Approved</Text>
               </View>
               {verificationNotes ? (
                 <Text style={styles.verifNotes}>Reason: {verificationNotes}</Text>
@@ -472,36 +481,69 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Preferences</Text>
 
+        <View style={styles.preferenceItem}>
+          <View style={styles.preferenceLeft}>
+            <Ionicons name="color-palette-outline" size={22} color={colors.textBody} />
+            <Text style={styles.preferenceText}>Appearance</Text>
+          </View>
+          <View style={styles.themeToggle}>
+            {THEME_OPTIONS.map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  styles.themeOption,
+                  preference === option.value && styles.themeOptionActive,
+                ]}
+                onPress={() => setPreference(option.value)}
+              >
+                <Ionicons
+                  name={option.icon}
+                  size={14}
+                  color={preference === option.value ? "#fff" : colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.themeOptionText,
+                    preference === option.value && styles.themeOptionTextActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
         <TouchableOpacity style={styles.preferenceItem} onPress={() => router.push("/notifications" as any)}>
           <View style={styles.preferenceLeft}>
-            <Ionicons name="notifications-outline" size={22} color="#e5e7eb" />
+            <Ionicons name="notifications-outline" size={22} color={colors.textBody} />
             <Text style={styles.preferenceText}>Notifications</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.preferenceItem} onPress={() => router.push("/privacy" as any)}>
           <View style={styles.preferenceLeft}>
-            <Ionicons name="lock-closed-outline" size={22} color="#e5e7eb" />
+            <Ionicons name="lock-closed-outline" size={22} color={colors.textBody} />
             <Text style={styles.preferenceText}>Privacy Policy</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.preferenceItem} onPress={() => router.push("/terms" as any)}>
           <View style={styles.preferenceLeft}>
-            <Ionicons name="document-text-outline" size={22} color="#e5e7eb" />
+            <Ionicons name="document-text-outline" size={22} color={colors.textBody} />
             <Text style={styles.preferenceText}>Terms of Service</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.preferenceItem} onPress={() => router.push("/blocked-users" as any)}>
           <View style={styles.preferenceLeft}>
-            <Ionicons name="ban-outline" size={22} color="#e5e7eb" />
+            <Ionicons name="ban-outline" size={22} color={colors.textBody} />
             <Text style={styles.preferenceText}>Blocked Users</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -509,10 +551,10 @@ export default function SettingsScreen() {
           onPress={() => WebBrowser.openBrowserAsync("https://api.ourcityvibe.com/delete-account")}
         >
           <View style={styles.preferenceLeft}>
-            <Ionicons name="trash-outline" size={22} color="#ef4444" />
-            <Text style={[styles.preferenceText, { color: "#ef4444" }]}>Delete Account</Text>
+            <Ionicons name="trash-outline" size={22} color={colors.error} />
+            <Text style={[styles.preferenceText, { color: colors.error }]}>Delete Account</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
 
@@ -521,23 +563,24 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.darkBackground,
+    backgroundColor: c.background,
     paddingTop: 60, 
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: Colors.darkBackground,
+    backgroundColor: c.background,
   },
   loadingText: {
     marginTop: 12,
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   header: {
     padding: 24,
@@ -552,58 +595,58 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 32,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 8,
   },
   headerSubtitle: {
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   section: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     marginHorizontal: 16,
     marginBottom: 16,
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   sectionTitle: {
     fontSize: 20,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 8,
   },
   sectionDescription: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginBottom: 20,
   },
   fieldLabel: {
     fontSize: 14,
     fontFamily: Fonts.semiBold,
-    color: "#e5e7eb",
+    color: c.textBody,
     marginTop: 16,
     marginBottom: 8,
   },
   bioInput: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     borderRadius: 12,
     padding: 14,
     fontSize: 15,
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
     minHeight: 90,
     textAlignVertical: "top",
   },
   bioCount: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     alignSelf: "flex-end",
     marginTop: 4,
   },
@@ -621,7 +664,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   saveButtonText: {
-    color: "#fff",
+    color: c.white,
     fontSize: 16,
     fontFamily: Fonts.semiBold,
   },
@@ -630,13 +673,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   infoIconContainer: {
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
@@ -647,18 +690,18 @@ const styles = StyleSheet.create({
   infoLabel: {
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginBottom: 4,
   },
   infoValue: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#e5e7eb",
+    color: c.textBody,
   },
   infoSubvalue: {
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   preferenceItem: {
     flexDirection: "row",
@@ -666,7 +709,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   preferenceLeft: {
     flexDirection: "row",
@@ -676,7 +719,33 @@ const styles = StyleSheet.create({
   preferenceText: {
     fontSize: 16,
     fontFamily: Fonts.medium,
-    color: "#e5e7eb",
+    color: c.textBody,
+  },
+  themeToggle: {
+    flexDirection: "row",
+    backgroundColor: c.glassFillSubtle,
+    borderRadius: 10,
+    padding: 3,
+    gap: 2,
+  },
+  themeOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  themeOptionActive: {
+    backgroundColor: c.primary,
+  },
+  themeOptionText: {
+    fontSize: 12,
+    fontFamily: Fonts.semiBold,
+    color: c.textSecondary,
+  },
+  themeOptionTextActive: {
+    color: c.white,
   },
   preferenceRight: {
     flexDirection: "row",
@@ -686,7 +755,7 @@ const styles = StyleSheet.create({
   preferenceValue: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   switchAccountButton: {
     flexDirection: "row",
@@ -708,19 +777,19 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: "rgba(168, 85, 247, 0.15)",
+    backgroundColor: c.primaryFadedStrong,
     justifyContent: "center",
     alignItems: "center",
   },
   switchAccountTitle: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
   },
   switchAccountSubtitle: {
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 2,
   },
   bottomPadding: {
@@ -739,7 +808,7 @@ const styles = StyleSheet.create({
   verifNotes: {
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginBottom: 16,
     lineHeight: 18,
   },

@@ -21,7 +21,11 @@ import { formatLocation } from "@/utils/location";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 export default function BestsPage() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const formatPrice = useFormatPrice();
   const [loading, setLoading] = useState(true);
@@ -94,7 +98,7 @@ export default function BestsPage() {
           {g.price === 0 ? "FREE" : `$${formatPrice(g.price)}`}
         </Text>
         <View style={styles.guideViews}>
-          <Ionicons name="eye-outline" size={13} color="#6b7280" />
+          <Ionicons name="eye-outline" size={13} color={colors.textMuted} />
           <Text style={styles.guideViewsText}>{g.views}</Text>
         </View>
       </View>
@@ -113,13 +117,13 @@ export default function BestsPage() {
                 style={styles.myGuidesButton}
                 onPress={() => router.push("/saved-guides" as any)}
               >
-                <Ionicons name="bookmark-outline" size={18} color="#a855f7" />
+                <Ionicons name="bookmark-outline" size={18} color={colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.myGuidesButton}
                 onPress={() => router.push("/my-guides" as any)}
               >
-                <Ionicons name="documents-outline" size={18} color="#a855f7" />
+                <Ionicons name="documents-outline" size={18} color={colors.primary} />
                 <Text style={styles.myGuidesText}>My Guides</Text>
               </TouchableOpacity>
             </View>
@@ -150,7 +154,7 @@ export default function BestsPage() {
             style={styles.sampleGuideLink}
             onPress={() => router.push("/guide/sample" as any)}
           >
-            <Ionicons name="document-text-outline" size={18} color="#a855f7" />
+            <Ionicons name="document-text-outline" size={18} color={colors.primary} />
             <Text style={styles.sampleGuideText}>View Sample Guide</Text>
           </TouchableOpacity>
 
@@ -194,21 +198,22 @@ export default function BestsPage() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
   },
   list: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
   },
   fixedHeader: {
     paddingHorizontal: getResponsivePadding(),
     paddingTop: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#1f1f2e",
+    borderBottomColor: c.card,
   },
   headerRow: {
     flexDirection: "row",
@@ -225,7 +230,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 8,
@@ -233,7 +238,7 @@ const styles = StyleSheet.create({
   myGuidesText: {
     fontSize: scaleFontSize(13),
     fontFamily: Fonts.semiBold,
-    color: "#a855f7",
+    color: c.primary,
   },
   scrollableHeader: {
     paddingTop: 16,
@@ -241,19 +246,19 @@ const styles = StyleSheet.create({
   title: {
     fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     flex: 1,
   },
   subtitle: {
     fontSize: scaleFontSize(20),
     fontFamily: Fonts.semiBold,
-    color: "#a855f7",
+    color: c.primary,
     marginBottom: 12,
   },
   description: {
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     lineHeight: 22,
     marginBottom: 20,
   },
@@ -264,19 +269,19 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 20,
     paddingVertical: 12,
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
     borderRadius: 8,
   },
   sampleGuideText: {
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.semiBold,
-    color: "#a855f7",
+    color: c.primary,
   },
   createButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderRadius: 12,
@@ -284,7 +289,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   createButtonText: {
-    color: "#fff",
+    color: c.white,
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.semiBold,
     textAlign: "center",
@@ -292,7 +297,7 @@ const styles = StyleSheet.create({
   sectionHeading: {
     fontSize: scaleFontSize(18),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 16,
   },
   listContent: {
@@ -311,13 +316,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: scaleFontSize(17),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   sectionCount: {
     fontSize: scaleFontSize(12),
     fontFamily: Fonts.semiBold,
-    color: "#a855f7",
-    backgroundColor: "rgba(168, 85, 247, 0.12)",
+    color: c.primary,
+    backgroundColor: c.primaryFaded,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 999,
@@ -329,29 +334,29 @@ const styles = StyleSheet.create({
   },
   guideCard: {
     width: 220,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: c.backgroundSecondary,
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: "#252538",
+    borderColor: c.glassStroke,
   },
   guideTitle: {
     fontSize: 15,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     lineHeight: 19,
     minHeight: 38,
   },
   guideMeta: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 6,
   },
   guideAuthor: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     marginTop: 2,
   },
   guideFooter: {
@@ -363,7 +368,7 @@ const styles = StyleSheet.create({
   guidePrice: {
     fontSize: 15,
     fontFamily: Fonts.bold,
-    color: "#a855f7",
+    color: c.primary,
   },
   guideViews: {
     flexDirection: "row",
@@ -373,12 +378,12 @@ const styles = StyleSheet.create({
   guideViewsText: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
   },
   emptyText: {
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     paddingVertical: 32,
     paddingHorizontal: 24,

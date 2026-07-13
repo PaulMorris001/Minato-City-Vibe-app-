@@ -3,11 +3,14 @@ import { View, StyleSheet } from "react-native";
 import Skeleton from "../shared/Skeleton";
 import EventCardSkeleton from "./EventCardSkeleton";
 
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface Props {
   eventCount?: number;
 }
 
 export default function ProfileHeaderSkeleton({ eventCount = 3 }: Props) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.container}>
       {/* Avatar + name */}
@@ -33,7 +36,8 @@ export default function ProfileHeaderSkeleton({ eventCount = 3 }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -56,7 +60,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: c.glassFill,
     marginBottom: 16,
   },
   statBlock: {

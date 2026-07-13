@@ -29,10 +29,13 @@ import {
   getCardImageUrl,
 } from '@/utils/imageUpload';
 
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 // Replace with your actual auth hook/context
 // import { useAuth } from '@/context/AuthContext';
 
 export default function ImageUploadTest() {
+  const styles = useThemedStyles(createStyles);
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
   const [cloudinaryUrl, setCloudinaryUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -254,7 +257,8 @@ export default function ImageUploadTest() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
@@ -292,7 +296,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF3B30',
   },
   buttonText: {
-    color: 'white',
+    color: c.white,
     fontSize: 16,
     fontWeight: '600',
   },

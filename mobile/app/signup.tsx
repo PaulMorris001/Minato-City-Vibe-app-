@@ -33,6 +33,7 @@ import {
 import { AU } from "@/components/auth/tokens";
 import { SocialAuthButtons } from "@/components/auth/SocialAuthButtons";
 
+import { darkColors, type ThemeColors } from "@/constants/theme";
 type StepKey = "username" | "email" | "password" | "confirm";
 
 type AvailStatus = "idle" | "checking" | "available" | "taken" | "error";
@@ -470,7 +471,7 @@ export default function Signup() {
                                 backgroundColor:
                                   i < 2 ? AU.purpleSoft : AU.pink,
                               }
-                            : { backgroundColor: "rgba(255,255,255,0.08)" },
+                            : { backgroundColor: colors.glassFill },
                         ]}
                       />
                     ))}
@@ -643,7 +644,8 @@ function AvailabilityChip({
   return null;
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: AU.bg },
   scrollContent: { flexGrow: 1, paddingBottom: 24 },
   topBar: {
@@ -660,7 +662,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 13,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
     borderColor: AU.stroke,
   },
@@ -710,7 +712,7 @@ const styles = StyleSheet.create({
   underlineTrack: {
     height: 2,
     borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: c.glassStroke,
     overflow: "hidden",
   },
   underlineFill: { height: 2, borderRadius: 2 },
@@ -720,7 +722,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   chipStandalone: { alignSelf: "flex-start", marginTop: 14 },
-  chipNeutral: { backgroundColor: "rgba(255,255,255,0.08)" },
+  chipNeutral: { backgroundColor: c.glassFill },
   chipNeutralText: {
     color: AU.textMute,
     fontFamily: "Outfit_700Bold",
@@ -792,7 +794,7 @@ const styles = StyleSheet.create({
   },
   dot: { height: 6, width: 6, borderRadius: 3 },
   dotActive: { width: 22 },
-  dotIdle: { backgroundColor: "rgba(255,255,255,0.14)" },
+  dotIdle: { backgroundColor: c.glassStrokeStrong },
   footerText: {
     fontFamily: "Outfit_500Medium",
     fontSize: 12.5,
@@ -805,3 +807,7 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit_700Bold",
   },
 });
+
+// Auth/poster surface: always renders the dark palette.
+const colors = darkColors;
+const styles = createStyles(darkColors);

@@ -3,6 +3,7 @@ import { Animated, Easing, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { AU, POSTERS } from "./tokens";
 
+import { darkColors, type ThemeColors } from "@/constants/theme";
 const POSTER_W = 110;
 const POSTER_H = 130;
 const GAP = 12;
@@ -71,7 +72,7 @@ export function PosterBackground() {
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {/* Aurora wash */}
       <LinearGradient
-        colors={["#A855F7", "#EC4899", "#7C3AED", "#A855F7"]}
+        colors={[colors.primary, colors.accentPink, colors.primaryDark, colors.primary]}
         start={{ x: 0.1, y: 0 }}
         end={{ x: 0.9, y: 1 }}
         style={styles.aurora}
@@ -89,7 +90,7 @@ export function PosterBackground() {
       <LinearGradient
         colors={[
           "rgba(11,6,19,0.15)",
-          "rgba(11,6,19,0.55)",
+          colors.imageScrim,
           "rgba(11,6,19,0.95)",
           AU.bg,
         ]}
@@ -100,7 +101,8 @@ export function PosterBackground() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   aurora: {
     position: "absolute",
     top: -80,
@@ -140,7 +142,7 @@ const styles = StyleSheet.create({
     transform: [{ rotate: "-8deg" }],
   },
   posterTitle: {
-    color: "#fff",
+    color: c.text,
     fontSize: 14,
     fontFamily: "BricolageGrotesque_800ExtraBold",
     letterSpacing: -0.3,
@@ -152,3 +154,7 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit_500Medium",
   },
 });
+
+// Auth/poster surface: always renders the dark palette.
+const colors = darkColors;
+const styles = createStyles(darkColors);

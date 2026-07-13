@@ -1,16 +1,15 @@
 import React from "react";
 import { View, StyleSheet } from "react-native";
 import Skeleton from "../shared/Skeleton";
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 
 interface Props {
   count?: number;
 }
 
-const TK_BG = "#0B0613";
-const TK_SURFACE = "rgba(26,16,48,0.7)";
-const TK_STROKE = "rgba(255,255,255,0.08)";
-
 function TicketCardItem() {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.card}>
       {/* Poster region */}
@@ -43,6 +42,7 @@ function TicketCardItem() {
 }
 
 export default function TicketCardSkeleton({ count = 3 }: Props) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.container}>
       {Array.from({ length: count }).map((_, i) => (
@@ -52,15 +52,16 @@ export default function TicketCardSkeleton({ count = 3 }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     gap: 14,
   },
   card: {
-    backgroundColor: TK_SURFACE,
+    backgroundColor: c.card,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: TK_STROKE,
+    borderColor: c.glassFill,
     overflow: "hidden",
   },
   poster: {
@@ -77,7 +78,7 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: TK_BG,
+    backgroundColor: c.backgroundDeep,
   },
   stub: {
     paddingTop: 4,

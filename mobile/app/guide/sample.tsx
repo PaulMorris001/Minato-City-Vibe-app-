@@ -11,7 +11,12 @@ import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function SampleGuidePage() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
 
   const sampleGuide = {
@@ -90,12 +95,7 @@ export default function SampleGuidePage() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        <GlassBackButton style={styles.backButton} />
         <Text style={styles.headerTitle}>Sample Guide</Text>
       </View>
 
@@ -105,7 +105,7 @@ export default function SampleGuidePage() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.banner}>
-          <Ionicons name="information-circle" size={24} color="#a855f7" />
+          <Ionicons name="information-circle" size={24} color={colors.primary} />
           <Text style={styles.bannerText}>
             This is an example of what a completed guide looks like
           </Text>
@@ -114,18 +114,18 @@ export default function SampleGuidePage() {
         <View style={styles.titleSection}>
           <Text style={styles.title}>{sampleGuide.title}</Text>
           <View style={styles.authorRow}>
-            <Ionicons name="person-circle-outline" size={20} color="#9ca3af" />
+            <Ionicons name="person-circle-outline" size={20} color={colors.textSecondary} />
             <Text style={styles.authorText}>by {sampleGuide.author}</Text>
           </View>
           <View style={styles.metaRow}>
             <View style={styles.metaItem}>
-              <Ionicons name="location" size={16} color="#a855f7" />
+              <Ionicons name="location" size={16} color={colors.primary} />
               <Text style={styles.metaText}>
                 {sampleGuide.city}, {sampleGuide.state}
               </Text>
             </View>
             <View style={styles.metaItem}>
-              <Ionicons name="pricetag" size={16} color="#a855f7" />
+              <Ionicons name="pricetag" size={16} color={colors.primary} />
               <Text style={styles.metaText}>{sampleGuide.topic}</Text>
             </View>
           </View>
@@ -179,10 +179,11 @@ export default function SampleGuidePage() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: "row",
@@ -191,7 +192,7 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   backButton: {
     marginRight: 16,
@@ -199,7 +200,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 24,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   scrollView: {
     flex: 1,
@@ -210,19 +211,19 @@ const styles = StyleSheet.create({
   banner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
     padding: 16,
     borderRadius: 12,
     marginBottom: 20,
     gap: 12,
     borderWidth: 1,
-    borderColor: "#a855f7",
+    borderColor: c.primary,
   },
   bannerText: {
     flex: 1,
     fontSize: 14,
     fontFamily: Fonts.medium,
-    color: "#d1d5db",
+    color: c.textTertiary,
     lineHeight: 20,
   },
   titleSection: {
@@ -231,7 +232,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 12,
     lineHeight: 36,
   },
@@ -244,7 +245,7 @@ const styles = StyleSheet.create({
   authorText: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   metaRow: {
     flexDirection: "row",
@@ -259,15 +260,15 @@ const styles = StyleSheet.create({
   metaText: {
     fontSize: 13,
     fontFamily: Fonts.medium,
-    color: "#d1d5db",
+    color: c.textTertiary,
   },
   priceSection: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   priceContent: {
     flexDirection: "row",
@@ -277,12 +278,12 @@ const styles = StyleSheet.create({
   priceLabel: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   priceValue: {
     fontSize: 32,
     fontFamily: Fonts.bold,
-    color: "#a855f7",
+    color: c.primary,
   },
   descriptionSection: {
     marginBottom: 20,
@@ -290,25 +291,25 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 12,
   },
   description: {
     fontSize: 15,
     fontFamily: Fonts.regular,
-    color: "#d1d5db",
+    color: c.textTertiary,
     lineHeight: 24,
   },
   sectionsContainer: {
     marginTop: 20,
   },
   sectionCard: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -317,7 +318,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   rankBadge: {
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
@@ -325,18 +326,18 @@ const styles = StyleSheet.create({
   rankText: {
     fontSize: 14,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   sectionTitleText: {
     flex: 1,
     fontSize: 16,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   sectionDescription: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#d1d5db",
+    color: c.textTertiary,
     lineHeight: 22,
   },
   ctaSection: {
@@ -344,19 +345,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 30,
     borderTopWidth: 1,
-    borderTopColor: "#374151",
+    borderTopColor: c.border,
   },
   ctaTitle: {
     fontSize: 20,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.white,
     marginBottom: 20,
     textAlign: "center",
   },
   ctaButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 12,
@@ -365,6 +366,6 @@ const styles = StyleSheet.create({
   ctaButtonText: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.white,
   },
 });

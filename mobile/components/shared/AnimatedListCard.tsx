@@ -3,6 +3,8 @@ import { View, Text, TouchableOpacity, StyleSheet, Animated } from "react-native
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface AnimatedListCardProps {
   icon: React.ComponentProps<typeof Ionicons>["name"];
   title: string;
@@ -28,6 +30,8 @@ export default function AnimatedListCard({
   iconSize = 24,
   testID,
 }: AnimatedListCardProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -94,7 +98,7 @@ export default function AnimatedListCard({
         </View>
         {showChevron && (
           <View style={styles.arrowContainer}>
-            <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
           </View>
         )}
       </TouchableOpacity>
@@ -102,18 +106,19 @@ export default function AnimatedListCard({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   animatedContainer: {
     marginBottom: 12,
   },
   card: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 16,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   iconContainer: {
     width: 48,
@@ -129,19 +134,19 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   arrowContainer: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },

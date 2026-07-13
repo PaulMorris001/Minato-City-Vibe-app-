@@ -7,6 +7,7 @@ import { router } from "expo-router";
 import { AU } from "@/components/auth/tokens";
 import { Fonts } from "@/constants/fonts";
 
+import { darkColors, type ThemeColors } from "@/constants/theme";
 interface GuestGateProps {
   title?: string;
   subtitle?: string;
@@ -62,14 +63,15 @@ export default function GuestGate({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: AU.bg },
   wrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
   icon: {
     width: 104,
     height: 104,
     borderRadius: 52,
-    backgroundColor: "rgba(168,85,247,0.12)",
+    backgroundColor: c.primaryFaded,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 22,
@@ -99,6 +101,9 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 14,
   },
-  btnText: { fontFamily: Fonts.bold, fontSize: 15, color: "#fff" },
+  btnText: { fontFamily: Fonts.bold, fontSize: 15, color: c.white },
   link: { fontFamily: Fonts.bold, fontSize: 13.5, color: AU.purpleSoft },
 });
+
+// Auth/poster surface: always renders the dark palette.
+const styles = createStyles(darkColors);

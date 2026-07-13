@@ -20,7 +20,6 @@ import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
-import { Colors } from "@/constants/colors";
 import { Fonts } from "@/constants/fonts";
 import { DateTimeDropdown, ImagePickerButton, LocationPicker, MultiImagePicker } from "@/components/shared";
 import { uploadImage, resolveImageUrls } from "@/utils/imageUpload";
@@ -28,6 +27,8 @@ import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import { LocationSelection } from "@/libs/interfaces";
 import { formatLocation } from "@/utils/location";
 
+import type { ThemeColors } from "@/constants/theme";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 interface CreateEventModalProps {
   visible: boolean;
   onClose: () => void;
@@ -39,6 +40,8 @@ export default function CreateEventModal({
   onClose,
   onEventCreated,
 }: CreateEventModalProps) {
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [eventLocation, setEventLocation] = useState<LocationSelection | null>(null);
@@ -271,7 +274,10 @@ export default function CreateEventModal({
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <LinearGradient colors={["#1A0F35", "#0B0613"]} style={styles.modalContainer}>
+          <LinearGradient
+            colors={isDark ? ["#1A0F35", colors.backgroundDeep] : [colors.background, colors.backgroundDeep]}
+            style={styles.modalContainer}
+          >
             {/* Grabber */}
             <View style={styles.grabber} />
 
@@ -284,7 +290,7 @@ export default function CreateEventModal({
               <View style={styles.header}>
                 <Text style={styles.modalTitle}>Create event</Text>
                 <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                  <Ionicons name="close" size={20} color="rgba(244,238,255,0.7)" />
+                  <Ionicons name="close" size={20} color={colors.textDim} />
                 </TouchableOpacity>
               </View>
 
@@ -303,7 +309,7 @@ export default function CreateEventModal({
               <TextInput
                 style={styles.input}
                 placeholder="Give it a name..."
-                placeholderTextColor="rgba(244,238,255,0.3)"
+                placeholderTextColor={colors.textGhost}
                 value={formData.title}
                 onChangeText={(value) => handleInputChange("title", value)}
               />
@@ -371,7 +377,7 @@ export default function CreateEventModal({
                   <TextInput
                     style={styles.input}
                     placeholder="https://zoom.us/j/... (optional)"
-                    placeholderTextColor="rgba(244,238,255,0.3)"
+                    placeholderTextColor={colors.textGhost}
                     autoCapitalize="none"
                     autoCorrect={false}
                     keyboardType="url"
@@ -386,7 +392,7 @@ export default function CreateEventModal({
                   <TextInput
                     style={styles.input}
                     placeholder="e.g., 123 Main St, Rooftop Lounge"
-                    placeholderTextColor="rgba(244,238,255,0.3)"
+                    placeholderTextColor={colors.textGhost}
                     value={formData.address}
                     onChangeText={(value) => handleInputChange("address", value)}
                   />
@@ -408,7 +414,7 @@ export default function CreateEventModal({
               <TextInput
                 style={[styles.input, styles.multilineInput]}
                 placeholder="What's the mood? Any details..."
-                placeholderTextColor="rgba(244,238,255,0.3)"
+                placeholderTextColor={colors.textGhost}
                 multiline
                 numberOfLines={4}
                 value={formData.description}
@@ -458,7 +464,7 @@ export default function CreateEventModal({
                   <View style={styles.visibilityPublicTop}>
                     <Text style={styles.visibilityEmoji}>🌐</Text>
                     {!isVerified && (
-                      <Ionicons name="lock-closed" size={13} color="rgba(244,238,255,0.3)" style={{ marginLeft: 4 }} />
+                      <Ionicons name="lock-closed" size={13} color={colors.textGhost} style={{ marginLeft: 4 }} />
                     )}
                   </View>
                   <Text style={[
@@ -481,7 +487,7 @@ export default function CreateEventModal({
                   }}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="shield-checkmark-outline" size={15} color="#A855F7" />
+                  <Ionicons name="shield-checkmark-outline" size={15} color={colors.primary} />
                   <Text style={styles.verifyLinkText}>
                     Get verified to host public events →
                   </Text>
@@ -507,7 +513,7 @@ export default function CreateEventModal({
                       <TextInput
                         style={styles.input}
                         placeholder="e.g., 25.00"
-                        placeholderTextColor="rgba(244,238,255,0.3)"
+                        placeholderTextColor={colors.textGhost}
                         keyboardType="decimal-pad"
                         value={formData.ticketPrice}
                         onChangeText={(value) => handleInputChange("ticketPrice", value)}
@@ -516,7 +522,7 @@ export default function CreateEventModal({
                       <TextInput
                         style={styles.input}
                         placeholder="e.g., 100"
-                        placeholderTextColor="rgba(244,238,255,0.3)"
+                        placeholderTextColor={colors.textGhost}
                         keyboardType="number-pad"
                         value={formData.maxGuests}
                         onChangeText={(value) => handleInputChange("maxGuests", value)}
@@ -527,7 +533,7 @@ export default function CreateEventModal({
                           <Text style={styles.label}>Venue Proof *</Text>
                           <Text
                             style={{
-                              color: "rgba(244,238,255,0.55)",
+                              color: colors.textDim,
                               fontSize: 12,
                               marginBottom: 8,
                               lineHeight: 16,
@@ -553,7 +559,12 @@ export default function CreateEventModal({
             </ScrollView>
 
             {/* Sticky footer */}
-            <View style={styles.stickyFooter}>
+            <View
+              style={[
+                styles.stickyFooter,
+                { backgroundColor: isDark ? "rgba(11,6,19,0.85)" : "rgba(247,245,251,0.94)" },
+              ]}
+            >
               <TouchableOpacity
                 style={[styles.createButton, !isSubmitEnabled && styles.createButtonDisabled]}
                 onPress={handleCreateEvent}
@@ -561,13 +572,13 @@ export default function CreateEventModal({
                 activeOpacity={0.85}
               >
                 <LinearGradient
-                  colors={isSubmitEnabled ? ["#A855F7", "#7C3AED"] : ["#2D1B69", "#1A1030"]}
+                  colors={isSubmitEnabled ? [colors.primary, colors.primaryDark] : [colors.cardGradientStart, colors.cardGradientEnd]}
                   style={styles.createButtonGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 >
                   {loading ? (
-                    <ActivityIndicator color="#fff" size="small" />
+                    <ActivityIndicator color={colors.white} size="small" />
                   ) : (
                     <Text style={styles.createButtonText}>
                       {isSubmitEnabled
@@ -587,10 +598,11 @@ export default function CreateEventModal({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: c.modalOverlay,
     justifyContent: "flex-end",
   },
   modalContainer: {
@@ -604,7 +616,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 5,
     borderRadius: 3,
-    backgroundColor: "rgba(244,238,255,0.2)",
+    backgroundColor: c.glassStrokeStrong,
     alignSelf: "center",
     marginTop: 12,
     marginBottom: 4,
@@ -619,21 +631,21 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: scaleFontSize(22),
-    color: "#F4EEFF",
+    color: c.textBright,
     letterSpacing: -0.5,
   },
   closeButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: c.glassFill,
     justifyContent: "center",
     alignItems: "center",
   },
   label: {
     fontSize: scaleFontSize(13),
     fontFamily: Fonts.semiBold,
-    color: "rgba(244,238,255,0.64)",
+    color: c.textDim,
     marginBottom: 8,
     marginTop: 16,
     paddingHorizontal: 20,
@@ -643,14 +655,14 @@ const styles = StyleSheet.create({
   input: {
     marginHorizontal: 20,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: c.glassStroke,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 13,
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
-    color: "#F4EEFF",
-    backgroundColor: "rgba(255,255,255,0.06)",
+    color: c.textBright,
+    backgroundColor: c.glassFillSubtle,
     marginBottom: 4,
   },
   quickDatesRow: {
@@ -664,38 +676,38 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: c.glassStroke,
+    backgroundColor: c.glassFillSubtle,
   },
   quickDatePillActive: {
-    backgroundColor: "#A855F7",
-    borderColor: "#A855F7",
+    backgroundColor: c.primary,
+    borderColor: c.primary,
   },
   quickDateText: {
     fontFamily: Fonts.semiBold,
     fontSize: 13,
-    color: "rgba(244,238,255,0.64)",
+    color: c.textDim,
   },
   quickDateTextActive: {
-    color: "#fff",
+    color: c.white,
   },
   datePickerButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: c.glassStroke,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 13,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: c.glassFillSubtle,
     marginBottom: 4,
     marginHorizontal: 20,
   },
   datePickerText: {
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.regular,
-    color: "#F4EEFF",
+    color: c.textBright,
   },
   multilineInput: {
     height: 90,
@@ -709,16 +721,16 @@ const styles = StyleSheet.create({
   visibilityCard: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: c.glassStroke,
     borderRadius: 16,
     padding: 14,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: c.glassFillSubtle,
     alignItems: "center",
     gap: 4,
   },
   visibilityCardActive: {
-    borderColor: "#A855F7",
-    backgroundColor: "rgba(168,85,247,0.12)",
+    borderColor: c.primary,
+    backgroundColor: c.primaryFaded,
   },
   visibilityCardDisabled: {
     opacity: 0.45,
@@ -733,21 +745,22 @@ const styles = StyleSheet.create({
   visibilityLabel: {
     fontFamily: Fonts.bold,
     fontSize: 14,
-    color: "rgba(244,238,255,0.5)",
+    color: c.textFaint,
   },
   visibilityLabelActive: {
-    color: "#A855F7",
+    color: c.primary,
   },
   visibilityLabelDisabled: {
-    color: "rgba(244,238,255,0.3)",
+    color: c.textGhost,
   },
   visibilityHint: {
     fontFamily: Fonts.regular,
     fontSize: 11,
-    color: "rgba(244,238,255,0.35)",
+    color: c.textGhost,
   },
   visibilityHintDisabled: {
-    color: "rgba(244,238,255,0.2)",
+    color: c.textGhost,
+    opacity: 0.7,
   },
   verifyLinkRow: {
     flexDirection: "row",
@@ -759,7 +772,7 @@ const styles = StyleSheet.create({
   verifyLinkText: {
     fontFamily: Fonts.semiBold,
     fontSize: 13,
-    color: "#A855F7",
+    color: c.primary,
   },
   checkboxContainer: {
     flexDirection: "row",
@@ -772,25 +785,25 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.2)",
-    backgroundColor: "rgba(255,255,255,0.06)",
+    borderColor: c.glassStrokeStrong,
+    backgroundColor: c.glassFillSubtle,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
   },
   checkboxChecked: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: c.primary,
+    borderColor: c.primary,
   },
   checkmark: {
-    color: "#fff",
+    color: c.white,
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
   },
   checkboxLabel: {
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.medium,
-    color: "#F4EEFF",
+    color: c.textBright,
   },
   checkboxTextContainer: {
     flex: 1,
@@ -798,7 +811,7 @@ const styles = StyleSheet.create({
   checkboxHint: {
     fontSize: scaleFontSize(12),
     fontFamily: Fonts.regular,
-    color: "rgba(244,238,255,0.42)",
+    color: c.textFaint,
     marginTop: 4,
   },
   stickyFooter: {
@@ -808,7 +821,6 @@ const styles = StyleSheet.create({
     right: 0,
     padding: 16,
     paddingBottom: 28,
-    backgroundColor: "rgba(11,6,19,0.85)",
   },
   createButton: {
     borderRadius: 14,
@@ -823,7 +835,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   createButtonText: {
-    color: "#fff",
+    color: c.white,
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
     letterSpacing: -0.2,

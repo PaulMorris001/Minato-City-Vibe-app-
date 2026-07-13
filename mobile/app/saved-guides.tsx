@@ -19,7 +19,12 @@ import { fetchSavedGuides } from "@/libs/api";
 import { formatLocation } from "@/utils/location";
 import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function SavedGuidesPage() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const formatPrice = useFormatPrice();
   const [guides, setGuides] = useState<Guide[]>([]);
@@ -58,7 +63,7 @@ export default function SavedGuidesPage() {
     >
       <Text style={styles.guideTitle} numberOfLines={2}>{item.title}</Text>
       <View style={styles.metadataRow}>
-        <Ionicons name="location-outline" size={14} color="#9ca3af" />
+        <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
         <Text style={styles.metadataText} numberOfLines={1}>
           {formatLocation({ city: item.city, state: item.cityState, country: item.country })}
         </Text>
@@ -78,9 +83,7 @@ export default function SavedGuidesPage() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        <GlassBackButton style={styles.backButton} />
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Saved Guides</Text>
           <Text style={styles.headerSubtitle}>
@@ -108,7 +111,7 @@ export default function SavedGuidesPage() {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="bookmark-outline" size={64} color="#6b7280" />
+              <Ionicons name="bookmark-outline" size={64} color={colors.textMuted} />
               <Text style={styles.emptyTitle}>No saved guides</Text>
               <Text style={styles.emptyText}>
                 Tap the bookmark on a guide to save it here for later.
@@ -121,38 +124,39 @@ export default function SavedGuidesPage() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f0f1a" },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   backButton: { marginRight: 12 },
   headerContent: { flex: 1 },
-  headerTitle: { fontSize: 24, fontFamily: Fonts.bold, color: "#fff" },
-  headerSubtitle: { fontSize: 12, fontFamily: Fonts.regular, color: "#9ca3af", marginTop: 2 },
+  headerTitle: { fontSize: 24, fontFamily: Fonts.bold, color: c.text },
+  headerSubtitle: { fontSize: 12, fontFamily: Fonts.regular, color: c.textSecondary, marginTop: 2 },
   listContent: { padding: 20, paddingBottom: 40 },
   guideCard: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
-  guideTitle: { fontSize: 18, fontFamily: Fonts.bold, color: "#fff", marginBottom: 6 },
+  guideTitle: { fontSize: 18, fontFamily: Fonts.bold, color: c.text, marginBottom: 6 },
   metadataRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 8 },
-  metadataText: { fontSize: 12, fontFamily: Fonts.regular, color: "#9ca3af", flexShrink: 1 },
-  metadataSeparator: { fontSize: 12, color: "#6b7280", marginHorizontal: 4 },
-  guideDescription: { fontSize: 14, fontFamily: Fonts.regular, color: "#d1d5db", lineHeight: 20, marginBottom: 12 },
+  metadataText: { fontSize: 12, fontFamily: Fonts.regular, color: c.textSecondary, flexShrink: 1 },
+  metadataSeparator: { fontSize: 12, color: c.textMuted, marginHorizontal: 4 },
+  guideDescription: { fontSize: 14, fontFamily: Fonts.regular, color: c.textTertiary, lineHeight: 20, marginBottom: 12 },
   cardFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  author: { fontSize: 12, fontFamily: Fonts.regular, color: "#6b7280", flex: 1, marginRight: 12 },
+  author: { fontSize: 12, fontFamily: Fonts.regular, color: c.textMuted, flex: 1, marginRight: 12 },
   priceText: { fontSize: 13, fontFamily: Fonts.bold, color: Colors.primary },
   emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center", paddingVertical: 80 },
-  emptyTitle: { fontSize: 20, fontFamily: Fonts.bold, color: "#fff", marginTop: 16, marginBottom: 8 },
-  emptyText: { fontSize: 14, fontFamily: Fonts.regular, color: "#9ca3af", textAlign: "center", paddingHorizontal: 40 },
+  emptyTitle: { fontSize: 20, fontFamily: Fonts.bold, color: c.text, marginTop: 16, marginBottom: 8 },
+  emptyText: { fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary, textAlign: "center", paddingHorizontal: 40 },
 });

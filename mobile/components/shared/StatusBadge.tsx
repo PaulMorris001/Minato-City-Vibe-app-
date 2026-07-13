@@ -48,15 +48,15 @@ export default function StatusBadge({
   iconSize = 12,
   style,
 }: StatusBadgeProps) {
-  const colors = BADGE_COLORS[type];
+  const badgeColors = BADGE_COLORS[type];
 
   return (
     <View
       style={[
         styles.badge,
         {
-          backgroundColor: colors.bg,
-          borderColor: colors.border,
+          backgroundColor: badgeColors.bg,
+          borderColor: badgeColors.border,
         },
         style,
       ]}
@@ -65,11 +65,11 @@ export default function StatusBadge({
         <Ionicons
           name={icon}
           size={iconSize}
-          color={colors.text}
+          color={badgeColors.text}
           style={styles.icon}
         />
       )}
-      <Text style={[styles.text, { color: colors.text }]}>{label}</Text>
+      <Text style={[styles.text, { color: badgeColors.text }]}>{label}</Text>
     </View>
   );
 }

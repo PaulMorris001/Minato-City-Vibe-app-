@@ -54,11 +54,11 @@ export interface ExploreParams {
   cursor?: string; // ISO date — paginate by passing the prior nextCursor back
 }
 
-async function authHeader() {
+async function authHeader(): Promise<Record<string, string>> {
   const token = await SecureStore.getItemAsync("token");
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }
 

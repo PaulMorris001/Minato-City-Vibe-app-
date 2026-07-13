@@ -18,6 +18,9 @@ import { Fonts } from "@/constants/fonts";
 import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
 
+import type { ThemeColors } from "@/constants/theme";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 type ScanResult =
   | { kind: "success"; name: string; type: string; already: boolean }
   | { kind: "error"; message: string };
@@ -27,6 +30,8 @@ type ScanResult =
  * attendee's OurCityvibe pass QR and checks them in via POST /events/:id/check-in.
  */
 export default function CheckInScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const [permission, requestPermission] = useCameraPermissions();
   const [busy, setBusy] = useState(false);
@@ -82,9 +87,7 @@ export default function CheckInScreen() {
     <View style={styles.container}>
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => goBack()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
+          <GlassBackButton style={styles.backBtn} />
           <Text style={styles.title}>Check in guests</Text>
           <View style={{ width: 40 }} />
         </View>
@@ -136,7 +139,7 @@ export default function CheckInScreen() {
                     <Ionicons
                       name={result.already ? "alert-circle" : "checkmark-circle"}
                       size={56}
-                      color={result.already ? "#FCD34D" : "#34D399"}
+                      color={result.already ? "#FCD34D" : colors.successLight}
                     />
                     <Text style={styles.resultName}>{result.name}</Text>
                     <Text style={styles.resultMsg}>
@@ -150,7 +153,7 @@ export default function CheckInScreen() {
                   </>
                 ) : (
                   <>
-                    <Ionicons name="close-circle" size={56} color="#F87171" />
+                    <Ionicons name="close-circle" size={56} color={colors.errorLight} />
                     <Text style={styles.resultMsg}>{result?.message}</Text>
                     <TouchableOpacity style={styles.againBtn} onPress={scanAgain}>
                       <Text style={styles.againBtnText}>Try again</Text>
@@ -166,7 +169,8 @@ export default function CheckInScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   safe: { flex: 1 },
   header: {
@@ -176,13 +180,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   backBtn: { width: 40 },
-  title: { flex: 1, textAlign: "center", fontSize: 18, fontFamily: Fonts.bold, color: "#fff" },
+  title: { flex: 1, textAlign: "center", fontSize: 18, fontFamily: Fonts.bold, color: c.text },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 12 },
-  permTitle: { fontSize: 20, fontFamily: Fonts.bold, color: "#fff", marginTop: 8 },
+  permTitle: { fontSize: 20, fontFamily: Fonts.bold, color: c.text, marginTop: 8 },
   permText: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     lineHeight: 20,
   },
@@ -193,7 +197,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
   },
-  permBtnText: { fontSize: 15, fontFamily: Fonts.semiBold, color: "#fff" },
+  permBtnText: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.white },
   cameraWrap: { flex: 1, overflow: "hidden" },
   overlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
   frame: {
@@ -208,7 +212,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
     fontSize: 14,
     fontFamily: Fonts.medium,
-    color: "#fff",
+    color: c.text,
     textAlign: "center",
     paddingHorizontal: 40,
   },
@@ -224,9 +228,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: c.glassStroke,
   },
-  resultName: { fontSize: 22, fontFamily: Fonts.bold, color: "#fff", marginTop: 4 },
+  resultName: { fontSize: 22, fontFamily: Fonts.bold, color: c.text, marginTop: 4 },
   resultMsg: { fontSize: 14, fontFamily: Fonts.medium, color: "#cbd5e1", textAlign: "center" },
   againBtn: {
     marginTop: 14,
@@ -235,5 +239,5 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 999,
   },
-  againBtnText: { fontSize: 15, fontFamily: Fonts.semiBold, color: "#fff" },
+  againBtnText: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.white },
 });

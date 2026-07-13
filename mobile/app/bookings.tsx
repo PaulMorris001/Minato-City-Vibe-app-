@@ -20,13 +20,9 @@ import TicketCardSkeleton from "@/components/skeletons/TicketCardSkeleton";
 import chatService from "@/services/chat.service";
 import { useStripePayment } from "@/hooks/useStripePayment";
 
-const TK_BG = "#0B0613";
-const TK_SURFACE = "rgba(26,16,48,0.7)";
-const TK_STROKE = "rgba(255,255,255,0.08)";
-const TK_TEXT = "#F4EEFF";
-const TK_TEXT_DIM = "rgba(244,238,255,0.62)";
-const TK_TEXT_MUTE = "rgba(244,238,255,0.38)";
-const TK_PURPLE_SOFT = "#C084FC";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 
 interface ClientBooking {
   _id: string;
@@ -46,6 +42,8 @@ const BOOKING_STATUS_COLORS: Record<string, string> = {
 };
 
 export default function BookingsScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [bookings, setBookings] = useState<ClientBooking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(true);
@@ -123,9 +121,7 @@ export default function BookingsScreen() {
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => goBack()} style={styles.backButton} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={18} color={TK_TEXT} />
-          </TouchableOpacity>
+          <GlassBackButton size={38} />
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>My Bookings</Text>
             <Text style={styles.headerSubtitle}>Your service bookings</Text>
@@ -135,7 +131,7 @@ export default function BookingsScreen() {
             style={styles.passesButton}
             activeOpacity={0.8}
           >
-            <Ionicons name="qr-code-outline" size={16} color={TK_PURPLE_SOFT} />
+            <Ionicons name="qr-code-outline" size={16} color={colors.primaryLight} />
             <Text style={styles.passesButtonText}>Passes</Text>
           </TouchableOpacity>
         </View>
@@ -145,7 +141,7 @@ export default function BookingsScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#A855F7" />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }
         >
           {bookingsLoading ? (
@@ -184,11 +180,11 @@ export default function BookingsScreen() {
                     <Text style={styles.bookingCategory}>{booking.service.category}</Text>
                   )}
                   <View style={styles.bookingRow}>
-                    <Ionicons name="person-outline" size={14} color={TK_TEXT_MUTE} />
+                    <Ionicons name="person-outline" size={14} color={"rgba(244,238,255,0.38)"} />
                     <Text style={styles.bookingDetail}>{booking.vendor?.username || "Vendor"}</Text>
                   </View>
                   <View style={styles.bookingRow}>
-                    <Ionicons name="calendar-outline" size={14} color={TK_TEXT_MUTE} />
+                    <Ionicons name="calendar-outline" size={14} color={"rgba(244,238,255,0.38)"} />
                     <Text style={styles.bookingDetail}>
                       {new Date(booking.preferredDate).toLocaleDateString("en-US", {
                         month: "short",
@@ -199,7 +195,7 @@ export default function BookingsScreen() {
                   </View>
                   {booking.priceSnapshot && (
                     <View style={styles.bookingRow}>
-                      <Ionicons name="cash-outline" size={14} color={TK_TEXT_MUTE} />
+                      <Ionicons name="cash-outline" size={14} color={"rgba(244,238,255,0.38)"} />
                       <Text style={styles.bookingDetail}>
                         {booking.priceSnapshot.currency} {booking.priceSnapshot.amount.toLocaleString()}
                       </Text>
@@ -242,10 +238,10 @@ export default function BookingsScreen() {
                       activeOpacity={0.8}
                     >
                       {chattingWith === booking._id ? (
-                        <ActivityIndicator size="small" color={TK_PURPLE_SOFT} />
+                        <ActivityIndicator size="small" color={colors.primaryLight} />
                       ) : (
                         <>
-                          <Ionicons name="chatbubbles-outline" size={16} color={TK_PURPLE_SOFT} />
+                          <Ionicons name="chatbubbles-outline" size={16} color={colors.primaryLight} />
                           <Text style={styles.chatVendorButtonText}>Chat with Vendor</Text>
                         </>
                       )}
@@ -262,6 +258,8 @@ export default function BookingsScreen() {
 }
 
 function EmptyState({ emoji, title, subtitle }: { emoji: string; title: string; subtitle: string }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   return (
     <View style={styles.emptyState}>
@@ -270,7 +268,7 @@ function EmptyState({ emoji, title, subtitle }: { emoji: string; title: string; 
       <Text style={styles.emptyStateText}>{subtitle}</Text>
       <TouchableOpacity activeOpacity={0.85} onPress={() => router.push("/(tabs)/vendors" as any)}>
         <LinearGradient
-          colors={["#A855F7", "#7C3AED", "#EC4899"]}
+          colors={[colors.primary, colors.primaryDark, colors.accentPink]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.emptyCta}
@@ -282,10 +280,11 @@ function EmptyState({ emoji, title, subtitle }: { emoji: string; title: string; 
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: TK_BG,
+    backgroundColor: c.backgroundDeep,
   },
   safeArea: {
     flex: 1,
@@ -300,16 +299,6 @@ const styles = StyleSheet.create({
     gap: 14,
     marginBottom: 16,
   },
-  backButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderWidth: 1,
-    borderColor: TK_STROKE,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   passesButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -317,27 +306,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 38,
     borderRadius: 19,
-    backgroundColor: "rgba(168,85,247,0.12)",
+    backgroundColor: c.primaryFaded,
     borderWidth: 1,
     borderColor: "rgba(168,85,247,0.28)",
   },
   passesButtonText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 12.5,
-    color: TK_PURPLE_SOFT,
+    color: c.primaryLight,
     letterSpacing: 0.1,
   },
   headerTitle: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 28,
-    color: TK_TEXT,
+    color: c.textBright,
     letterSpacing: -1,
     lineHeight: 30,
   },
   headerSubtitle: {
     fontFamily: "Outfit_500Medium",
     fontSize: 12,
-    color: TK_TEXT_DIM,
+    color: c.textDim,
     marginTop: 4,
   },
 
@@ -368,13 +357,13 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 20,
-    color: TK_TEXT,
+    color: c.textBright,
     marginBottom: 8,
   },
   emptyStateText: {
     fontFamily: "Outfit_500Medium",
     fontSize: 13,
-    color: TK_TEXT_DIM,
+    color: c.textDim,
     textAlign: "center",
     marginBottom: 20,
   },
@@ -386,17 +375,17 @@ const styles = StyleSheet.create({
   emptyCtaText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 14,
-    color: "#fff",
+    color: c.white,
     letterSpacing: 0.2,
   },
 
   // Booking card
   bookingCard: {
-    backgroundColor: TK_SURFACE,
+    backgroundColor: c.card,
     borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    borderColor: TK_STROKE,
+    borderColor: c.glassFill,
   },
   bookingHeader: {
     flexDirection: "row",
@@ -408,7 +397,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 16,
-    color: TK_TEXT,
+    color: c.textBright,
     marginRight: 8,
     letterSpacing: -0.2,
   },
@@ -425,7 +414,7 @@ const styles = StyleSheet.create({
   bookingCategory: {
     fontFamily: "Outfit_500Medium",
     fontSize: 12,
-    color: TK_TEXT_MUTE,
+    color: "rgba(244,238,255,0.38)",
     marginBottom: 10,
   },
   bookingRow: {
@@ -437,7 +426,7 @@ const styles = StyleSheet.create({
   bookingDetail: {
     fontFamily: "Outfit_500Medium",
     fontSize: 12.5,
-    color: TK_TEXT_DIM,
+    color: c.textDim,
   },
   chatVendorButton: {
     flexDirection: "row",
@@ -447,14 +436,14 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: "rgba(168,85,247,0.12)",
+    backgroundColor: c.primaryFaded,
     borderWidth: 1,
     borderColor: "rgba(168,85,247,0.28)",
   },
   chatVendorButtonText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 13,
-    color: TK_PURPLE_SOFT,
+    color: c.primaryLight,
     letterSpacing: 0.1,
   },
   payButton: {
@@ -465,12 +454,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: "#A855F7",
+    backgroundColor: c.primary,
   },
   payButtonText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 14,
-    color: "#fff",
+    color: c.white,
     letterSpacing: 0.1,
   },
   paidBadge: {

@@ -18,6 +18,9 @@ import { Fonts } from "@/constants/fonts";
 import { Avatar } from "@/components/shared/Avatar";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
+import type { ThemeColors } from "@/constants/theme";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 interface Event {
   _id: string;
   title: string;
@@ -42,6 +45,8 @@ interface Event {
 }
 
 export default function ShareEventScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   // Sanitize: useLocalSearchParams can hand back `string | string[]` for
   // malformed deep links — narrow to a single string we can rely on.
@@ -163,8 +168,8 @@ export default function ShareEventScreen() {
 
   if (loading) {
     return (
-      <LinearGradient colors={["#0f0f1a", "#1a1a2e"]} style={styles.container}>
-        <ActivityIndicator size="large" color="#a855f7" style={{ flex: 1 }} />
+      <LinearGradient colors={[colors.background, colors.backgroundSecondary]} style={styles.container}>
+        <ActivityIndicator size="large" color={colors.primary} style={{ flex: 1 }} />
       </LinearGradient>
     );
   }
@@ -174,11 +179,9 @@ export default function ShareEventScreen() {
   const eventDate = new Date(event.date);
 
   return (
-    <LinearGradient colors={["#0f0f1a", "#1a1a2e"]} style={styles.container}>
+    <LinearGradient colors={[colors.background, colors.backgroundSecondary]} style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.replace("/(tabs)/home")}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        <GlassBackButton onPress={() => router.replace("/(tabs)/home")} style={styles.backButton} />
         <Text style={styles.headerTitle}>Event Invite</Text>
         <View style={styles.backButton} />
       </View>
@@ -188,7 +191,7 @@ export default function ShareEventScreen() {
           <Image source={{ uri: event.image }} style={styles.eventImage} />
         ) : (
           <View style={styles.placeholderImage}>
-            <Ionicons name="calendar-outline" size={64} color="#6b7280" />
+            <Ionicons name="calendar-outline" size={64} color={colors.textMuted} />
           </View>
         )}
 
@@ -208,7 +211,7 @@ export default function ShareEventScreen() {
           <Text style={styles.title}>{event.title}</Text>
 
           <View style={styles.detailRow}>
-            <Ionicons name="calendar" size={18} color="#a855f7" />
+            <Ionicons name="calendar" size={18} color={colors.primary} />
             <Text style={styles.detailText}>
               {eventDate.toLocaleDateString("en-GB", {
                 weekday: "long",
@@ -222,7 +225,7 @@ export default function ShareEventScreen() {
           </View>
 
           <View style={styles.detailRow}>
-            <Ionicons name="location" size={18} color="#a855f7" />
+            <Ionicons name="location" size={18} color={colors.primary} />
             <Text style={styles.detailText}>{event.location}</Text>
           </View>
 
@@ -249,7 +252,7 @@ export default function ShareEventScreen() {
             </TouchableOpacity>
           ) : alreadyJoined ? (
             <View style={styles.joinedBanner}>
-              <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+              <Ionicons name="checkmark-circle" size={20} color={colors.success} />
               <Text style={styles.joinedText}>You're already attending this event</Text>
             </View>
           ) : (
@@ -259,7 +262,7 @@ export default function ShareEventScreen() {
               disabled={joining}
             >
               <LinearGradient
-                colors={["#a855f7", "#7c3aed"]}
+                colors={[colors.primary, colors.primaryDark]}
                 style={styles.joinGradient}
               >
                 {joining ? (
@@ -279,7 +282,8 @@ export default function ShareEventScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1 },
   header: {
     flexDirection: "row",
@@ -289,16 +293,16 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     paddingHorizontal: getResponsivePadding(),
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   backButton: { width: 40, height: 40, justifyContent: "center", alignItems: "center" },
-  headerTitle: { fontSize: scaleFontSize(18), fontFamily: Fonts.bold, color: "#fff" },
+  headerTitle: { fontSize: scaleFontSize(18), fontFamily: Fonts.bold, color: c.text },
   scroll: { paddingBottom: 40 },
   eventImage: { width: "100%", height: 240, resizeMode: "cover" },
   placeholderImage: {
     width: "100%",
     height: 240,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -306,21 +310,21 @@ const styles = StyleSheet.create({
   badgeRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   badgePublic: { backgroundColor: "rgba(16, 185, 129, 0.15)" },
-  badgePrivate: { backgroundColor: "rgba(168, 85, 247, 0.15)" },
+  badgePrivate: { backgroundColor: c.primaryFadedStrong },
   badgePaid: { backgroundColor: "rgba(245, 158, 11, 0.15)" },
-  badgeText: { fontSize: scaleFontSize(12), fontFamily: Fonts.semiBold, color: "#e5e7eb" },
+  badgeText: { fontSize: scaleFontSize(12), fontFamily: Fonts.semiBold, color: c.textBody },
   title: {
     fontSize: scaleFontSize(26),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 16,
   },
   detailRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
-  detailText: { fontSize: scaleFontSize(15), fontFamily: Fonts.regular, color: "#d1d5db", flex: 1 },
+  detailText: { fontSize: scaleFontSize(15), fontFamily: Fonts.regular, color: c.textTertiary, flex: 1 },
   description: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     lineHeight: 21,
     marginTop: 12,
     marginBottom: 4,
@@ -329,25 +333,25 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 14,
     marginTop: 20,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   avatar: { width: 44, height: 44, borderRadius: 22 },
   avatarPlaceholder: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
-  organiserLabel: { fontSize: scaleFontSize(12), fontFamily: Fonts.regular, color: "#9ca3af" },
-  organiserName: { fontSize: scaleFontSize(15), fontFamily: Fonts.semiBold, color: "#fff" },
+  organiserLabel: { fontSize: scaleFontSize(12), fontFamily: Fonts.regular, color: c.textSecondary },
+  organiserName: { fontSize: scaleFontSize(15), fontFamily: Fonts.semiBold, color: c.text },
   joinButton: { borderRadius: 14, overflow: "hidden" },
   joinGradient: {
     flexDirection: "row",
@@ -356,7 +360,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 16,
   },
-  joinButtonText: { fontSize: scaleFontSize(16), fontFamily: Fonts.bold, color: "#fff" },
+  joinButtonText: { fontSize: scaleFontSize(16), fontFamily: Fonts.bold, color: c.white },
   joinedBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -365,16 +369,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: "#10b981",
+    borderColor: c.success,
   },
-  joinedText: { fontSize: scaleFontSize(14), fontFamily: Fonts.semiBold, color: "#10b981" },
+  joinedText: { fontSize: scaleFontSize(14), fontFamily: Fonts.semiBold, color: c.success },
   viewButton: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
-  viewButtonText: { fontSize: scaleFontSize(16), fontFamily: Fonts.semiBold, color: "#e5e7eb" },
+  viewButtonText: { fontSize: scaleFontSize(16), fontFamily: Fonts.semiBold, color: c.textBody },
 });

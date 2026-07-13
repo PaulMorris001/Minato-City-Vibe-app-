@@ -18,6 +18,8 @@ import {
   type ReportTargetType,
 } from "@/services/moderation.service";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface ReportBlockSheetProps {
   visible: boolean;
   onClose: () => void;
@@ -53,6 +55,8 @@ export default function ReportBlockSheet({
   onBlocked,
   onReported,
 }: ReportBlockSheetProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [details, setDetails] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -148,7 +152,7 @@ export default function ReportBlockSheet({
       <TextInput
         style={styles.details}
         placeholder="Add more details (optional)"
-        placeholderTextColor="#6b7280"
+        placeholderTextColor={colors.textMuted}
         value={details}
         onChangeText={setDetails}
         multiline
@@ -186,7 +190,7 @@ export default function ReportBlockSheet({
             activeOpacity={0.8}
           >
             {blocking ? (
-              <ActivityIndicator color="#ef4444" />
+              <ActivityIndicator color={colors.error} />
             ) : (
               <Text style={styles.secondaryText}>
                 Block {targetUsername ? `@${targetUsername}` : "user"}
@@ -201,9 +205,10 @@ export default function ReportBlockSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   sectionLabel: {
-    color: "#fff",
+    color: c.text,
     fontFamily: Fonts.semiBold,
     fontSize: 15,
     marginBottom: 12,
@@ -215,12 +220,12 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     backgroundColor: "#16161f",
     marginBottom: 8,
   },
   reasonRowSelected: {
-    borderColor: "#a855f7",
+    borderColor: c.primary,
     backgroundColor: "#1f1730",
   },
   reasonText: {
@@ -228,13 +233,13 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   reasonLabel: {
-    color: "#fff",
+    color: c.text,
     fontFamily: Fonts.medium,
     fontSize: 14,
     marginBottom: 2,
   },
   reasonDescription: {
-    color: "#9ca3af",
+    color: c.textSecondary,
     fontSize: 12,
     lineHeight: 16,
   },
@@ -243,21 +248,21 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 11,
     borderWidth: 1.5,
-    borderColor: "#6b7280",
+    borderColor: c.textMuted,
     alignItems: "center",
     justifyContent: "center",
   },
   radioSelected: {
-    backgroundColor: "#a855f7",
-    borderColor: "#a855f7",
+    backgroundColor: c.primary,
+    borderColor: c.primary,
   },
   details: {
     backgroundColor: "#16161f",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     padding: 12,
-    color: "#fff",
+    color: c.text,
     minHeight: 80,
     textAlignVertical: "top",
     marginTop: 8,
@@ -265,7 +270,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   primary: {
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: "center",
@@ -274,30 +279,30 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   primaryText: {
-    color: "#fff",
+    color: c.text,
     fontFamily: Fonts.semiBold,
     fontSize: 16,
   },
   divider: {
     height: 1,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     marginVertical: 24,
   },
   blockHelp: {
-    color: "#9ca3af",
+    color: c.textSecondary,
     fontSize: 13,
     lineHeight: 18,
     marginBottom: 12,
   },
   secondary: {
     borderWidth: 1,
-    borderColor: "#ef4444",
+    borderColor: c.error,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: "center",
   },
   secondaryText: {
-    color: "#ef4444",
+    color: c.error,
     fontFamily: Fonts.semiBold,
     fontSize: 16,
   },

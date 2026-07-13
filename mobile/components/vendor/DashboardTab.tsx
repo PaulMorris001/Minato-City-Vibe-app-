@@ -23,6 +23,8 @@ import {
   categoryEmoji,
 } from "./vendorTheme";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface DashboardTabProps {
   stats: VendorStats | null;
   onRefresh: () => void;
@@ -57,6 +59,7 @@ function StatCard({
   value: string | number;
   sub: string;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.statCard}>
       <View style={styles.statTop}>
@@ -78,6 +81,8 @@ export default function DashboardTab({
   onGoToServices,
   onGoToAccount,
 }: DashboardTabProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const formatPrice = useFormatPrice();
   const [firstName, setFirstName] = useState("");
 
@@ -177,7 +182,7 @@ export default function DashboardTab({
                   { height: `${h}%` },
                   i > 8
                     ? { backgroundColor: VN.pink }
-                    : { backgroundColor: "rgba(255,255,255,0.18)" },
+                    : { backgroundColor: colors.glassStrokeStrong },
                 ]}
               />
             ))}
@@ -338,7 +343,8 @@ export default function DashboardTab({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: VN.bg },
   aurora: {
     position: "absolute",
@@ -347,7 +353,7 @@ const styles = StyleSheet.create({
     width: 360,
     height: 280,
     borderRadius: 180,
-    backgroundColor: "rgba(168,85,247,0.16)",
+    backgroundColor: c.primaryFadedStrong,
   },
   section: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 18 },
   sectionH: { paddingHorizontal: 18, paddingBottom: 18 },
@@ -369,10 +375,10 @@ const styles = StyleSheet.create({
   },
   blob: { position: "absolute", width: 200, height: 200, borderRadius: 100 },
   earningsTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  earningsKicker: { fontFamily: VNF.bold, fontSize: 10, color: "rgba(255,255,255,0.7)", letterSpacing: 1.2 },
+  earningsKicker: { fontFamily: VNF.bold, fontSize: 10, color: c.textDim, letterSpacing: 1.2 },
   trendChip: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1 },
   trendText: { fontFamily: VNF.bold, fontSize: 10 },
-  earningsAmount: { fontFamily: VNF.display, fontSize: 42, color: "#fff", letterSpacing: -1.6, marginTop: 6 },
+  earningsAmount: { fontFamily: VNF.display, fontSize: 42, color: c.text, letterSpacing: -1.6, marginTop: 6 },
   earningsDelta: { fontFamily: VNF.medium, fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 4 },
   sparkline: { flexDirection: "row", alignItems: "flex-end", gap: 3, height: 28, marginTop: 14 },
   bar: { flex: 1, borderRadius: 2 },
@@ -411,7 +417,7 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     elevation: 8,
   },
-  primaryBtnText: { fontFamily: VNF.heading, fontSize: 13, color: "#fff" },
+  primaryBtnText: { fontFamily: VNF.heading, fontSize: 13, color: c.white },
   glassBtn: {
     flex: 1,
     height: 44,
@@ -420,7 +426,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
     borderColor: VN.strokeHi,
   },
@@ -441,7 +447,7 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: 10,
     borderWidth: 1,
-    backgroundColor: "rgba(168,85,247,0.12)",
+    backgroundColor: c.primaryFaded,
     alignItems: "center",
     justifyContent: "center",
   },

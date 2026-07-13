@@ -4,6 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import PickerModal, { PickerItemText } from "./PickerModal";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface DateTimeDropdownProps {
   value: Date | null;
   onChange: (date: Date) => void;
@@ -70,6 +72,8 @@ export default function DateTimeDropdown({
   defaultHour = 20,
   showTime = true,
 }: DateTimeDropdownProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [dayOpen, setDayOpen] = useState(false);
   const [monthOpen, setMonthOpen] = useState(false);
   const [yearOpen, setYearOpen] = useState(false);
@@ -205,7 +209,7 @@ export default function DateTimeDropdown({
           <Text style={[styles.dropdownText, draft.day == null && styles.placeholder]} numberOfLines={1}>
             {draft.day != null ? String(draft.day) : "Day"}
           </Text>
-          <Ionicons name="chevron-down" size={16} color="#6b7280" />
+          <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -216,7 +220,7 @@ export default function DateTimeDropdown({
           <Text style={[styles.dropdownText, draft.month == null && styles.placeholder]} numberOfLines={1}>
             {draft.month != null ? MONTH_SHORT[draft.month] : "Month"}
           </Text>
-          <Ionicons name="chevron-down" size={16} color="#6b7280" />
+          <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -227,7 +231,7 @@ export default function DateTimeDropdown({
           <Text style={[styles.dropdownText, draft.year == null && styles.placeholder]} numberOfLines={1}>
             {draft.year != null ? String(draft.year) : "Year"}
           </Text>
-          <Ionicons name="chevron-down" size={16} color="#6b7280" />
+          <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
 
@@ -237,11 +241,11 @@ export default function DateTimeDropdown({
           onPress={() => setTimeOpen(true)}
           activeOpacity={0.8}
         >
-          <Ionicons name="time-outline" size={18} color="#a855f7" />
+          <Ionicons name="time-outline" size={18} color={colors.primary} />
           <Text style={[styles.dropdownText, !value && styles.placeholder]} numberOfLines={1}>
             {value ? timeLabel(value.getHours(), value.getMinutes()) : "Time"}
           </Text>
-          <Ionicons name="chevron-down" size={16} color="#6b7280" />
+          <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
         </TouchableOpacity>
       )}
 
@@ -302,7 +306,8 @@ export default function DateTimeDropdown({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     gap: 10,
   },
@@ -315,17 +320,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: c.glassStroke,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 13,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: c.glassFillSubtle,
   },
   dropdownText: {
     flex: 1,
     fontSize: 15,
     fontFamily: Fonts.regular,
-    color: "#F4EEFF",
+    color: c.textBright,
   },
   placeholder: {
     color: "rgba(244,238,255,0.35)",

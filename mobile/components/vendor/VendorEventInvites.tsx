@@ -15,6 +15,8 @@ import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
 import { VN, VNF } from "./vendorTheme";
 
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface EventInvite {
   eventId: string;
   title: string;
@@ -30,6 +32,7 @@ interface EventInvite {
  * into the dashboard without reserving space.
  */
 export default function VendorEventInvites() {
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [invites, setInvites] = useState<EventInvite[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,7 +136,8 @@ export default function VendorEventInvites() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   wrap: { paddingHorizontal: 18, paddingBottom: 18 },
   title: {
     fontFamily: VNF.heading,
@@ -156,7 +160,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 10,
-    backgroundColor: "rgba(168,85,247,0.12)",
+    backgroundColor: c.primaryFaded,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -171,11 +175,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   decline: {
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
     borderColor: VN.strokeHi,
   },
   declineText: { fontFamily: VNF.bold, fontSize: 13, color: VN.textDim },
   accept: { backgroundColor: VN.purple },
-  acceptText: { fontFamily: VNF.bold, fontSize: 13, color: "#fff" },
+  acceptText: { fontFamily: VNF.bold, fontSize: 13, color: c.text },
 });

@@ -11,6 +11,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface PrimaryButtonProps {
   onPress: () => void;
   children: string;
@@ -40,6 +42,7 @@ export default function PrimaryButton({
   fullWidth = true,
   testID,
 }: PrimaryButtonProps) {
+  const styles = useThemedStyles(createStyles);
   return (
     <TouchableOpacity
       style={[
@@ -87,11 +90,12 @@ export default function PrimaryButton({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   buttonContainer: {
     borderRadius: 12,
     overflow: "hidden",
-    shadowColor: "#a855f7",
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.4,
     shadowRadius: 16,
@@ -112,7 +116,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   text: {
-    color: "#fff",
+    color: c.text,
     fontSize: 16,
     fontFamily: Fonts.bold,
   },
