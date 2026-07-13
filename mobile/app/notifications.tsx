@@ -20,6 +20,9 @@ import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import NotificationItemSkeleton from "@/components/skeletons/NotificationItemSkeleton";
 import { useUnread } from "@/contexts/UnreadContext";
 
+import type { ThemeColors } from "@/constants/theme";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 interface Notification {
   _id: string;
   type: string;
@@ -55,6 +58,8 @@ function notifIcon(type: string) {
 }
 
 export default function NotificationsScreen() {
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const { refreshUnread } = useUnread();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -150,7 +155,7 @@ export default function NotificationsScreen() {
       activeOpacity={0.7}
     >
       <View style={[styles.notifIcon, !item.read && styles.notifIconUnread]}>
-        <Ionicons name={notifIcon(item.type) as any} size={20} color={item.read ? "#6b7280" : "#a855f7"} />
+        <Ionicons name={notifIcon(item.type) as any} size={20} color={item.read ? colors.textMuted : colors.primary} />
       </View>
       <View style={styles.notifBody}>
         <Text style={styles.notifTitle}>{item.title}</Text>
@@ -164,10 +169,8 @@ export default function NotificationsScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <LinearGradient colors={["#0f0f1a", "#1a1a2e", "#16213e"]} style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+      <LinearGradient colors={[colors.background, colors.backgroundSecondary, colors.backgroundTertiary]} style={styles.header}>
+        <GlassBackButton style={styles.backButton} />
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Notifications</Text>
           {unreadCount > 0 && (
@@ -194,13 +197,13 @@ export default function NotificationsScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => { setRefreshing(true); fetchNotifications(); }}
-              tintColor="#a855f7"
-              colors={["#a855f7"]}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
             />
           }
           ListEmptyComponent={
             <View style={styles.center}>
-              <Ionicons name="notifications-off-outline" size={64} color="#374151" />
+              <Ionicons name="notifications-off-outline" size={64} color={colors.border} />
               <Text style={styles.emptyTitle}>No notifications yet</Text>
               <Text style={styles.emptyText}>
                 You'll see ticket sales, event updates, and more here.
@@ -213,8 +216,9 @@ export default function NotificationsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f0f1a" },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
   header: {
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight! + 16 : 60,
     paddingBottom: 20,
@@ -228,68 +232,68 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: scaleFontSize(26),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   headerSubtitle: {
     fontSize: scaleFontSize(13),
     fontFamily: Fonts.regular,
-    color: "#a855f7",
+    color: c.primary,
     marginTop: 2,
   },
   markAllBtn: { paddingBottom: 4 },
   markAllText: {
     fontSize: scaleFontSize(13),
     fontFamily: Fonts.medium,
-    color: "#a855f7",
+    color: c.primary,
   },
   list: { padding: getResponsivePadding(), gap: 8, paddingBottom: 40 },
   notifItem: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 14,
     padding: 14,
     gap: 12,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   notifItemUnread: {
-    borderColor: "rgba(168,85,247,0.3)",
+    borderColor: c.primaryBorder,
     backgroundColor: "rgba(168,85,247,0.05)",
   },
   notifIcon: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
-  notifIconUnread: { backgroundColor: "rgba(168,85,247,0.15)" },
+  notifIconUnread: { backgroundColor: c.primaryFadedStrong },
   notifBody: { flex: 1 },
   notifTitle: {
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 2,
   },
   notifText: {
     fontSize: scaleFontSize(13),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     lineHeight: 18,
   },
   notifTime: {
     fontSize: scaleFontSize(11),
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     marginTop: 4,
   },
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
   },
   center: {
     flex: 1,
@@ -301,14 +305,14 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: scaleFontSize(20),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginTop: 20,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     lineHeight: 20,
   },

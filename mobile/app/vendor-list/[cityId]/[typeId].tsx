@@ -18,7 +18,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "@/constants/colors";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function VendorsList() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { cityId, typeId } = useLocalSearchParams();
   const router = useRouter();
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -74,7 +79,7 @@ export default function VendorsList() {
           key={i}
           name={i < Math.floor(rating) ? "star" : "star-outline"}
           size={16}
-          color={i < Math.floor(rating) ? "#fbbf24" : "#4b5563"}
+          color={i < Math.floor(rating) ? colors.warningLight : colors.borderMuted}
         />
       );
     }
@@ -118,7 +123,7 @@ export default function VendorsList() {
           <Text style={styles.vendorName}>{item.name}</Text>
           {item.verified && (
             <View style={styles.verifiedBadge}>
-              <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
+              <Ionicons name="checkmark-circle" size={16} color={colors.success} />
               <Text style={styles.verifiedText}>Verified</Text>
             </View>
           )}
@@ -183,9 +188,7 @@ export default function VendorsList() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        <GlassBackButton style={styles.backButton} />
         <Text style={styles.title}>Vendors</Text>
       </View>
 
@@ -198,7 +201,7 @@ export default function VendorsList() {
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="search-outline" size={48} color="#4b5563" />
+            <Ionicons name="search-outline" size={48} color={colors.borderMuted} />
             <Text style={styles.emptyText}>No vendors found in this category</Text>
           </View>
         }
@@ -208,17 +211,18 @@ export default function VendorsList() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: 40,
-    backgroundColor: Colors.darkBackground,
+    backgroundColor: c.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: Colors.darkBackground,
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: "row",
@@ -233,7 +237,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: scaleFontSize(20),
     fontWeight: "bold",
-    color: "#fff",
+    color: c.text,
     marginLeft: 12,
     flex: 1,
   },
@@ -244,7 +248,7 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === "ios" ? 24 : 100,
   },
   card: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 16,
     marginBottom: 16,
     overflow: "hidden",
@@ -252,7 +256,7 @@ const styles = StyleSheet.create({
   cardImage: {
     width: "100%",
     height: 180,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
   },
   cardContent: {
     padding: 16,
@@ -266,7 +270,7 @@ const styles = StyleSheet.create({
   vendorName: {
     fontSize: scaleFontSize(18),
     fontWeight: "bold",
-    color: "#fff",
+    color: c.text,
     flex: 1,
   },
   verifiedBadge: {
@@ -285,7 +289,7 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: scaleFontSize(14),
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginBottom: 12,
     lineHeight: 20,
   },
@@ -307,14 +311,14 @@ const styles = StyleSheet.create({
     color: "#22c55e",
   },
   dollarInactive: {
-    color: "#4b5563",
+    color: c.borderMuted,
   },
   ratingContainer: {
     flexDirection: "row",
     alignItems: "center",
   },
   ratingText: {
-    color: "#fbbf24",
+    color: c.warningLight,
     fontSize: scaleFontSize(14),
     fontWeight: "600",
     marginLeft: 6,
@@ -324,7 +328,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   contactButton: {
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
     padding: 10,
     borderRadius: 10,
   },
@@ -333,7 +337,7 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   emptyText: {
-    color: "#9ca3af",
+    color: c.textSecondary,
     fontSize: scaleFontSize(16),
     marginTop: 12,
   },
@@ -341,7 +345,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   ctaContainer: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: getResponsivePadding(),
     alignItems: "center",
@@ -351,12 +355,12 @@ const styles = StyleSheet.create({
   ctaTitle: {
     fontSize: scaleFontSize(20),
     fontWeight: "bold",
-    color: "#fff",
+    color: c.white,
     marginBottom: 8,
   },
   ctaText: {
     fontSize: scaleFontSize(14),
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     marginBottom: 20,
     lineHeight: 20,
@@ -371,7 +375,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   ctaButtonText: {
-    color: "#fff",
+    color: c.white,
     fontSize: scaleFontSize(16),
     fontWeight: "700",
   },

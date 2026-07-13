@@ -22,7 +22,12 @@ import FollowButton from "@/components/shared/FollowButton";
 import { Avatar } from "@/components/shared/Avatar";
 import UserListItemSkeleton from "@/components/skeletons/UserListItemSkeleton";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function FollowingScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const [users, setUsers] = useState<FollowUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,19 +100,17 @@ export default function FollowingScreen() {
 
   if (loading) {
     return (
-      <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
+      <LinearGradient colors={[colors.backgroundSecondary, colors.backgroundTertiary]} style={styles.container}>
         <UserListItemSkeleton count={6} />
       </LinearGradient>
     );
   }
 
   return (
-    <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
+    <LinearGradient colors={[colors.backgroundSecondary, colors.backgroundTertiary]} style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => goBack()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
+          <GlassBackButton style={styles.backButton} />
           <Text style={styles.headerTitle}>Following</Text>
           <View style={{ width: 40 }} />
         </View>
@@ -121,15 +124,15 @@ export default function FollowingScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#a855f7"
-              colors={["#a855f7"]}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
             />
           }
           onEndReached={loadMore}
           onEndReachedThreshold={0.3}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="people-outline" size={48} color="#6b7280" />
+              <Ionicons name="people-outline" size={48} color={colors.textMuted} />
               <Text style={styles.emptyText}>Not following anyone yet</Text>
             </View>
           }
@@ -140,7 +143,8 @@ export default function FollowingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
   loadingContainer: {
@@ -160,7 +164,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   listContent: {
     paddingHorizontal: 20,
@@ -171,19 +175,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   userAvatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
   },
   userAvatarPlaceholder: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -194,12 +198,12 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
   },
   mutualLabel: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#a855f7",
+    color: c.primary,
     marginTop: 2,
   },
   emptyContainer: {
@@ -209,7 +213,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#6b7280",
+    color: c.textMuted,
     marginTop: 12,
   },
 });

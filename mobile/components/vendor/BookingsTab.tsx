@@ -18,6 +18,8 @@ import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import chatService from "@/services/chat.service";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 type BookingStatus = "all" | "pending" | "confirmed" | "rejected" | "cancelled";
 
 interface BookingClient {
@@ -74,6 +76,8 @@ function formatDate(iso: string) {
 }
 
 export default function BookingsTab() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -177,7 +181,7 @@ export default function BookingsTab() {
             <Image source={{ uri: serviceImage }} style={styles.serviceImage} />
           ) : (
             <View style={styles.serviceImagePlaceholder}>
-              <Ionicons name="briefcase-outline" size={20} color="#6b7280" />
+              <Ionicons name="briefcase-outline" size={20} color={colors.textMuted} />
             </View>
           )}
           <View style={styles.serviceInfo}>
@@ -222,14 +226,14 @@ export default function BookingsTab() {
 
         {/* Date */}
         <View style={styles.detailRow}>
-          <Ionicons name="calendar-outline" size={14} color="#9ca3af" />
+          <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
           <Text style={styles.detailText}>{formatDate(item.preferredDate)}</Text>
         </View>
 
         {/* Message */}
         {!!item.message && (
           <View style={styles.messageBox}>
-            <Ionicons name="chatbubble-outline" size={13} color="#6b7280" />
+            <Ionicons name="chatbubble-outline" size={13} color={colors.textMuted} />
             <Text style={styles.messageText} numberOfLines={3}>{item.message}</Text>
           </View>
         )}
@@ -243,10 +247,10 @@ export default function BookingsTab() {
             activeOpacity={0.8}
           >
             {chattingWith === item._id ? (
-              <ActivityIndicator size="small" color="#a855f7" />
+              <ActivityIndicator size="small" color={colors.primary} />
             ) : (
               <>
-                <Ionicons name="chatbubbles-outline" size={16} color="#a855f7" />
+                <Ionicons name="chatbubbles-outline" size={16} color={colors.primary} />
                 <Text style={styles.chatButtonText}>Message Client</Text>
               </>
             )}
@@ -263,11 +267,11 @@ export default function BookingsTab() {
               activeOpacity={0.8}
             >
               {isUpdating ? (
-                <ActivityIndicator size="small" color="#ef4444" />
+                <ActivityIndicator size="small" color={colors.error} />
               ) : (
                 <>
-                  <Ionicons name="close-outline" size={16} color="#ef4444" />
-                  <Text style={[styles.actionText, { color: "#ef4444" }]}>Reject</Text>
+                  <Ionicons name="close-outline" size={16} color={colors.error} />
+                  <Text style={[styles.actionText, { color: colors.error }]}>Reject</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -341,7 +345,7 @@ export default function BookingsTab() {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="calendar-outline" size={52} color="#374151" />
+              <Ionicons name="calendar-outline" size={52} color={colors.border} />
               <Text style={styles.emptyTitle}>No Bookings</Text>
               <Text style={styles.emptyText}>
                 {activeFilter === "all"
@@ -356,10 +360,11 @@ export default function BookingsTab() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.darkBackground,
+    backgroundColor: c.background,
   },
   header: {
     paddingHorizontal: 16,
@@ -369,12 +374,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 26,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   headerSubtitle: {
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 2,
   },
   filterRow: {
@@ -387,9 +392,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   filterChipActive: {
     backgroundColor: Colors.primary,
@@ -398,22 +403,22 @@ const styles = StyleSheet.create({
   filterChipText: {
     fontSize: 13,
     fontFamily: Fonts.medium,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   filterChipTextActive: {
-    color: "#fff",
+    color: c.white,
   },
   list: {
     paddingHorizontal: 16,
     paddingBottom: 40,
   },
   card: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   serviceRow: {
     flexDirection: "row",
@@ -424,13 +429,13 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 8,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
   },
   serviceImagePlaceholder: {
     width: 44,
     height: 44,
     borderRadius: 8,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -441,12 +446,12 @@ const styles = StyleSheet.create({
   serviceName: {
     fontSize: 15,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
   },
   serviceCategory: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 2,
   },
   statusBadge: {
@@ -475,20 +480,20 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
   },
   avatarPlaceholder: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
   avatarLetter: {
     fontSize: 13,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   clientInfo: {
     flex: 1,
@@ -497,12 +502,12 @@ const styles = StyleSheet.create({
   clientName: {
     fontSize: 14,
     fontFamily: Fonts.semiBold,
-    color: "#e5e7eb",
+    color: c.textBody,
   },
   clientEmail: {
     fontSize: 11,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
   },
   price: {
     fontSize: 15,
@@ -518,12 +523,12 @@ const styles = StyleSheet.create({
   detailText: {
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   messageBox: {
     flexDirection: "row",
     gap: 6,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
     borderRadius: 8,
     padding: 10,
     marginBottom: 12,
@@ -533,7 +538,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     lineHeight: 18,
   },
   actions: {
@@ -570,14 +575,14 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
     borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.3)",
+    borderColor: c.primaryBorder,
   },
   chatButtonText: {
     fontSize: 14,
     fontFamily: Fonts.semiBold,
-    color: "#a855f7",
+    color: c.primary,
   },
   centered: {
     flex: 1,
@@ -593,14 +598,14 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginTop: 16,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     textAlign: "center",
     lineHeight: 20,
   },

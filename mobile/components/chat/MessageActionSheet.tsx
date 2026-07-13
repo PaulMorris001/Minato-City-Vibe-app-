@@ -11,9 +11,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import type { Message } from "@/services/chat.service";
 
-const CH_TEXT = "#F4EEFF";
-const CH_STROKE = "rgba(255,255,255,0.08)";
-const CH_STROKE_HI = "rgba(255,255,255,0.14)";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 
 const QUICK_REACTIONS = ["❤️", "✨", "🔥", "👍", "😂"];
 
@@ -56,6 +55,8 @@ export default function MessageActionSheet({
   onReact,
   onReport,
 }: MessageActionSheetProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [menuMode, setMenuMode] = useState<"actions" | "react">("actions");
 
   const isTemp = !!message && message._id.startsWith("temp_");
@@ -123,7 +124,7 @@ export default function MessageActionSheet({
                   }}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="create-outline" size={18} color={CH_TEXT} />
+                  <Ionicons name="create-outline" size={18} color={colors.textBright} />
                   <Text style={styles.actionLabel}>Edit</Text>
                 </TouchableOpacity>
                 <View style={styles.actionDivider} />
@@ -140,7 +141,7 @@ export default function MessageActionSheet({
                   }}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="copy-outline" size={18} color={CH_TEXT} />
+                  <Ionicons name="copy-outline" size={18} color={colors.textBright} />
                   <Text style={styles.actionLabel}>Copy</Text>
                 </TouchableOpacity>
                 <View style={styles.actionDivider} />
@@ -152,7 +153,7 @@ export default function MessageActionSheet({
               onPress={() => setMenuMode("react")}
               activeOpacity={0.7}
             >
-              <Ionicons name="happy-outline" size={18} color={CH_TEXT} />
+              <Ionicons name="happy-outline" size={18} color={colors.textBright} />
               <Text style={styles.actionLabel}>React</Text>
             </TouchableOpacity>
 
@@ -170,9 +171,9 @@ export default function MessageActionSheet({
                   <Ionicons
                     name={isPinned ? "pin" : "pin-outline"}
                     size={18}
-                    color={isPinned ? "#a855f7" : CH_TEXT}
+                    color={isPinned ? colors.primary : colors.textBright}
                   />
-                  <Text style={[styles.actionLabel, isPinned && { color: "#a855f7" }]}>
+                  <Text style={[styles.actionLabel, isPinned && { color: colors.primary }]}>
                     {isPinned ? "Unpin" : "Pin"}
                   </Text>
                 </TouchableOpacity>
@@ -190,7 +191,7 @@ export default function MessageActionSheet({
                   }}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="flag-outline" size={18} color="#ef4444" />
+                  <Ionicons name="flag-outline" size={18} color={colors.error} />
                   <Text style={[styles.actionLabel, styles.actionLabelDanger]}>
                     Report
                   </Text>
@@ -206,7 +207,7 @@ export default function MessageActionSheet({
                   onPress={handleDelete}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                  <Ionicons name="trash-outline" size={18} color={colors.error} />
                   <Text style={[styles.actionLabel, styles.actionLabelDanger]}>
                     Delete
                   </Text>
@@ -220,7 +221,8 @@ export default function MessageActionSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   pickerOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",
@@ -235,7 +237,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(26,16,48,0.98)",
     borderWidth: 1,
-    borderColor: CH_STROKE_HI,
+    borderColor: c.glassStrokeStrong,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.5,
@@ -256,7 +258,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: "rgba(26,16,48,0.98)",
     borderWidth: 1,
-    borderColor: CH_STROKE_HI,
+    borderColor: c.glassStrokeStrong,
     overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 12 },
@@ -273,13 +275,13 @@ const styles = StyleSheet.create({
   actionLabel: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 15,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   actionLabelDanger: {
-    color: "#ef4444",
+    color: c.error,
   },
   actionDivider: {
     height: 1,
-    backgroundColor: CH_STROKE,
+    backgroundColor: c.glassFill,
   },
 });

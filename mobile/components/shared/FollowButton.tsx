@@ -9,6 +9,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import followService from "@/services/follow.service";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface FollowButtonProps {
   userId: string;
   initialIsFollowing: boolean;
@@ -24,6 +26,8 @@ export default function FollowButton({
   onFollowChange,
   size = "medium",
 }: FollowButtonProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [isFollowing, setIsFollowing] = useState(initialIsFollowing);
   const [isMutual, setIsMutual] = useState(initialIsMutual);
   const processing = useRef(false);
@@ -80,7 +84,7 @@ export default function FollowButton({
           <Ionicons
             name="checkmark-circle"
             size={isSmall ? 12 : 14}
-            color="#a855f7"
+            color={colors.primary}
             style={{ marginRight: 4 }}
           />
         )}
@@ -99,7 +103,7 @@ export default function FollowButton({
   return (
     <TouchableOpacity onPress={handlePress} activeOpacity={0.7}>
       <LinearGradient
-        colors={["#a855f7", "#7c3aed"]}
+        colors={[colors.primary, colors.primaryDark]}
         style={[styles.gradientButton, isSmall ? styles.smallButton : styles.mediumButton]}
       >
         <Text
@@ -115,7 +119,8 @@ export default function FollowButton({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   gradientButton: {
     paddingHorizontal: 20,
     paddingVertical: 8,
@@ -125,7 +130,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   gradientButtonText: {
-    color: "#fff",
+    color: c.white,
     fontSize: 14,
     fontFamily: Fonts.semiBold,
   },
@@ -134,20 +139,20 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     backgroundColor: "transparent",
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
   },
   outlinedButtonText: {
-    color: "#9ca3af",
+    color: c.textSecondary,
     fontSize: 14,
     fontFamily: Fonts.semiBold,
   },
   mutualButton: {
-    borderColor: "rgba(168, 85, 247, 0.3)",
-    backgroundColor: "rgba(168, 85, 247, 0.08)",
+    borderColor: c.primaryBorder,
+    backgroundColor: c.primaryFaded,
   },
   // Fixed height so all medium states (Follow / Following / Mutual) match the
   // profile screen's Message button exactly, border or no border.

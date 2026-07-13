@@ -31,7 +31,6 @@ import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 import { createEventShareLink } from "@/utils/shareLinks";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
-import GuestGate from "@/components/shared/GuestGate";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { Avatar } from "@/components/shared/Avatar";
 import { useStripePayment } from "@/hooks/useStripePayment";
@@ -41,6 +40,8 @@ import { LocationPicker, MultiImagePicker } from "@/components/shared";
 import { formatLocation } from "@/utils/location";
 import { resolveImageUrls } from "@/utils/imageUpload";
 
+import type { ThemeColors } from "@/constants/theme";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 interface Event {
   _id: string;
   title: string;
@@ -86,6 +87,8 @@ interface Event {
 }
 
 export default function EventsPage() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const { payForTicket } = useStripePayment();
 
@@ -200,8 +203,9 @@ export default function EventsPage() {
       if (pageNum === 1) setDiscoverLoading(true);
       else setDiscoverLoadingMore(true);
 
+      // Discover is guest-accessible — the explore routes use optionalAuth on
+      // the server, so only attach the token when one exists.
       const token = await SecureStore.getItemAsync("token");
-      if (!token) return;
 
       const params = new URLSearchParams({
         page: String(pageNum),
@@ -222,7 +226,7 @@ export default function EventsPage() {
       // Ticketmaster events are always physical.
       const [nativeRes, externalRes] = await Promise.allSettled([
         fetch(`${BASE_URL}/events/public/explore?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
         }),
         pageNum === 1 && !online
           ? externalEventService.explore({
@@ -274,6 +278,10 @@ export default function EventsPage() {
   };
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
+    if (isGuest) {
+      router.push("/login");
+      return;
+    }
     // The hook runs checkout AND confirms server-side before returning.
     const result = await payForTicket(eventId);
     if (!result.success) {
@@ -288,7 +296,10 @@ export default function EventsPage() {
   const handleJoinFreeEvent = async (eventId: string, eventTitle: string) => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      if (!token) return;
+      if (!token) {
+        router.push("/login");
+        return;
+      }
       const res = await fetch(`${BASE_URL}/events/${eventId}/join`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -315,6 +326,12 @@ export default function EventsPage() {
       fetchDiscoverEvents(1, null, true, false);
     }, [])
   );
+
+  // Guests can browse Discover but "Private" needs an account — land them on
+  // the tab that actually works for them.
+  useEffect(() => {
+    if (isGuest) setActiveTab("discover");
+  }, [isGuest]);
 
   // Re-fetch events immediately when this user receives a new invite via socket
   useEffect(() => {
@@ -618,7 +635,7 @@ export default function EventsPage() {
           <Image source={{ uri: event.image }} style={styles.eventImage} />
         ) : (
           <View style={styles.placeholderImage}>
-            <Ionicons name="calendar-outline" size={40} color="#6b7280" />
+            <Ionicons name="calendar-outline" size={40} color={colors.textMuted} />
           </View>
         )}
 
@@ -626,13 +643,13 @@ export default function EventsPage() {
           <View style={styles.eventTitleRow}>
             <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>
             <View style={styles.privateBadge}>
-              <Ionicons name="lock-closed-outline" size={12} color="#a855f7" />
+              <Ionicons name="lock-closed-outline" size={12} color={colors.primary} />
               <Text style={styles.privateBadgeText}>PRIVATE</Text>
             </View>
           </View>
 
           <View style={styles.eventDetail}>
-            <Ionicons name="calendar" size={16} color="#a855f7" />
+            <Ionicons name="calendar" size={16} color={colors.primary} />
             <Text style={styles.eventDetailText}>
               {eventDate.toLocaleDateString()} at{" "}
               {eventDate.toLocaleTimeString([], {
@@ -643,13 +660,13 @@ export default function EventsPage() {
           </View>
 
           <View style={styles.eventDetail}>
-            <Ionicons name={event.isVirtual ? "videocam" : "location"} size={16} color="#a855f7" />
+            <Ionicons name={event.isVirtual ? "videocam" : "location"} size={16} color={colors.primary} />
             <Text style={styles.eventDetailText}>{event.location}</Text>
           </View>
 
           {event.description ? (
             <View style={styles.eventDetail}>
-              <Ionicons name="document-text" size={16} color="#a855f7" />
+              <Ionicons name="document-text" size={16} color={colors.primary} />
               <Text style={styles.eventDetailText} numberOfLines={2}>
                 {event.description}
               </Text>
@@ -657,7 +674,7 @@ export default function EventsPage() {
           ) : null}
 
           <View style={styles.eventDetail}>
-            <Ionicons name="people" size={16} color="#a855f7" />
+            <Ionicons name="people" size={16} color={colors.primary} />
             <Text style={styles.eventDetailText}>
               {event.invitedUsers.length} invited
               {event.pendingInvites.length > 0 ? ` · ${event.pendingInvites.length} pending` : ""}
@@ -672,7 +689,7 @@ export default function EventsPage() {
                 handleShareEvent(event);
               }}
             >
-              <Ionicons name="share-social" size={20} color="#a855f7" />
+              <Ionicons name="share-social" size={20} color={colors.primary} />
             </TouchableOpacity>
 
             {/* Only show invite button for private events */}
@@ -684,7 +701,7 @@ export default function EventsPage() {
                   openInviteModal(event);
                 }}
               >
-                <Ionicons name="person-add" size={20} color="#a855f7" />
+                <Ionicons name="person-add" size={20} color={colors.primary} />
               </TouchableOpacity>
             )}
 
@@ -695,7 +712,7 @@ export default function EventsPage() {
                 openEditModal(event);
               }}
             >
-              <Ionicons name="create-outline" size={20} color="#a855f7" />
+              <Ionicons name="create-outline" size={20} color={colors.primary} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -705,7 +722,7 @@ export default function EventsPage() {
                 handleDeleteEvent(event._id);
               }}
             >
-              <Ionicons name="trash-outline" size={20} color="#ef4444" />
+              <Ionicons name="trash-outline" size={20} color={colors.error} />
             </TouchableOpacity>
           </View>
         </View>
@@ -713,19 +730,9 @@ export default function EventsPage() {
     );
   };
 
-  if (isGuest) {
-    return (
-      <GuestGate
-        title="Log in to see your events"
-        subtitle="Sign in or create an account to host events, RSVP, manage invites, and track what you're attending."
-        icon="calendar-outline"
-      />
-    );
-  }
-
   return (
     <>
-      <LinearGradient colors={["#0f0f1a", "#1a1a2e"]} style={styles.container}>
+      <LinearGradient colors={[colors.background, colors.backgroundSecondary]} style={styles.container}>
         {/* Top edge only — content should run under the floating tab bar on iOS. */}
         <SafeAreaView style={styles.safeArea} edges={["top"]}>
           <View style={styles.header}>
@@ -739,7 +746,7 @@ export default function EventsPage() {
               onPress={() => setActiveTab("private")}
               activeOpacity={0.8}
             >
-              <Ionicons name="lock-closed-outline" size={14} color={activeTab === "private" ? "#fff" : "#6b7280"} />
+              <Ionicons name="lock-closed-outline" size={14} color={activeTab === "private" ? "#fff" : colors.textMuted} />
               <Text style={[styles.tabBtnText, activeTab === "private" && styles.tabBtnTextActive]}>Private</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -747,7 +754,7 @@ export default function EventsPage() {
               onPress={() => setActiveTab("discover")}
               activeOpacity={0.8}
             >
-              <Ionicons name="globe-outline" size={14} color={activeTab === "discover" ? "#fff" : "#6b7280"} />
+              <Ionicons name="globe-outline" size={14} color={activeTab === "discover" ? "#fff" : colors.textMuted} />
               <Text style={[styles.tabBtnText, activeTab === "discover" && styles.tabBtnTextActive]}>Discover</Text>
             </TouchableOpacity>
           </View>
@@ -760,7 +767,7 @@ export default function EventsPage() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#a855f7"
+              tintColor={colors.primary}
             />
           }
         >
@@ -793,7 +800,7 @@ export default function EventsPage() {
                   }}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="videocam-outline" size={15} color={discoverOnline ? "#fff" : "#9ca3af"} />
+                  <Ionicons name="videocam-outline" size={15} color={discoverOnline ? "#fff" : colors.textSecondary} />
                   <Text style={[styles.onlineFilterText, discoverOnline && styles.onlineFilterTextActive]}>
                     Online events
                   </Text>
@@ -810,7 +817,7 @@ export default function EventsPage() {
                     }}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="close-circle" size={16} color="#9ca3af" />
+                    <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
                     <Text style={styles.clearLocationText}>Show all events</Text>
                   </TouchableOpacity>
                 ) : null}
@@ -820,7 +827,7 @@ export default function EventsPage() {
                 <EventCardSkeleton count={5} />
               ) : discoverEvents.length === 0 && externalEvents.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Ionicons name="globe-outline" size={64} color="#6b7280" />
+                  <Ionicons name="globe-outline" size={64} color={colors.textMuted} />
                   <Text style={styles.emptyStateTitle}>No public events yet</Text>
                   <Text style={styles.emptyStateText}>Check back soon or try a different city</Text>
                 </View>
@@ -864,7 +871,7 @@ export default function EventsPage() {
                     ))}
                   {discoverHasMore && (
                     <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMoreDiscover} disabled={discoverLoadingMore} activeOpacity={0.7}>
-                      {discoverLoadingMore ? <ActivityIndicator size="small" color="#a855f7" /> : <Text style={styles.loadMoreText}>Load More</Text>}
+                      {discoverLoadingMore ? <ActivityIndicator size="small" color={colors.primary} /> : <Text style={styles.loadMoreText}>Load More</Text>}
                     </TouchableOpacity>
                   )}
                 </>
@@ -873,7 +880,23 @@ export default function EventsPage() {
           ) : null}
 
           {/* ──── PRIVATE TAB ──── */}
-          {activeTab === "private" ? (loading ? (
+          {activeTab === "private" ? (isGuest ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="lock-closed-outline" size={64} color={colors.textMuted} />
+              <Text style={styles.emptyStateTitle}>Log in to see your events</Text>
+              <Text style={styles.emptyStateText}>
+                Sign in or create an account to host events, RSVP, manage invites, and track what you're attending.
+              </Text>
+              <TouchableOpacity
+                style={styles.guestLoginBtn}
+                onPress={() => router.push("/login")}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="log-in-outline" size={18} color={colors.white} />
+                <Text style={styles.guestLoginBtnText}>Log in or sign up</Text>
+              </TouchableOpacity>
+            </View>
+          ) : loading ? (
             <EventCardSkeleton count={5} />
           ) : (() => {
             const pending = privateEvents.filter(e => e.userStatus === "pending");
@@ -898,7 +921,7 @@ export default function EventsPage() {
                             <Image source={{ uri: event.image }} style={styles.pendingImage} />
                           ) : (
                             <View style={styles.pendingImagePlaceholder}>
-                              <Ionicons name="calendar-outline" size={28} color="#6b7280" />
+                              <Ionicons name="calendar-outline" size={28} color={colors.textMuted} />
                             </View>
                           )}
                           <View style={styles.pendingContent}>
@@ -927,7 +950,7 @@ export default function EventsPage() {
                                 onPress={(e) => { e.stopPropagation(); handleRespondInvite(event._id, "declined"); }}
                                 disabled={isResponding}
                               >
-                                <Ionicons name="close" size={15} color="#ef4444" />
+                                <Ionicons name="close" size={15} color={colors.error} />
                                 <Text style={styles.declineBtnText}>Decline</Text>
                               </TouchableOpacity>
                             </View>
@@ -941,7 +964,7 @@ export default function EventsPage() {
                 {/* ── My Private Events & Attending ── */}
                 {myEvents.length === 0 && pending.length === 0 ? (
                   <View style={styles.emptyState}>
-                    <Ionicons name="lock-closed-outline" size={64} color="#6b7280" />
+                    <Ionicons name="lock-closed-outline" size={64} color={colors.textMuted} />
                     <Text style={styles.emptyStateTitle}>No private events yet</Text>
                     <Text style={styles.emptyStateText}>
                       Create an invite-only event from the home page
@@ -965,7 +988,7 @@ export default function EventsPage() {
                     activeOpacity={0.7}
                   >
                     {loadingMore ? (
-                      <ActivityIndicator size="small" color="#a855f7" />
+                      <ActivityIndicator size="small" color={colors.primary} />
                     ) : (
                       <Text style={styles.loadMoreText}>Load More</Text>
                     )}
@@ -1014,7 +1037,7 @@ export default function EventsPage() {
                 <TextInput
                   style={styles.input}
                   placeholder="e.g., Birthday Party"
-                  placeholderTextColor="#6b7280"
+                  placeholderTextColor={colors.textMuted}
                   value={editData.title}
                   onChangeText={(text) =>
                     setEditData({ ...editData, title: text })
@@ -1083,7 +1106,7 @@ export default function EventsPage() {
                   <TextInput
                     style={styles.input}
                     placeholder="https://zoom.us/j/... (optional)"
-                    placeholderTextColor="#6b7280"
+                    placeholderTextColor={colors.textMuted}
                     autoCapitalize="none"
                     autoCorrect={false}
                     keyboardType="url"
@@ -1098,7 +1121,7 @@ export default function EventsPage() {
                     <TextInput
                       style={styles.input}
                       placeholder="e.g., 123 Main St, Rooftop Lounge"
-                      placeholderTextColor="#6b7280"
+                      placeholderTextColor={colors.textMuted}
                       value={editData.address}
                       onChangeText={(text) => setEditData({ ...editData, address: text })}
                     />
@@ -1139,7 +1162,7 @@ export default function EventsPage() {
                 <TextInput
                   style={[styles.input, styles.textArea]}
                   placeholder="Describe your event..."
-                  placeholderTextColor="#6b7280"
+                  placeholderTextColor={colors.textMuted}
                   value={editData.description}
                   onChangeText={(text) =>
                     setEditData({ ...editData, description: text })
@@ -1235,7 +1258,7 @@ export default function EventsPage() {
                 onPress={handleUpdateEvent}
               >
                 <LinearGradient
-                  colors={["#a855f7", "#7c3aed"]}
+                  colors={[colors.primary, colors.primaryDark]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.createButtonGradient}
@@ -1316,13 +1339,13 @@ export default function EventsPage() {
                   <Ionicons
                     name="search"
                     size={20}
-                    color="#6b7280"
+                    color={colors.textMuted}
                     style={styles.searchIconInModal}
                   />
                   <TextInput
                     style={styles.searchInputInModal}
                     placeholder={inviteTab === "vendors" ? "Enter vendor name..." : "Enter username or email..."}
-                    placeholderTextColor="#6b7280"
+                    placeholderTextColor={colors.textMuted}
                     value={inviteUsername}
                     onChangeText={setInviteUsername}
                     autoCapitalize="none"
@@ -1332,7 +1355,7 @@ export default function EventsPage() {
 
               {searchingUsers && (
                 <View style={styles.loadingUserContainer}>
-                  <ActivityIndicator size="small" color="#a855f7" />
+                  <ActivityIndicator size="small" color={colors.primary} />
                 </View>
               )}
 
@@ -1365,14 +1388,14 @@ export default function EventsPage() {
                 ListEmptyComponent={
                   !searchingUsers && inviteUsername.length >= 2 ? (
                     <View style={styles.emptyUserSearchContainer}>
-                      <Ionicons name="people-outline" size={48} color="#6b7280" />
+                      <Ionicons name="people-outline" size={48} color={colors.textMuted} />
                       <Text style={styles.emptyUserSearchText}>
                         No {inviteTab === "vendors" ? "vendors" : "users"} found
                       </Text>
                     </View>
                   ) : !searchingUsers && inviteUsername.length < 2 ? (
                     <View style={styles.emptyUserSearchContainer}>
-                      <Ionicons name="search-outline" size={48} color="#6b7280" />
+                      <Ionicons name="search-outline" size={48} color={colors.textMuted} />
                       <Text style={styles.emptyUserSearchText}>
                         Type at least 2 characters to search
                       </Text>
@@ -1390,7 +1413,8 @@ export default function EventsPage() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -1402,12 +1426,12 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     paddingHorizontal: getResponsivePadding(),
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   headerTitle: {
     fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   scrollView: {
     flex: 1,
@@ -1425,22 +1449,37 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontSize: scaleFontSize(20),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginTop: 16,
     marginBottom: 8,
   },
   emptyStateText: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
+  },
+  guestLoginBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: c.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+    marginTop: 20,
+  },
+  guestLoginBtnText: {
+    fontSize: scaleFontSize(14),
+    fontFamily: Fonts.semiBold,
+    color: c.white,
   },
   // ── Section headings ──
   section: { marginBottom: 8, paddingHorizontal: 16 },
   sectionTitle: {
     fontSize: scaleFontSize(13),
     fontFamily: Fonts.semiBold,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.8,
     marginBottom: 12,
@@ -1449,12 +1488,12 @@ const styles = StyleSheet.create({
   // ── Pending invite card ──
   pendingCard: {
     flexDirection: "row",
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 16,
     marginBottom: 12,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#a855f7",
+    borderColor: c.primary,
   },
   pendingImage: {
     width: 90,
@@ -1463,7 +1502,7 @@ const styles = StyleSheet.create({
   },
   pendingImagePlaceholder: {
     width: 90,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
     minHeight: 110,
@@ -1475,13 +1514,13 @@ const styles = StyleSheet.create({
   pendingTitle: {
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 4,
   },
   pendingMeta: {
     fontSize: scaleFontSize(12),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginBottom: 2,
   },
   pendingActions: {
@@ -1497,17 +1536,17 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 8,
   },
-  acceptBtn: { backgroundColor: "#a855f7" },
-  acceptBtnText: { fontSize: scaleFontSize(13), fontFamily: Fonts.semiBold, color: "#fff" },
-  declineBtn: { backgroundColor: "rgba(239,68,68,0.1)", borderWidth: 1, borderColor: "#ef4444" },
-  declineBtnText: { fontSize: scaleFontSize(13), fontFamily: Fonts.semiBold, color: "#ef4444" },
+  acceptBtn: { backgroundColor: c.primary },
+  acceptBtnText: { fontSize: scaleFontSize(13), fontFamily: Fonts.semiBold, color: c.white },
+  declineBtn: { backgroundColor: "rgba(239,68,68,0.1)", borderWidth: 1, borderColor: c.error },
+  declineBtnText: { fontSize: scaleFontSize(13), fontFamily: Fonts.semiBold, color: c.error },
   eventCard: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 16,
     marginBottom: 16,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   eventImage: {
     width: "100%",
@@ -1517,7 +1556,7 @@ const styles = StyleSheet.create({
   placeholderImage: {
     width: "100%",
     height: 180,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1533,7 +1572,7 @@ const styles = StyleSheet.create({
   eventTitle: {
     fontSize: scaleFontSize(20),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     flex: 1,
   },
   publicBadge: {
@@ -1549,14 +1588,14 @@ const styles = StyleSheet.create({
   publicBadgeText: {
     fontSize: scaleFontSize(10),
     fontFamily: Fonts.bold,
-    color: "#10b981",
+    color: c.success,
     letterSpacing: 0.5,
   },
   privateBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(168, 85, 247, 0.15)",
+    backgroundColor: c.primaryFadedStrong,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -1565,14 +1604,14 @@ const styles = StyleSheet.create({
   privateBadgeText: {
     fontSize: scaleFontSize(10),
     fontFamily: Fonts.bold,
-    color: "#a855f7",
+    color: c.primary,
     letterSpacing: 0.5,
   },
   tabRow: {
     flexDirection: "row",
     marginHorizontal: 16,
     marginVertical: 12,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 4,
   },
@@ -1586,15 +1625,15 @@ const styles = StyleSheet.create({
     borderRadius: 9,
   },
   tabBtnActive: {
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
   },
   tabBtnText: {
     fontSize: 13,
     fontFamily: Fonts.semiBold,
-    color: "#6b7280",
+    color: c.textMuted,
   },
   tabBtnTextActive: {
-    color: "#fff",
+    color: c.white,
   },
   discoverFilterWrap: {
     paddingHorizontal: 16,
@@ -1610,21 +1649,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: c.glassStroke,
+    backgroundColor: c.glassFillSubtle,
     marginBottom: 8,
   },
   onlineFilterBtnActive: {
-    backgroundColor: "#a855f7",
-    borderColor: "#a855f7",
+    backgroundColor: c.primary,
+    borderColor: c.primary,
   },
   onlineFilterText: {
     fontSize: 13,
     fontFamily: Fonts.medium,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   onlineFilterTextActive: {
-    color: "#fff",
+    color: c.text,
   },
   clearLocationBtn: {
     flexDirection: "row",
@@ -1639,7 +1678,7 @@ const styles = StyleSheet.create({
   clearLocationText: {
     fontSize: 13,
     fontFamily: Fonts.medium,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   eventDetail: {
     flexDirection: "row",
@@ -1650,7 +1689,7 @@ const styles = StyleSheet.create({
   eventDetailText: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
-    color: "#e5e7eb",
+    color: c.textBody,
     flex: 1,
   },
   eventActions: {
@@ -1662,26 +1701,26 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: c.modalOverlay,
     justifyContent: "flex-end",
   },
   modalBackdrop: {
     flex: 1,
   },
   modalContent: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: "90%",
   },
   inviteModalContent: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     height: "75%",
@@ -1693,12 +1732,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   modalTitle: {
     fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   closeButton: {
     padding: 4,
@@ -1712,18 +1751,18 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.semiBold,
-    color: "#e5e7eb",
+    color: c.textBody,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     borderRadius: 12,
     padding: 14,
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
     borderWidth: 1,
-    borderColor: "#4b5563",
+    borderColor: c.borderMuted,
   },
   textArea: {
     minHeight: 100,
@@ -1734,17 +1773,17 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 12,
     borderTopWidth: 1,
-    borderTopColor: "#374151",
+    borderTopColor: c.border,
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: "center",
   },
   cancelButtonText: {
-    color: "#9ca3af",
+    color: c.textSecondary,
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.semiBold,
   },
@@ -1758,7 +1797,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   createButtonText: {
-    color: "white",
+    color: c.white,
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
   },
@@ -1776,7 +1815,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   imagePickerText: {
-    color: "white",
+    color: c.text,
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.semiBold,
   },
@@ -1799,30 +1838,30 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   datePickerButton: {
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     borderRadius: 12,
     padding: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     borderWidth: 1,
-    borderColor: "#4b5563",
+    borderColor: c.borderMuted,
   },
   datePickerText: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
     flex: 1,
   },
   searchInputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     borderRadius: 12,
     paddingHorizontal: 16,
     height: 48,
     borderWidth: 1,
-    borderColor: "#4b5563",
+    borderColor: c.borderMuted,
   },
   searchIconInModal: {
     marginRight: 8,
@@ -1831,7 +1870,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
   },
   loadingUserContainer: {
     paddingVertical: 20,
@@ -1842,19 +1881,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   userSearchAvatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
   },
   userSearchAvatarPlaceholder: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1865,16 +1904,16 @@ const styles = StyleSheet.create({
   userSearchName: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
   },
   userSearchEmail: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     marginTop: 2,
   },
   vendorBadge: {
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -1882,14 +1921,14 @@ const styles = StyleSheet.create({
   vendorBadgeText: {
     fontSize: scaleFontSize(12),
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.white,
   },
   inviteTabRow: {
     flexDirection: "row",
     marginHorizontal: 20,
     marginTop: 4,
     marginBottom: 4,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 10,
     padding: 3,
   },
@@ -1900,15 +1939,15 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   inviteTabBtnActive: {
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
   },
   inviteTabText: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.semiBold,
-    color: "#6b7280",
+    color: c.textMuted,
   },
   inviteTabTextActive: {
-    color: "#fff",
+    color: c.text,
   },
   emptyUserSearchContainer: {
     paddingVertical: 60,
@@ -1917,7 +1956,7 @@ const styles = StyleSheet.create({
   emptyUserSearchText: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     marginTop: 12,
     textAlign: "center",
   },
@@ -1930,30 +1969,30 @@ const styles = StyleSheet.create({
   visibilityOption: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    borderColor: "#4b5563",
+    borderColor: c.borderMuted,
   },
   radioButton: {
     width: 24,
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: "#6b7280",
+    borderColor: c.textMuted,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
   },
   radioButtonSelected: {
-    borderColor: "#a855f7",
+    borderColor: c.primary,
   },
   radioButtonInner: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
   },
   visibilityTextContainer: {
     flex: 1,
@@ -1961,18 +2000,18 @@ const styles = StyleSheet.create({
   visibilityLabel: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
   },
   visibilityHint: {
     fontSize: scaleFontSize(12),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 2,
   },
   visibilityLockedHint: {
     fontSize: scaleFontSize(12),
     fontFamily: Fonts.regular,
-    color: "#fbbf24",
+    color: c.warningLight,
     backgroundColor: "rgba(251,191,36,0.08)",
     borderRadius: 10,
     paddingVertical: 8,
@@ -1987,12 +2026,12 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   visibilityLabelDim: {
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   visibilityLockBadge: {
     fontSize: scaleFontSize(11),
     fontFamily: Fonts.semiBold,
-    color: "#a855f7",
+    color: c.primary,
   },
   loadMoreBtn: {
     marginTop: 12,
@@ -2002,18 +2041,18 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#a855f7",
+    borderColor: c.primary,
     minWidth: 140,
     alignItems: "center",
   },
   loadMoreText: {
-    color: "#a855f7",
+    color: c.primary,
     fontFamily: Fonts.semiBold,
     fontSize: scaleFontSize(14),
   },
   allLoadedText: {
     textAlign: "center",
-    color: "#6b7280",
+    color: c.textMuted,
     fontFamily: Fonts.regular,
     fontSize: scaleFontSize(12),
     marginTop: 8,

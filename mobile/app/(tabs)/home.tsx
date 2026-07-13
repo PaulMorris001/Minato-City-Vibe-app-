@@ -28,23 +28,11 @@ import { useStripePayment } from "@/hooks/useStripePayment";
 import { trackEvent } from "@/utils/analytics";
 import { ensureAuth } from "@/utils/requireAuth";
 
-const C = {
-  bg: "#0B0613",
-  surface: "#1A1030",
-  surfaceHi: "#241540",
-  stroke: "rgba(255,255,255,0.06)",
-  strokeHi: "rgba(255,255,255,0.12)",
-  text: "#F4EEFF",
-  textDim: "rgba(244,238,255,0.64)",
-  textMute: "rgba(244,238,255,0.42)",
-  purple: "#A855F7",
-  purpleDeep: "#7C3AED",
-  pink: "#EC4899",
-  cyan: "#22D3EE",
-  amber: "#F59E0B",
-};
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 
 function Skeleton({ width, height, borderRadius = 10, style }: { width: number | string; height: number; borderRadius?: number; style?: any }) {
+  const { colors } = useTheme();
   const opacity = useRef(new Animated.Value(0.4)).current;
 
   useEffect(() => {
@@ -58,12 +46,13 @@ function Skeleton({ width, height, borderRadius = 10, style }: { width: number |
 
   return (
     <Animated.View
-      style={[{ width, height, borderRadius, backgroundColor: C.surfaceHi, opacity }, style]}
+      style={[{ width, height, borderRadius, backgroundColor: colors.cardAlt, opacity }, style]}
     />
   );
 }
 
 function HeroSkeleton() {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={[styles.heroCard, { overflow: "hidden" }]}>
       <Skeleton width="100%" height={320} borderRadius={24} />
@@ -72,6 +61,7 @@ function HeroSkeleton() {
 }
 
 function SmallCardSkeleton() {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={[styles.smallCard, { overflow: "hidden", marginRight: 12 }]}>
       <Skeleton width={160} height={100} borderRadius={0} />
@@ -85,6 +75,7 @@ function SmallCardSkeleton() {
 }
 
 function VendorCardSkeleton() {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={[styles.vendorCard, { overflow: "hidden", marginRight: 12 }]}>
       <Skeleton width="100%" height={100} borderRadius={0} />
@@ -149,13 +140,14 @@ const TOPIC_EMOJI: Record<string, string> = {
 const NAVBAR_OVERLAY_HEIGHT = 106;
 
 const QUICK_ACTIONS = [
-  { icon: "home-outline" as const, label: "House Party", color: C.purple },
-  { icon: "ticket-outline" as const, label: "Ticketed Event", color: C.pink },
-  { icon: "walk-outline" as const, label: "Bar Crawl", color: C.cyan },
-  { icon: "briefcase-outline" as const, label: "Book Vendor", color: C.amber },
+  { icon: "home-outline" as const, label: "House Party", color: "#A855F7" },
+  { icon: "ticket-outline" as const, label: "Ticketed Event", color: "#EC4899" },
+  { icon: "walk-outline" as const, label: "Bar Crawl", color: "#22D3EE" },
+  { icon: "briefcase-outline" as const, label: "Book Vendor", color: "#F59E0B" },
 ];
 
 function SectionHeader({ title, subtitle, onAction, actionLabel }: { title: string; subtitle?: string; onAction?: () => void; actionLabel?: string }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.sectionHeader}>
       <View>
@@ -182,17 +174,19 @@ function SmallEventCard({
   onPurchase: (id: string, title: string) => void;
   onJoin: (id: string, title: string) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const owned = event.isCreator || event.userHasPurchased || event.userStatus === "accepted";
 
   return (
     <TouchableOpacity style={styles.smallCard} onPress={onPress} activeOpacity={0.8}>
-      <LinearGradient colors={["#2D1B69", "#1A1030"]} style={styles.smallCardInner}>
+      <LinearGradient colors={[colors.cardGradientStart, colors.cardGradientEnd]} style={styles.smallCardInner}>
         <View style={styles.smallCardImageWrap}>
           {event.image ? (
             <Image source={{ uri: event.image }} style={styles.smallCardImage} contentFit="cover" />
           ) : (
-            <View style={[styles.smallCardImage, { backgroundColor: C.surfaceHi, justifyContent: "center", alignItems: "center" }]}>
-              <Ionicons name="calendar" size={24} color={C.purple} />
+            <View style={[styles.smallCardImage, { backgroundColor: colors.cardAlt, justifyContent: "center", alignItems: "center" }]}>
+              <Ionicons name="calendar" size={24} color={colors.primary} />
             </View>
           )}
           {/* Price badge */}
@@ -211,7 +205,7 @@ function SmallEventCard({
 
           {owned ? (
             <View style={styles.smallCardOwned}>
-              <Ionicons name="checkmark-circle" size={12} color={C.purple} />
+              <Ionicons name="checkmark-circle" size={12} color={colors.primary} />
               <Text style={styles.smallCardOwnedText}>
                 {event.isCreator ? "Hosting" : "Going"}
               </Text>
@@ -250,19 +244,21 @@ function SmallExternalEventCard({
   event: ExternalEvent;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const sym = event.currency === "USD" ? "$" : `${event.currency} `;
   const priceLabel =
     event.priceMin != null ? `${sym}${Math.round(event.priceMin)}` : "TICKETS";
 
   return (
     <TouchableOpacity style={styles.smallCard} onPress={onPress} activeOpacity={0.8}>
-      <LinearGradient colors={["#2D1B69", "#1A1030"]} style={styles.smallCardInner}>
+      <LinearGradient colors={[colors.cardGradientStart, colors.cardGradientEnd]} style={styles.smallCardInner}>
         <View style={styles.smallCardImageWrap}>
           {event.image ? (
             <Image source={{ uri: event.image }} style={styles.smallCardImage} contentFit="cover" />
           ) : (
-            <View style={[styles.smallCardImage, { backgroundColor: C.surfaceHi, justifyContent: "center", alignItems: "center" }]}>
-              <Ionicons name="calendar" size={24} color={C.purple} />
+            <View style={[styles.smallCardImage, { backgroundColor: colors.cardAlt, justifyContent: "center", alignItems: "center" }]}>
+              <Ionicons name="calendar" size={24} color={colors.primary} />
             </View>
           )}
           <View style={[styles.smallCardBadge, styles.smallCardBadgePaid]}>
@@ -285,6 +281,8 @@ function SmallExternalEventCard({
 }
 
 function VendorCard({ vendor, onPress }: { vendor: Vendor; onPress: () => void }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const name = vendor.vendorName || vendor.businessName || vendor.username || "Vendor";
   const type = vendor.category || vendor.vendorType || "";
   return (
@@ -297,7 +295,7 @@ function VendorCard({ vendor, onPress }: { vendor: Vendor; onPress: () => void }
             contentFit="cover"
           />
         ) : (
-          <LinearGradient colors={[C.purple, C.purpleDeep]} style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <LinearGradient colors={[colors.primary, colors.primaryDark]} style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
             <Ionicons name="briefcase" size={28} color="#fff" />
           </LinearGradient>
         )}
@@ -311,6 +309,8 @@ function VendorCard({ vendor, onPress }: { vendor: Vendor; onPress: () => void }
 }
 
 function GuideCard({ guide, onPress }: { guide: TopGuide; onPress: () => void }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const emoji = TOPIC_EMOJI[guide.topic] || "📍";
   return (
     <TouchableOpacity style={styles.guideCard} onPress={onPress} activeOpacity={0.85}>
@@ -321,7 +321,7 @@ function GuideCard({ guide, onPress }: { guide: TopGuide; onPress: () => void })
           contentFit="cover"
         />
       ) : (
-        <LinearGradient colors={["#2D1B69", "#1A1030"]} style={styles.guideCardBanner}>
+        <LinearGradient colors={[colors.cardGradientStart, colors.cardGradientEnd]} style={styles.guideCardBanner}>
           <Text style={styles.guideCardEmoji}>{emoji}</Text>
         </LinearGradient>
       )}
@@ -344,6 +344,7 @@ function GuideCard({ guide, onPress }: { guide: TopGuide; onPress: () => void })
 }
 
 function GuideCardSkeleton() {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={[styles.guideCard, { overflow: "hidden" }]}>
       <Skeleton width="100%" height={70} borderRadius={0} />
@@ -357,8 +358,11 @@ function GuideCardSkeleton() {
 }
 
 export default function Home() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const isIpad = Platform.OS === "ios" && Platform.isPad;
   const { payForTicket } = useStripePayment();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
@@ -641,13 +645,20 @@ export default function Home() {
         // inset keeps the last item scrollable above it.
         contentInsetAdjustmentBehavior="automatic"
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.purple} colors={[C.purple]} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
         }
         contentContainerStyle={[
           styles.scrollContent,
           Platform.OS === "ios" && {
-            paddingTop: Math.max(0, NAVBAR_OVERLAY_HEIGHT - insets.top),
+            // iPad's navbar is insets-driven (insets.top + 10 + ~56 row), so
+            // pad just past the row; phones keep the fixed-height overlay math.
+            paddingTop: isIpad
+              ? 10
+              : Math.max(0, NAVBAR_OVERLAY_HEIGHT - insets.top),
           },
+          // Phones: tighter tail — the FAB floats over the last few px of
+          // content instead of reserving a full empty band.
+          !isIpad && { paddingBottom: 64 },
         ]}
       >
         {/* Greeting */}
@@ -672,7 +683,7 @@ export default function Home() {
             onPress={() => router.push(`/event/${heroEvent._id}` as any)}
           >
             <LinearGradient
-              colors={["#2D1B69", "#0B0613"]}
+              colors={["#2D1B69", colors.backgroundDeep]}
               style={styles.heroCardInner}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -707,7 +718,7 @@ export default function Home() {
                         <Text style={styles.heroTitle} numberOfLines={2}>{heroEvent.title}</Text>
                         {heroEvent.location && (
                           <Text style={styles.heroLocation} numberOfLines={1}>
-                            <Ionicons name="location-outline" size={12} color="rgba(244,238,255,0.7)" /> {heroEvent.location}
+                            <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.78)" /> {heroEvent.location}
                           </Text>
                         )}
 
@@ -718,7 +729,7 @@ export default function Home() {
                             onPress={() => router.push(`/event/${heroEvent._id}` as any)}
                           >
                             <Text style={styles.heroButtonText}>Manage Event</Text>
-                            <Ionicons name="arrow-forward" size={14} color={C.bg} />
+                            <Ionicons name="arrow-forward" size={14} color={colors.white} />
                           </TouchableOpacity>
                         ) : hasTicket ? (
                           <TouchableOpacity
@@ -727,7 +738,7 @@ export default function Home() {
                             onPress={() => router.push("/passes" as any)}
                           >
                             <Text style={styles.heroButtonText}>View Pass</Text>
-                            <Ionicons name="qr-code-outline" size={14} color={C.bg} />
+                            <Ionicons name="qr-code-outline" size={14} color={colors.white} />
                           </TouchableOpacity>
                         ) : isAttending ? (
                           <TouchableOpacity
@@ -736,7 +747,7 @@ export default function Home() {
                             onPress={() => router.push(`/event/${heroEvent._id}` as any)}
                           >
                             <Text style={styles.heroButtonText}>View Details</Text>
-                            <Ionicons name="arrow-forward" size={14} color={C.bg} />
+                            <Ionicons name="arrow-forward" size={14} color={colors.white} />
                           </TouchableOpacity>
                         ) : isPending ? (
                           <View style={styles.heroRsvpRow}>
@@ -746,7 +757,7 @@ export default function Home() {
                               onPress={() => handleRsvp(heroEvent._id, "accept")}
                             >
                               <Text style={styles.heroButtonText}>Accept</Text>
-                              <Ionicons name="checkmark" size={14} color={C.bg} />
+                              <Ionicons name="checkmark" size={14} color={colors.white} />
                             </TouchableOpacity>
                             <TouchableOpacity
                               style={[styles.heroButton, styles.heroRsvpDecline]}
@@ -769,7 +780,7 @@ export default function Home() {
                             }}
                           >
                             <Text style={styles.heroButtonText}>{heroEvent.isPaid ? "Get Ticket" : "Join Free"}</Text>
-                            <Ionicons name="arrow-forward" size={14} color={C.bg} />
+                            <Ionicons name="arrow-forward" size={14} color={colors.white} />
                           </TouchableOpacity>
                         )}
                       </>
@@ -788,7 +799,7 @@ export default function Home() {
             onPress={() => router.push(`/external-event/${heroExternal._id}` as any)}
           >
             <LinearGradient
-              colors={["#2D1B69", "#0B0613"]}
+              colors={["#2D1B69", colors.backgroundDeep]}
               style={styles.heroCardInner}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -809,7 +820,7 @@ export default function Home() {
                   <Text style={styles.heroTitle} numberOfLines={2}>{heroExternal.title}</Text>
                   {(heroExternal.venueName || heroExternal.location) && (
                     <Text style={styles.heroLocation} numberOfLines={1}>
-                      <Ionicons name="location-outline" size={12} color="rgba(244,238,255,0.7)" />{" "}
+                      <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.78)" />{" "}
                       {heroExternal.venueName || heroExternal.location}
                     </Text>
                   )}
@@ -819,7 +830,7 @@ export default function Home() {
                     onPress={() => router.push(`/external-event/${heroExternal._id}` as any)}
                   >
                     <Text style={styles.heroButtonText}>Read more</Text>
-                    <Ionicons name="arrow-forward" size={14} color={C.bg} />
+                    <Ionicons name="arrow-forward" size={14} color={colors.white} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1015,7 +1026,7 @@ export default function Home() {
         }}
         activeOpacity={0.85}
       >
-        <LinearGradient colors={[C.purple, C.purpleDeep]} style={styles.fabGradient}>
+        <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.fabGradient}>
           <Ionicons name="add" size={28} color="#fff" />
         </LinearGradient>
       </TouchableOpacity>
@@ -1029,10 +1040,11 @@ export default function Home() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   scrollView: {
     flex: 1,
-    backgroundColor: C.bg,
+    backgroundColor: c.backgroundDeep,
   },
   scrollContent: {
     flexGrow: 1,
@@ -1051,14 +1063,14 @@ const styles = StyleSheet.create({
   greetingText: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 28,
-    color: C.text,
+    color: c.textBright,
     letterSpacing: -0.5,
     lineHeight: 34,
   },
   greetingDate: {
     fontFamily: Fonts.regular,
     fontSize: 13,
-    color: C.textDim,
+    color: c.textDim,
     marginTop: 4,
   },
   heroCard: {
@@ -1066,7 +1078,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     overflow: "hidden",
     marginBottom: 28,
-    shadowColor: C.purple,
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.35,
     shadowRadius: 30,
@@ -1085,7 +1097,7 @@ const styles = StyleSheet.create({
   heroOverlay: {
     position: "absolute",
     inset: 0,
-    backgroundColor: "rgba(11,6,19,0.55)",
+    backgroundColor: c.imageScrim,
   },
   heroContent: {
     flex: 1,
@@ -1110,12 +1122,12 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: C.pink,
+    backgroundColor: c.accentPink,
   },
   heroBadgeText: {
     fontFamily: Fonts.bold,
     fontSize: 10,
-    color: "#fff",
+    color: c.white,
     letterSpacing: 0.6,
     textTransform: "uppercase",
   },
@@ -1133,14 +1145,14 @@ const styles = StyleSheet.create({
   heroTitle: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 36,
-    color: "#fff",
+    color: c.white,
     letterSpacing: -1,
     lineHeight: 38,
   },
   heroLocation: {
     fontFamily: Fonts.regular,
     fontSize: 12,
-    color: "rgba(244,238,255,0.7)",
+    color: "rgba(255,255,255,0.78)",
     marginTop: 6,
   },
   heroButton: {
@@ -1148,7 +1160,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     marginTop: 14,
-    backgroundColor: "#fff",
+    backgroundColor: c.primary,
     paddingHorizontal: 18,
     paddingVertical: 11,
     borderRadius: 12,
@@ -1157,7 +1169,7 @@ const styles = StyleSheet.create({
   heroButtonText: {
     fontFamily: Fonts.bold,
     fontSize: 13,
-    color: C.bg,
+    color: c.white,
     letterSpacing: -0.2,
   },
   heroRsvpRow: {
@@ -1167,11 +1179,11 @@ const styles = StyleSheet.create({
   },
   heroRsvpAccept: {
     marginTop: 0,
-    backgroundColor: "#fff",
+    backgroundColor: c.primary,
   },
   heroRsvpDecline: {
     marginTop: 0,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    backgroundColor: c.glassStrokeStrong,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.3)",
   },
@@ -1188,19 +1200,19 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: Fonts.bold,
     fontSize: 18,
-    color: C.text,
+    color: c.textBright,
     letterSpacing: -0.3,
   },
   sectionSubtitle: {
     fontFamily: Fonts.regular,
     fontSize: 12,
-    color: C.textMute,
+    color: c.textFaint,
     marginTop: 2,
   },
   sectionAction: {
     fontFamily: Fonts.semiBold,
     fontSize: 13,
-    color: C.purple,
+    color: c.primary,
   },
   horizontalList: {
     paddingHorizontal: 20,
@@ -1212,7 +1224,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: C.strokeHi,
+    borderColor: c.glassStroke,
   },
   smallCardInner: {
     flex: 1,
@@ -1241,7 +1253,7 @@ const styles = StyleSheet.create({
   smallCardBadgeText: {
     fontFamily: Fonts.bold,
     fontSize: 10,
-    color: "#fff",
+    color: c.white,
     letterSpacing: 0.3,
   },
   smallCardContent: {
@@ -1251,7 +1263,7 @@ const styles = StyleSheet.create({
   smallCardTitle: {
     fontFamily: Fonts.semiBold,
     fontSize: 13,
-    color: C.text,
+    color: c.textBright,
     lineHeight: 17,
     // Reserve two lines so the date + action rows sit at the same height on
     // every card, whether the title wraps or not.
@@ -1260,7 +1272,7 @@ const styles = StyleSheet.create({
   smallCardDate: {
     fontFamily: Fonts.regular,
     fontSize: 11,
-    color: C.textMute,
+    color: c.textFaint,
     marginTop: 4,
     marginBottom: 8,
   },
@@ -1274,13 +1286,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   smallCardActionPaid: {
-    backgroundColor: "rgba(168,85,247,0.15)",
+    backgroundColor: c.primaryFadedStrong,
     borderColor: "rgba(168,85,247,0.4)",
   },
   smallCardActionText: {
     fontFamily: Fonts.bold,
     fontSize: 11,
-    color: C.text,
+    color: c.textBright,
   },
   smallCardOwned: {
     flexDirection: "row",
@@ -1291,7 +1303,7 @@ const styles = StyleSheet.create({
   smallCardOwnedText: {
     fontFamily: Fonts.semiBold,
     fontSize: 11,
-    color: C.purple,
+    color: c.primary,
   },
   quickGrid: {
     flexDirection: "row",
@@ -1301,11 +1313,11 @@ const styles = StyleSheet.create({
   },
   quickAction: {
     width: "47%",
-    backgroundColor: C.surface,
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: C.stroke,
+    borderColor: c.glassFillSubtle,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
@@ -1320,17 +1332,17 @@ const styles = StyleSheet.create({
   quickActionLabel: {
     fontFamily: Fonts.semiBold,
     fontSize: 13,
-    color: C.text,
+    color: c.textBright,
     flex: 1,
   },
   vendorCard: {
     width: 140,
     marginRight: 12,
-    backgroundColor: C.surface,
+    backgroundColor: c.card,
     borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: C.stroke,
+    borderColor: c.glassFillSubtle,
   },
   vendorCardImage: {
     width: "100%",
@@ -1343,21 +1355,21 @@ const styles = StyleSheet.create({
   vendorCardName: {
     fontFamily: Fonts.semiBold,
     fontSize: 13,
-    color: C.text,
+    color: c.textBright,
   },
   vendorCardType: {
     fontFamily: Fonts.regular,
     fontSize: 11,
-    color: C.textMute,
+    color: c.textFaint,
     marginTop: 3,
   },
   guideCard: {
     width: 220,
     marginRight: 16,
     borderRadius: 16,
-    backgroundColor: C.surface,
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: C.stroke,
+    borderColor: c.glassFillSubtle,
     overflow: "hidden",
   },
   guideCardBanner: {
@@ -1375,14 +1387,14 @@ const styles = StyleSheet.create({
   guideCardTitle: {
     fontFamily: Fonts.bold,
     fontSize: 14,
-    color: C.text,
+    color: c.textBright,
     lineHeight: 18,
     minHeight: 36,
   },
   guideCardMeta: {
     fontFamily: Fonts.regular,
     fontSize: 12,
-    color: C.textDim,
+    color: c.textDim,
   },
   guideCardFooter: {
     flexDirection: "row",
@@ -1392,7 +1404,7 @@ const styles = StyleSheet.create({
   },
   guideTopicBadge: {
     flexShrink: 1,
-    backgroundColor: "rgba(168,85,247,0.12)",
+    backgroundColor: c.primaryFaded,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -1401,12 +1413,12 @@ const styles = StyleSheet.create({
   guideTopicText: {
     fontFamily: Fonts.medium,
     fontSize: 11,
-    color: C.purple,
+    color: c.primary,
   },
   guideCardPrice: {
     fontFamily: Fonts.bold,
     fontSize: 14,
-    color: C.purple,
+    color: c.primary,
   },
   fab: {
     position: "absolute",
@@ -1414,7 +1426,7 @@ const styles = StyleSheet.create({
     right: 24,
     borderRadius: 30,
     overflow: "hidden",
-    shadowColor: C.purple,
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.5,
     shadowRadius: 16,

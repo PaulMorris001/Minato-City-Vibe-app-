@@ -19,6 +19,8 @@ import ServiceModal from "./ServiceModal";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { VN, VNF, VN_CTA_GRADIENT, coverGradient, categoryEmoji } from "./vendorTheme";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface ServicesTabProps {
   services: Service[];
   onRefresh: () => void;
@@ -28,6 +30,8 @@ interface ServicesTabProps {
 type Filter = "all" | "active" | "unavailable";
 
 export default function ServicesTab({ services, onRefresh, refreshing }: ServicesTabProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const formatPrice = useFormatPrice();
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
@@ -121,7 +125,7 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
                 styles.statusPill,
                 active
                   ? { backgroundColor: "rgba(52,211,153,0.22)", borderColor: "rgba(52,211,153,0.4)" }
-                  : { backgroundColor: "rgba(0,0,0,0.4)", borderColor: "rgba(255,255,255,0.14)" },
+                  : { backgroundColor: "rgba(0,0,0,0.4)", borderColor: colors.glassStrokeStrong },
               ]}
             >
               <View style={[styles.statusDot, { backgroundColor: active ? VN.green : VN.textMute }]} />
@@ -228,15 +232,15 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
                     style={[
                       styles.filterPill,
                       on
-                        ? { backgroundColor: "rgba(168,85,247,0.18)", borderColor: "rgba(192,132,252,0.4)" }
-                        : { backgroundColor: "rgba(255,255,255,0.04)", borderColor: VN.stroke },
+                        ? { backgroundColor: colors.primaryFadedStrong, borderColor: "rgba(192,132,252,0.4)" }
+                        : { backgroundColor: colors.glassFillSubtle, borderColor: VN.stroke },
                     ]}
                   >
                     <Text style={[styles.filterLabel, { color: on ? VN.purpleSoft : VN.textDim }]}>{f.label}</Text>
                     <View
                       style={[
                         styles.filterCount,
-                        { backgroundColor: on ? "rgba(168,85,247,0.2)" : "rgba(255,255,255,0.06)" },
+                        { backgroundColor: on ? "rgba(168,85,247,0.2)" : colors.glassFillSubtle },
                       ]}
                     >
                       <Text style={[styles.filterCountText, { color: on ? VN.purpleSoft : VN.textMute }]}>{f.n}</Text>
@@ -279,7 +283,8 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: VN.bg },
   listContent: { padding: 18, paddingBottom: 32 },
 
@@ -299,7 +304,7 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 8,
   },
-  newBtnText: { fontFamily: VNF.heading, fontSize: 13, color: "#fff" },
+  newBtnText: { fontFamily: VNF.heading, fontSize: 13, color: c.white },
 
   filters: { flexDirection: "row", gap: 8, marginBottom: 18 },
   filterPill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1 },
@@ -326,10 +331,10 @@ const styles = StyleSheet.create({
   statusPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
   statusDot: { width: 5, height: 5, borderRadius: 3 },
   statusText: { fontFamily: VNF.bold, fontSize: 10, letterSpacing: 0.5 },
-  priceChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.45)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" },
-  priceChipText: { fontFamily: VNF.heading, fontSize: 13, color: "#fff" },
+  priceChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.45)", borderWidth: 1, borderColor: c.glassStrokeStrong },
+  priceChipText: { fontFamily: VNF.heading, fontSize: 13, color: c.white },
   coverBottom: { position: "absolute", left: 14, right: 14, bottom: 12 },
-  coverTitle: { fontFamily: VNF.display, fontSize: 22, color: "#fff", letterSpacing: -0.6, lineHeight: 24 },
+  coverTitle: { fontFamily: VNF.display, fontSize: 22, color: c.text, letterSpacing: -0.6, lineHeight: 24 },
   coverSub: { fontFamily: VNF.semibold, fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 4 },
 
   body: { padding: 14 },
@@ -338,9 +343,9 @@ const styles = StyleSheet.create({
   metaText: { fontFamily: VNF.medium, fontSize: 12, color: VN.textDim },
   description: { fontFamily: VNF.body, fontSize: 13, color: VN.text, lineHeight: 19, marginTop: 10 },
   actions: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: VN.stroke },
-  editBtn: { flex: 1, height: 38, borderRadius: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "rgba(168,85,247,0.16)", borderWidth: 1, borderColor: "rgba(192,132,252,0.3)" },
+  editBtn: { flex: 1, height: 38, borderRadius: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: c.primaryFadedStrong, borderWidth: 1, borderColor: "rgba(192,132,252,0.3)" },
   editBtnText: { fontFamily: VNF.bold, fontSize: 12, color: VN.purpleSoft },
-  pauseBtn: { height: 38, paddingHorizontal: 12, borderRadius: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1, borderColor: VN.strokeHi },
+  pauseBtn: { height: 38, paddingHorizontal: 12, borderRadius: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: c.glassFillSubtle, borderWidth: 1, borderColor: VN.strokeHi },
   pauseBtnText: { fontFamily: VNF.bold, fontSize: 12, color: VN.textDim },
   deleteBtn: { width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(236,72,153,0.10)", borderWidth: 1, borderColor: "rgba(236,72,153,0.3)" },
 
@@ -349,5 +354,5 @@ const styles = StyleSheet.create({
   emptyTitle: { fontFamily: VNF.heading, fontSize: 20, color: VN.text, marginTop: 8 },
   emptySub: { fontFamily: VNF.body, fontSize: 13, color: VN.textDim, marginTop: 6, textAlign: "center", paddingHorizontal: 40 },
   emptyCta: { flexDirection: "row", alignItems: "center", gap: 6, height: 44, paddingHorizontal: 20, borderRadius: 12, marginTop: 20 },
-  emptyCtaText: { fontFamily: VNF.heading, fontSize: 14, color: "#fff" },
+  emptyCtaText: { fontFamily: VNF.heading, fontSize: 14, color: c.white },
 });

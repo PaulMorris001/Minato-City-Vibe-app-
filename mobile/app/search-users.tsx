@@ -23,6 +23,9 @@ import FollowButton from "@/components/shared/FollowButton";
 import { Avatar } from "@/components/shared/Avatar";
 import UserListItemSkeleton from "@/components/skeletons/UserListItemSkeleton";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 interface SearchUser {
   id: string;
   username: string;
@@ -36,6 +39,8 @@ interface SearchUser {
 }
 
 export default function SearchUsersScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState<SearchUser[]>([]);
   const [searching, setSearching] = useState(false);
@@ -107,31 +112,29 @@ export default function SearchUsersScreen() {
   );
 
   return (
-    <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
+    <LinearGradient colors={[colors.backgroundSecondary, colors.backgroundTertiary]} style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => goBack()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
+          <GlassBackButton style={styles.backButton} />
           <Text style={styles.headerTitle}>Find People</Text>
           <View style={{ width: 40 }} />
         </View>
 
         {/* Search Bar */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#6b7280" style={styles.searchIcon} />
+          <Ionicons name="search" size={20} color={colors.textMuted} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search by username or email..."
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={colors.textMuted}
             value={query}
             onChangeText={setQuery}
             autoFocus
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => setQuery("")}>
-              <Ionicons name="close-circle" size={20} color="#6b7280" />
+              <Ionicons name="close-circle" size={20} color={colors.textMuted} />
             </TouchableOpacity>
           )}
         </View>
@@ -147,12 +150,12 @@ export default function SearchUsersScreen() {
           ListEmptyComponent={
             !searching && query.length >= 2 ? (
               <View style={styles.emptyContainer}>
-                <Ionicons name="people-outline" size={48} color="#6b7280" />
+                <Ionicons name="people-outline" size={48} color={colors.textMuted} />
                 <Text style={styles.emptyText}>No users found</Text>
               </View>
             ) : !searching && query.length < 2 ? (
               <View style={styles.emptyContainer}>
-                <Ionicons name="search-outline" size={48} color="#6b7280" />
+                <Ionicons name="search-outline" size={48} color={colors.textMuted} />
                 <Text style={styles.emptyText}>
                   Search for people to follow
                 </Text>
@@ -166,7 +169,8 @@ export default function SearchUsersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
   header: {
@@ -181,7 +185,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   searchContainer: {
     flexDirection: "row",
@@ -189,7 +193,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginBottom: 16,
     paddingHorizontal: 16,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     borderRadius: 12,
     height: 48,
   },
@@ -198,7 +202,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
   },
   searchingContainer: {
     paddingVertical: 20,
@@ -213,19 +217,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   userAvatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
   },
   userAvatarPlaceholder: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -236,18 +240,18 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
   },
   userSub: {
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     marginTop: 2,
   },
   followsYou: {
     fontSize: 12,
     fontFamily: Fonts.medium,
-    color: "#a855f7",
+    color: c.primary,
     marginTop: 2,
   },
   emptyContainer: {
@@ -257,7 +261,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     marginTop: 12,
     textAlign: "center",
   },

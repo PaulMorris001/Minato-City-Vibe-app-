@@ -33,6 +33,9 @@ import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 import ImageViewerModal from "@/components/shared/ImageViewerModal";
 import { displayName } from "@/utils/displayName";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 interface UserData {
   _id: string;
   username: string;
@@ -56,6 +59,8 @@ interface UserEvent {
 }
 
 export default function UserProfileScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const formatPrice = useFormatPrice();
   const [user, setUser] = useState<UserData | null>(null);
@@ -209,7 +214,7 @@ export default function UserProfileScreen() {
               {capitalize(displayName(user))}
             </Text>
             {user?.verified && (
-              <Ionicons name="checkmark-circle" size={18} color="#3b82f6" />
+              <Ionicons name="checkmark-circle" size={18} color={colors.info} />
             )}
             {user?.isVendor && (
               <TouchableOpacity
@@ -218,7 +223,7 @@ export default function UserProfileScreen() {
                 disabled={!user?.vendorId}
                 activeOpacity={0.7}
               >
-                <Ionicons name="briefcase" size={10} color="#fff" />
+                <Ionicons name="briefcase" size={10} color={colors.white} />
                 <Text style={styles.vendorBadgeText}>Vendor</Text>
               </TouchableOpacity>
             )}
@@ -263,9 +268,9 @@ export default function UserProfileScreen() {
           onPress={openVendorPage}
           activeOpacity={0.7}
         >
-          <Ionicons name="storefront-outline" size={16} color="#a855f7" />
+          <Ionicons name="storefront-outline" size={16} color={colors.primary} />
           <Text style={styles.vendorLinkText}>View vendor page</Text>
-          <Ionicons name="chevron-forward" size={16} color="#a855f7" />
+          <Ionicons name="chevron-forward" size={16} color={colors.primary} />
         </TouchableOpacity>
       )}
 
@@ -285,7 +290,7 @@ export default function UserProfileScreen() {
             onPress={handleMessage}
             activeOpacity={0.7}
           >
-            <Ionicons name="chatbubble-outline" size={18} color="#a855f7" />
+            <Ionicons name="chatbubble-outline" size={18} color={colors.primary} />
             <Text style={styles.messageButtonText}>Message</Text>
           </TouchableOpacity>
         )}
@@ -293,7 +298,7 @@ export default function UserProfileScreen() {
 
       {isFollowedBy && !isFollowing && (
         <View style={styles.followsYouBanner}>
-          <Ionicons name="person-add" size={16} color="#a855f7" />
+          <Ionicons name="person-add" size={16} color={colors.primary} />
           <Text style={styles.followsYouText}>Follows you</Text>
         </View>
       )}
@@ -322,10 +327,10 @@ export default function UserProfileScreen() {
               <Image source={{ uri: guide.coverImage }} style={styles.eventImage} />
             ) : (
               <LinearGradient
-                colors={["#a855f7", "#7c3aed"]}
+                colors={[colors.primary, colors.primaryDark]}
                 style={styles.eventImagePlaceholder}
               >
-                <Ionicons name="book" size={20} color="#fff" />
+                <Ionicons name="book" size={20} color={colors.white} />
               </LinearGradient>
             )}
             <View style={styles.eventInfo}>
@@ -353,10 +358,10 @@ export default function UserProfileScreen() {
         <Image source={{ uri: item.image }} style={styles.eventImage} />
       ) : (
         <LinearGradient
-          colors={["#a855f7", "#7c3aed"]}
+          colors={[colors.primary, colors.primaryDark]}
           style={styles.eventImagePlaceholder}
         >
-          <Ionicons name="calendar" size={20} color="#fff" />
+          <Ionicons name="calendar" size={20} color={colors.white} />
         </LinearGradient>
       )}
       <View style={styles.eventInfo}>
@@ -369,20 +374,18 @@ export default function UserProfileScreen() {
 
   if (loading) {
     return (
-      <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
+      <LinearGradient colors={[colors.backgroundSecondary, colors.backgroundTertiary]} style={styles.container}>
         <ProfileHeaderSkeleton eventCount={3} />
       </LinearGradient>
     );
   }
 
   return (
-    <LinearGradient colors={["#1a1a2e", "#16213e"]} style={styles.container}>
+    <LinearGradient colors={[colors.backgroundSecondary, colors.backgroundTertiary]} style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => goBack()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
+          <GlassBackButton style={styles.backButton} />
           <Text style={styles.headerTitle} numberOfLines={1}>
             {capitalize(user?.username || "")}
           </Text>
@@ -394,7 +397,7 @@ export default function UserProfileScreen() {
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 accessibilityLabel="Share profile"
               >
-                <Ionicons name="share-outline" size={22} color="#fff" />
+                <Ionicons name="share-outline" size={22} color={colors.text} />
               </TouchableOpacity>
             ) : null}
             {userId && currentUserId && userId !== currentUserId ? (
@@ -404,7 +407,7 @@ export default function UserProfileScreen() {
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 accessibilityLabel="Report or block user"
               >
-                <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+                <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -424,8 +427,8 @@ export default function UserProfileScreen() {
                 setRefreshing(true);
                 fetchAll();
               }}
-              tintColor="#a855f7"
-              colors={["#a855f7"]}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
             />
           }
           showsVerticalScrollIndicator={false}
@@ -454,7 +457,8 @@ export default function UserProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
   loadingContainer: {
@@ -476,7 +480,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: scaleFontSize(20),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   listContent: {
     paddingHorizontal: 20,
@@ -493,7 +497,7 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
     borderWidth: 2,
-    borderColor: "#a855f7",
+    borderColor: c.primary,
     flexShrink: 0,
   },
   avatarPlaceholder: {
@@ -503,7 +507,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#a855f7",
+    borderColor: c.primary,
     flexShrink: 0,
   },
   profileInfo: {
@@ -519,14 +523,14 @@ const styles = StyleSheet.create({
   username: {
     fontSize: 20,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     flexShrink: 1,
   },
   vendorBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
@@ -534,7 +538,7 @@ const styles = StyleSheet.create({
   vendorBadgeText: {
     fontSize: 10,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.white,
   },
   statsRow: {
     flexDirection: "row",
@@ -545,37 +549,39 @@ const styles = StyleSheet.create({
   statDivider: {
     width: 1,
     height: 24,
-    backgroundColor: "#4b5563",
+    backgroundColor: c.borderMuted,
   },
   statNumber: {
     fontSize: 16,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   statLabel: {
     fontSize: 11,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 1,
   },
   bio: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#d1d5db",
+    color: c.textTertiary,
     lineHeight: 20,
     marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 18,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginTop: 8,
     marginBottom: 12,
   },
   eventCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(55, 65, 81, 0.5)",
+    backgroundColor: c.cardGlass,
+    borderWidth: 1,
+    borderColor: c.glassStroke,
     borderRadius: 12,
     padding: 12,
     marginBottom: 10,
@@ -599,24 +605,26 @@ const styles = StyleSheet.create({
   eventTitle: {
     fontSize: 15,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
   },
   eventDate: {
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 2,
   },
   eventLocation: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     marginTop: 2,
   },
   guideCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(55, 65, 81, 0.5)",
+    backgroundColor: c.cardGlass,
+    borderWidth: 1,
+    borderColor: c.glassStroke,
     borderRadius: 12,
     padding: 12,
     marginBottom: 10,
@@ -624,7 +632,7 @@ const styles = StyleSheet.create({
   guidePrice: {
     fontSize: 13,
     fontFamily: Fonts.bold,
-    color: "#a855f7",
+    color: c.primary,
     marginTop: 4,
   },
   actionRow: {
@@ -642,25 +650,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
     height: 40,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.3)",
+    borderColor: c.primaryBorder,
   },
   messageButtonText: {
     fontSize: 14,
     fontFamily: Fonts.semiBold,
-    color: "#a855f7",
+    color: c.primary,
   },
   vendorLinkRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "rgba(168, 85, 247, 0.08)",
+    backgroundColor: c.primaryFaded,
     borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.2)",
+    borderColor: c.primaryBorder,
     paddingVertical: 10,
     borderRadius: 12,
     marginBottom: 16,
@@ -668,14 +676,14 @@ const styles = StyleSheet.create({
   vendorLinkText: {
     fontSize: 14,
     fontFamily: Fonts.semiBold,
-    color: "#a855f7",
+    color: c.primary,
   },
   followsYouBanner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "rgba(168, 85, 247, 0.08)",
+    backgroundColor: c.primaryFaded,
     paddingVertical: 10,
     borderRadius: 12,
     marginBottom: 16,
@@ -683,6 +691,6 @@ const styles = StyleSheet.create({
   followsYouText: {
     fontSize: 14,
     fontFamily: Fonts.medium,
-    color: "#a855f7",
+    color: c.primary,
   },
 });

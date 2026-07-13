@@ -30,6 +30,8 @@ import socketService from "@/services/socket.service";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "@/components/shared/Avatar";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 // Circular navbar action surface. On iOS 26 this is real Liquid Glass;
 // everywhere else it keeps the original gradient fill.
 function PillSurface({
@@ -43,6 +45,7 @@ function PillSurface({
   gradientColors: [string, string];
   children: React.ReactNode;
 }) {
+  const styles = useThemedStyles(createStyles);
   if (glass) {
     return (
       <GlassView style={styles.ticketGlass} tintColor={tintColor} isInteractive>
@@ -58,9 +61,12 @@ function PillSurface({
 }
 
 export default function TabsLayout() {
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { activeAccount } = useAccount();
   const { totalUnread, notifUnread } = useUnread();
   const isGlassAvailable = Platform.OS === "ios" && isLiquidGlassAvailable();
+  const isIpad = Platform.OS === "ios" && Platform.isPad;
   // The profile modal sits on a translucent surface on any iOS (real glass on
   // 26+, blur below), so the brighter text palette applies to both. Android
   // keeps the solid card.
@@ -179,7 +185,7 @@ export default function TabsLayout() {
   if (isCheckingAuth) {
     return (
       <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
-        <ActivityIndicator size="large" color="#a855f7" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -215,7 +221,7 @@ export default function TabsLayout() {
         <Ionicons
           name="close"
           size={24}
-          color={isTranslucentModal ? "#fff" : "#9ca3af"}
+          color={isTranslucentModal ? colors.text : colors.textSecondary}
         />
       </TouchableOpacity>
 
@@ -228,7 +234,7 @@ export default function TabsLayout() {
           {user.email}
         </Text>
         <LinearGradient
-          colors={["#3b82f6", "#1d4ed8"]}
+          colors={[colors.info, "#1d4ed8"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.accountTypeBadge}
@@ -253,7 +259,7 @@ export default function TabsLayout() {
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="chatbubbles-outline" size={20} color="#a855f7" />
+          <Ionicons name="chatbubbles-outline" size={20} color={colors.primary} />
         </View>
         <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
           Messages
@@ -261,7 +267,7 @@ export default function TabsLayout() {
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isTranslucentModal ? "#fff" : "#4b5563"}
+          color={isTranslucentModal ? colors.text : colors.borderMuted}
         />
       </TouchableOpacity>
 
@@ -273,7 +279,7 @@ export default function TabsLayout() {
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="calendar-outline" size={20} color="#a855f7" />
+          <Ionicons name="calendar-outline" size={20} color={colors.primary} />
         </View>
         <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
           My Events
@@ -281,7 +287,7 @@ export default function TabsLayout() {
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isTranslucentModal ? "#fff" : "#4b5563"}
+          color={isTranslucentModal ? colors.text : colors.borderMuted}
         />
       </TouchableOpacity>
 
@@ -293,7 +299,7 @@ export default function TabsLayout() {
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="heart-outline" size={20} color="#a855f7" />
+          <Ionicons name="heart-outline" size={20} color={colors.primary} />
         </View>
         <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
           Favorites
@@ -301,7 +307,7 @@ export default function TabsLayout() {
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isTranslucentModal ? "#fff" : "#4b5563"}
+          color={isTranslucentModal ? colors.text : colors.borderMuted}
         />
       </TouchableOpacity>
 
@@ -313,7 +319,7 @@ export default function TabsLayout() {
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="settings-outline" size={20} color="#a855f7" />
+          <Ionicons name="settings-outline" size={20} color={colors.primary} />
         </View>
         <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
           Settings
@@ -321,7 +327,7 @@ export default function TabsLayout() {
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isTranslucentModal ? "#fff" : "#4b5563"}
+          color={isTranslucentModal ? colors.text : colors.borderMuted}
         />
       </TouchableOpacity>
 
@@ -337,7 +343,7 @@ export default function TabsLayout() {
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="help-circle-outline" size={20} color="#a855f7" />
+          <Ionicons name="help-circle-outline" size={20} color={colors.primary} />
         </View>
         <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
           Help & Support
@@ -345,7 +351,7 @@ export default function TabsLayout() {
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isTranslucentModal ? "#fff" : "#4b5563"}
+          color={isTranslucentModal ? colors.text : colors.borderMuted}
         />
       </TouchableOpacity>
 
@@ -356,7 +362,7 @@ export default function TabsLayout() {
         onPress={handleLogout}
         activeOpacity={0.8}
       >
-        <Ionicons name="log-out-outline" size={20} color="#ef4444" />
+        <Ionicons name="log-out-outline" size={20} color={colors.error} />
         <Text style={styles.logoutText}>Log Out</Text>
       </TouchableOpacity>
     </>
@@ -364,9 +370,20 @@ export default function TabsLayout() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
       {currentTab === "home" && (
-        <View style={[styles.navbar, Platform.OS === "ios" && styles.navbarOverlay]}>
+        // On iPad the native tab bar renders as a capsule centered at the TOP
+        // of the screen, in this same row. The navbar goes transparent there —
+        // logo left, actions right, capsule in the middle — and box-none lets
+        // touches in the middle reach the native bar underneath.
+        <View
+          pointerEvents={isIpad ? "box-none" : "auto"}
+          style={[
+            styles.navbar,
+            Platform.OS === "ios" && styles.navbarOverlay,
+            isIpad && [styles.navbarIpad, { paddingTop: insets.top + 10 }],
+          ]}
+        >
           <Text style={styles.logoText}>OurCityvibe</Text>
           <View style={styles.navbarActions}>
             {isGuest ? (
@@ -385,8 +402,8 @@ export default function TabsLayout() {
               style={styles.ticketButton}
               activeOpacity={0.7}
             >
-              <PillSurface glass={isGlassAvailable} gradientColors={["#374151", "#1f2937"]}>
-                <Ionicons name="notifications-outline" size={20} color="#fff" />
+              <PillSurface glass={isGlassAvailable} gradientColors={[colors.border, colors.cardAlt]}>
+                <Ionicons name="notifications-outline" size={20} color={colors.text} />
                 {notifUnread > 0 && (
                   <View style={styles.unreadBadge}>
                     <Text style={styles.unreadBadgeText}>
@@ -401,8 +418,8 @@ export default function TabsLayout() {
               style={styles.ticketButton}
               activeOpacity={0.7}
             >
-              <PillSurface glass={isGlassAvailable} gradientColors={["#374151", "#1f2937"]}>
-                <Ionicons name="chatbubbles-outline" size={20} color="#fff" />
+              <PillSurface glass={isGlassAvailable} gradientColors={[colors.border, colors.cardAlt]}>
+                <Ionicons name="chatbubbles-outline" size={20} color={colors.text} />
                 {totalUnread > 0 && (
                   <View style={styles.unreadBadge}>
                     <Text style={styles.unreadBadgeText}>
@@ -419,8 +436,8 @@ export default function TabsLayout() {
             >
               <PillSurface
                 glass={isGlassAvailable}
-                tintColor="#a855f7"
-                gradientColors={["#a855f7", "#7c3aed"]}
+                tintColor={colors.primary}
+                gradientColors={[colors.primary, colors.primaryDark]}
               >
                 <Ionicons name="qr-code" size={20} color="#fff" />
               </PillSurface>
@@ -444,15 +461,23 @@ export default function TabsLayout() {
         animationType="fade"
         onRequestClose={() => setIsProfileModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View
+          style={[
+            styles.modalOverlay,
+            !isDark && { backgroundColor: "rgba(17, 12, 26, 0.25)" },
+          ]}
+        >
           {isGlassAvailable ? (
-            <GlassView style={[styles.modalContent, styles.glassModalContent]}>
+            <GlassView
+              tintColor={isDark ? undefined : "rgba(255, 255, 255, 0.72)"}
+              style={[styles.modalContent, styles.glassModalContent]}
+            >
               {renderModalContent()}
             </GlassView>
           ) : Platform.OS === "ios" ? (
             <BlurView
               intensity={80}
-              tint="dark"
+              tint={isDark ? "dark" : "light"}
               style={[styles.modalContent, styles.glassModalContent]}
             >
               {renderModalContent()}
@@ -468,7 +493,7 @@ export default function TabsLayout() {
         // unstyled — no background, height or border — so iOS 26 renders the
         // floating Liquid Glass capsule (older iOS gets the standard system
         // bar). Route names match the old <Tabs.Screen> entries exactly.
-        <NativeTabs tintColor="#a855f7" minimizeBehavior="onScrollDown">
+        <NativeTabs tintColor={colors.primary} minimizeBehavior="onScrollDown">
           <NativeTabs.Trigger name="home">
             <Label>Home</Label>
             <Icon sf={{ default: "house", selected: "house.fill" }} />
@@ -496,10 +521,10 @@ export default function TabsLayout() {
         <Tabs
           screenOptions={{
             headerShown: false,
-            tabBarActiveTintColor: "#a855f7",
-            tabBarInactiveTintColor: "#6b7280",
+            tabBarActiveTintColor: colors.primary,
+            tabBarInactiveTintColor: colors.textMuted,
             tabBarStyle: {
-              backgroundColor: "#1f1f2e",
+              backgroundColor: colors.card,
               paddingBottom: insets.bottom + 8,
               paddingTop: 8,
               borderTopWidth: 0.5,
@@ -584,29 +609,38 @@ export default function TabsLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.backgroundDeep,
   },
   navbar: {
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight! + 10 : 50,
     paddingBottom: 16,
     paddingHorizontal: 20,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.backgroundDeep,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     borderBottomWidth: 1,
-    borderBottomColor: "#1f1f2e",
+    borderBottomColor: c.card,
   },
   logoText: {
     fontFamily: Fonts.black,
     fontSize: 24,
-    color: "#a855f7",
-    textShadowColor: "rgba(168, 85, 247, 0.3)",
+    color: c.primary,
+    textShadowColor: c.primaryBorder,
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 8,
+  },
+  // iPad: the native tab bar capsule is centered in this same top row, so the
+  // navbar keeps only its left/right content and lets the capsule show
+  // through. paddingTop is set inline (insets.top + 10) to vertically center
+  // the 40pt action row on the 40pt capsule.
+  navbarIpad: {
+    backgroundColor: "transparent",
+    borderBottomWidth: 0,
   },
   // iOS only: the navbar must float over the native tab host instead of
   // sitting above it in the flex column — if the host is pushed down by a
@@ -631,17 +665,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 38,
     borderRadius: 19,
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
   },
   loginPillText: {
-    color: "#fff",
+    color: c.white,
     fontFamily: Fonts.bold,
     fontSize: 13.5,
   },
   ticketButton: {
     borderRadius: 20,
     overflow: "hidden",
-    shadowColor: "#a855f7",
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -665,7 +699,7 @@ const styles = StyleSheet.create({
   profileButton: {
     borderRadius: 20,
     overflow: "hidden",
-    shadowColor: "#a855f7",
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -684,23 +718,23 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: c.modalOverlay,
     justifyContent: "center",
     alignItems: "center",
   },
   modalContent: {
     width: "85%",
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 24,
     padding: 24,
     position: "relative",
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   glassModalContent: {
     backgroundColor: "transparent",
     borderWidth: 0,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: c.glassStroke,
     overflow: "hidden",
   },
   closeButton: {
@@ -731,20 +765,20 @@ const styles = StyleSheet.create({
   usernameText: {
     fontSize: 24,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 4,
   },
   emailText: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginBottom: 12,
   },
   glassText: {
-    color: "#fff",
+    color: c.text,
   },
   glassTextSecondary: {
-    color: "rgba(255, 255, 255, 0.7)",
+    color: c.textDim,
   },
   accountTypeBadge: {
     flexDirection: "row",
@@ -757,20 +791,20 @@ const styles = StyleSheet.create({
   accountTypeText: {
     fontSize: 13,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
   },
   accountTypeSubtext: {
     fontSize: 11,
     fontFamily: Fonts.regular,
-    color: "rgba(255, 255, 255, 0.7)",
+    color: c.textDim,
   },
   divider: {
     height: 1,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     marginVertical: 16,
   },
   glassDivider: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: c.glassStroke,
   },
   menuItem: {
     flexDirection: "row",
@@ -782,14 +816,14 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
     justifyContent: "center",
     alignItems: "center",
   },
   menuItemText: {
     flex: 1,
     fontSize: 16,
-    color: "#e5e7eb",
+    color: c.textBody,
     fontFamily: Fonts.medium,
   },
   logoutButton: {
@@ -803,7 +837,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   logoutText: {
-    color: "#ef4444",
+    color: c.error,
     fontSize: 16,
     fontFamily: Fonts.semiBold,
   },
@@ -814,15 +848,15 @@ const styles = StyleSheet.create({
     minWidth: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: "#EC4899",
+    backgroundColor: c.accentPink,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 3,
     borderWidth: 1.5,
-    borderColor: "#1f2937",
+    borderColor: c.cardAlt,
   },
   unreadBadgeText: {
-    color: "#fff",
+    color: c.white,
     fontSize: 9,
     fontFamily: Fonts.bold,
     lineHeight: 11,

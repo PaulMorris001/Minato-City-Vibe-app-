@@ -28,7 +28,12 @@ import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
 import { Avatar } from "@/components/shared/Avatar";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function GuideDetailPage() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   // Sanitize: useLocalSearchParams can hand back `string | string[]` for
   // malformed deep links — narrow to a single string we can rely on.
@@ -203,17 +208,12 @@ export default function GuideDetailPage() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => {
+        <GlassBackButton onPress={() => {
             // Warm-start deep links have no back stack — fall through to
             // home so the user isn't stranded on the guide screen.
             if (router.canGoBack()) router.back();
             else router.replace("/(tabs)/home");
-          }}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+          }} style={styles.backButton} />
         <Text style={styles.headerTitle} numberOfLines={1}>
           Guide
         </Text>
@@ -227,7 +227,7 @@ export default function GuideDetailPage() {
               <Ionicons
                 name={isSaved ? "bookmark" : "bookmark-outline"}
                 size={22}
-                color="#a855f7"
+                color={colors.primary}
               />
             </TouchableOpacity>
           )}
@@ -236,7 +236,7 @@ export default function GuideDetailPage() {
             onPress={() => setShareSheetVisible(true)}
             accessibilityLabel="Share guide"
           >
-            <Ionicons name="share-social" size={22} color="#a855f7" />
+            <Ionicons name="share-social" size={22} color={colors.primary} />
           </TouchableOpacity>
           {!isOwner ? (
             <TouchableOpacity
@@ -282,22 +282,22 @@ export default function GuideDetailPage() {
             />
             <Text style={styles.authorText}>by {guide.authorName}</Text>
             {!!guide.author?._id && (
-              <Ionicons name="chevron-forward" size={14} color="#6b7280" />
+              <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
             )}
           </TouchableOpacity>
           <View style={styles.metaRow}>
             <View style={styles.metaItem}>
-              <Ionicons name="location" size={16} color="#a855f7" />
+              <Ionicons name="location" size={16} color={colors.primary} />
               <Text style={styles.metaText}>
                 {formatLocation({ city: guide.city, state: guide.cityState, country: guide.country })}
               </Text>
             </View>
             <View style={styles.metaItem}>
-              <Ionicons name="pricetag" size={16} color="#a855f7" />
+              <Ionicons name="pricetag" size={16} color={colors.primary} />
               <Text style={styles.metaText}>{guide.topic}</Text>
             </View>
             <View style={styles.metaItem}>
-              <Ionicons name="eye-outline" size={16} color="#a855f7" />
+              <Ionicons name="eye-outline" size={16} color={colors.primary} />
               <Text style={styles.metaText}>{guide.views} views</Text>
             </View>
           </View>
@@ -316,7 +316,7 @@ export default function GuideDetailPage() {
               )}
             </View>
             <View style={styles.sectionCountChip}>
-              <Ionicons name="list" size={14} color="#a855f7" />
+              <Ionicons name="list" size={14} color={colors.primary} />
               <Text style={styles.sectionCountText}>{guide.sections.length} section{guide.sections.length !== 1 ? "s" : ""}</Text>
             </View>
           </View>
@@ -338,13 +338,13 @@ export default function GuideDetailPage() {
           )}
           {isOwner && (
             <View style={styles.ownerBadge}>
-              <Ionicons name="star" size={16} color="#fbbf24" />
+              <Ionicons name="star" size={16} color={colors.warningLight} />
               <Text style={styles.ownerBadgeText}>Your Guide</Text>
             </View>
           )}
           {hasPurchased && !isOwner && (
             <View style={styles.purchasedBadge}>
-              <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+              <Ionicons name="checkmark-circle" size={16} color={colors.success} />
               <Text style={styles.purchasedBadgeText}>Purchased</Text>
             </View>
           )}
@@ -389,7 +389,7 @@ export default function GuideDetailPage() {
         ) : (
           <View style={styles.lockedSection}>
             <View style={styles.lockedIconWrap}>
-              <Ionicons name="lock-closed" size={28} color="#a855f7" />
+              <Ionicons name="lock-closed" size={28} color={colors.primary} />
             </View>
             <Text style={styles.lockedTitle}>Unlock Full Guide</Text>
             <Text style={styles.lockedText}>
@@ -435,10 +435,11 @@ export default function GuideDetailPage() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: "row",
@@ -447,7 +448,7 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   backButton: {
     marginRight: 16,
@@ -463,7 +464,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 24,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     flex: 1,
   },
   scrollView: {
@@ -476,7 +477,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
   },
   coverImage: {
     width: "100%",
@@ -496,7 +497,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 12,
     lineHeight: 36,
   },
@@ -509,7 +510,7 @@ const styles = StyleSheet.create({
   authorText: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   metaRow: {
     flexDirection: "row",
@@ -524,15 +525,15 @@ const styles = StyleSheet.create({
   metaText: {
     fontSize: 13,
     fontFamily: Fonts.medium,
-    color: "#d1d5db",
+    color: c.textTertiary,
   },
   priceSection: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   priceContent: {
     flexDirection: "row",
@@ -543,7 +544,7 @@ const styles = StyleSheet.create({
   priceLabel: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 4,
@@ -551,7 +552,7 @@ const styles = StyleSheet.create({
   priceValue: {
     fontSize: 32,
     fontFamily: Fonts.bold,
-    color: "#a855f7",
+    color: c.primary,
   },
   freeBadge: {
     backgroundColor: "rgba(34,197,94,0.15)",
@@ -572,7 +573,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(168,85,247,0.1)",
+    backgroundColor: c.primaryFaded,
     borderWidth: 1,
     borderColor: "rgba(168,85,247,0.25)",
     borderRadius: 20,
@@ -582,13 +583,13 @@ const styles = StyleSheet.create({
   sectionCountText: {
     fontSize: 13,
     fontFamily: Fonts.medium,
-    color: "#a855f7",
+    color: c.primary,
   },
   purchaseButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
@@ -596,7 +597,7 @@ const styles = StyleSheet.create({
   purchaseButtonText: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.white,
   },
   ownerBadge: {
     flexDirection: "row",
@@ -610,7 +611,7 @@ const styles = StyleSheet.create({
   ownerBadgeText: {
     fontSize: 14,
     fontFamily: Fonts.semiBold,
-    color: "#fbbf24",
+    color: c.warningLight,
   },
   purchasedBadge: {
     flexDirection: "row",
@@ -624,7 +625,7 @@ const styles = StyleSheet.create({
   purchasedBadgeText: {
     fontSize: 14,
     fontFamily: Fonts.semiBold,
-    color: "#10b981",
+    color: c.success,
   },
   descriptionSection: {
     marginBottom: 20,
@@ -632,25 +633,25 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 12,
   },
   description: {
     fontSize: 15,
     fontFamily: Fonts.regular,
-    color: "#d1d5db",
+    color: c.textTertiary,
     lineHeight: 24,
   },
   sectionsContainer: {
     marginTop: 20,
   },
   sectionCard: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -659,7 +660,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   rankBadge: {
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
@@ -667,12 +668,12 @@ const styles = StyleSheet.create({
   rankText: {
     fontSize: 14,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   sectionDescription: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#d1d5db",
+    color: c.textTertiary,
     lineHeight: 22,
   },
   lockedSection: {
@@ -682,30 +683,30 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(168,85,247,0.05)",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "rgba(168,85,247,0.15)",
+    borderColor: c.primaryFadedStrong,
     marginTop: 8,
   },
   lockedIconWrap: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: "rgba(168,85,247,0.12)",
+    backgroundColor: c.primaryFaded,
     borderWidth: 1,
-    borderColor: "rgba(168,85,247,0.3)",
+    borderColor: c.primaryBorder,
     alignItems: "center",
     justifyContent: "center",
   },
   lockedTitle: {
     fontSize: 18,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginTop: 14,
     marginBottom: 6,
   },
   lockedText: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     lineHeight: 20,
   },

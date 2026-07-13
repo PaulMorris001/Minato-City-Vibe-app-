@@ -34,6 +34,7 @@ import {
 } from "@/components/auth/AuthPrimitives";
 import { AU } from "@/components/auth/tokens";
 
+import { darkColors, type ThemeColors } from "@/constants/theme";
 export default function Login() {
   const router = useRouter();
   const { setActiveAccount } = useAccount();
@@ -331,7 +332,8 @@ export default function Login() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: AU.bg },
   scrollContent: { flexGrow: 1 },
   topBar: {
@@ -350,7 +352,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
     borderColor: AU.stroke,
     marginBottom: 16,
@@ -389,7 +391,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 10,
     paddingBottom: 10,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
     borderColor: AU.stroke,
   },
@@ -491,7 +493,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: "rgba(168,85,247,0.12)",
+    backgroundColor: c.primaryFaded,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -507,3 +509,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
+
+// Auth/poster surface: always renders the dark palette.
+const styles = createStyles(darkColors);

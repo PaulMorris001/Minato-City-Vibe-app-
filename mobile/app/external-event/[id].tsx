@@ -22,6 +22,9 @@ import { GlassCard } from "@/components/event-details/GlassCard";
 import { heroEmojiFor } from "@/utils/eventDetails";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import { GlassIconButton } from "@/components/shared/GlassBackButton";
+import type { ThemeColors } from "@/constants/theme";
 /**
  * Detail screen for external events (Ticketmaster, Bandsintown, etc).
  *
@@ -66,15 +69,7 @@ function GlassRoundIcon({
   onPress?: () => void;
   size?: number;
 }) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.7}
-      style={[styles.glassRound, { width: size, height: size, borderRadius: size / 2 }]}
-    >
-      <Ionicons name={icon} size={size * 0.5} color="#fff" />
-    </TouchableOpacity>
-  );
+  return <GlassIconButton icon={icon} onPress={onPress} size={size} overMedia />;
 }
 
 function formatPriceLine(event: ExternalEvent): string | null {
@@ -113,6 +108,8 @@ function formatLongDate(iso: string): string {
 }
 
 export default function ExternalEventDetail() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [event, setEvent] = useState<ExternalEvent | null>(null);
@@ -173,7 +170,7 @@ export default function ExternalEventDetail() {
     return (
       <View style={styles.container}>
         <SafeAreaView style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={AU.purple} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </SafeAreaView>
       </View>
     );
@@ -184,7 +181,7 @@ export default function ExternalEventDetail() {
   const sourceMeta = SOURCE_META[event.source] ?? {
     label: event.source.toUpperCase(),
     chipBg: "rgba(0,0,0,0.4)",
-    chipBorder: "rgba(255,255,255,0.18)",
+    chipBorder: colors.glassStrokeStrong,
   };
   const priceLine = formatPriceLine(event);
   const dateLine = formatDateLine(event.date);
@@ -207,7 +204,7 @@ export default function ExternalEventDetail() {
             colors={
               event.image
                 ? ["transparent", "transparent"]
-                : ["#22D3EE", "#7C3AED", "#EC4899"]
+                : [colors.accentCyan, colors.primaryDark, colors.accentPink]
             }
             locations={[0, 0.6, 1]}
             start={{ x: 0.2, y: 0 }}
@@ -220,7 +217,7 @@ export default function ExternalEventDetail() {
 
           {/* Bottom readability fade */}
           <LinearGradient
-            colors={["rgba(11,6,19,0)", "rgba(11,6,19,0.55)", AU.bg]}
+            colors={["rgba(11,6,19,0)", colors.imageScrim, colors.backgroundDeep]}
             locations={[0, 0.5, 1]}
             style={styles.heroFade}
             pointerEvents="none"
@@ -243,14 +240,14 @@ export default function ExternalEventDetail() {
           <View style={styles.chipRow}>
             {priceLine && (
               <View style={[styles.chip, styles.chipDark]}>
-                <Text style={[styles.chipText, { color: AU.text }]}>
+                <Text style={[styles.chipText, { color: colors.textBright }]}>
                   TICKETED · {priceLine}
                 </Text>
               </View>
             )}
             {(event.additionalDates ?? 0) > 0 && (
               <View style={[styles.chip, styles.chipDark]}>
-                <Text style={[styles.chipText, { color: AU.text }]}>
+                <Text style={[styles.chipText, { color: colors.textBright }]}>
                   +{event.additionalDates} MORE {event.additionalDates === 1 ? "DATE" : "DATES"}
                 </Text>
               </View>
@@ -263,12 +260,12 @@ export default function ExternalEventDetail() {
               {event.title}
             </Text>
             <View style={styles.heroMetaRow}>
-              <Ionicons name="calendar-outline" size={14} color={AU.purpleSoft} />
+              <Ionicons name="calendar-outline" size={14} color={colors.primaryLight} />
               <Text style={styles.heroMetaText}>{dateLine}</Text>
               {!!event.city && (
                 <>
                   <View style={styles.metaDot} />
-                  <Ionicons name="location-outline" size={14} color={AU.purpleSoft} />
+                  <Ionicons name="location-outline" size={14} color={colors.primaryLight} />
                   <Text style={styles.heroMetaText}>{event.city}</Text>
                 </>
               )}
@@ -315,7 +312,7 @@ export default function ExternalEventDetail() {
                 </Text>
               )}
               <View style={styles.mapsHintRow}>
-                <Ionicons name="navigate-outline" size={13} color={AU.purpleSoft} />
+                <Ionicons name="navigate-outline" size={13} color={colors.primaryLight} />
                 <Text style={styles.mapsHintText}>Open in Maps</Text>
               </View>
             </TouchableOpacity>
@@ -357,9 +354,9 @@ export default function ExternalEventDetail() {
 
           {/* Multi-date callout */}
           {(event.additionalDates ?? 0) > 0 && (
-            <GlassCard style={{ borderColor: "rgba(168,85,247,0.4)" }}>
+            <GlassCard style={{ borderColor: colors.primaryBorder }}>
               <View style={styles.calloutHeader}>
-                <Ionicons name="calendar-outline" size={16} color={AU.purpleSoft} />
+                <Ionicons name="calendar-outline" size={16} color={colors.primaryLight} />
                 <Text style={styles.microLabel}>More dates available</Text>
               </View>
               <Text style={styles.aboutText}>
@@ -376,16 +373,16 @@ export default function ExternalEventDetail() {
       <SafeAreaView edges={["bottom"]} style={styles.ctaWrap}>
         <TouchableOpacity onPress={openTicketUrl} activeOpacity={0.85}>
           <LinearGradient
-            colors={["#A855F7", "#7C3AED", "#EC4899"]}
+            colors={[colors.primary, colors.primaryDark, colors.accentPink]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.ctaGradient}
           >
-            <Ionicons name="ticket" size={18} color="#fff" />
+            <Ionicons name="ticket" size={18} color={colors.white} />
             <Text style={styles.ctaText}>
               Get Tickets on {sourceMeta.label === "TICKETMASTER" ? "Ticketmaster" : sourceMeta.label}
             </Text>
-            <Ionicons name="arrow-forward" size={16} color="#fff" />
+            <Ionicons name="arrow-forward" size={16} color={colors.white} />
           </LinearGradient>
         </TouchableOpacity>
       </SafeAreaView>
@@ -393,8 +390,9 @@ export default function ExternalEventDetail() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: AU.bg },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.backgroundDeep },
   loadingWrap: { flex: 1, justifyContent: "center", alignItems: "center" },
   scrollContent: { paddingBottom: 140 },
 
@@ -403,7 +401,7 @@ const styles = StyleSheet.create({
     height: HERO_HEIGHT,
     width: "100%",
     position: "relative",
-    backgroundColor: AU.surface,
+    backgroundColor: c.card,
   },
   heroImage: { ...StyleSheet.absoluteFillObject },
   heroFallback: { ...StyleSheet.absoluteFillObject },
@@ -438,13 +436,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  glassRound: {
-    backgroundColor: "rgba(11,6,19,0.55)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
 
   // Chips
   chipRow: {
@@ -468,7 +459,7 @@ const styles = StyleSheet.create({
   },
   chipDark: {
     backgroundColor: "rgba(0,0,0,0.4)",
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: c.glassStrokeStrong,
   },
   chipText: {
     fontFamily: Fonts.bold,
@@ -485,7 +476,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   heroTitle: {
-    color: "#fff",
+    color: c.text,
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 32,
     lineHeight: 32 * 0.97,
@@ -520,7 +511,7 @@ const styles = StyleSheet.create({
   microLabel: {
     fontFamily: Fonts.bold,
     fontSize: 10,
-    color: AU.textMute,
+    color: c.textFaint,
     letterSpacing: 1,
     textTransform: "uppercase",
     marginBottom: 6,
@@ -528,17 +519,17 @@ const styles = StyleSheet.create({
   factValue: {
     fontFamily: Fonts.semiBold,
     fontSize: 15,
-    color: AU.text,
+    color: c.textBright,
   },
   factSubvalue: {
     fontFamily: Fonts.regular,
     fontSize: 13,
-    color: AU.textDim,
+    color: c.textDim,
     marginTop: 4,
   },
   divider: {
     height: 1,
-    backgroundColor: AU.stroke,
+    backgroundColor: c.glassFill,
     marginVertical: 12,
   },
   mapsHintRow: {
@@ -550,7 +541,7 @@ const styles = StyleSheet.create({
   mapsHintText: {
     fontFamily: Fonts.semiBold,
     fontSize: 12,
-    color: AU.purpleSoft,
+    color: c.primaryLight,
   },
 
   // Gallery
@@ -561,8 +552,8 @@ const styles = StyleSheet.create({
   // Lineup chips
   performerRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 2 },
   performerChip: {
-    backgroundColor: "rgba(168,85,247,0.15)",
-    borderColor: "rgba(168,85,247,0.4)",
+    backgroundColor: c.primaryFadedStrong,
+    borderColor: c.primaryBorder,
     borderWidth: 1,
     borderRadius: 18,
     paddingHorizontal: 14,
@@ -571,14 +562,14 @@ const styles = StyleSheet.create({
   performerText: {
     fontFamily: Fonts.semiBold,
     fontSize: 13,
-    color: "#e9d5ff",
+    color: c.primarySoft,
   },
 
   // About text
   aboutText: {
     fontFamily: Fonts.regular,
     fontSize: 14,
-    color: AU.text,
+    color: c.textBright,
     lineHeight: 21,
   },
 
@@ -598,9 +589,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 10,
     paddingBottom: 8,
-    backgroundColor: AU.bg,
+    backgroundColor: c.backgroundDeep,
     borderTopWidth: 1,
-    borderTopColor: AU.stroke,
+    borderTopColor: c.glassFill,
   },
   ctaGradient: {
     flexDirection: "row",
@@ -614,6 +605,6 @@ const styles = StyleSheet.create({
   ctaText: {
     fontFamily: Fonts.bold,
     fontSize: 16,
-    color: "#fff",
+    color: c.white,
   },
 });
