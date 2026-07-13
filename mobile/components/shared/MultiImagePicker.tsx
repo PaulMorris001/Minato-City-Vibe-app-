@@ -12,6 +12,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { pickMultipleImages } from "@/utils/imageUpload";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface MultiImagePickerProps {
   value: string[];
   onChange: (uris: string[]) => void;
@@ -32,6 +34,8 @@ export default function MultiImagePicker({
   max = 6,
   size = 96,
 }: MultiImagePickerProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const remaining = max - value.length;
 
   const add = async () => {
@@ -67,7 +71,7 @@ export default function MultiImagePicker({
         ))}
         {remaining > 0 && (
           <TouchableOpacity style={[styles.addTile, { width: size, height: size }]} onPress={add} activeOpacity={0.8}>
-            <Ionicons name="camera-outline" size={26} color="#9ca3af" />
+            <Ionicons name="camera-outline" size={26} color={colors.textSecondary} />
             <Text style={styles.addText}>Add</Text>
           </TouchableOpacity>
         )}
@@ -76,19 +80,20 @@ export default function MultiImagePicker({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     marginVertical: 8,
   },
   label: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#e5e7eb",
+    color: c.textBody,
     marginBottom: 10,
   },
   count: {
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     fontSize: 14,
   },
   row: {
@@ -118,16 +123,16 @@ const styles = StyleSheet.create({
   addTile: {
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: "#374151",
+    borderColor: c.border,
     borderStyle: "dashed",
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     alignItems: "center",
     justifyContent: "center",
   },
   addText: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 4,
   },
 });

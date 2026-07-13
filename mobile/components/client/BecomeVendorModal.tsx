@@ -25,6 +25,8 @@ import { resetToAccountRoot } from "@/utils/navigation";
 import { useAccount } from "@/contexts/AccountContext";
 import { fetchVendorTypes } from "@/libs/api";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface BecomeVendorModalProps {
   visible: boolean;
   onClose: () => void;
@@ -34,6 +36,8 @@ export default function BecomeVendorModal({
   visible,
   onClose,
 }: BecomeVendorModalProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { setActiveAccount } = useAccount();
   const [loading, setLoading] = useState(false);
   const [vendorTypes, setVendorTypes] = useState<VendorType[]>([]);
@@ -214,7 +218,7 @@ export default function BecomeVendorModal({
           <Ionicons
             name={showTypeDropdown ? "chevron-up" : "chevron-down"}
             size={20}
-            color="#9ca3af"
+            color={colors.textSecondary}
           />
         </TouchableOpacity>
         {showTypeDropdown && (
@@ -236,7 +240,7 @@ export default function BecomeVendorModal({
                     color={
                       selectedVendorType?._id === type._id
                         ? Colors.primary
-                        : "#9ca3af"
+                        : colors.textSecondary
                     }
                     style={styles.dropdownItemIcon}
                   />
@@ -337,7 +341,8 @@ export default function BecomeVendorModal({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   intro: {
     alignItems: "center",
     marginBottom: 32,
@@ -346,13 +351,13 @@ const styles = StyleSheet.create({
   introTitle: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#fff",
+    color: c.text,
     marginTop: 16,
     marginBottom: 8,
   },
   introText: {
     fontSize: 14,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     paddingHorizontal: 20,
   },
@@ -362,35 +367,35 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#e5e7eb",
+    color: c.textBody,
     marginBottom: 8,
   },
   required: {
-    color: "#ef4444",
+    color: c.error,
   },
   picker: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 8,
     padding: 14,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
   pickerText: {
     fontSize: 16,
-    color: "#fff",
+    color: c.text,
   },
   pickerPlaceholder: {
-    color: "#6b7280",
+    color: c.textMuted,
   },
   dropdown: {
     marginTop: 8,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     maxHeight: 200,
   },
   dropdownScroll: {
@@ -399,19 +404,19 @@ const styles = StyleSheet.create({
   dropdownItem: {
     padding: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
     flexDirection: "row",
     alignItems: "center",
   },
   dropdownItemSelected: {
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
   },
   dropdownItemIcon: {
     marginRight: 12,
   },
   dropdownItemText: {
     fontSize: 16,
-    color: "#e5e7eb",
+    color: c.textBody,
   },
   dropdownItemTextSelected: {
     color: Colors.primary,
@@ -419,7 +424,7 @@ const styles = StyleSheet.create({
   },
   dropdownItemSubtext: {
     fontSize: 13,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 2,
   },
   textAreaContainer: {

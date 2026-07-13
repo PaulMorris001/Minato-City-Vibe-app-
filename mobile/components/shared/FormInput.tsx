@@ -12,6 +12,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface FormInputProps extends TextInputProps {
   label?: string;
   required?: boolean;
@@ -30,6 +32,8 @@ export default function FormInput({
   secureTextEntry,
   ...textInputProps
 }: FormInputProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [revealed, setRevealed] = useState(false);
   const isPassword = !!secureTextEntry;
 
@@ -52,7 +56,7 @@ export default function FormInput({
         isPassword && styles.inputWithEye,
         style,
       ]}
-      placeholderTextColor="#6b7280"
+      placeholderTextColor={colors.textMuted}
       editable={editable}
       multiline={multiline}
       textAlignVertical={multiline ? "top" : "center"}
@@ -83,7 +87,7 @@ export default function FormInput({
             <Ionicons
               name={revealed ? "eye-off-outline" : "eye-outline"}
               size={20}
-              color="#9ca3af"
+              color={colors.textSecondary}
             />
           </TouchableOpacity>
         </View>
@@ -95,28 +99,29 @@ export default function FormInput({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     marginBottom: 20,
   },
   label: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#e5e7eb",
+    color: c.textBody,
     marginBottom: 8,
   },
   required: {
-    color: "#ef4444",
+    color: c.error,
   },
   input: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 8,
     padding: 14,
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   textArea: {
     minHeight: 100,
@@ -124,10 +129,10 @@ const styles = StyleSheet.create({
   },
   inputDisabled: {
     backgroundColor: "#2a2a3e",
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   inputError: {
-    borderColor: "#ef4444",
+    borderColor: c.error,
   },
   inputWithEye: {
     paddingRight: 48,
@@ -148,7 +153,7 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#ef4444",
+    color: c.error,
     marginTop: 4,
   },
 });

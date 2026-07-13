@@ -8,6 +8,8 @@ import { Fonts } from "@/constants/fonts";
 import { scaleFontSize } from "@/utils/responsive";
 import type { ExternalEvent } from "@/services/externalEvent.service";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 /**
  * Card for events ingested from third-party providers.
  *
@@ -36,6 +38,8 @@ function formatPriceLine(event: ExternalEvent): string | null {
 }
 
 export default function ExternalEventCard({ event, style }: ExternalEventCardProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const priceLine = formatPriceLine(event);
 
@@ -63,7 +67,7 @@ export default function ExternalEventCard({ event, style }: ExternalEventCardPro
             colors={["#667eea", "#764ba2"]}
             style={styles.eventCardImagePlaceholder}
           >
-            <Ionicons name="calendar" size={48} color="rgba(255,255,255,0.5)" />
+            <Ionicons name="calendar" size={48} color={colors.textFaint} />
           </LinearGradient>
         )}
 
@@ -82,14 +86,14 @@ export default function ExternalEventCard({ event, style }: ExternalEventCardPro
             </Text>
 
             <View style={styles.eventCardDetail}>
-              <Ionicons name="location" size={14} color="#a855f7" />
+              <Ionicons name="location" size={14} color={colors.primary} />
               <Text style={styles.eventCardDetailText} numberOfLines={1}>
                 {event.location || event.city}
               </Text>
             </View>
 
             <View style={styles.eventCardDetail}>
-              <Ionicons name="calendar" size={14} color="#a855f7" />
+              <Ionicons name="calendar" size={14} color={colors.primary} />
               <Text style={styles.eventCardDetailText}>
                 {new Date(event.date).toLocaleDateString(undefined, {
                   weekday: "short",
@@ -101,7 +105,7 @@ export default function ExternalEventCard({ event, style }: ExternalEventCardPro
 
             {event.category && (
               <View style={styles.eventCardDetail}>
-                <Ionicons name="pricetag" size={14} color="#a855f7" />
+                <Ionicons name="pricetag" size={14} color={colors.primary} />
                 <Text style={styles.eventCardDetailText} numberOfLines={1}>
                   {[event.category, event.genre].filter(Boolean).join(" · ")}
                 </Text>
@@ -131,7 +135,7 @@ export default function ExternalEventCard({ event, style }: ExternalEventCardPro
               activeOpacity={0.85}
             >
               <LinearGradient
-                colors={["#a855f7", "#7c3aed"]}
+                colors={[colors.primary, colors.primaryDark]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.getTicketsGradient}
@@ -153,7 +157,8 @@ export default function ExternalEventCard({ event, style }: ExternalEventCardPro
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   eventCard: {
     width: "100%",
     height: 400,
@@ -199,7 +204,7 @@ const styles = StyleSheet.create({
   eventCardTitle: {
     fontSize: scaleFontSize(22),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.white,
     marginBottom: 12,
   },
   eventCardDetail: {
@@ -211,7 +216,7 @@ const styles = StyleSheet.create({
   eventCardDetailText: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
-    color: "#e5e7eb",
+    color: "rgba(255,255,255,0.85)",
     flex: 1,
   },
   priceContainer: {
@@ -232,7 +237,7 @@ const styles = StyleSheet.create({
   priceText: {
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.white,
   },
   getTicketsButton: { marginTop: 4 },
   getTicketsGradient: {
@@ -247,7 +252,7 @@ const styles = StyleSheet.create({
   getTicketsText: {
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.white,
   },
   moreDatesHint: {
     marginTop: 8,

@@ -15,7 +15,10 @@ import { VENDOR_NAVBAR_HEIGHT } from "@/constants/vendorChrome";
 import { VendorStats } from "@/libs/interfaces";
 import DashboardTab from "@/components/vendor/DashboardTab";
 
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 export default function VendorDashboard() {
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<VendorStats | null>(null);
@@ -73,10 +76,11 @@ export default function VendorDashboard() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#0B0613",
+    backgroundColor: c.backgroundDeep,
     // The vendor navbar overlays the tab host on iOS; pad below it. On
     // Android the navbar sits in normal flow above the tabs.
     paddingTop: Platform.OS === "ios" ? VENDOR_NAVBAR_HEIGHT : 0,
@@ -88,6 +92,6 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
 });

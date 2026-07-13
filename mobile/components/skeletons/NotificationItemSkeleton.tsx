@@ -2,11 +2,14 @@ import React from "react";
 import { View, StyleSheet } from "react-native";
 import Skeleton from "../shared/Skeleton";
 
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface Props {
   count?: number;
 }
 
 function NotificationItem() {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.row}>
       <Skeleton width={44} height={44} borderRadius={22} />
@@ -20,6 +23,7 @@ function NotificationItem() {
 }
 
 export default function NotificationItemSkeleton({ count = 6 }: Props) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.container}>
       {Array.from({ length: count }).map((_, i) => (
@@ -29,7 +33,8 @@ export default function NotificationItemSkeleton({ count = 6 }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     paddingHorizontal: 16,
     paddingTop: 8,
@@ -40,7 +45,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.05)",
+    borderBottomColor: c.glassFillSubtle,
   },
   textGroup: {
     flex: 1,

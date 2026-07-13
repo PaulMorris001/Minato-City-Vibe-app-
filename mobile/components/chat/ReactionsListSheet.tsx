@@ -6,6 +6,8 @@ import { Avatar } from "@/components/shared/Avatar";
 import { openUserProfile } from "@/utils/userNavigation";
 import BottomSheetModal from "@/components/shared/BottomSheetModal";
 
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface ReactionsListSheetProps {
   /** The message whose reactions to list, or null when closed. */
   message: Message | null;
@@ -25,6 +27,7 @@ export default function ReactionsListSheet({
   onClose,
   onReact,
 }: ReactionsListSheetProps) {
+  const styles = useThemedStyles(createStyles);
   const grouped = useMemo(
     () => groupReactions(message?.reactions, currentUserId),
     [message, currentUserId]
@@ -66,7 +69,8 @@ export default function ReactionsListSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   reactSheetGroup: {
     marginBottom: 4,
   },
@@ -80,7 +84,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: "Outfit_600SemiBold",
     fontSize: 15,
-    color: "#fff",
+    color: c.text,
   },
   reactSheetEmoji: {
     fontSize: 20,

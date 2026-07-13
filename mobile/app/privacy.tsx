@@ -15,6 +15,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 const sections = [
   {
     title: "Information We Collect",
@@ -51,15 +54,15 @@ const sections = [
 ];
 
 export default function PrivacyScreen() {
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      <LinearGradient colors={["#0f0f1a", "#1a1a2e", "#16213e"]} style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+      <LinearGradient colors={[colors.background, colors.backgroundSecondary, colors.backgroundTertiary]} style={styles.header}>
+        <GlassBackButton style={styles.backButton} />
         <View>
           <Text style={styles.headerTitle}>Privacy Policy</Text>
           <Text style={styles.headerSubtitle}>Last updated March 2026</Text>
@@ -84,8 +87,9 @@ export default function PrivacyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f0f1a" },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
   header: {
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight! + 16 : 60,
     paddingBottom: 20,
@@ -98,12 +102,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: scaleFontSize(26),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   headerSubtitle: {
     fontSize: scaleFontSize(13),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 2,
   },
   content: {
@@ -113,28 +117,28 @@ const styles = StyleSheet.create({
   intro: {
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     lineHeight: 22,
     marginBottom: 24,
   },
   section: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 14,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   sectionTitle: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 8,
   },
   sectionBody: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     lineHeight: 21,
   },
   bottomPad: { height: 20 },

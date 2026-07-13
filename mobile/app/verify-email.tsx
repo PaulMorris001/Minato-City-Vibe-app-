@@ -22,6 +22,7 @@ import { BASE_URL } from "@/constants/constants";
 import { AU } from "@/components/auth/tokens";
 import { GlassRoundButton, PrimaryCTA } from "@/components/auth/AuthPrimitives";
 
+import { darkColors, type ThemeColors } from "@/constants/theme";
 const LEN = 6;
 const RESEND_SECONDS = 30;
 
@@ -312,7 +313,8 @@ export default function VerifyEmail() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: AU.bg },
   scrollContent: { flexGrow: 1, paddingBottom: 24 },
   hiddenInput: {
@@ -355,14 +357,14 @@ const styles = StyleSheet.create({
     flex: 1,
     aspectRatio: 1 / 1.15,
     borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1.5,
     borderColor: AU.stroke,
     alignItems: "center",
     justifyContent: "center",
   },
   otpCellFilled: {
-    backgroundColor: "rgba(168,85,247,0.18)",
+    backgroundColor: c.primaryFadedStrong,
     borderColor: "rgba(192,132,252,0.6)",
   },
   otpCellFocus: { borderColor: "rgba(236,72,153,0.7)" },
@@ -383,7 +385,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 11,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
     borderColor: AU.stroke,
   },
@@ -427,3 +429,6 @@ const styles = StyleSheet.create({
   },
   footerLink: { color: AU.purpleSoft, fontFamily: "Outfit_700Bold" },
 });
+
+// Auth/poster surface: always renders the dark palette.
+const styles = createStyles(darkColors);

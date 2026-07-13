@@ -4,9 +4,11 @@ import * as SecureStore from "expo-secure-store";
 import { View, ActivityIndicator } from "react-native";
 import { consumePendingDeepLink, deepLinkToPath } from "@/utils/pendingDeepLink";
 
+import { useTheme } from "@/contexts/ThemeContext";
 type AppState = "checking" | "onboarding" | "login" | "home" | "deeplink";
 
 export default function Index() {
+  const { colors } = useTheme();
   const [appState, setAppState] = useState<AppState>("checking");
   const [deepLinkPath, setDeepLinkPath] = useState<string | null>(null);
 
@@ -40,8 +42,8 @@ export default function Index() {
 
   if (appState === "checking") {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#0f0f1a" }}>
-        <ActivityIndicator size="large" color="#a855f7" />
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }

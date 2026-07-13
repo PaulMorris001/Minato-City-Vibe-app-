@@ -26,13 +26,18 @@ import { BASE_URL } from "@/constants/constants";
 import { useAccount } from "@/contexts/AccountContext";
 import socketService from "@/services/socket.service";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 export const unstable_settings = {
   initialRouteName: "dashboard",
 };
 
 export default function VendorLayout() {
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { setActiveAccount } = useAccount();
   const isGlassAvailable = Platform.OS === "ios" && isLiquidGlassAvailable();
+  const isIpad = Platform.OS === "ios" && Platform.isPad;
   // The profile modal sits on a translucent surface on any iOS (real glass on
   // 26+, blur below), so the brighter chrome applies to both. Android keeps
   // the solid card.
@@ -152,7 +157,7 @@ export default function VendorLayout() {
         <Ionicons
           name="close"
           size={24}
-          color={isTranslucentModal ? "#fff" : "#9ca3af"}
+          color={isTranslucentModal ? "#fff" : colors.textSecondary}
         />
       </TouchableOpacity>
 
@@ -164,7 +169,7 @@ export default function VendorLayout() {
           />
         ) : (
           <LinearGradient
-            colors={["#a855f7", "#7c3aed"]}
+            colors={[colors.primary, colors.primaryDark]}
             style={styles.avatarGradient}
           >
             <Ionicons name="person" size={40} color="#fff" />
@@ -195,13 +200,13 @@ export default function VendorLayout() {
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="grid-outline" size={20} color="#a855f7" />
+          <Ionicons name="grid-outline" size={20} color={colors.primary} />
         </View>
         <Text style={styles.menuItemText}>Dashboard</Text>
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isTranslucentModal ? "#fff" : "#4b5563"}
+          color={isTranslucentModal ? "#fff" : colors.borderMuted}
         />
       </TouchableOpacity>
 
@@ -213,13 +218,13 @@ export default function VendorLayout() {
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="settings-outline" size={20} color="#a855f7" />
+          <Ionicons name="settings-outline" size={20} color={colors.primary} />
         </View>
         <Text style={styles.menuItemText}>Settings</Text>
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isTranslucentModal ? "#fff" : "#4b5563"}
+          color={isTranslucentModal ? "#fff" : colors.borderMuted}
         />
       </TouchableOpacity>
 
@@ -233,14 +238,14 @@ export default function VendorLayout() {
           <Ionicons
             name="help-circle-outline"
             size={20}
-            color="#a855f7"
+            color={colors.primary}
           />
         </View>
         <Text style={styles.menuItemText}>Help & Support</Text>
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isTranslucentModal ? "#fff" : "#4b5563"}
+          color={isTranslucentModal ? "#fff" : colors.borderMuted}
         />
       </TouchableOpacity>
 
@@ -251,7 +256,7 @@ export default function VendorLayout() {
         onPress={handleLogout}
         activeOpacity={0.8}
       >
-        <Ionicons name="log-out-outline" size={20} color="#ef4444" />
+        <Ionicons name="log-out-outline" size={20} color={colors.error} />
         <Text style={styles.logoutText}>Log Out</Text>
       </TouchableOpacity>
     </>
@@ -259,16 +264,27 @@ export default function VendorLayout() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
       {/* On iOS the navbar floats over the native tab host: a flex sibling
           would shrink the host and iOS 26 then refuses to render the floating
           Liquid Glass tab bar. Each tab screen pads its top to compensate
           (see VENDOR_NAVBAR_HEIGHT). */}
-      <View style={[styles.navbar, Platform.OS === "ios" && styles.navbarOverlay]}>
+      {/* On iPad the native tab bar renders as a capsule centered at the TOP
+          of the screen, in this same row. The navbar goes transparent there —
+          logo left, actions right, capsule in the middle — and box-none lets
+          touches in the middle reach the native bar underneath. */}
+      <View
+        pointerEvents={isIpad ? "box-none" : "auto"}
+        style={[
+          styles.navbar,
+          Platform.OS === "ios" && styles.navbarOverlay,
+          isIpad && [styles.navbarIpad, { paddingTop: insets.top + 10 }],
+        ]}
+      >
         <View style={styles.navLeft}>
           <Text style={styles.logoText}>OurCityvibe</Text>
           <View style={styles.badge}>
-            <Ionicons name="briefcase" size={11} color="#C084FC" />
+            <Ionicons name="briefcase" size={11} color={colors.primaryLight} />
             <Text style={styles.badgeText}>VENDOR</Text>
           </View>
         </View>
@@ -278,7 +294,7 @@ export default function VendorLayout() {
             activeOpacity={0.7}
             onPress={() => router.push("/notifications" as any)}
           >
-            <Ionicons name="notifications-outline" size={17} color="#F4EEFF" />
+            <Ionicons name="notifications-outline" size={17} color={colors.textBright} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={handleProfilePress}
@@ -288,7 +304,7 @@ export default function VendorLayout() {
             {user.profilePicture ? (
               <Image source={{ uri: user.profilePicture }} style={styles.profileImage} />
             ) : (
-              <LinearGradient colors={["#a855f7", "#7c3aed"]} style={styles.profileGradient}>
+              <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.profileGradient}>
                 <Ionicons name="person" size={18} color="#fff" />
               </LinearGradient>
             )}
@@ -310,7 +326,7 @@ export default function VendorLayout() {
           ) : Platform.OS === "ios" ? (
             <BlurView
               intensity={80}
-              tint="dark"
+              tint={isDark ? "dark" : "light"}
               style={[styles.modalContent, styles.glassModalContent]}
             >
               {renderModalContent()}
@@ -326,8 +342,8 @@ export default function VendorLayout() {
         // the floating Liquid Glass capsule (older iOS gets the standard
         // system bar).
         <NativeTabs
-          tintColor="#A855F7"
-          badgeBackgroundColor="#EC4899"
+          tintColor={colors.primary}
+          badgeBackgroundColor={colors.accentPink}
           minimizeBehavior="onScrollDown"
         >
           <NativeTabs.Trigger name="dashboard">
@@ -362,14 +378,14 @@ export default function VendorLayout() {
         <Tabs
           screenOptions={{
             headerShown: false,
-            tabBarActiveTintColor: "#A855F7",
-            tabBarInactiveTintColor: "rgba(244,238,255,0.38)",
+            tabBarActiveTintColor: colors.primary,
+            tabBarInactiveTintColor: colors.textFaint,
             tabBarStyle: {
-              backgroundColor: "#0B0613",
+              backgroundColor: colors.backgroundDeep,
               paddingBottom: insets.bottom + 8,
               paddingTop: 8,
               borderTopWidth: 1,
-              borderTopColor: "rgba(255,255,255,0.08)",
+              borderTopColor: colors.glassFill,
               height: 60 + insets.bottom + 8,
               elevation: 5,
             },
@@ -402,7 +418,7 @@ export default function VendorLayout() {
             options={{
               title: "Bookings",
               tabBarBadge: pendingBookingsCount > 0 ? pendingBadgeLabel : undefined,
-              tabBarBadgeStyle: { backgroundColor: "#EC4899", color: "#fff", fontSize: 10 },
+              tabBarBadgeStyle: { backgroundColor: colors.accentPink, color: "#fff", fontSize: 10 },
               tabBarIcon: ({ focused, color }) => (
                 <Ionicons name={focused ? "calendar" : "calendar-outline"} size={20} color={color} />
               ),
@@ -432,21 +448,30 @@ export default function VendorLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0B0613",
+    backgroundColor: c.backgroundDeep,
   },
   navbar: {
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight! + 10 : 50,
     paddingBottom: 14,
     paddingHorizontal: 18,
-    backgroundColor: "#0B0613",
+    backgroundColor: c.backgroundDeep,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.08)",
+    borderBottomColor: c.glassFill,
+  },
+  // iPad: the native tab bar capsule is centered in this same top row, so the
+  // navbar keeps only its left/right content and lets the capsule show
+  // through. paddingTop is set inline (insets.top + 10) to vertically center
+  // the 40pt action row on the 40pt capsule.
+  navbarIpad: {
+    backgroundColor: "transparent",
+    borderBottomWidth: 0,
   },
   // iOS only: keep the navbar out of the flex column so the native tab host
   // stays full-screen (required for the Liquid Glass bar to render).
@@ -471,16 +496,16 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: c.glassFill,
     alignItems: "center",
     justifyContent: "center",
   },
   logoText: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 22,
-    color: "#C084FC",
+    color: c.primaryLight,
     letterSpacing: -0.6,
   },
   badge: {
@@ -490,12 +515,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: "rgba(168,85,247,0.16)",
+    backgroundColor: c.primaryFadedStrong,
     borderWidth: 1,
     borderColor: "rgba(192,132,252,0.35)",
   },
   badgeText: {
-    color: "#C084FC",
+    color: c.primaryLight,
     fontSize: 10.5,
     fontFamily: Fonts.bold,
     letterSpacing: 0.8,
@@ -503,7 +528,7 @@ const styles = StyleSheet.create({
   profileButton: {
     borderRadius: 20,
     overflow: "hidden",
-    shadowColor: "#a855f7",
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -522,23 +547,23 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: c.modalOverlay,
     justifyContent: "center",
     alignItems: "center",
   },
   modalContent: {
     width: "85%",
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 24,
     padding: 24,
     position: "relative",
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   glassModalContent: {
     backgroundColor: "transparent",
     borderWidth: 0,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: c.glassStroke,
     overflow: "hidden",
   },
   closeButton: {
@@ -569,13 +594,13 @@ const styles = StyleSheet.create({
   usernameText: {
     fontSize: 24,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 4,
   },
   emailText: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginBottom: 12,
   },
   accountTypeBadge: {
@@ -589,15 +614,15 @@ const styles = StyleSheet.create({
   accountTypeText: {
     fontSize: 13,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
   },
   divider: {
     height: 1,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     marginVertical: 16,
   },
   glassDivider: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: c.glassStroke,
   },
   menuItem: {
     flexDirection: "row",
@@ -609,14 +634,14 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
     justifyContent: "center",
     alignItems: "center",
   },
   menuItemText: {
     flex: 1,
     fontSize: 16,
-    color: "#e5e7eb",
+    color: c.textBody,
     fontFamily: Fonts.medium,
   },
   logoutButton: {
@@ -630,7 +655,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   logoutText: {
-    color: "#ef4444",
+    color: c.error,
     fontSize: 16,
     fontFamily: Fonts.semiBold,
   },

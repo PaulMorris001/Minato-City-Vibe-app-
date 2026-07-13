@@ -16,6 +16,9 @@ import * as WebBrowser from "expo-web-browser";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 // Custom-scheme prefix the server redirects to after Stripe onboarding.
 // Must match `scheme` in app.config.js AND the APP_URL env var on the server.
 const RETURN_URL = "mobile://stripe-onboarding";
@@ -28,6 +31,8 @@ type AccountStatus = {
 };
 
 export default function StripeOnboardingScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const params = useLocalSearchParams<{ success?: string; refresh?: string }>();
 
@@ -116,7 +121,7 @@ export default function StripeOnboardingScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#a855f7" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -126,9 +131,7 @@ export default function StripeOnboardingScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        <GlassBackButton style={styles.backButton} />
         <Text style={styles.headerTitle}>Payouts Setup</Text>
       </View>
 
@@ -138,7 +141,7 @@ export default function StripeOnboardingScreen() {
           <Ionicons
             name={isFullySetup ? "checkmark-circle" : "alert-circle"}
             size={40}
-            color={isFullySetup ? "#10b981" : "#f59e0b"}
+            color={isFullySetup ? colors.success : colors.warning}
           />
           <Text style={styles.statusTitle}>
             {isFullySetup ? "Payouts Enabled" : "Setup Required"}
@@ -153,28 +156,28 @@ export default function StripeOnboardingScreen() {
         {/* Info boxes */}
         <View style={styles.infoSection}>
           <View style={styles.infoRow}>
-            <Ionicons name="cash-outline" size={20} color="#a855f7" />
+            <Ionicons name="cash-outline" size={20} color={colors.primary} />
             <Text style={styles.infoText}>
               <Text style={styles.infoLabel}>Your cut: </Text>
               90% of every sale goes directly to you
             </Text>
           </View>
           <View style={styles.infoRow}>
-            <Ionicons name="shield-checkmark-outline" size={20} color="#a855f7" />
+            <Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} />
             <Text style={styles.infoText}>
               <Text style={styles.infoLabel}>Powered by Stripe: </Text>
               Secure, trusted by millions of businesses
             </Text>
           </View>
           <View style={styles.infoRow}>
-            <Ionicons name="time-outline" size={20} color="#a855f7" />
+            <Ionicons name="time-outline" size={20} color={colors.primary} />
             <Text style={styles.infoText}>
               <Text style={styles.infoLabel}>Payouts: </Text>
               Automatically deposited to your bank account
             </Text>
           </View>
           <View style={styles.infoRow}>
-            <Ionicons name="card-outline" size={20} color="#a855f7" />
+            <Ionicons name="card-outline" size={20} color={colors.primary} />
             <Text style={styles.infoText}>
               <Text style={styles.infoLabel}>Platform fee: </Text>
               10% per transaction covers payment processing and platform costs
@@ -191,7 +194,7 @@ export default function StripeOnboardingScreen() {
               <Ionicons
                 name={status.chargesEnabled ? "checkmark-circle" : "close-circle"}
                 size={20}
-                color={status.chargesEnabled ? "#10b981" : "#ef4444"}
+                color={status.chargesEnabled ? colors.success : colors.error}
               />
             </View>
             <View style={styles.detailRow}>
@@ -199,7 +202,7 @@ export default function StripeOnboardingScreen() {
               <Ionicons
                 name={status.payoutsEnabled ? "checkmark-circle" : "close-circle"}
                 size={20}
-                color={status.payoutsEnabled ? "#10b981" : "#ef4444"}
+                color={status.payoutsEnabled ? colors.success : colors.error}
               />
             </View>
           </View>
@@ -231,7 +234,7 @@ export default function StripeOnboardingScreen() {
             onPress={handleSetupPayouts}
             disabled={actionLoading}
           >
-            <Ionicons name="open-outline" size={18} color="#a855f7" />
+            <Ionicons name="open-outline" size={18} color={colors.primary} />
             <Text style={styles.secondaryButtonText}>Manage Stripe Account</Text>
           </TouchableOpacity>
         )}
@@ -240,9 +243,10 @@ export default function StripeOnboardingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f0f1a" },
-  centered: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#0f0f1a" },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
+  centered: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: c.background },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -250,10 +254,10 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   backButton: { marginRight: 16 },
-  headerTitle: { fontSize: 22, fontFamily: Fonts.bold, color: "#fff" },
+  headerTitle: { fontSize: 22, fontFamily: Fonts.bold, color: c.text },
   content: { padding: 20, paddingBottom: 40 },
   statusCard: {
     borderRadius: 16,
@@ -270,48 +274,48 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(245, 158, 11, 0.08)",
     borderColor: "rgba(245, 158, 11, 0.3)",
   },
-  statusTitle: { fontSize: 20, fontFamily: Fonts.bold, color: "#fff", marginTop: 12, marginBottom: 8 },
-  statusSubtitle: { fontSize: 14, fontFamily: Fonts.regular, color: "#9ca3af", textAlign: "center", lineHeight: 22 },
+  statusTitle: { fontSize: 20, fontFamily: Fonts.bold, color: c.text, marginTop: 12, marginBottom: 8 },
+  statusSubtitle: { fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary, textAlign: "center", lineHeight: 22 },
   infoSection: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 20,
     gap: 14,
   },
   infoRow: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
-  infoText: { fontSize: 14, fontFamily: Fonts.regular, color: "#d1d5db", flex: 1, lineHeight: 20 },
-  infoLabel: { fontFamily: Fonts.semiBold, color: "#fff" },
+  infoText: { fontSize: 14, fontFamily: Fonts.regular, color: c.textTertiary, flex: 1, lineHeight: 20 },
+  infoLabel: { fontFamily: Fonts.semiBold, color: c.text },
   detailsCard: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 24,
   },
-  detailsTitle: { fontSize: 16, fontFamily: Fonts.semiBold, color: "#fff", marginBottom: 12 },
+  detailsTitle: { fontSize: 16, fontFamily: Fonts.semiBold, color: c.text, marginBottom: 12 },
   detailRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },
-  detailLabel: { fontSize: 14, fontFamily: Fonts.regular, color: "#9ca3af" },
+  detailLabel: { fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary },
   ctaButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     paddingVertical: 16,
     borderRadius: 12,
     gap: 8,
     marginTop: 4,
   },
-  ctaText: { fontSize: 16, fontFamily: Fonts.semiBold, color: "#fff" },
+  ctaText: { fontSize: 16, fontFamily: Fonts.semiBold, color: c.white },
   secondaryButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#a855f7",
+    borderColor: c.primary,
     paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
     marginTop: 4,
   },
-  secondaryButtonText: { fontSize: 15, fontFamily: Fonts.semiBold, color: "#a855f7" },
+  secondaryButtonText: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.primary },
 });

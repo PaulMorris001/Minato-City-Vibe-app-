@@ -50,6 +50,9 @@ import { formatLocation } from "@/utils/location";
 import { addEventToCalendar } from "@/utils/calendar";
 import { openUserProfile } from "@/utils/userNavigation";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import { GlassIconButton } from "@/components/shared/GlassBackButton";
+import type { ThemeColors } from "@/constants/theme";
 interface RsvpUser {
   _id: string;
   username: string;
@@ -191,18 +194,12 @@ function GlassRoundIcon({
   onPress?: () => void;
   size?: number;
 }) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.7}
-      style={[styles.glassRound, { width: size, height: size, borderRadius: size / 2 }]}
-    >
-      <Ionicons name={icon} size={size * 0.5} color="#fff" />
-    </TouchableOpacity>
-  );
+  return <GlassIconButton icon={icon} onPress={onPress} size={size} overMedia />;
 }
 
 export default function EventDetailsPage() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   // `useLocalSearchParams` can hand back `string | string[]` if a deep link
   // produces a malformed param. Narrow it once so the rest of the screen
@@ -794,7 +791,7 @@ export default function EventDetailsPage() {
     return (
       <View style={styles.container}>
         <SafeAreaView style={styles.stateScreen} edges={["top"]}>
-          <Ionicons name="alert-circle-outline" size={56} color={AU.textMute} />
+          <Ionicons name="alert-circle-outline" size={56} color={colors.textFaint} />
           <Text style={styles.stateTitle}>Invalid event link</Text>
           <Text style={styles.stateText}>
             The link you opened doesn't look like a valid event. Try opening it again or browse events.
@@ -820,7 +817,7 @@ export default function EventDetailsPage() {
     return (
       <View style={styles.container}>
         <SafeAreaView style={styles.stateScreen} edges={["top"]}>
-          <Ionicons name="lock-closed-outline" size={56} color={AU.purpleSoft} />
+          <Ionicons name="lock-closed-outline" size={56} color={colors.primaryLight} />
           <Text style={styles.stateTitle}>Log in to view this event</Text>
           <Text style={styles.stateText}>
             This event isn't public. Sign in to see the details and RSVP.
@@ -869,7 +866,7 @@ export default function EventDetailsPage() {
   const capacityPct = event.maxGuests
     ? Math.min(100, Math.round((goingCount / event.maxGuests) * 100))
     : 0;
-  const capacityColor = capacityPct > 85 ? AU.pink : AU.greenSoft;
+  const capacityColor = capacityPct > 85 ? colors.accentPink : colors.successLight;
 
   return (
     <View style={styles.container}>
@@ -893,7 +890,7 @@ export default function EventDetailsPage() {
             colors={
               event.image
                 ? ["transparent", "transparent"]
-                : ["#22D3EE", "#7C3AED", "#EC4899"]
+                : [colors.accentCyan, colors.primaryDark, colors.accentPink]
             }
             locations={[0, 0.6, 1]}
             start={{ x: 0.2, y: 0 }}
@@ -906,7 +903,7 @@ export default function EventDetailsPage() {
 
           {/* Bottom readability fade */}
           <LinearGradient
-            colors={["rgba(11,6,19,0)", "rgba(11,6,19,0.55)", AU.bg]}
+            colors={["rgba(11,6,19,0)", colors.imageScrim, colors.backgroundDeep]}
             locations={[0, 0.5, 1]}
             style={styles.heroFade}
             pointerEvents="none"
@@ -944,20 +941,20 @@ export default function EventDetailsPage() {
               </View>
             )}
             <View style={[styles.chip, styles.chipDark]}>
-              <Text style={[styles.chipText, { color: AU.text }]}>
+              <Text style={[styles.chipText, { color: colors.textBright }]}>
                 {event.isPublic ? "PUBLIC" : "INVITE ONLY"}
               </Text>
             </View>
             {event.isPaid && (
               <View style={[styles.chip, styles.chipDark]}>
-                <Text style={[styles.chipText, { color: AU.text }]}>
+                <Text style={[styles.chipText, { color: colors.textBright }]}>
                   TICKETED · {currencyPrefix(event.currency)}{event.ticketPrice?.toFixed(0) ?? "—"}
                 </Text>
               </View>
             )}
             {soldOut && (
               <View style={[styles.chip, styles.chipDark]}>
-                <Text style={[styles.chipText, { color: AU.text }]}>SOLD OUT</Text>
+                <Text style={[styles.chipText, { color: colors.textBright }]}>SOLD OUT</Text>
               </View>
             )}
           </View>
@@ -989,10 +986,10 @@ export default function EventDetailsPage() {
                   editable={!savingTitle}
                 />
                 {savingTitle ? (
-                  <ActivityIndicator size="small" color="#a855f7" />
+                  <ActivityIndicator size="small" color={colors.primary} />
                 ) : (
                   <TouchableOpacity onPress={handleSaveTitle} hitSlop={8}>
-                    <Ionicons name="checkmark-circle" size={24} color="#a855f7" />
+                    <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -1003,11 +1000,11 @@ export default function EventDetailsPage() {
                 style={{ flexDirection: "row", alignItems: "flex-start", gap: 6 }}
               >
                 <Text style={[styles.heroTitle, { flex: 1 }]} numberOfLines={3}>{event.title}</Text>
-                {isCreator && <Ionicons name="pencil-outline" size={16} color="rgba(255,255,255,0.5)" style={{ marginTop: 4 }} />}
+                {isCreator && <Ionicons name="pencil-outline" size={16} color={colors.textFaint} style={{ marginTop: 4 }} />}
               </TouchableOpacity>
             )}
             <View style={styles.heroMetaRow}>
-              <Ionicons name="calendar-outline" size={14} color={AU.purpleSoft} />
+              <Ionicons name="calendar-outline" size={14} color={colors.primaryLight} />
               <Text style={styles.heroMetaText}>{dateLine}</Text>
               {!!neighborhood && (
                 <>
@@ -1015,7 +1012,7 @@ export default function EventDetailsPage() {
                   <Ionicons
                     name={event.isVirtual ? "videocam-outline" : "location-outline"}
                     size={14}
-                    color={AU.purpleSoft}
+                    color={colors.primaryLight}
                   />
                   <Text style={styles.heroMetaText}>{neighborhood}</Text>
                 </>
@@ -1023,7 +1020,7 @@ export default function EventDetailsPage() {
               {isCreator && (
                 <>
                   <View style={styles.metaDot} />
-                  <Ionicons name="eye-outline" size={14} color={AU.purpleSoft} />
+                  <Ionicons name="eye-outline" size={14} color={colors.primaryLight} />
                   <Text style={styles.heroMetaText}>{event.seenCount ?? 0} seen</Text>
                 </>
               )}
@@ -1066,7 +1063,7 @@ export default function EventDetailsPage() {
           {/* Organizer-only approval / payout banners */}
           {isCreator && event.isPaid && isPending && (
             <View style={styles.bannerPending}>
-              <Ionicons name="time-outline" size={18} color={AU.amber} />
+              <Ionicons name="time-outline" size={18} color={colors.warning} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.bannerTitle}>Pending admin review</Text>
                 <Text style={styles.bannerBody}>
@@ -1078,7 +1075,7 @@ export default function EventDetailsPage() {
           )}
           {isCreator && event.isPaid && isRejected && (
             <View style={styles.bannerRejected}>
-              <Ionicons name="close-circle-outline" size={18} color="#ef4444" />
+              <Ionicons name="close-circle-outline" size={18} color={colors.error} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.bannerTitle}>Not approved</Text>
                 <Text style={styles.bannerBody}>
@@ -1094,7 +1091,7 @@ export default function EventDetailsPage() {
             event.payoutStatus &&
             event.payoutStatus !== "released" && (
               <View style={styles.bannerInfo}>
-                <Ionicons name="cash-outline" size={18} color={AU.purpleSoft} />
+                <Ionicons name="cash-outline" size={18} color={colors.primaryLight} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.bannerTitle}>Payout held</Text>
                   <Text style={styles.bannerBody}>
@@ -1109,7 +1106,7 @@ export default function EventDetailsPage() {
             event.payoutStatus === "released" &&
             event.payoutReleasedAt && (
               <View style={styles.bannerSuccess}>
-                <Ionicons name="checkmark-circle-outline" size={18} color={AU.greenSoft} />
+                <Ionicons name="checkmark-circle-outline" size={18} color={colors.successLight} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.bannerTitle}>Payout released</Text>
                   <Text style={styles.bannerBody}>
@@ -1134,7 +1131,7 @@ export default function EventDetailsPage() {
                   disabled={inviteResponding}
                 >
                   {inviteResponding ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                    <ActivityIndicator size="small" color={colors.white} />
                   ) : (
                     <Text style={styles.inviteAcceptText}>Accept</Text>
                   )}
@@ -1155,7 +1152,7 @@ export default function EventDetailsPage() {
             <View style={styles.statsRow}>
               <GlassCard style={styles.statCard}>
                 <Text style={styles.microLabel}>GOING</Text>
-                <Text style={[styles.statValue, { color: AU.purpleSoft }]}>{goingCount}</Text>
+                <Text style={[styles.statValue, { color: colors.primaryLight }]}>{goingCount}</Text>
                 {event.maxGuests ? (
                   <Text style={styles.statSub}>of {event.maxGuests}</Text>
                 ) : null}
@@ -1175,7 +1172,7 @@ export default function EventDetailsPage() {
 
               <GlassCard style={styles.statCard}>
                 <Text style={styles.microLabel}>FRIENDS</Text>
-                <Text style={[styles.statValue, { color: AU.amber }]}>
+                <Text style={[styles.statValue, { color: colors.warning }]}>
                   {event.friendsGoing ?? 0}
                 </Text>
                 <Text style={styles.statSub}>going</Text>
@@ -1194,7 +1191,7 @@ export default function EventDetailsPage() {
               </View>
               <View style={styles.capacityTrack}>
                 <LinearGradient
-                  colors={[AU.purple, AU.pink]}
+                  colors={[colors.primary, colors.accentPink]}
                   start={{ x: 0, y: 0.5 }}
                   end={{ x: 1, y: 0.5 }}
                   style={[styles.capacityFill, { width: `${capacityPct}%` }]}
@@ -1216,7 +1213,7 @@ export default function EventDetailsPage() {
             <GlassCard>
               <Text style={styles.microLabel}>WHERE</Text>
               <View style={styles.whereRow}>
-                <Ionicons name="videocam-outline" size={15} color={AU.purpleSoft} />
+                <Ionicons name="videocam-outline" size={15} color={colors.primaryLight} />
                 <Text style={styles.whereCity}>Online event</Text>
               </View>
               {event.meetingLink ? (
@@ -1225,7 +1222,7 @@ export default function EventDetailsPage() {
                   onPress={() => Linking.openURL(event.meetingLink!).catch(() => {})}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="link-outline" size={15} color={AU.purpleSoft} />
+                  <Ionicons name="link-outline" size={15} color={colors.primaryLight} />
                   <Text
                     style={[styles.whereCity, { textDecorationLine: "underline" }]}
                     numberOfLines={1}
@@ -1245,7 +1242,7 @@ export default function EventDetailsPage() {
               <Text style={styles.microLabel}>WHERE</Text>
               {!!event.address && <Text style={styles.aboutBody}>{event.address}</Text>}
               <View style={styles.whereRow}>
-                <Ionicons name="location-outline" size={15} color={AU.purpleSoft} />
+                <Ionicons name="location-outline" size={15} color={colors.primaryLight} />
                 <Text style={styles.whereCity}>
                   {formatLocation({
                     city: event.city,
@@ -1328,7 +1325,7 @@ export default function EventDetailsPage() {
                     : event.groupChatId.name || "Tap to open"}
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={AU.purpleSoft} />
+              <Ionicons name="chevron-forward" size={18} color={colors.primaryLight} />
             </TouchableOpacity>
           )}
 
@@ -1373,7 +1370,7 @@ export default function EventDetailsPage() {
                       ]}
                     >
                       <LinearGradient
-                        colors={[`${color}33`, "rgba(26,16,48,0.75)"]}
+                        colors={[`${color}33`, colors.cardGlass]}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={StyleSheet.absoluteFill}
@@ -1395,7 +1392,7 @@ export default function EventDetailsPage() {
               onPress={() => setVendorSearchVisible(true)}
               style={styles.addVendorEmpty}
             >
-              <Ionicons name="add-circle-outline" size={18} color={AU.purpleSoft} />
+              <Ionicons name="add-circle-outline" size={18} color={colors.primaryLight} />
               <Text style={styles.addVendorEmptyText}>Add vendors to the lineup</Text>
             </TouchableOpacity>
           )}
@@ -1487,7 +1484,7 @@ export default function EventDetailsPage() {
                     hitSlop={8}
                     style={{ padding: 4 }}
                   >
-                    <Ionicons name="close-circle-outline" size={18} color="rgba(239,68,68,0.8)" />
+                    <Ionicons name="close-circle-outline" size={18} color={colors.error} />
                   </TouchableOpacity>
                 </View>
               ))}
@@ -1499,7 +1496,7 @@ export default function EventDetailsPage() {
                 onPress={() => { setInviteMode("cohost"); setIsInviteModalVisible(true); }}
                 activeOpacity={0.8}
               >
-                <Ionicons name="person-add-outline" size={14} color="#a855f7" />
+                <Ionicons name="person-add-outline" size={14} color={colors.primary} />
                 <Text style={styles.addCohostBtnText}>Add co-host</Text>
               </TouchableOpacity>
             </GlassCard>
@@ -1584,7 +1581,7 @@ export default function EventDetailsPage() {
       {!isCancelled && (
         <View style={styles.stickyBarWrap} pointerEvents="box-none">
           <LinearGradient
-            colors={["rgba(11,6,19,0)", AU.bg]}
+            colors={[`${colors.backgroundDeep}00`, colors.backgroundDeep]}
             locations={[0, 0.5]}
             style={styles.stickyFade}
             pointerEvents="none"
@@ -1801,16 +1798,16 @@ export default function EventDetailsPage() {
                 }}
                 style={styles.closeButton}
               >
-                <Ionicons name="close" size={24} color="#fff" />
+                <Ionicons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
             <View style={styles.modalBody}>
               <View style={styles.searchContainer}>
-                <Ionicons name="search" size={20} color={AU.textMute} />
+                <Ionicons name="search" size={20} color={colors.textFaint} />
                 <TextInput
                   style={styles.searchInput}
                   placeholder="Search by username or email..."
-                  placeholderTextColor={AU.textMute}
+                  placeholderTextColor={colors.textFaint}
                   value={userSearchQuery}
                   onChangeText={setUserSearchQuery}
                   autoCapitalize="none"
@@ -1818,7 +1815,7 @@ export default function EventDetailsPage() {
                 />
               </View>
               {searchingUsers && (
-                <ActivityIndicator size="small" color={AU.purpleSoft} style={{ marginTop: 16 }} />
+                <ActivityIndicator size="small" color={colors.primaryLight} style={{ marginTop: 16 }} />
               )}
               <FlatList
                 style={{ flex: 1 }}
@@ -1903,23 +1900,23 @@ export default function EventDetailsPage() {
                 }}
                 style={styles.closeButton}
               >
-                <Ionicons name="close" size={24} color="#fff" />
+                <Ionicons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
             <View style={styles.modalBody}>
               <View style={styles.searchContainer}>
-                <Ionicons name="search" size={20} color={AU.textMute} />
+                <Ionicons name="search" size={20} color={colors.textFaint} />
                 <TextInput
                   style={styles.searchInput}
                   placeholder="Search vendors by name..."
-                  placeholderTextColor={AU.textMute}
+                  placeholderTextColor={colors.textFaint}
                   value={vendorQuery}
                   onChangeText={handleVendorSearch}
                   autoFocus
                 />
               </View>
               {searchingVendors && (
-                <ActivityIndicator size="small" color={AU.purpleSoft} style={{ marginTop: 16 }} />
+                <ActivityIndicator size="small" color={colors.primaryLight} style={{ marginTop: 16 }} />
               )}
               <FlatList
                 style={{ flex: 1 }}
@@ -1940,7 +1937,7 @@ export default function EventDetailsPage() {
                         />
                       ) : (
                         <View style={styles.searchAvatarFallback}>
-                          <Ionicons name="briefcase" size={22} color={AU.purpleSoft} />
+                          <Ionicons name="briefcase" size={22} color={colors.primaryLight} />
                         </View>
                       )}
                       <View style={{ flex: 1, marginLeft: 12 }}>
@@ -1954,9 +1951,9 @@ export default function EventDetailsPage() {
                           <Text style={styles.vendorBadgeText}>Added</Text>
                         </View>
                       ) : addingVendor === item._id ? (
-                        <ActivityIndicator size="small" color={AU.purpleSoft} />
+                        <ActivityIndicator size="small" color={colors.primaryLight} />
                       ) : (
-                        <Ionicons name="add-circle-outline" size={24} color={AU.purpleSoft} />
+                        <Ionicons name="add-circle-outline" size={24} color={colors.primaryLight} />
                       )}
                     </TouchableOpacity>
                   );
@@ -1997,6 +1994,8 @@ function StickyCTA(props: {
   onRequestJoin: () => void;
   onViewTicket: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const {
     event,
     isCreator,
@@ -2041,7 +2040,7 @@ function StickyCTA(props: {
           style={styles.ctaBtn}
         >
           <LinearGradient
-            colors={[AU.purple, AU.purpleDeep, AU.pink]}
+            colors={[colors.primary, colors.primaryDark, colors.accentPink]}
             locations={[0, 0.5, 1]}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
@@ -2083,7 +2082,7 @@ function StickyCTA(props: {
         >
           {!userHasRequested && (
             <LinearGradient
-              colors={[AU.purple, AU.purpleDeep, AU.pink]}
+              colors={[colors.primary, colors.primaryDark, colors.accentPink]}
               locations={[0, 0.5, 1]}
               start={{ x: 0, y: 0.5 }}
               end={{ x: 1, y: 0.5 }}
@@ -2122,7 +2121,7 @@ function StickyCTA(props: {
           style={styles.ctaBtn}
         >
           <LinearGradient
-            colors={[AU.purple, AU.purpleDeep, AU.pink]}
+            colors={[colors.primary, colors.primaryDark, colors.accentPink]}
             locations={[0, 0.5, 1]}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
@@ -2147,7 +2146,7 @@ function StickyCTA(props: {
         style={styles.ctaBtn}
       >
         <LinearGradient
-          colors={[AU.purple, AU.purpleDeep, AU.pink]}
+          colors={[colors.primary, colors.primaryDark, colors.accentPink]}
           locations={[0, 0.5, 1]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
@@ -2160,6 +2159,7 @@ function StickyCTA(props: {
 }
 
 function PriceBlock({ event }: { event: Event }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.priceBlock}>
       <Text style={styles.priceLabel}>{event.isPaid ? "TICKET" : "FREE"}</Text>
@@ -2183,7 +2183,9 @@ function SheetAction({
   destructive?: boolean;
   muted?: boolean;
 }) {
-  const color = destructive ? "#ef4444" : muted ? AU.textMute : AU.text;
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  const color = destructive ? colors.error : muted ? colors.textFaint : colors.textBright;
   return (
     <TouchableOpacity activeOpacity={0.7} onPress={onPress} style={styles.sheetRow}>
       <Ionicons name={icon} size={20} color={color} />
@@ -2192,8 +2194,9 @@ function SheetAction({
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: AU.bg },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.backgroundDeep },
   scrollContent: { paddingBottom: 140 },
 
   // ── Hero
@@ -2201,7 +2204,7 @@ const styles = StyleSheet.create({
     height: HERO_HEIGHT,
     width: "100%",
     position: "relative",
-    backgroundColor: AU.surface,
+    backgroundColor: c.card,
   },
   heroImage: { ...StyleSheet.absoluteFillObject },
   galleryStrip: { marginBottom: 16 },
@@ -2238,13 +2241,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   topChromeRight: { flexDirection: "row", gap: 8 },
-  glassRound: {
-    backgroundColor: "rgba(11,6,19,0.55)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
   chipRow: {
     position: "absolute",
     top: 110,
@@ -2270,7 +2266,7 @@ const styles = StyleSheet.create({
   },
   chipDark: {
     backgroundColor: "rgba(0,0,0,0.4)",
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: c.glassStrokeStrong,
   },
   chipText: {
     fontFamily: Fonts.bold,
@@ -2297,7 +2293,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   heroTitle: {
-    color: "#fff",
+    color: c.text,
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 38,
     lineHeight: 38 * 0.94,
@@ -2332,7 +2328,7 @@ const styles = StyleSheet.create({
   microLabel: {
     fontFamily: Fonts.bold,
     fontSize: 10,
-    color: AU.textMute,
+    color: c.textFaint,
     letterSpacing: 1,
     textTransform: "uppercase",
   },
@@ -2347,12 +2343,12 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   cancelledTitle: {
-    color: AU.pinkSoft,
+    color: c.accentPink,
     fontFamily: Fonts.bold,
     fontSize: 14,
   },
   cancelledBody: {
-    color: "rgba(244,238,255,0.85)",
+    color: c.textBody,
     fontFamily: Fonts.regular,
     fontSize: 13,
     lineHeight: 18,
@@ -2380,9 +2376,9 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 14,
     borderRadius: 16,
-    backgroundColor: "rgba(168,85,247,0.10)",
+    backgroundColor: c.primaryFaded,
     borderWidth: 1,
-    borderColor: "rgba(168,85,247,0.3)",
+    borderColor: c.primaryBorder,
   },
   bannerSuccess: {
     flexDirection: "row",
@@ -2393,11 +2389,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(52,211,153,0.3)",
   },
-  bannerTitle: { color: AU.text, fontFamily: Fonts.bold, fontSize: 14, marginBottom: 2 },
-  bannerBody: { color: AU.textDim, fontFamily: Fonts.regular, fontSize: 12.5, lineHeight: 17 },
+  bannerTitle: { color: c.textBright, fontFamily: Fonts.bold, fontSize: 14, marginBottom: 2 },
+  bannerBody: { color: c.textDim, fontFamily: Fonts.regular, fontSize: 12.5, lineHeight: 17 },
 
   inviteBannerSub: {
-    color: AU.textDim,
+    color: c.textDim,
     fontFamily: Fonts.regular,
     fontSize: 13,
     marginTop: 6,
@@ -2410,14 +2406,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  inviteAcceptBtn: { backgroundColor: AU.purple },
-  inviteAcceptText: { color: "#fff", fontFamily: Fonts.bold, fontSize: 14 },
+  inviteAcceptBtn: { backgroundColor: c.primary },
+  inviteAcceptText: { color: c.white, fontFamily: Fonts.bold, fontSize: 14 },
   inviteDeclineBtn: {
     backgroundColor: "rgba(239,68,68,0.08)",
     borderWidth: 1,
-    borderColor: "#ef4444",
+    borderColor: c.error,
   },
-  inviteDeclineText: { color: "#ef4444", fontFamily: Fonts.bold, fontSize: 14 },
+  inviteDeclineText: { color: c.error, fontFamily: Fonts.bold, fontSize: 14 },
 
   // Stats grid
   statsRow: { flexDirection: "row", gap: 8 },
@@ -2432,7 +2428,7 @@ const styles = StyleSheet.create({
   statSub: {
     fontFamily: Fonts.regular,
     fontSize: 10.5,
-    color: AU.textDim,
+    color: c.textDim,
   },
 
   // Capacity bar
@@ -2442,14 +2438,14 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   capacityCount: {
-    color: AU.text,
+    color: c.textBright,
     fontFamily: Fonts.bold,
     fontSize: 11,
   },
   capacityTrack: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: c.glassFill,
     marginTop: 8,
     overflow: "hidden",
   },
@@ -2460,7 +2456,7 @@ const styles = StyleSheet.create({
 
   // About
   aboutBody: {
-    color: AU.text,
+    color: c.textBright,
     fontFamily: Fonts.regular,
     fontSize: 13.5,
     lineHeight: 21,
@@ -2473,7 +2469,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   whereCity: {
-    color: AU.textDim,
+    color: c.textDim,
     fontFamily: Fonts.regular,
     fontSize: 13,
   },
@@ -2486,37 +2482,37 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     borderWidth: 2,
-    borderColor: "rgba(168,85,247,0.4)",
+    borderColor: c.primaryBorder,
   },
   hostAvatarFallback: {
     width: 44,
     height: 44,
     borderRadius: 22,
     borderWidth: 2,
-    borderColor: "rgba(168,85,247,0.4)",
+    borderColor: c.primaryBorder,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: AU.surface,
+    backgroundColor: c.card,
   },
   hostAvatarInitials: {
-    color: AU.text,
+    color: c.textBright,
     fontFamily: Fonts.bold,
     fontSize: 14,
     letterSpacing: 0.5,
   },
   hostNameRow: { flexDirection: "row", alignItems: "center" },
   hostName: {
-    color: AU.text,
+    color: c.textBright,
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 15,
     letterSpacing: -0.15,
   },
   hostVerified: {
-    color: AU.purpleSoft,
+    color: c.primaryLight,
     fontSize: 15,
   },
   hostSub: {
-    color: AU.textDim,
+    color: c.textDim,
     fontFamily: Fonts.regular,
     fontSize: 11.5,
     marginTop: 2,
@@ -2525,20 +2521,20 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: c.glassFill,
     borderWidth: 1,
-    borderColor: AU.strokeHi,
+    borderColor: c.glassStrokeStrong,
   },
   followingPill: {
     backgroundColor: "rgba(52,211,153,0.16)",
     borderColor: "transparent",
   },
   followText: {
-    color: AU.text,
+    color: c.textBright,
     fontFamily: Fonts.bold,
     fontSize: 11.5,
   },
-  followingText: { color: AU.greenSoft },
+  followingText: { color: c.successLight },
 
   // Group chat
   groupChatCard: {
@@ -2548,8 +2544,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "rgba(192,132,252,0.35)",
-    backgroundColor: "rgba(168,85,247,0.15)",
+    borderColor: c.primaryBorder,
+    backgroundColor: c.primaryFadedStrong,
   },
   groupChatIconTile: {
     width: 42,
@@ -2557,28 +2553,28 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: AU.purple,
-    shadowColor: AU.purple,
+    backgroundColor: c.primary,
+    shadowColor: c.primary,
     shadowOpacity: 0.45,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 6,
   },
   groupChatTitle: {
-    color: AU.text,
+    color: c.textBright,
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 14,
     letterSpacing: -0.14,
   },
   groupChatSub: {
-    color: AU.textDim,
+    color: c.textDim,
     fontFamily: Fonts.regular,
     fontSize: 11.5,
     marginTop: 2,
   },
 
   // Vendors
-  seeAll: { color: AU.purpleSoft, fontFamily: Fonts.bold, fontSize: 11 },
+  seeAll: { color: c.primaryLight, fontFamily: Fonts.bold, fontSize: 11 },
   vendorCard: {
     minWidth: 138,
     marginRight: 8,
@@ -2587,7 +2583,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     overflow: "hidden",
-    backgroundColor: "rgba(26,16,48,0.75)",
+    backgroundColor: c.cardGlass,
   },
   vendorEmoji: {
     position: "absolute",
@@ -2595,16 +2591,16 @@ const styles = StyleSheet.create({
     bottom: -10,
     fontSize: 50,
     opacity: 0.45,
-    color: "#fff",
+    color: c.text,
   },
   vendorName: {
-    color: AU.text,
+    color: c.textBright,
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 13,
     letterSpacing: -0.13,
   },
   vendorTag: {
-    color: AU.textDim,
+    color: c.textDim,
     fontFamily: Fonts.semiBold,
     fontSize: 10.5,
     marginTop: 2,
@@ -2617,12 +2613,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: AU.stroke,
+    borderColor: c.glassFill,
     borderStyle: "dashed",
-    backgroundColor: "rgba(26,16,48,0.5)",
+    backgroundColor: c.cardGlassSoft,
   },
   addVendorEmptyText: {
-    color: AU.purpleSoft,
+    color: c.primaryLight,
     fontFamily: Fonts.bold,
     fontSize: 12.5,
   },
@@ -2636,12 +2632,12 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: AU.surface,
+    backgroundColor: c.card,
     overflow: "hidden",
   },
-  pendingName: { flex: 1, color: AU.text, fontFamily: Fonts.semiBold, fontSize: 14 },
+  pendingName: { flex: 1, color: c.textBright, fontFamily: Fonts.semiBold, fontSize: 14 },
   pendingStatus: {
-    color: "#FCD34D",
+    color: c.warningLight,
     fontFamily: Fonts.bold,
     fontSize: 10.5,
     letterSpacing: 0.4,
@@ -2651,11 +2647,11 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(168,85,247,0.16)",
+    backgroundColor: c.primaryFadedStrong,
     alignItems: "center",
     justifyContent: "center",
   },
-  pendingVendorEmoji: { color: AU.purpleSoft, fontSize: 14 },
+  pendingVendorEmoji: { color: c.primaryLight, fontSize: 14 },
   addCohostBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -2664,43 +2660,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "rgba(168,85,247,0.3)",
+    borderColor: c.primaryBorder,
     alignSelf: "flex-start",
     marginTop: 4,
   },
   addCohostBtnText: {
-    color: "#a855f7",
+    color: c.primary,
     fontFamily: Fonts.semiBold,
     fontSize: 13,
   },
   attendeesHeadline: {
-    color: AU.text,
+    color: c.textBright,
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 16,
     letterSpacing: -0.16,
     marginTop: 4,
   },
-  attendeesSep: { color: AU.textDim },
-  attendeesFriends: { color: AU.amber },
+  attendeesSep: { color: c.textDim },
+  attendeesFriends: { color: c.warning },
   avatarStack: { flexDirection: "row", alignItems: "center" },
   attendeeAvatarWrap: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: AU.surface,
+    backgroundColor: c.card,
     overflow: "hidden",
     borderWidth: 2,
-    borderColor: AU.bg,
+    borderColor: c.backgroundDeep,
   },
   attendeeAvatar: { width: "100%", height: "100%" },
   attendeeAvatarFallback: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: AU.surface,
+    backgroundColor: c.card,
   },
   attendeeInitials: {
-    color: AU.text,
+    color: c.textBright,
     fontFamily: Fonts.bold,
     fontSize: 11,
     letterSpacing: 0.4,
@@ -2708,10 +2704,10 @@ const styles = StyleSheet.create({
   attendeePlus: {
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.10)",
+    backgroundColor: c.glassStroke,
   },
   attendeePlusText: {
-    color: "#fff",
+    color: c.text,
     fontFamily: Fonts.bold,
     fontSize: 11,
   },
@@ -2732,9 +2728,9 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 6,
     borderRadius: 18,
-    backgroundColor: "rgba(26,16,48,0.9)",
+    backgroundColor: c.cardGlass,
     borderWidth: 1,
-    borderColor: AU.strokeHi,
+    borderColor: c.glassStrokeStrong,
     shadowColor: "#000",
     shadowOpacity: 0.5,
     shadowRadius: 24,
@@ -2743,13 +2739,13 @@ const styles = StyleSheet.create({
   },
   priceBlock: { paddingVertical: 8, paddingHorizontal: 12 },
   priceLabel: {
-    color: AU.textMute,
+    color: c.textFaint,
     fontFamily: Fonts.bold,
     fontSize: 10,
     letterSpacing: 1,
   },
   priceValue: {
-    color: AU.text,
+    color: c.textBright,
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 22,
     letterSpacing: -0.44,
@@ -2763,7 +2759,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    shadowColor: AU.purple,
+    shadowColor: c.primary,
     shadowOpacity: 0.5,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 12 },
@@ -2771,21 +2767,21 @@ const styles = StyleSheet.create({
   },
   ctaBtnGradient: { ...StyleSheet.absoluteFillObject },
   ctaBtnText: {
-    color: "#fff",
+    color: c.white,
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 16,
     letterSpacing: -0.16,
   },
-  ctaBtnLight: { backgroundColor: AU.text, shadowOpacity: 0 },
+  ctaBtnLight: { backgroundColor: c.textBright, shadowOpacity: 0 },
   ctaBtnLightText: {
-    color: AU.bg,
+    color: c.backgroundDeep,
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 16,
     letterSpacing: -0.16,
   },
-  ctaBtnDisabled: { backgroundColor: "rgba(255,255,255,0.08)", shadowOpacity: 0 },
+  ctaBtnDisabled: { backgroundColor: c.glassFill, shadowOpacity: 0 },
   ctaBtnDisabledText: {
-    color: AU.textMute,
+    color: c.textFaint,
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 16,
     letterSpacing: -0.16,
@@ -2808,7 +2804,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: "rgba(26,16,48,0.96)",
     borderWidth: 1,
-    borderColor: AU.strokeHi,
+    borderColor: c.glassStrokeStrong,
     paddingVertical: 6,
   },
   sheetGrabber: {
@@ -2816,7 +2812,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: AU.stroke,
+    backgroundColor: c.glassFill,
     marginVertical: 8,
   },
   sheetRow: {
@@ -2831,12 +2827,12 @@ const styles = StyleSheet.create({
   // Modal (preserved)
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: c.modalOverlay,
     justifyContent: "flex-end",
   },
   modalBackdrop: { flex: 1 },
   modalContent: {
-    backgroundColor: AU.surface,
+    backgroundColor: c.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     // Definite height (not just maxHeight) so the results FlatList inside
@@ -2851,9 +2847,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     padding: 18,
     borderBottomWidth: 1,
-    borderBottomColor: AU.stroke,
+    borderBottomColor: c.glassFill,
   },
-  modalTitle: { color: "#fff", fontFamily: Fonts.bold, fontSize: 20 },
+  modalTitle: { color: c.text, fontFamily: Fonts.bold, fontSize: 20 },
   closeButton: { padding: 4 },
   modalBody: { flex: 1, paddingHorizontal: 18, paddingBottom: 18, paddingTop: 12 },
   searchContainer: {
@@ -2863,39 +2859,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 44,
     borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: AU.stroke,
+    borderColor: c.glassFill,
     marginTop: 4,
   },
-  searchInput: { flex: 1, fontFamily: Fonts.regular, color: "#fff", fontSize: 15 },
+  searchInput: { flex: 1, fontFamily: Fonts.regular, color: c.text, fontSize: 15 },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: AU.stroke,
+    borderBottomColor: c.glassFill,
   },
-  searchAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: AU.surface },
+  searchAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: c.card },
   searchAvatarFallback: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: AU.surface,
+    backgroundColor: c.card,
     alignItems: "center",
     justifyContent: "center",
   },
-  searchName: { color: AU.text, fontFamily: Fonts.semiBold, fontSize: 14 },
-  searchSub: { color: AU.textDim, fontFamily: Fonts.regular, fontSize: 12, marginTop: 2 },
+  searchName: { color: c.textBright, fontFamily: Fonts.semiBold, fontSize: 14 },
+  searchSub: { color: c.textDim, fontFamily: Fonts.regular, fontSize: 12, marginTop: 2 },
   vendorBadge: {
-    backgroundColor: AU.purple,
+    backgroundColor: c.primary,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
   },
-  vendorBadgeText: { color: "#fff", fontFamily: Fonts.semiBold, fontSize: 11 },
+  vendorBadgeText: { color: c.white, fontFamily: Fonts.semiBold, fontSize: 11 },
   emptyHint: {
-    color: AU.textMute,
+    color: c.textFaint,
     fontFamily: Fonts.regular,
     fontSize: 13,
     textAlign: "center",
@@ -2910,14 +2906,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   stateTitle: {
-    color: AU.text,
+    color: c.textBright,
     fontFamily: Fonts.bold,
     fontSize: 20,
     textAlign: "center",
     marginTop: 8,
   },
   stateText: {
-    color: AU.textDim,
+    color: c.textDim,
     fontFamily: Fonts.regular,
     fontSize: 14,
     lineHeight: 20,
@@ -2925,14 +2921,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   statePrimaryBtn: {
-    backgroundColor: AU.purple,
+    backgroundColor: c.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
     marginTop: 4,
   },
   statePrimaryBtnText: {
-    color: "#fff",
+    color: c.white,
     fontFamily: Fonts.semiBold,
     fontSize: 15,
   },
@@ -2941,7 +2937,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   stateSecondaryBtnText: {
-    color: AU.textDim,
+    color: c.textDim,
     fontFamily: Fonts.medium,
     fontSize: 14,
   },

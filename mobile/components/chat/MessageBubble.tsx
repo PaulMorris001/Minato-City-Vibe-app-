@@ -28,14 +28,8 @@ import { groupReactions } from "@/utils/reactions";
 import { openUserProfile } from "@/utils/userNavigation";
 import { Avatar } from "@/components/shared/Avatar";
 
-const CH_TEXT = "#F4EEFF";
-const CH_TEXT_DIM = "rgba(244,238,255,0.62)";
-const CH_TEXT_MUTE = "rgba(244,238,255,0.42)";
-const CH_STROKE = "rgba(255,255,255,0.08)";
-const CH_STROKE_HI = "rgba(255,255,255,0.14)";
-const CH_BUBBLE_IN = "rgba(255,255,255,0.07)";
-const CH_PURPLE_SOFT = "#C084FC";
-const CH_BG = "#0B0613";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 
 const SENDER_PALETTE = [
   "#A855F7",
@@ -122,6 +116,8 @@ function MessageBubble({
   mentionUsernames,
   isHighlighted = false,
 }: MessageBubbleProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
 
   // NOTE: all hooks must run unconditionally (no early return before them) —
@@ -315,7 +311,7 @@ function MessageBubble({
               />
             ) : (
               <LinearGradient
-                colors={["#A855F7", "#7C3AED", "#EC4899"]}
+                colors={[colors.primary, colors.primaryDark, colors.accentPink]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.eventImage}
@@ -324,7 +320,7 @@ function MessageBubble({
 
             <View style={styles.eventDetails}>
               <View style={styles.eventHeader}>
-                <Ionicons name="calendar" size={11} color={CH_PURPLE_SOFT} />
+                <Ionicons name="calendar" size={11} color={colors.primaryLight} />
                 <Text style={styles.eventKicker}>EVENT INVITATION</Text>
               </View>
 
@@ -334,7 +330,7 @@ function MessageBubble({
 
               {eventDate && (
                 <View style={styles.eventMetaRow}>
-                  <Ionicons name="time-outline" size={12} color={CH_PURPLE_SOFT} />
+                  <Ionicons name="time-outline" size={12} color={colors.primaryLight} />
                   <Text style={styles.eventMeta}>
                     {eventDate.toLocaleDateString(undefined, {
                       weekday: "short",
@@ -352,7 +348,7 @@ function MessageBubble({
 
               {eventData?.location && (
                 <View style={styles.eventMetaRow}>
-                  <Ionicons name="location-outline" size={12} color={CH_PURPLE_SOFT} />
+                  <Ionicons name="location-outline" size={12} color={colors.primaryLight} />
                   <Text style={styles.eventMeta} numberOfLines={1}>
                     {eventData.location}
                   </Text>
@@ -360,7 +356,7 @@ function MessageBubble({
               )}
 
               <LinearGradient
-                colors={["#A855F7", "#7C3AED", "#EC4899"]}
+                colors={[colors.primary, colors.primaryDark, colors.accentPink]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.eventCta}
@@ -392,7 +388,7 @@ function MessageBubble({
             activeOpacity={0.85}
           >
             <LinearGradient
-              colors={["#7C3AED", "#A855F7", "#EC4899"]}
+              colors={[colors.primaryDark, colors.primary, colors.accentPink]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.eventImage}
@@ -404,7 +400,7 @@ function MessageBubble({
 
             <View style={styles.eventDetails}>
               <View style={styles.eventHeader}>
-                <Ionicons name="book-outline" size={11} color={CH_PURPLE_SOFT} />
+                <Ionicons name="book-outline" size={11} color={colors.primaryLight} />
                 <Text style={styles.eventKicker}>CITY GUIDE</Text>
               </View>
 
@@ -414,7 +410,7 @@ function MessageBubble({
 
               {cityLine ? (
                 <View style={styles.eventMetaRow}>
-                  <Ionicons name="location-outline" size={12} color={CH_PURPLE_SOFT} />
+                  <Ionicons name="location-outline" size={12} color={colors.primaryLight} />
                   <Text style={styles.eventMeta} numberOfLines={1}>
                     {cityLine}
                   </Text>
@@ -423,7 +419,7 @@ function MessageBubble({
 
               {guideData?.authorName ? (
                 <View style={styles.eventMetaRow}>
-                  <Ionicons name="person-outline" size={12} color={CH_PURPLE_SOFT} />
+                  <Ionicons name="person-outline" size={12} color={colors.primaryLight} />
                   <Text style={styles.eventMeta} numberOfLines={1}>
                     by {guideData.authorName}
                   </Text>
@@ -432,7 +428,7 @@ function MessageBubble({
 
               {priceLine ? (
                 <View style={styles.eventMetaRow}>
-                  <Ionicons name="pricetag-outline" size={12} color={CH_PURPLE_SOFT} />
+                  <Ionicons name="pricetag-outline" size={12} color={colors.primaryLight} />
                   <Text style={styles.eventMeta} numberOfLines={1}>
                     {priceLine}
                   </Text>
@@ -440,7 +436,7 @@ function MessageBubble({
               ) : null}
 
               <LinearGradient
-                colors={["#A855F7", "#7C3AED", "#EC4899"]}
+                colors={[colors.primary, colors.primaryDark, colors.accentPink]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.eventCta}
@@ -544,7 +540,7 @@ function MessageBubble({
       return (
         <Pressable onLongPress={handleLongPress}>
           <LinearGradient
-            colors={["#A855F7", "#7C3AED", "#EC4899"]}
+            colors={[colors.primary, colors.primaryDark, colors.accentPink]}
             locations={[0, 0.6, 1]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -579,7 +575,7 @@ function MessageBubble({
           pointerEvents="none"
         >
           <View style={styles.replyIconCircle}>
-            <Ionicons name="arrow-undo" size={16} color={CH_PURPLE_SOFT} />
+            <Ionicons name="arrow-undo" size={16} color={colors.primaryLight} />
           </View>
         </Animated.View>
 
@@ -637,7 +633,7 @@ function MessageBubble({
                       >
                         <Text style={styles.reactionEmoji}>{r.emoji}</Text>
                         {r.count > 1 && (
-                          <Text style={[styles.reactionCount, r.mine && { color: CH_PURPLE_SOFT }]}>
+                          <Text style={[styles.reactionCount, r.mine && { color: colors.primaryLight }]}>
                             {r.count}
                           </Text>
                         )}
@@ -658,17 +654,17 @@ function MessageBubble({
                 {isOwnMessage && (
                   <View style={{ marginLeft: 4, justifyContent: "center" }}>
                     {message.status === "sending" ? (
-                      <Ionicons name="time-outline" size={12} color={CH_TEXT_MUTE} />
+                      <Ionicons name="time-outline" size={12} color={colors.textFaint} />
                     ) : message.status === "failed" ? (
-                      <Ionicons name="alert-circle" size={13} color="#ef4444" />
+                      <Ionicons name="alert-circle" size={13} color={colors.error} />
                     ) : message.status === "read" || message.status === "delivered" ? (
                       <Ionicons
                         name="checkmark-done"
                         size={13}
-                        color={message.status === "read" ? CH_PURPLE_SOFT : CH_TEXT_MUTE}
+                        color={message.status === "read" ? colors.primaryLight : colors.textFaint}
                       />
                     ) : (
-                      <Ionicons name="checkmark" size={13} color={CH_TEXT_MUTE} />
+                      <Ionicons name="checkmark" size={13} color={colors.textFaint} />
                     )}
                   </View>
                 )}
@@ -686,7 +682,8 @@ function MessageBubble({
 // A stable `message` reference + stable callbacks let most bubbles bail out.
 export default React.memo(MessageBubble);
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   swipeWrap: {
     position: "relative",
     width: "100%",
@@ -708,7 +705,7 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: "rgba(168,85,247,0.18)",
+    backgroundColor: c.primaryFadedStrong,
     borderWidth: 1,
     borderColor: "rgba(192,132,252,0.45)",
     alignItems: "center",
@@ -760,20 +757,20 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 18,
     borderBottomLeftRadius: 18,
     borderBottomRightRadius: 4,
-    shadowColor: "#A855F7",
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.5,
     shadowRadius: 12,
     elevation: 6,
   },
   otherBubble: {
-    backgroundColor: CH_BUBBLE_IN,
+    backgroundColor: "rgba(255,255,255,0.07)",
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     borderBottomRightRadius: 18,
     borderBottomLeftRadius: 4,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
 
   messageText: {
@@ -782,25 +779,25 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   ownText: {
-    color: "#fff",
+    color: c.text,
   },
   otherText: {
-    color: CH_TEXT,
+    color: c.textBright,
   },
   linkOwn: {
-    color: "#fff",
+    color: c.text,
     textDecorationLine: "underline",
   },
   linkOther: {
-    color: CH_PURPLE_SOFT,
+    color: c.primaryLight,
     textDecorationLine: "underline",
   },
   mentionOwn: {
-    color: "#fff",
+    color: c.text,
     fontFamily: "Outfit_700Bold",
   },
   mentionOther: {
-    color: CH_PURPLE_SOFT,
+    color: c.primaryLight,
     fontFamily: "Outfit_700Bold",
   },
   captionText: {
@@ -821,7 +818,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.5,
@@ -852,19 +849,19 @@ const styles = StyleSheet.create({
   },
   replyBar: {
     width: 3,
-    backgroundColor: CH_PURPLE_SOFT,
+    backgroundColor: c.primaryLight,
     borderRadius: 2,
   },
   replyUsername: {
     fontFamily: "Outfit_700Bold",
     fontSize: 11.5,
-    color: CH_PURPLE_SOFT,
+    color: c.primaryLight,
     marginBottom: 2,
   },
   replyText: {
     fontFamily: "Outfit_500Medium",
     fontSize: 12,
-    color: "rgba(255,255,255,0.7)",
+    color: c.textDim,
   },
 
   // Event card (in-bubble)
@@ -874,8 +871,8 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: "rgba(26,16,48,0.95)",
     borderWidth: 1,
-    borderColor: CH_STROKE_HI,
-    shadowColor: "#7C3AED",
+    borderColor: c.glassStrokeStrong,
+    shadowColor: c.primaryDark,
     shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.5,
     shadowRadius: 30,
@@ -902,13 +899,13 @@ const styles = StyleSheet.create({
   eventKicker: {
     fontFamily: "Outfit_700Bold",
     fontSize: 9.5,
-    color: CH_PURPLE_SOFT,
+    color: c.primaryLight,
     letterSpacing: 1.2,
   },
   eventTitle: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 16,
-    color: CH_TEXT,
+    color: c.textBright,
     letterSpacing: -0.3,
     lineHeight: 19,
     marginBottom: 8,
@@ -922,7 +919,7 @@ const styles = StyleSheet.create({
   eventMeta: {
     fontFamily: "Outfit_500Medium",
     fontSize: 11,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     flex: 1,
   },
   eventCta: {
@@ -938,7 +935,7 @@ const styles = StyleSheet.create({
   eventCtaText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 12,
-    color: "#fff",
+    color: c.white,
     letterSpacing: 0.2,
   },
 
@@ -954,7 +951,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(11,6,19,0.95)",
     borderWidth: 1,
-    borderColor: CH_STROKE_HI,
+    borderColor: c.glassStrokeStrong,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
@@ -972,7 +969,7 @@ const styles = StyleSheet.create({
   reactionCount: {
     fontFamily: "Outfit_700Bold",
     fontSize: 10,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
   },
 
   // Time + status
@@ -991,7 +988,7 @@ const styles = StyleSheet.create({
   timeText: {
     fontFamily: "Outfit_500Medium",
     fontSize: 10,
-    color: CH_TEXT_MUTE,
+    color: c.textFaint,
   },
 
   // System
@@ -1000,19 +997,18 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   systemBubble: {
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   systemText: {
     fontFamily: "Outfit_500Medium",
     fontSize: 11.5,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     textAlign: "center",
   },
 });
 
-export { CH_TEXT, CH_TEXT_DIM, CH_TEXT_MUTE, CH_STROKE, CH_STROKE_HI, CH_BUBBLE_IN, CH_PURPLE_SOFT, CH_BG };

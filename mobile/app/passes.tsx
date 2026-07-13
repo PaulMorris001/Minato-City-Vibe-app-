@@ -18,6 +18,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 type AttendanceStatus = "incoming" | "attended" | "missed";
 
 interface Pass {
@@ -36,12 +39,6 @@ interface Pass {
   };
 }
 
-const BG = "#0B0613";
-const SURFACE = "rgba(26,16,48,0.7)";
-const STROKE = "rgba(255,255,255,0.08)";
-const TEXT = "#F4EEFF";
-const TEXT_DIM = "rgba(244,238,255,0.62)";
-
 const STATUS_META: Record<
   AttendanceStatus,
   { label: string; color: string; bg: string; icon: keyof typeof Ionicons.glyphMap }
@@ -52,6 +49,8 @@ const STATUS_META: Record<
 };
 
 export default function PassesScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [passes, setPasses] = useState<Pass[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,9 +86,7 @@ export default function PassesScreen() {
     <View style={styles.container}>
       <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => goBack()} style={styles.backBtn} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={18} color={TEXT} />
-          </TouchableOpacity>
+          <GlassBackButton size={38} />
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>My Passes</Text>
             <Text style={styles.headerSubtitle}>Show your QR at the door</Text>
@@ -99,7 +96,7 @@ export default function PassesScreen() {
             style={styles.bookingsButton}
             activeOpacity={0.8}
           >
-            <Ionicons name="briefcase-outline" size={16} color="#C084FC" />
+            <Ionicons name="briefcase-outline" size={16} color={colors.primaryLight} />
             <Text style={styles.bookingsButtonText}>Bookings</Text>
           </TouchableOpacity>
         </View>
@@ -108,12 +105,12 @@ export default function PassesScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#A855F7" />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }
         >
           {loading ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator size="large" color="#A855F7" />
+              <ActivityIndicator size="large" color={colors.primary} />
             </View>
           ) : passes.length === 0 ? (
             <View style={styles.emptyState}>
@@ -142,7 +139,7 @@ export default function PassesScreen() {
                     </View>
 
                     <View style={styles.metaRow}>
-                      <Ionicons name="calendar-outline" size={13} color={TEXT_DIM} />
+                      <Ionicons name="calendar-outline" size={13} color={colors.textDim} />
                       <Text style={styles.metaText}>
                         {new Date(pass.event.date).toLocaleString("en-US", {
                           weekday: "short",
@@ -155,7 +152,7 @@ export default function PassesScreen() {
                     </View>
                     {!!(pass.event.address || pass.event.location) && (
                       <View style={styles.metaRow}>
-                        <Ionicons name="location-outline" size={13} color={TEXT_DIM} />
+                        <Ionicons name="location-outline" size={13} color={colors.textDim} />
                         <Text style={styles.metaText} numberOfLines={1}>
                           {pass.event.address || pass.event.location}
                         </Text>
@@ -174,13 +171,13 @@ export default function PassesScreen() {
                       />
                       {pass.status === "attended" && (
                         <View style={styles.qrOverlay}>
-                          <Ionicons name="checkmark-circle" size={48} color="#34D399" />
+                          <Ionicons name="checkmark-circle" size={48} color={colors.successLight} />
                           <Text style={styles.qrOverlayText}>Checked in</Text>
                         </View>
                       )}
                       {pass.status === "missed" && (
                         <View style={styles.qrOverlay}>
-                          <Ionicons name="close-circle" size={48} color="#F87171" />
+                          <Ionicons name="close-circle" size={48} color={colors.errorLight} />
                           <Text style={styles.qrOverlayText}>Event missed</Text>
                         </View>
                       )}
@@ -213,8 +210,9 @@ export default function PassesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.backgroundDeep },
   safe: { flex: 1 },
   header: {
     paddingTop: 8,
@@ -224,24 +222,14 @@ const styles = StyleSheet.create({
     gap: 14,
     marginBottom: 8,
   },
-  backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderWidth: 1,
-    borderColor: STROKE,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   headerTitle: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 28,
-    color: TEXT,
+    color: c.textBright,
     letterSpacing: -1,
     lineHeight: 30,
   },
-  headerSubtitle: { fontFamily: "Outfit_500Medium", fontSize: 12, color: TEXT_DIM, marginTop: 4 },
+  headerSubtitle: { fontFamily: "Outfit_500Medium", fontSize: 12, color: c.textDim, marginTop: 4 },
   bookingsButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -249,24 +237,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 38,
     borderRadius: 19,
-    backgroundColor: "rgba(168,85,247,0.12)",
+    backgroundColor: c.primaryFaded,
     borderWidth: 1,
     borderColor: "rgba(168,85,247,0.28)",
   },
   bookingsButtonText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 12.5,
-    color: "#C084FC",
+    color: c.primaryLight,
     letterSpacing: 0.1,
   },
   scrollContent: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 28 },
   loadingWrap: { paddingVertical: 80, alignItems: "center" },
   card: {
-    backgroundColor: SURFACE,
+    backgroundColor: c.card,
     borderRadius: 22,
     padding: 18,
     borderWidth: 1,
-    borderColor: STROKE,
+    borderColor: c.glassFill,
   },
   cardHeader: {
     flexDirection: "row",
@@ -279,7 +267,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 17,
-    color: TEXT,
+    color: c.textBright,
     letterSpacing: -0.2,
   },
   badge: {
@@ -292,7 +280,7 @@ const styles = StyleSheet.create({
   },
   badgeText: { fontFamily: "Outfit_700Bold", fontSize: 10, letterSpacing: 0.4 },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3 },
-  metaText: { fontFamily: "Outfit_500Medium", fontSize: 12.5, color: TEXT_DIM, flexShrink: 1 },
+  metaText: { fontFamily: "Outfit_500Medium", fontSize: 12.5, color: c.textDim, flexShrink: 1 },
   qrWrap: {
     alignSelf: "center",
     marginTop: 18,
@@ -307,15 +295,15 @@ const styles = StyleSheet.create({
   },
   qr: { width: 196, height: 196 },
   qrOverlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", gap: 6 },
-  qrOverlayText: { fontFamily: "Outfit_700Bold", fontSize: 14, color: "#1f2937" },
+  qrOverlayText: { fontFamily: "Outfit_700Bold", fontSize: 14, color: c.cardAlt },
   passType: {
     fontFamily: "Outfit_500Medium",
     fontSize: 12.5,
-    color: TEXT_DIM,
+    color: c.textDim,
     textAlign: "center",
   },
   emptyState: { alignItems: "center", paddingVertical: 70, paddingHorizontal: 24 },
   emptyEmoji: { fontSize: 72, opacity: 0.3, marginBottom: 14 },
-  emptyTitle: { fontFamily: "BricolageGrotesque_800ExtraBold", fontSize: 20, color: TEXT, marginBottom: 8 },
-  emptyText: { fontFamily: "Outfit_500Medium", fontSize: 13, color: TEXT_DIM, textAlign: "center" },
+  emptyTitle: { fontFamily: "BricolageGrotesque_800ExtraBold", fontSize: 20, color: c.textBright, marginBottom: 8 },
+  emptyText: { fontFamily: "Outfit_500Medium", fontSize: 13, color: c.textDim, textAlign: "center" },
 });

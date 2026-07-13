@@ -13,6 +13,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import ZoomableImage from "./ZoomableImage";
 
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
 interface ImageViewerModalProps {
@@ -33,6 +35,7 @@ export default function ImageViewerModal({
   initialIndex = 0,
   onClose,
 }: ImageViewerModalProps) {
+  const styles = useThemedStyles(createStyles);
   const [index, setIndex] = useState(initialIndex);
   // Paging is disabled while an image is zoomed so panning the zoomed image
   // doesn't fight the horizontal pager.
@@ -84,7 +87,8 @@ export default function ImageViewerModal({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.96)",
@@ -120,7 +124,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   counterText: {
-    color: "#fff",
+    color: c.text,
     fontFamily: Fonts.semiBold,
     fontSize: 14,
   },

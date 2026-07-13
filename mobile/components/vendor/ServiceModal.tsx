@@ -23,6 +23,8 @@ import { BASE_URL } from "@/constants/constants";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { uploadMultipleImages } from "@/utils/imageUpload";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface ServiceModalProps {
   visible: boolean;
   service: Service | null;
@@ -39,6 +41,8 @@ export default function ServiceModal({
   onClose,
   onSuccess,
 }: ServiceModalProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [loading, setLoading] = useState(false);
   const [images, setImages] = useState<string[]>([]);
   const [formData, setFormData] = useState({
@@ -233,7 +237,7 @@ export default function ServiceModal({
                 setFormData({ ...formData, name: text })
               }
               placeholder="e.g., Wedding Photography"
-              placeholderTextColor="#6b7280"
+              placeholderTextColor={colors.textMuted}
             />
           </View>
 
@@ -249,7 +253,7 @@ export default function ServiceModal({
                 setFormData({ ...formData, category: text })
               }
               placeholder="e.g., Photography, Catering, Music"
-              placeholderTextColor="#6b7280"
+              placeholderTextColor={colors.textMuted}
             />
           </View>
 
@@ -265,7 +269,7 @@ export default function ServiceModal({
                 setFormData({ ...formData, description: text })
               }
               placeholder="Describe your service in detail..."
-              placeholderTextColor="#6b7280"
+              placeholderTextColor={colors.textMuted}
               multiline
               numberOfLines={4}
             />
@@ -284,7 +288,7 @@ export default function ServiceModal({
                     style={styles.removeImageButton}
                     onPress={() => removeImage(index)}
                   >
-                    <Ionicons name="close-circle" size={24} color="#ef4444" />
+                    <Ionicons name="close-circle" size={24} color={colors.error} />
                   </TouchableOpacity>
                 </View>
               ))}
@@ -314,7 +318,7 @@ export default function ServiceModal({
                   setFormData({ ...formData, price: text })
                 }
                 placeholder="0.00"
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={colors.textMuted}
                 keyboardType="decimal-pad"
               />
               <TextInput
@@ -324,7 +328,7 @@ export default function ServiceModal({
                   setFormData({ ...formData, currency: text.toUpperCase() })
                 }
                 placeholder="USD"
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={colors.textMuted}
                 maxLength={3}
               />
             </View>
@@ -341,7 +345,7 @@ export default function ServiceModal({
                   setFormData({ ...formData, durationValue: text })
                 }
                 placeholder="1"
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={colors.textMuted}
                 keyboardType="number-pad"
               />
               <View style={styles.unitSelector}>
@@ -413,7 +417,7 @@ export default function ServiceModal({
                 setFormData({ ...formData, features: text })
               }
               placeholder="Full day coverage&#10;Edited photos&#10;Online gallery"
-              placeholderTextColor="#6b7280"
+              placeholderTextColor={colors.textMuted}
               multiline
               numberOfLines={5}
             />
@@ -442,10 +446,11 @@ export default function ServiceModal({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.darkBackground,
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: "row",
@@ -453,9 +458,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 16,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   closeButton: {
     width: 40,
@@ -466,7 +471,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: "#fff",
+    color: c.text,
   },
   placeholder: {
     width: 40,
@@ -481,25 +486,25 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#e5e7eb",
+    color: c.textBody,
     marginBottom: 8,
   },
   required: {
-    color: "#ef4444",
+    color: c.error,
   },
   hint: {
     fontSize: 12,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 8,
     padding: 14,
     fontSize: 16,
-    color: "#fff",
+    color: c.text,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   textArea: {
     minHeight: 100,
@@ -531,9 +536,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     alignItems: "center",
   },
   unitButtonActive: {
@@ -542,11 +547,11 @@ const styles = StyleSheet.create({
   },
   unitText: {
     fontSize: 14,
-    color: "#9ca3af",
+    color: c.textSecondary,
     fontWeight: "500",
   },
   unitTextActive: {
-    color: "#fff",
+    color: c.text,
     fontWeight: "600",
   },
   availabilityRow: {
@@ -556,9 +561,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 8,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     alignItems: "center",
   },
   availabilityButtonActive: {
@@ -567,12 +572,12 @@ const styles = StyleSheet.create({
   },
   availabilityText: {
     fontSize: 14,
-    color: "#9ca3af",
+    color: c.textSecondary,
     fontWeight: "500",
     textTransform: "capitalize",
   },
   availabilityTextActive: {
-    color: "#fff",
+    color: c.text,
     fontWeight: "600",
   },
   submitButton: {
@@ -586,7 +591,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   submitButtonText: {
-    color: "#fff",
+    color: c.white,
     fontSize: 18,
     fontWeight: "700",
   },
@@ -607,20 +612,20 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 8,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
   },
   removeImageButton: {
     position: "absolute",
     top: -8,
     right: -8,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
   },
   addImageButton: {
     width: 100,
     height: 100,
     borderRadius: 8,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderWidth: 2,
     borderColor: Colors.primary,
     borderStyle: "dashed",

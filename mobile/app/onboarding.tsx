@@ -15,6 +15,8 @@ import * as SecureStore from "expo-secure-store";
 import { Fonts } from "@/constants/fonts";
 import { scaleFontSize } from "@/utils/responsive";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 const { width, height } = Dimensions.get("window");
 
 interface OnboardingSlide {
@@ -61,6 +63,8 @@ const slides: OnboardingSlide[] = [
 ];
 
 export default function OnboardingScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   // When opened as the public "App features" tour (from the login screen), we
   // just dismiss back instead of completing onboarding / entering the app.
@@ -149,7 +153,7 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <LinearGradient colors={["#0f0f1a", "#1a1a2e"]} style={styles.container}>
+    <LinearGradient colors={[colors.background, colors.backgroundSecondary]} style={styles.container}>
       {/* Skip Button */}
       <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
         <Text style={styles.skipText}>Skip</Text>
@@ -179,7 +183,7 @@ export default function OnboardingScreen() {
       {/* Next/Get Started Button */}
       <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
         <LinearGradient
-          colors={["#a855f7", "#7c3aed"]}
+          colors={[colors.primary, colors.primaryDark]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.nextButtonGradient}
@@ -218,7 +222,8 @@ export default function OnboardingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -233,7 +238,7 @@ const styles = StyleSheet.create({
   skipText: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.medium,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   slide: {
     width,
@@ -249,7 +254,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 48,
-    shadowColor: "#a855f7",
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.4,
     shadowRadius: 24,
@@ -258,14 +263,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: scaleFontSize(32),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     textAlign: "center",
     marginBottom: 16,
   },
   description: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     lineHeight: 24,
   },
@@ -278,7 +283,7 @@ const styles = StyleSheet.create({
   dot: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     marginHorizontal: 4,
   },
   nextButton: {
@@ -286,7 +291,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderRadius: 16,
     overflow: "hidden",
-    shadowColor: "#a855f7",
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.4,
     shadowRadius: 16,
@@ -302,7 +307,7 @@ const styles = StyleSheet.create({
   nextButtonText: {
     fontSize: scaleFontSize(18),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.white,
   },
   loginLink: {
     alignItems: "center",
@@ -312,10 +317,10 @@ const styles = StyleSheet.create({
   loginLinkText: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   loginLinkBold: {
     fontFamily: Fonts.bold,
-    color: "#a855f7",
+    color: c.primary,
   },
 });

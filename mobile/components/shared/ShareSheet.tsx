@@ -19,13 +19,9 @@ import chatService, { Chat } from "@/services/chat.service";
 import { Avatar } from "@/components/shared/Avatar";
 import { Fonts } from "@/constants/fonts";
 
-const CH_BG = "#0B0613";
-const CH_TEXT = "#F4EEFF";
-const CH_TEXT_DIM = "rgba(244,238,255,0.62)";
-const CH_TEXT_MUTE = "rgba(244,238,255,0.42)";
-const CH_STROKE = "rgba(255,255,255,0.08)";
-const CH_STROKE_HI = "rgba(255,255,255,0.14)";
-const CH_PURPLE = "#A855F7";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import { GlassIconButton } from "@/components/shared/GlassBackButton";
+import type { ThemeColors } from "@/constants/theme";
 
 export type ShareTarget =
   | { kind: "event"; eventId: string; title: string; externalUrl: string }
@@ -50,6 +46,8 @@ interface ShareSheetProps {
  *     MessageBubble renders as a card.
  */
 export default function ShareSheet({ visible, onClose, target }: ShareSheetProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [stage, setStage] = useState<"choice" | "picker">("choice");
   const [chats, setChats] = useState<Chat[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
@@ -165,7 +163,7 @@ export default function ShareSheet({ visible, onClose, target }: ShareSheetProps
           </Text>
         </View>
         {sendingTo === item._id ? (
-          <ActivityIndicator size="small" color={CH_PURPLE} />
+          <ActivityIndicator size="small" color={colors.primary} />
         ) : (
           <View style={styles.sendBadge}>
             <Ionicons name="send" size={14} color="#fff" />
@@ -210,27 +208,30 @@ export default function ShareSheet({ visible, onClose, target }: ShareSheetProps
           ) : (
             <>
               <View style={styles.pickerHeader}>
-                <TouchableOpacity onPress={() => setStage("choice")} style={styles.pickerBack}>
-                  <Ionicons name="chevron-back" size={22} color={CH_TEXT} />
-                </TouchableOpacity>
+                <GlassIconButton
+                  icon="chevron-back"
+                  size={32}
+                  onPress={() => setStage("choice")}
+                  accessibilityLabel="Back"
+                />
                 <Text style={styles.pickerTitle}>Send to a chat</Text>
-                <View style={{ width: 22 }} />
+                <View style={{ width: 32 }} />
               </View>
 
               <View style={styles.searchRow}>
-                <Ionicons name="search" size={16} color={CH_TEXT_MUTE} />
+                <Ionicons name="search" size={16} color={colors.textFaint} />
                 <TextInput
                   value={query}
                   onChangeText={setQuery}
                   placeholder="Search chats"
-                  placeholderTextColor={CH_TEXT_MUTE}
+                  placeholderTextColor={colors.textFaint}
                   style={styles.searchInput}
                   autoCorrect={false}
                 />
               </View>
 
               {loadingChats ? (
-                <ActivityIndicator color={CH_PURPLE} style={{ paddingVertical: 28 }} />
+                <ActivityIndicator color={colors.primary} style={{ paddingVertical: 28 }} />
               ) : filteredChats.length === 0 ? (
                 <Text style={styles.empty}>
                   {chats.length === 0
@@ -267,25 +268,28 @@ function SheetOption({
   onPress: () => void;
   muted?: boolean;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={styles.optionRow}>
-      <View style={[styles.optionIcon, muted && { backgroundColor: "rgba(255,255,255,0.05)" }]}>
+      <View style={[styles.optionIcon, muted && { backgroundColor: colors.glassFillSubtle }]}>
         <Ionicons
           name={icon}
           size={20}
-          color={muted ? CH_TEXT_DIM : CH_PURPLE}
+          color={muted ? colors.textDim : colors.primary}
         />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.optionLabel, muted && { color: CH_TEXT_DIM }]}>{label}</Text>
+        <Text style={[styles.optionLabel, muted && { color: colors.textDim }]}>{label}</Text>
         {hint ? <Text style={styles.optionHint}>{hint}</Text> : null}
       </View>
-      {!muted ? <Ionicons name="chevron-forward" size={18} color={CH_TEXT_MUTE} /> : null}
+      {!muted ? <Ionicons name="chevron-forward" size={18} color={colors.textFaint} /> : null}
     </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",
@@ -297,21 +301,21 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   card: {
-    backgroundColor: CH_BG,
+    backgroundColor: c.backgroundDeep,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     paddingTop: 8,
     paddingHorizontal: 16,
     paddingBottom: 12,
     borderTopWidth: 1,
-    borderColor: CH_STROKE_HI,
+    borderColor: c.glassStrokeStrong,
   },
   grabber: {
     alignSelf: "center",
     width: 38,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: c.glassStrokeStrong,
     marginBottom: 14,
   },
 
@@ -320,13 +324,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.2,
     textTransform: "uppercase",
-    color: CH_TEXT_MUTE,
+    color: c.textFaint,
     marginBottom: 4,
   },
   headerTitle: {
     fontFamily: Fonts.bold,
     fontSize: 18,
-    color: CH_TEXT,
+    color: c.textBright,
     marginBottom: 14,
   },
 
@@ -336,25 +340,25 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   optionIcon: {
     width: 38,
     height: 38,
     borderRadius: 11,
-    backgroundColor: "rgba(168,85,247,0.12)",
+    backgroundColor: c.primaryFaded,
     alignItems: "center",
     justifyContent: "center",
   },
   optionLabel: {
     fontFamily: Fonts.semiBold,
     fontSize: 15,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   optionHint: {
     fontFamily: Fonts.regular,
     fontSize: 12,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     marginTop: 2,
   },
 
@@ -366,27 +370,26 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginBottom: 8,
   },
-  pickerBack: { padding: 4 },
   pickerTitle: {
     fontFamily: Fonts.bold,
     fontSize: 16,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: c.glassFillSubtle,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   searchInput: {
     flex: 1,
-    color: CH_TEXT,
+    color: c.textBright,
     fontFamily: Fonts.regular,
     fontSize: 14,
     padding: 0,
@@ -394,7 +397,7 @@ const styles = StyleSheet.create({
   empty: {
     fontFamily: Fonts.regular,
     fontSize: 13,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     textAlign: "center",
     paddingVertical: 28,
   },
@@ -405,24 +408,24 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 4,
     borderTopWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   chatName: {
     fontFamily: Fonts.semiBold,
     fontSize: 14.5,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   chatSub: {
     fontFamily: Fonts.regular,
     fontSize: 12,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     marginTop: 2,
   },
   sendBadge: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: CH_PURPLE,
+    backgroundColor: c.primary,
     alignItems: "center",
     justifyContent: "center",
   },

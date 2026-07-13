@@ -11,6 +11,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { Avatar } from "./Avatar";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface ImagePickerButtonProps {
   imageUri?: string;
   onImageSelected: (uri: string) => void;
@@ -42,6 +44,8 @@ export default function ImagePickerButton({
   aspect,
   fallbackName,
 }: ImagePickerButtonProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const pickImage = async () => {
     if (disabled) return;
 
@@ -98,7 +102,7 @@ export default function ImagePickerButton({
           </>
         ) : (
           <View style={styles.placeholder}>
-            <Ionicons name="camera-outline" size={32} color="#9ca3af" />
+            <Ionicons name="camera-outline" size={32} color={colors.textSecondary} />
             <Text style={styles.placeholderText}>Add Photo</Text>
           </View>
         )}
@@ -107,7 +111,8 @@ export default function ImagePickerButton({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     alignItems: "center",
     marginVertical: 16,
@@ -115,13 +120,13 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#e5e7eb",
+    color: c.textBody,
     marginBottom: 12,
   },
   imageContainer: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderWidth: 2,
-    borderColor: "#374151",
+    borderColor: c.border,
     borderStyle: "dashed",
     justifyContent: "center",
     alignItems: "center",
@@ -155,7 +160,7 @@ const styles = StyleSheet.create({
   placeholderText: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 8,
   },
   disabled: {

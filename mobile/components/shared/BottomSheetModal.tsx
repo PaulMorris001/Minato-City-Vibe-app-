@@ -12,6 +12,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface BottomSheetModalProps {
   visible: boolean;
   onClose: () => void;
@@ -31,6 +33,7 @@ export default function BottomSheetModal({
   scrollable = true,
   showsVerticalScrollIndicator = false,
 }: BottomSheetModalProps) {
+  const styles = useThemedStyles(createStyles);
   return (
     <Modal
       visible={visible}
@@ -69,14 +72,15 @@ export default function BottomSheetModal({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: c.modalOverlay,
     justifyContent: "flex-end",
   },
   content: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
   },
@@ -87,7 +91,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   closeButton: {
     width: 40,
@@ -98,7 +102,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   placeholder: {
     width: 40,

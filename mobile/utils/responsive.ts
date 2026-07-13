@@ -33,9 +33,16 @@ export const moderateScale = (size: number, factor: number = 0.5): number => {
 /**
  * Scales font sizes specifically
  * Uses moderate scaling and ensures readability
+ *
+ * The scale basis is capped at a large-phone width: text should track phone
+ * size, but on tablets an uncapped basis balloons fonts (~60% larger on a
+ * 13" iPad), dwarfing fixed-size chrome like the home navbar logo.
  */
+const FONT_SCALE_MAX_WIDTH = 440;
+
 export const scaleFontSize = (size: number): number => {
-  const newSize = moderateScale(size, 0.35);
+  const cappedWidth = Math.min(SCREEN_WIDTH, FONT_SCALE_MAX_WIDTH);
+  const newSize = size + ((cappedWidth / BASE_WIDTH) * size - size) * 0.35;
   if (Platform.OS === 'android') {
     return Math.round(PixelRatio.roundToNearestPixel(newSize));
   }

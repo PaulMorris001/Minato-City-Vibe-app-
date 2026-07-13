@@ -31,6 +31,7 @@ import {
 } from "@/components/auth/AuthPrimitives";
 import { AU } from "@/components/auth/tokens";
 
+import { darkColors, type ThemeColors } from "@/constants/theme";
 const LEN = 6;
 const RESEND_SECONDS = 28;
 
@@ -355,7 +356,8 @@ export default function VerifySignupEmail() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: AU.bg },
   scrollContent: { flexGrow: 1, paddingBottom: 24 },
   hiddenInput: {
@@ -378,7 +380,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 13,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
     borderColor: AU.stroke,
   },
@@ -415,14 +417,14 @@ const styles = StyleSheet.create({
     flex: 1,
     aspectRatio: 1 / 1.15,
     borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1.5,
     borderColor: AU.stroke,
     alignItems: "center",
     justifyContent: "center",
   },
   otpCellFilled: {
-    backgroundColor: "rgba(168,85,247,0.18)",
+    backgroundColor: c.primaryFadedStrong,
     borderColor: "rgba(192,132,252,0.6)",
     shadowColor: AU.purple,
     shadowOpacity: 0.4,
@@ -447,7 +449,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 11,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
     borderColor: AU.stroke,
   },
@@ -476,7 +478,7 @@ const styles = StyleSheet.create({
     width: "31.5%",
     height: 48,
     borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
     borderColor: AU.stroke,
     alignItems: "center",
@@ -500,20 +502,20 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
     borderColor: AU.stroke,
     marginBottom: 12,
   },
   tosRowChecked: {
-    backgroundColor: "rgba(168,85,247,0.10)",
+    backgroundColor: c.primaryFaded,
     borderColor: "rgba(192,132,252,0.45)",
   },
   checkbox: {
     width: 20,
     height: 20,
     borderRadius: 6,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1.5,
     borderColor: AU.strokeHi,
     alignItems: "center",
@@ -546,3 +548,6 @@ const styles = StyleSheet.create({
   },
   footerLink: { color: AU.purpleSoft, fontFamily: "Outfit_700Bold" },
 });
+
+// Auth/poster surface: always renders the dark palette.
+const styles = createStyles(darkColors);

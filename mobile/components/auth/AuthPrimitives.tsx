@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import {
   Animated,
   Easing,
+  Platform,
   StyleSheet,
   Text,
   TextProps,
@@ -11,8 +12,12 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { AU, AU_GRADIENT_CTA } from "./tokens";
 
+const hasLiquidGlass = Platform.OS === "ios" && isLiquidGlassAvailable();
+
+import { darkColors, type ThemeColors } from "@/constants/theme";
 /**
  * Wordmark — "OurCityvibe" in display weight.
  * Note: true gradient-fill text needs masked-view; we approximate with the
@@ -44,7 +49,9 @@ export function GradientAccent({ children, style }: TextProps) {
 }
 
 /**
- * Round glassy button used for back / close.
+ * Round glassy button used for back / close. Real Liquid Glass on iOS 26+,
+ * faux-glass fill elsewhere. The glyph stays AU.text in both schemes because
+ * auth/poster screens are pinned dark by design.
  */
 export function GlassRoundButton({
   icon,
@@ -59,15 +66,27 @@ export function GlassRoundButton({
   size?: number;
   iconRatio?: number;
 }) {
+  const round = { width: size, height: size, borderRadius: size / 2 };
+  if (hasLiquidGlass) {
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        disabled={disabled}
+        activeOpacity={0.7}
+        style={{ opacity: disabled ? 0.35 : 1 }}
+      >
+        <GlassView style={[styles.glassRoundNative, round]} isInteractive>
+          <Ionicons name={icon} size={size * iconRatio} color={AU.text} />
+        </GlassView>
+      </TouchableOpacity>
+    );
+  }
   return (
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.7}
-      style={[
-        styles.glassRound,
-        { width: size, height: size, borderRadius: size / 2, opacity: disabled ? 0.35 : 1 },
-      ]}
+      style={[styles.glassRound, round, { opacity: disabled ? 0.35 : 1 }]}
     >
       <Ionicons name={icon} size={size * iconRatio} color={AU.text} />
     </TouchableOpacity>
@@ -203,7 +222,7 @@ export function PrimaryCTA({
             { height },
             isLight && { backgroundColor: AU.text },
             variant === "disabled" && {
-              backgroundColor: "rgba(255,255,255,0.08)",
+              backgroundColor: colors.glassFill,
             },
           ]}
         >
@@ -262,13 +281,19 @@ export function LiveDot() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   glassRound: {
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
     borderColor: AU.stroke,
     alignItems: "center",
     justifyContent: "center",
+  },
+  glassRoundNative: {
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
   ctaWrap: {
     width: "100%",
@@ -297,3 +322,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
 });
+
+// Auth/poster surface: always renders the dark palette.
+const colors = darkColors;
+const styles = createStyles(darkColors);

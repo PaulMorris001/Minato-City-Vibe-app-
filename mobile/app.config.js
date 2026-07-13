@@ -16,10 +16,10 @@ module.exports = {
   orientation: "portrait",
   icon: "./assets/images/ios/icon.png",
   scheme: "mobile",
-  // Locked to dark: the app is dark-only, and system materials (Liquid Glass
-  // tab bar, sheets, alerts) must never render their light variant when the
-  // device is in light mode.
-  userInterfaceStyle: "dark",
+  // Follows the device scheme so system materials (Liquid Glass tab bar,
+  // sheets, alerts) match the in-app light/dark theme, which defaults to
+  // "system" (see contexts/ThemeContext.tsx).
+  userInterfaceStyle: "automatic",
   newArchEnabled: true,
   // Native-only app (Stripe et al. don't bundle for web). Listing just the two
   // native platforms keeps `expo export` / `eas update --platform all` from

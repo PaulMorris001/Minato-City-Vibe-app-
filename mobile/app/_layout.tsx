@@ -35,9 +35,9 @@ import { PortalProvider } from "@gorhom/portal";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AccountProvider } from "@/contexts/AccountContext";
 import { UnreadProvider } from "@/contexts/UnreadContext";
+import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import socketService from "@/services/socket.service";
 import { StripeProvider } from "@stripe/stripe-react-native";
-import { theme } from "@/constants/theme";
 import { StatusBar } from "expo-status-bar";
 import { setupGlobalErrorHandler, setupConsoleOverride } from "@/utils/errorHandler";
 import { setupApiClient } from "@/utils/apiClient";
@@ -337,14 +337,6 @@ export default Sentry.wrap(function RootLayout() {
     return () => sub.remove();
   }, [routeDeepLink]);
 
-  // Set navigation bar color for Android
-  useEffect(() => {
-    if (Platform.OS === "android") {
-      NavigationBar.setButtonStyleAsync("light");
-      NavigationBar.setBackgroundColorAsync(theme.colors.dark.background);
-    }
-  }, []);
-
   if (!fontsLoaded) {
     return null;
   }
@@ -353,24 +345,45 @@ export default Sentry.wrap(function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ErrorBoundary>
         <StripeProvider publishableKey={stripeKey}>
-          <AccountProvider>
-            <UnreadProvider>
-            <PortalProvider>
-              <StatusBar style="light" />
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: {
-                    backgroundColor: theme.colors.dark.background,
-                  },
-                }}
-              />
-              <Toast />
-            </PortalProvider>
-            </UnreadProvider>
-          </AccountProvider>
+          <ThemeProvider>
+            <AccountProvider>
+              <UnreadProvider>
+              <PortalProvider>
+                <ThemedNavigation />
+                <Toast />
+              </PortalProvider>
+              </UnreadProvider>
+            </AccountProvider>
+          </ThemeProvider>
         </StripeProvider>
       </ErrorBoundary>
     </GestureHandlerRootView>
   );
 });
+
+// Lives below ThemeProvider so the status bar, Android navigation bar and the
+// stack background all follow the active scheme.
+function ThemedNavigation() {
+  const { colors, isDark } = useTheme();
+
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      NavigationBar.setButtonStyleAsync(isDark ? "light" : "dark");
+      NavigationBar.setBackgroundColorAsync(colors.background);
+    }
+  }, [colors, isDark]);
+
+  return (
+    <>
+      <StatusBar style={isDark ? "light" : "dark"} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: {
+            backgroundColor: colors.background,
+          },
+        }}
+      />
+    </>
+  );
+}

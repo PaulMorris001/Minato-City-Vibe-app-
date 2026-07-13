@@ -2,12 +2,15 @@ import React from "react";
 import { View, StyleSheet } from "react-native";
 import Skeleton from "../shared/Skeleton";
 
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface Props {
   count?: number;
   horizontal?: boolean;
 }
 
 function EventCardItem({ horizontal }: { horizontal?: boolean }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={[styles.card, horizontal && styles.cardHorizontal]}>
       <Skeleton width="100%" height={horizontal ? 120 : 160} borderRadius={12} />
@@ -21,6 +24,7 @@ function EventCardItem({ horizontal }: { horizontal?: boolean }) {
 }
 
 export default function EventCardSkeleton({ count = 4, horizontal = false }: Props) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={[styles.container, horizontal && styles.containerHorizontal]}>
       {Array.from({ length: count }).map((_, i) => (
@@ -30,7 +34,8 @@ export default function EventCardSkeleton({ count = 4, horizontal = false }: Pro
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     gap: 12,
     paddingHorizontal: 16,
@@ -41,7 +46,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   card: {
-    backgroundColor: "#1a1a2e",
+    backgroundColor: c.backgroundSecondary,
     borderRadius: 12,
     overflow: "hidden",
   },

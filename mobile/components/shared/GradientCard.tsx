@@ -10,6 +10,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface GradientCardProps {
   icon: React.ComponentProps<typeof Ionicons>["name"];
   title: string;
@@ -29,6 +31,7 @@ export default function GradientCard({
   delay = 0,
   iconSize = 32,
 }: GradientCardProps) {
+  const styles = useThemedStyles(createStyles);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
@@ -93,7 +96,8 @@ export default function GradientCard({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   animatedContainer: {
     marginBottom: 16,
   },
@@ -122,7 +126,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontFamily: Fonts.bold,
-    color: "white",
+    color: c.text,
     marginBottom: 8,
     textAlign: "center",
   },

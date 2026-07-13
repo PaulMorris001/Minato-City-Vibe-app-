@@ -24,7 +24,12 @@ import {
   type BlockedUser,
 } from "@/services/moderation.service";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function BlockedUsersScreen() {
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [users, setUsers] = useState<BlockedUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,21 +77,19 @@ export default function BlockedUsersScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      <LinearGradient colors={["#0f0f1a", "#1a1a2e", "#16213e"]} style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+      <LinearGradient colors={[colors.background, colors.backgroundSecondary, colors.backgroundTertiary]} style={styles.header}>
+        <GlassBackButton style={styles.backButton} />
         <Text style={styles.headerTitle}>Blocked Users</Text>
       </LinearGradient>
 
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator color="#a855f7" />
+          <ActivityIndicator color={colors.primary} />
         </View>
       ) : users.length === 0 ? (
         <View style={styles.centered}>
-          <Ionicons name="ban-outline" size={48} color="#6b7280" />
+          <Ionicons name="ban-outline" size={48} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>No blocked users</Text>
           <Text style={styles.emptyText}>
             People you block will appear here. You can unblock them at any time.
@@ -107,7 +110,7 @@ export default function BlockedUsersScreen() {
                 disabled={unblockingId === item._id}
               >
                 {unblockingId === item._id ? (
-                  <ActivityIndicator color="#a855f7" />
+                  <ActivityIndicator color={colors.primary} />
                 ) : (
                   <Text style={styles.unblockText}>Unblock</Text>
                 )}
@@ -120,8 +123,9 @@ export default function BlockedUsersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f0f1a" },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
   header: {
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight! + 16 : 60,
     paddingBottom: 20,
@@ -134,7 +138,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   centered: {
     flex: 1,
@@ -143,13 +147,13 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   emptyTitle: {
-    color: "#fff",
+    color: c.text,
     fontFamily: Fonts.semiBold,
     fontSize: 18,
     marginTop: 16,
   },
   emptyText: {
-    color: "#9ca3af",
+    color: c.textSecondary,
     fontSize: 14,
     textAlign: "center",
     marginTop: 8,
@@ -159,26 +163,26 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   avatar: { width: 40, height: 40, borderRadius: 20 },
   avatarPlaceholder: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     alignItems: "center",
     justifyContent: "center",
   },
   username: {
     flex: 1,
     marginLeft: 12,
-    color: "#fff",
+    color: c.text,
     fontFamily: Fonts.medium,
     fontSize: 15,
   },
@@ -187,10 +191,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#a855f7",
+    borderColor: c.primary,
   },
   unblockText: {
-    color: "#a855f7",
+    color: c.primary,
     fontFamily: Fonts.semiBold,
     fontSize: 14,
   },

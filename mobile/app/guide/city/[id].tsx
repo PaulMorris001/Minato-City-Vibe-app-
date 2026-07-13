@@ -19,7 +19,12 @@ import { BASE_URL } from "@/constants/constants";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function CityGuidesPage() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const { cityName, state, country } = useLocalSearchParams<{
     cityName: string;
@@ -148,7 +153,7 @@ export default function CityGuidesPage() {
           <Text style={styles.topicText}>{item.topic}</Text>
         </View>
         <View style={styles.statsRow}>
-          <Ionicons name="eye-outline" size={14} color="#6b7280" />
+          <Ionicons name="eye-outline" size={14} color={colors.textMuted} />
           <Text style={styles.statsText}>{item.views} views</Text>
         </View>
       </View>
@@ -177,12 +182,7 @@ export default function CityGuidesPage() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        <GlassBackButton style={styles.backButton} />
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>{cityName}</Text>
           <Text style={styles.headerSubtitle}>Best of Lists & Guides</Text>
@@ -190,17 +190,17 @@ export default function CityGuidesPage() {
       </View>
 
       <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#6b7280" />
+        <Ionicons name="search" size={20} color={colors.textMuted} />
         <TextInput
           style={styles.searchInput}
           placeholder="Search guides..."
-          placeholderTextColor="#6b7280"
+          placeholderTextColor={colors.textMuted}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
         {searchQuery ? (
           <TouchableOpacity onPress={() => setSearchQuery("")}>
-            <Ionicons name="close-circle" size={20} color="#6b7280" />
+            <Ionicons name="close-circle" size={20} color={colors.textMuted} />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -284,7 +284,7 @@ export default function CityGuidesPage() {
               <Ionicons
                 name="document-text-outline"
                 size={64}
-                color="#6b7280"
+                color={colors.textMuted}
               />
               <Text style={styles.emptyTitle}>No guides found</Text>
               <Text style={styles.emptyText}>
@@ -300,10 +300,11 @@ export default function CityGuidesPage() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: "row",
@@ -312,7 +313,7 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   backButton: {
     marginRight: 16,
@@ -323,32 +324,32 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   headerSubtitle: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 2,
   },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     marginHorizontal: 20,
     marginTop: 20,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   searchInput: {
     flex: 1,
     marginLeft: 12,
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
   },
   priceFilterRow: {
     flexDirection: "row",
@@ -361,9 +362,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     alignItems: "center",
   },
   priceFilterButtonActive: {
@@ -373,10 +374,10 @@ const styles = StyleSheet.create({
   priceFilterText: {
     fontSize: 14,
     fontFamily: Fonts.semiBold,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   priceFilterTextActive: {
-    color: "#fff",
+    color: c.text,
   },
   topicSection: {
     marginTop: 20,
@@ -385,7 +386,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
     paddingHorizontal: 20,
     marginBottom: 12,
   },
@@ -397,9 +398,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 20,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     marginRight: 8,
   },
   topicFilterButtonActive: {
@@ -409,22 +410,22 @@ const styles = StyleSheet.create({
   topicFilterText: {
     fontSize: 13,
     fontFamily: Fonts.medium,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   topicFilterTextActive: {
-    color: "#fff",
+    color: c.text,
   },
   listContent: {
     padding: 20,
     paddingBottom: 40,
   },
   guideCard: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   guideHeader: {
     flexDirection: "row",
@@ -438,13 +439,13 @@ const styles = StyleSheet.create({
   guideTitle: {
     fontSize: 18,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 4,
   },
   guideAuthor: {
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   priceContainer: {
     alignItems: "flex-end",
@@ -452,7 +453,7 @@ const styles = StyleSheet.create({
   priceLabel: {
     fontSize: 11,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     marginBottom: 2,
   },
   priceValue: {
@@ -463,7 +464,7 @@ const styles = StyleSheet.create({
   guideDescription: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#d1d5db",
+    color: c.textTertiary,
     lineHeight: 20,
     marginBottom: 12,
   },
@@ -475,7 +476,7 @@ const styles = StyleSheet.create({
   topicBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
@@ -494,7 +495,7 @@ const styles = StyleSheet.create({
   statsText: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
   },
   loadingContainer: {
     flex: 1,
@@ -510,14 +511,14 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginTop: 16,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     paddingHorizontal: 40,
   },

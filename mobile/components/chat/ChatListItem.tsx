@@ -7,10 +7,8 @@ import { capitalize } from "@/libs/helpers";
 import { displayName } from "@/utils/displayName";
 import { Avatar } from "@/components/shared/Avatar";
 
-const CH_TEXT = "#F4EEFF";
-const CH_TEXT_DIM = "rgba(244,238,255,0.62)";
-const CH_TEXT_MUTE = "rgba(244,238,255,0.42)";
-const CH_PURPLE_SOFT = "#C084FC";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 
 interface ChatListItemProps {
   chat: Chat;
@@ -47,6 +45,8 @@ export default function ChatListItem({
   onPress,
   onLongPress,
 }: ChatListItemProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const getChatInfo = () => {
     if (chat.type === "group") {
       return {
@@ -104,7 +104,7 @@ export default function ChatListItem({
     >
       {isPinned && (
         <LinearGradient
-          colors={["#A855F7", "#EC4899"]}
+          colors={[colors.primary, colors.accentPink]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={styles.pinnedBar}
@@ -116,7 +116,7 @@ export default function ChatListItem({
         {chat.type === "group" && (
           <View style={styles.groupGlyphWrap}>
             <LinearGradient
-              colors={["#A855F7", "#7C3AED"]}
+              colors={[colors.primary, colors.primaryDark]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.groupGlyph}
@@ -139,10 +139,10 @@ export default function ChatListItem({
             {capitalize(chatInfo.name)}
           </Text>
           {isPinned && (
-            <Ionicons name="star" size={11} color={CH_PURPLE_SOFT} style={{ marginLeft: 4 }} />
+            <Ionicons name="star" size={11} color={colors.primaryLight} style={{ marginLeft: 4 }} />
           )}
           {isMuted && (
-            <Ionicons name="notifications-off" size={11} color={CH_TEXT_MUTE} style={{ marginLeft: 4 }} />
+            <Ionicons name="notifications-off" size={11} color={colors.textFaint} style={{ marginLeft: 4 }} />
           )}
           {eventRef && chat.type === "group" && (
             <View style={styles.eventTag}>
@@ -168,7 +168,7 @@ export default function ChatListItem({
                 <Ionicons
                   name={lastIsRead ? "checkmark-done" : "checkmark"}
                   size={12}
-                  color={lastIsRead ? CH_PURPLE_SOFT : CH_TEXT_MUTE}
+                  color={lastIsRead ? colors.primaryLight : colors.textFaint}
                   style={{ marginRight: 4 }}
                 />
               )}
@@ -207,7 +207,7 @@ export default function ChatListItem({
             </View>
           ) : (
             <LinearGradient
-              colors={["#A855F7", "#EC4899"]}
+              colors={[colors.primary, colors.accentPink]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.unreadPill}
@@ -225,7 +225,8 @@ export default function ChatListItem({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     position: "relative",
     flexDirection: "row",
@@ -268,7 +269,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1.5,
-    borderColor: "#0B0613",
+    borderColor: c.backgroundDeep,
   },
 
   content: {
@@ -284,26 +285,26 @@ const styles = StyleSheet.create({
   name: {
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 15.5,
-    color: CH_TEXT,
+    color: c.textBright,
     letterSpacing: -0.15,
     flexShrink: 1,
   },
   nameMuted: {
-    color: CH_TEXT_DIM,
+    color: c.textDim,
   },
   eventTag: {
     marginLeft: "auto",
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 999,
-    backgroundColor: "rgba(168,85,247,0.15)",
+    backgroundColor: c.primaryFadedStrong,
     borderWidth: 1,
     borderColor: "rgba(192,132,252,0.3)",
   },
   eventTagText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 9,
-    color: CH_PURPLE_SOFT,
+    color: c.primaryLight,
     letterSpacing: 0.4,
   },
 
@@ -320,19 +321,19 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: "Outfit_500Medium",
     fontSize: 12.5,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
   },
   previewUnread: {
     fontFamily: "Outfit_600SemiBold",
-    color: CH_TEXT,
+    color: c.textBright,
   },
   previewTyping: {
     fontFamily: "Outfit_600SemiBold",
-    color: CH_PURPLE_SOFT,
+    color: c.primaryLight,
   },
   previewEmpty: {
     fontStyle: "italic",
-    color: CH_TEXT_MUTE,
+    color: c.textFaint,
   },
 
   rightCol: {
@@ -343,11 +344,11 @@ const styles = StyleSheet.create({
   time: {
     fontFamily: "Outfit_500Medium",
     fontSize: 10.5,
-    color: CH_TEXT_MUTE,
+    color: c.textFaint,
   },
   timeUnread: {
     fontFamily: "Outfit_700Bold",
-    color: CH_PURPLE_SOFT,
+    color: c.primaryLight,
   },
   unreadPill: {
     minWidth: 20,
@@ -356,24 +357,24 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#A855F7",
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 8,
   },
   unreadPillMuted: {
-    backgroundColor: "rgba(255,255,255,0.12)",
+    backgroundColor: c.glassStroke,
     shadowOpacity: 0,
   },
   unreadCount: {
     fontFamily: "Outfit_700Bold",
     fontSize: 11,
-    color: "#fff",
+    color: c.text,
   },
   unreadCountMuted: {
     fontFamily: "Outfit_700Bold",
     fontSize: 11,
-    color: "#fff",
+    color: c.text,
   },
   unreadPlaceholder: {
     width: 20,

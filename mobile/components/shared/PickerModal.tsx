@@ -10,6 +10,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 
+import type { ThemeColors } from "@/constants/theme";
+import { useThemedStyles } from "@/contexts/ThemeContext";
 interface PickerItem {
   _id: string;
   [key: string]: any;
@@ -36,6 +38,7 @@ export default function PickerModal<T extends PickerItem>({
   renderItem,
   keyExtractor = (item) => item._id,
 }: PickerModalProps<T>) {
+  const styles = useThemedStyles(createStyles);
   return (
     <Modal
       visible={visible}
@@ -89,28 +92,32 @@ export const PickerItemText = ({
   text: string;
   isSelected: boolean;
   isSubtext?: boolean;
-}) => (
-  <Text
-    style={[
-      isSubtext ? styles.itemSubtext : styles.itemText,
-      isSelected && !isSubtext && styles.itemTextSelected,
-    ]}
-  >
-    {text}
-  </Text>
-);
+}) => {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <Text
+      style={[
+        isSubtext ? styles.itemSubtext : styles.itemText,
+        isSelected && !isSubtext && styles.itemTextSelected,
+      ]}
+    >
+      {text}
+    </Text>
+  );
+};
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: "flex-end",
   },
   overlayTouchable: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: c.modalOverlay,
   },
   content: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: "70%",
@@ -122,34 +129,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   title: {
     fontSize: 20,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   item: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   itemSelected: {
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
   },
   itemText: {
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#e5e7eb",
+    color: c.textBody,
   },
   itemTextSelected: {
-    color: "#a855f7",
+    color: c.primary,
     fontFamily: Fonts.semiBold,
   },
   itemSubtext: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 4,
   },
 });

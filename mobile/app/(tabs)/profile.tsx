@@ -30,6 +30,8 @@ import { createUserShareLink } from "@/utils/shareLinks";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { Guide } from "@/libs/interfaces";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface UserProfile {
   _id: string;
   username: string;
@@ -55,6 +57,8 @@ interface UserEvent {
 type TabKey = "hosted" | "attended";
 
 export default function ProfileScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [events, setEvents] = useState<UserEvent[]>([]);
   const [guides, setGuides] = useState<Guide[]>([]);
@@ -184,8 +188,8 @@ export default function ProfileScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={AU.purple}
-              colors={[AU.purple]}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
             />
           }
           showsVerticalScrollIndicator={false}
@@ -220,6 +224,8 @@ function Header({
   loading: boolean;
   onAvatarPress: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const handleShareProfile = async () => {
     if (!user?._id) return;
     try {
@@ -247,7 +253,7 @@ function Header({
             accessibilityLabel="Share profile"
             disabled={!user?._id}
           >
-            <Ionicons name="share-outline" size={16} color={AU.text} />
+            <Ionicons name="share-outline" size={16} color={colors.textBright} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => router.push("/settings")}
@@ -255,7 +261,7 @@ function Header({
             style={styles.settingsBtn}
             accessibilityLabel="Settings"
           >
-            <Ionicons name="settings-outline" size={16} color={AU.text} />
+            <Ionicons name="settings-outline" size={16} color={colors.textBright} />
           </TouchableOpacity>
         </View>
       </View>
@@ -280,7 +286,7 @@ function Header({
                 {displayName(user) || (loading ? "" : "—")}
               </Text>
               {user?.verified && (
-                <Ionicons name="checkmark-circle" size={20} color="#3b82f6" />
+                <Ionicons name="checkmark-circle" size={20} color={colors.info} />
               )}
             </View>
             <Text style={styles.handle} numberOfLines={1}>
@@ -342,7 +348,7 @@ function Header({
           onPress={() => router.push("/search-users" as any)}
           activeOpacity={0.7}
         >
-          <Ionicons name="search" size={14} color={AU.textMute} />
+          <Ionicons name="search" size={14} color={colors.textFaint} />
           <Text style={styles.searchPlaceholder}>Search users…</Text>
         </TouchableOpacity>
       </View>
@@ -364,6 +370,8 @@ function TabsRow({
   tab: TabKey;
   setTab: (t: TabKey) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   // Underline x-position is interpolated between the two tab anchors.
   const anim = React.useRef(new Animated.Value(tab === "hosted" ? 0 : 1)).current;
 
@@ -415,7 +423,7 @@ function TabsRow({
       </TouchableOpacity>
       <Animated.View style={[styles.tabUnderlineWrap, { transform: [{ translateX }], width }]}>
         <LinearGradient
-          colors={[AU.purple, AU.pink]}
+          colors={[colors.primary, colors.accentPink]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={styles.tabUnderline}
@@ -427,6 +435,8 @@ function TabsRow({
 
 // ─── Event row ──────────────────────────────────────────────────────────────
 function EventRow({ event }: { event: UserEvent }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const created = event.userStatus === "creator";
   const date = useMemo(() => {
     const d = new Date(event.date);
@@ -451,7 +461,7 @@ function EventRow({ event }: { event: UserEvent }) {
           <Image source={{ uri: event.image }} style={StyleSheet.absoluteFill} contentFit="cover" />
         ) : (
           <LinearGradient
-            colors={["#22D3EE", "#7C3AED", "#EC4899"]}
+            colors={[colors.accentCyan, colors.primaryDark, colors.accentPink]}
             locations={[0, 0.5, 1]}
             start={{ x: 0.2, y: 0 }}
             end={{ x: 0.8, y: 1 }}
@@ -484,7 +494,7 @@ function EventRow({ event }: { event: UserEvent }) {
         <Text
           style={[
             styles.roleLabel,
-            { color: created ? AU.purpleSoft : AU.textMute },
+            { color: created ? colors.primaryLight : colors.textFaint },
           ]}
         >
           {created ? "CREATED" : "ATTENDED"}
@@ -496,6 +506,8 @@ function EventRow({ event }: { event: UserEvent }) {
 
 // ─── Guides section ───────────────────────────────────────────────────────────
 function GuidesSection({ guides }: { guides: Guide[] }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.guidesSection}>
       <View style={styles.guidesHeader}>
@@ -505,7 +517,7 @@ function GuidesSection({ guides }: { guides: Guide[] }) {
           activeOpacity={0.7}
           style={styles.manageBtn}
         >
-          <Ionicons name="add" size={14} color={AU.purpleSoft} />
+          <Ionicons name="add" size={14} color={colors.primaryLight} />
           <Text style={styles.manageText}>Manage</Text>
         </TouchableOpacity>
       </View>
@@ -516,7 +528,7 @@ function GuidesSection({ guides }: { guides: Guide[] }) {
           activeOpacity={0.85}
           style={styles.guidesEmpty}
         >
-          <Ionicons name="book-outline" size={18} color={AU.textMute} />
+          <Ionicons name="book-outline" size={18} color={colors.textFaint} />
           <Text style={styles.guidesEmptyText}>
             Share your local knowledge — create a guide
           </Text>
@@ -534,6 +546,8 @@ function GuidesSection({ guides }: { guides: Guide[] }) {
 
 // ─── Guide row ──────────────────────────────────────────────────────────────
 function GuideRow({ guide }: { guide: Guide }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const formatPrice = useFormatPrice();
   return (
     <TouchableOpacity
@@ -552,7 +566,7 @@ function GuideRow({ guide }: { guide: Guide }) {
           />
         ) : (
           <LinearGradient
-            colors={["#7C3AED", "#EC4899"]}
+            colors={[colors.primaryDark, colors.accentPink]}
             start={{ x: 0.2, y: 0 }}
             end={{ x: 0.8, y: 1 }}
             style={StyleSheet.absoluteFill}
@@ -586,8 +600,8 @@ function GuideRow({ guide }: { guide: Guide }) {
         </View>
       ) : (
         <View style={styles.roleIndicator}>
-          <Ionicons name="eye-outline" size={13} color={AU.textMute} />
-          <Text style={[styles.roleLabel, { color: AU.textMute }]}>
+          <Ionicons name="eye-outline" size={13} color={colors.textFaint} />
+          <Text style={[styles.roleLabel, { color: colors.textFaint }]}>
             {guide.views}
           </Text>
         </View>
@@ -598,6 +612,8 @@ function GuideRow({ guide }: { guide: Guide }) {
 
 // ─── Empty states ───────────────────────────────────────────────────────────
 function EmptyState({ tab }: { tab: TabKey }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   if (tab === "hosted") {
     return (
       <View style={styles.empty}>
@@ -608,7 +624,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
           style={styles.ctaPrimaryWrap}
         >
           <LinearGradient
-            colors={[AU.purple, AU.purpleDeep, AU.pink]}
+            colors={[colors.primary, colors.primaryDark, colors.accentPink]}
             locations={[0, 0.5, 1]}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
@@ -634,8 +650,9 @@ function EmptyState({ tab }: { tab: TabKey }) {
 }
 
 // ─── Styles ─────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: AU.bg },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.backgroundDeep },
   listContent: { paddingBottom: 40, flexGrow: 1 },
 
   // Top row
@@ -649,7 +666,7 @@ const styles = StyleSheet.create({
   kicker: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 13,
-    color: AU.textDim,
+    color: c.textDim,
     letterSpacing: 2.34,
   },
   topActions: { flexDirection: "row", alignItems: "center", gap: 10 },
@@ -657,9 +674,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: AU.stroke,
+    borderColor: c.glassFill,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -682,18 +699,18 @@ const styles = StyleSheet.create({
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 26,
     letterSpacing: -0.78,
-    color: AU.text,
+    color: c.textBright,
     lineHeight: 26 * 1.05,
   },
   handle: {
-    color: AU.textDim,
+    color: c.textDim,
     fontFamily: Fonts.medium,
     fontSize: 12.5,
     marginTop: 3,
   },
-  handleVendor: { color: AU.purpleSoft, fontFamily: Fonts.bold },
+  handleVendor: { color: c.primaryLight, fontFamily: Fonts.bold },
   bio: {
-    color: AU.text,
+    color: c.textBright,
     fontFamily: Fonts.regular,
     fontSize: 13.5,
     lineHeight: 20,
@@ -712,13 +729,13 @@ const styles = StyleSheet.create({
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 20,
     letterSpacing: -0.4,
-    color: AU.text,
+    color: c.textBright,
     lineHeight: 20,
   },
   statLabel: {
     fontFamily: Fonts.medium,
     fontSize: 11.5,
-    color: AU.textDim,
+    color: c.textDim,
   },
 
   // Search
@@ -730,12 +747,12 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 14,
     borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: AU.stroke,
+    borderColor: c.glassFill,
   },
   searchPlaceholder: {
-    color: AU.textMute,
+    color: c.textFaint,
     fontFamily: Fonts.medium,
     fontSize: 13,
   },
@@ -753,7 +770,7 @@ const styles = StyleSheet.create({
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 20,
     letterSpacing: -0.4,
-    color: AU.text,
+    color: c.textBright,
   },
   tabsRow: {
     flexDirection: "row",
@@ -767,8 +784,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     paddingBottom: 4,
   },
-  tabLabelActive: { color: AU.text },
-  tabLabelInactive: { color: AU.textMute },
+  tabLabelActive: { color: c.textBright },
+  tabLabelInactive: { color: c.textFaint },
   tabUnderlineWrap: {
     position: "absolute",
     left: 0,
@@ -787,9 +804,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 14,
-    backgroundColor: "rgba(26,16,48,0.7)",
+    backgroundColor: c.cardGlass,
     borderWidth: 1,
-    borderColor: AU.stroke,
+    borderColor: c.glassFill,
     marginHorizontal: 22,
   },
   thumbWrap: {
@@ -798,8 +815,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: AU.strokeHi,
-    backgroundColor: AU.surface,
+    borderColor: c.glassStrokeStrong,
+    backgroundColor: c.card,
   },
   thumbEmoji: {
     position: "absolute",
@@ -808,13 +825,13 @@ const styles = StyleSheet.create({
     fontSize: 38,
     opacity: 0.45,
     transform: [{ rotate: "-8deg" }],
-    color: "#fff",
+    color: c.text,
   },
   eventTitle: {
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 14.5,
     letterSpacing: -0.145,
-    color: AU.text,
+    color: c.textBright,
   },
   subRow: {
     marginTop: 3,
@@ -825,13 +842,13 @@ const styles = StyleSheet.create({
   subText: {
     fontFamily: Fonts.medium,
     fontSize: 11.5,
-    color: AU.textDim,
+    color: c.textDim,
   },
   subDot: {
     width: 2.5,
     height: 2.5,
     borderRadius: 1.25,
-    backgroundColor: AU.textMute,
+    backgroundColor: c.textFaint,
   },
   roleIndicator: {
     flexDirection: "row",
@@ -840,8 +857,8 @@ const styles = StyleSheet.create({
   },
   roleDot: { width: 6, height: 6, borderRadius: 3 },
   roleDotCreated: {
-    backgroundColor: AU.purple,
-    shadowColor: AU.purple,
+    backgroundColor: c.primary,
+    shadowColor: c.primary,
     shadowOpacity: 0.6,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 0 },
@@ -873,10 +890,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: AU.strokeHi,
+    borderColor: c.glassStrokeStrong,
   },
   manageText: {
-    color: AU.purpleSoft,
+    color: c.primaryLight,
     fontFamily: Fonts.bold,
     fontSize: 12,
   },
@@ -889,13 +906,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: AU.stroke,
+    borderColor: c.glassFill,
     borderStyle: "dashed",
     backgroundColor: "rgba(255,255,255,0.03)",
   },
   guidesEmptyText: {
     flex: 1,
-    color: AU.textDim,
+    color: c.textDim,
     fontFamily: Fonts.medium,
     fontSize: 13,
   },
@@ -913,7 +930,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(251,191,36,0.4)",
   },
   draftBadgeText: {
-    color: "#fbbf24",
+    color: c.warningLight,
     fontFamily: Fonts.bold,
     fontSize: 9.5,
     letterSpacing: 0.5,
@@ -930,21 +947,21 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 14,
-    color: AU.textDim,
+    color: c.textDim,
   },
   ctaPrimaryWrap: {
     paddingVertical: 12,
     paddingHorizontal: 22,
     borderRadius: 999,
     overflow: "hidden",
-    shadowColor: AU.purple,
+    shadowColor: c.primary,
     shadowOpacity: 0.45,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
     elevation: 8,
   },
   ctaPrimaryText: {
-    color: "#fff",
+    color: c.white,
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 14,
   },
@@ -953,10 +970,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: AU.strokeHi,
+    borderColor: c.glassStrokeStrong,
   },
   ctaSecondaryText: {
-    color: AU.text,
+    color: c.textBright,
     fontFamily: Fonts.bold,
     fontSize: 13,
   },

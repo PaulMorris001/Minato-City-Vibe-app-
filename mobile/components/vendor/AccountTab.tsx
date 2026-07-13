@@ -28,6 +28,8 @@ import { formatLocation } from "@/utils/location";
 import { uploadImage } from "@/utils/imageUpload";
 import { VN, VNF } from "./vendorTheme";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface AccountTabProps {
   onRefresh: () => void;
 }
@@ -40,6 +42,8 @@ const SOCIAL_META: { key: "instagram" | "tiktok" | "twitter" | "facebook"; label
 ];
 
 export default function AccountTab({ onRefresh }: AccountTabProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [stripeOnboardingComplete, setStripeOnboardingComplete] = useState(false);
@@ -288,7 +292,7 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
     const pal = {
       green: { bg: "rgba(52,211,153,0.16)", br: "rgba(52,211,153,0.35)", tx: VN.greenSoft },
       amber: { bg: "rgba(245,158,11,0.16)", br: "rgba(245,158,11,0.35)", tx: VN.amberSoft },
-      purple: { bg: "rgba(168,85,247,0.16)", br: "rgba(192,132,252,0.35)", tx: VN.purpleSoft },
+      purple: { bg: colors.primaryFadedStrong, br: "rgba(192,132,252,0.35)", tx: VN.purpleSoft },
     }[tone];
     return (
       <TouchableOpacity
@@ -318,7 +322,7 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
             {businessPicture ? (
               <Image source={{ uri: businessPicture }} style={StyleSheet.absoluteFill as any} contentFit="cover" />
             ) : (
-              <LinearGradient colors={["#F59E0B", "#EC4899", "#7C3AED"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill as any} />
+              <LinearGradient colors={[colors.warning, colors.accentPink, colors.primaryDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill as any} />
             )}
             <LinearGradient colors={["transparent", "rgba(0,0,0,0.45)"]} locations={[0.5, 1]} style={StyleSheet.absoluteFill as any} />
             <TouchableOpacity style={styles.editCoverBtn} onPress={() => setIsEditing(true)} activeOpacity={0.8}>
@@ -332,7 +336,7 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
               {profilePicture ? (
                 <Image source={{ uri: profilePicture }} style={styles.avatarImg} contentFit="cover" />
               ) : (
-                <LinearGradient colors={["#22D3EE", "#7C3AED", "#EC4899"]} style={styles.avatarImg}>
+                <LinearGradient colors={[colors.accentCyan, colors.primaryDark, colors.accentPink]} style={styles.avatarImg}>
                   <Ionicons name="storefront" size={28} color="#fff" />
                 </LinearGradient>
               )}
@@ -341,7 +345,7 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
             <View style={styles.nameRow}>
               <Text style={styles.bizName}>{profile.businessName || "Your business"}</Text>
               {profile.verified && (
-                <LinearGradient colors={["#A855F7", "#EC4899"]} style={styles.verifiedBadge}>
+                <LinearGradient colors={[colors.primary, colors.accentPink]} style={styles.verifiedBadge}>
                   <Text style={styles.verifiedGlyph}>✦</Text>
                 </LinearGradient>
               )}
@@ -424,7 +428,7 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.85} style={{ flex: 1 }} onPress={handleSave} disabled={saving}>
-              <LinearGradient colors={["#A855F7", "#7C3AED", "#EC4899"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtn}>
+              <LinearGradient colors={[colors.primary, colors.primaryDark, colors.accentPink]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtn}>
                 {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.saveBtnText}>Save changes</Text>}
               </LinearGradient>
             </TouchableOpacity>
@@ -519,7 +523,8 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: { flex: 1, backgroundColor: VN.bg },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: VN.bg },
 
@@ -533,7 +538,7 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
   bizName: { fontFamily: VNF.display, fontSize: 26, color: VN.text, letterSpacing: -0.8 },
   verifiedBadge: { width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  verifiedGlyph: { color: "#fff", fontSize: 11 },
+  verifiedGlyph: { color: c.text, fontSize: 11 },
   bizSub: { fontFamily: VNF.medium, fontSize: 12.5, color: VN.textDim, marginTop: 4 },
   pillsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 14 },
   statusPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1 },
@@ -548,11 +553,11 @@ const styles = StyleSheet.create({
 
   socialRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: VN.stroke },
   socialIcon: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-  socialIconSet: { backgroundColor: "rgba(168,85,247,0.16)", borderColor: "rgba(192,132,252,0.3)" },
-  socialIconEmpty: { backgroundColor: "rgba(255,255,255,0.04)", borderColor: VN.stroke },
+  socialIconSet: { backgroundColor: c.primaryFadedStrong, borderColor: "rgba(192,132,252,0.3)" },
+  socialIconEmpty: { backgroundColor: c.glassFillSubtle, borderColor: VN.stroke },
 
   logoutWrap: { paddingHorizontal: 18, paddingTop: 4, paddingBottom: 8 },
-  logoutRow: { height: 48, paddingHorizontal: 14, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.04)", borderWidth: 1, borderColor: VN.strokeHi, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  logoutRow: { height: 48, paddingHorizontal: 14, borderRadius: 14, backgroundColor: c.glassFillSubtle, borderWidth: 1, borderColor: VN.strokeHi, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   logoutText: { fontFamily: VNF.bold, fontSize: 13.5, color: VN.text },
 
   // Edit mode
@@ -562,15 +567,15 @@ const styles = StyleSheet.create({
   input: { backgroundColor: VN.surface, borderWidth: 1, borderColor: VN.stroke, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, fontFamily: VNF.body, fontSize: 15, color: VN.text },
   multiline: { minHeight: 90, textAlignVertical: "top" },
   editActions: { flexDirection: "row", gap: 10, marginTop: 20 },
-  cancelBtn: { height: 48, paddingHorizontal: 18, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1, borderColor: VN.strokeHi },
+  cancelBtn: { height: 48, paddingHorizontal: 18, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: c.glassFillSubtle, borderWidth: 1, borderColor: VN.strokeHi },
   cancelBtnText: { fontFamily: VNF.bold, fontSize: 14, color: VN.textDim },
   saveBtn: { height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  saveBtnText: { fontFamily: VNF.heading, fontSize: 14, color: "#fff" },
+  saveBtnText: { fontFamily: VNF.heading, fontSize: 14, color: c.white },
 
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
-  modalSheet: { backgroundColor: "#1f1f2e", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "70%", paddingBottom: 30 },
+  modalOverlay: { flex: 1, backgroundColor: c.modalOverlay, justifyContent: "flex-end" },
+  modalSheet: { backgroundColor: c.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "70%", paddingBottom: 30 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: VN.stroke },
-  modalTitle: { fontFamily: VNF.heading, fontSize: 20, color: "#fff" },
+  modalTitle: { fontFamily: VNF.heading, fontSize: 20, color: c.text },
   typeRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderBottomWidth: 1, borderBottomColor: VN.stroke },
   typeRowText: { fontFamily: VNF.body, fontSize: 16, color: VN.text },
 });

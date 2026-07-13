@@ -15,6 +15,8 @@ import { useFormatPrice } from "@/hooks/useFormatPrice";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 export interface PublicEvent {
   _id: string;
   title: string;
@@ -55,6 +57,8 @@ export default function PublicEventCard({
   onJoinFreeEvent,
   style,
 }: PublicEventCardProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const formatPrice = useFormatPrice();
   const [favorited, setFavorited] = useState(event.isFavorited ?? false);
@@ -92,7 +96,7 @@ export default function PublicEventCard({
             colors={["#667eea", "#764ba2"]}
             style={styles.eventCardImagePlaceholder}
           >
-            <Ionicons name="calendar" size={48} color="rgba(255,255,255,0.5)" />
+            <Ionicons name="calendar" size={48} color={colors.textFaint} />
           </LinearGradient>
         )}
 
@@ -104,7 +108,7 @@ export default function PublicEventCard({
           <Ionicons
             name={favorited ? "heart" : "heart-outline"}
             size={22}
-            color={favorited ? "#ef4444" : "#fff"}
+            color={favorited ? colors.error : "#fff"}
           />
         </TouchableOpacity>
 
@@ -124,14 +128,14 @@ export default function PublicEventCard({
             </Text>
 
             <View style={styles.eventCardDetail}>
-              <Ionicons name={event.isVirtual ? "videocam" : "location"} size={14} color="#a855f7" />
+              <Ionicons name={event.isVirtual ? "videocam" : "location"} size={14} color={colors.primary} />
               <Text style={styles.eventCardDetailText} numberOfLines={1}>
                 {event.location}
               </Text>
             </View>
 
             <View style={styles.eventCardDetail}>
-              <Ionicons name="calendar" size={14} color="#a855f7" />
+              <Ionicons name="calendar" size={14} color={colors.primary} />
               <Text style={styles.eventCardDetailText}>
                 {new Date(event.date).toLocaleDateString()}
               </Text>
@@ -170,7 +174,7 @@ export default function PublicEventCard({
                     activeOpacity={0.8}
                   >
                     <LinearGradient
-                      colors={["#a855f7", "#7c3aed"]}
+                      colors={[colors.primary, colors.primaryDark]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                       style={styles.buyTicketGradient}
@@ -184,7 +188,7 @@ export default function PublicEventCard({
                 {/* Show "Purchased" badge if user has a ticket */}
                 {event.userHasPurchased && (
                   <View style={styles.purchasedBadge}>
-                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <Ionicons name="checkmark-circle" size={16} color={colors.success} />
                     <Text style={styles.purchasedText}>Purchased</Text>
                   </View>
                 )}
@@ -192,7 +196,7 @@ export default function PublicEventCard({
                 {/* Show "Your Event" badge if user is the creator */}
                 {event.isCreator && (
                   <View style={styles.creatorBadge}>
-                    <Ionicons name="star" size={16} color="#f59e0b" />
+                    <Ionicons name="star" size={16} color={colors.warning} />
                     <Text style={styles.creatorText}>Your Event</Text>
                   </View>
                 )}
@@ -216,7 +220,7 @@ export default function PublicEventCard({
                     activeOpacity={0.8}
                   >
                     <LinearGradient
-                      colors={["#10b981", "#059669"]}
+                      colors={[colors.success, "#059669"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                       style={styles.joinEventGradient}
@@ -230,7 +234,7 @@ export default function PublicEventCard({
                 {/* Show "Joined" badge if user has joined */}
                 {event.userHasPurchased && (
                   <View style={styles.joinedBadge}>
-                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <Ionicons name="checkmark-circle" size={16} color={colors.success} />
                     <Text style={styles.joinedText}>Joined</Text>
                   </View>
                 )}
@@ -238,7 +242,7 @@ export default function PublicEventCard({
                 {/* Show "Your Event" badge if user is the creator */}
                 {event.isCreator && (
                   <View style={styles.creatorBadge}>
-                    <Ionicons name="star" size={16} color="#f59e0b" />
+                    <Ionicons name="star" size={16} color={colors.warning} />
                     <Text style={styles.creatorText}>Your Event</Text>
                   </View>
                 )}
@@ -251,7 +255,8 @@ export default function PublicEventCard({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   eventCard: {
     width: "100%",
     height: 400,
@@ -291,7 +296,7 @@ const styles = StyleSheet.create({
   rsvpBadgeText: {
     fontSize: scaleFontSize(12),
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.white,
   },
   favoriteButton: {
     position: "absolute",
@@ -322,7 +327,7 @@ const styles = StyleSheet.create({
   eventCardTitle: {
     fontSize: scaleFontSize(22),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.white,
     marginBottom: 12,
   },
   eventCardDetail: {
@@ -334,7 +339,7 @@ const styles = StyleSheet.create({
   eventCardDetailText: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
-    color: "#e5e7eb",
+    color: "rgba(255,255,255,0.85)",
     flex: 1,
   },
   eventCardPriceContainer: {
@@ -355,12 +360,12 @@ const styles = StyleSheet.create({
   eventCardPriceText: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   eventCardTicketsText: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.medium,
-    color: "#fbbf24",
+    color: c.warningLight,
   },
   buyTicketButton: {
     borderRadius: 12,
@@ -378,10 +383,10 @@ const styles = StyleSheet.create({
   buyTicketText: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   freeEventBadge: {
-    backgroundColor: "#10b981",
+    backgroundColor: c.success,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
@@ -392,7 +397,7 @@ const styles = StyleSheet.create({
   freeEventText: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.white,
     letterSpacing: 0.5,
   },
   joinEventButton: {
@@ -411,7 +416,7 @@ const styles = StyleSheet.create({
   joinEventText: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   joinedBadge: {
     flexDirection: "row",
@@ -426,7 +431,7 @@ const styles = StyleSheet.create({
   joinedText: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
-    color: "#10b981",
+    color: c.successLight,
   },
   purchasedBadge: {
     flexDirection: "row",
@@ -441,7 +446,7 @@ const styles = StyleSheet.create({
   purchasedText: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
-    color: "#10b981",
+    color: c.successLight,
   },
   creatorBadge: {
     flexDirection: "row",
@@ -456,6 +461,6 @@ const styles = StyleSheet.create({
   creatorText: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
-    color: "#f59e0b",
+    color: c.warningLight,
   },
 });

@@ -29,6 +29,8 @@ import {
   LocationSelection,
 } from "@/libs/interfaces";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 type Field = "country" | "state" | "city";
 
 interface LocationPickerProps {
@@ -44,6 +46,8 @@ export default function LocationPicker({
   label = "Location",
   required = false,
 }: LocationPickerProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [country, setCountry] = useState<{ name: string; iso: string } | null>(
     value?.country ? { name: value.country, iso: value.countryIso || "" } : null
   );
@@ -203,11 +207,11 @@ export default function LocationPicker({
       onPress={() => !disabled && openPicker(field)}
       activeOpacity={disabled ? 1 : 0.7}
     >
-      <Ionicons name={icon} size={18} color={disabled ? "#4b5563" : Colors.primary} />
+      <Ionicons name={icon} size={18} color={disabled ? colors.borderMuted : Colors.primary} />
       <Text style={[styles.rowText, !text && styles.rowPlaceholder]} numberOfLines={1}>
         {text || placeholder}
       </Text>
-      <Ionicons name="chevron-down" size={16} color="#6b7280" />
+      <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
     </TouchableOpacity>
   );
 
@@ -273,16 +277,16 @@ export default function LocationPicker({
             <View style={styles.header}>
               <Text style={styles.title}>{modalTitle}</Text>
               <TouchableOpacity onPress={() => setOpenField(null)}>
-                <Ionicons name="close" size={24} color="#fff" />
+                <Ionicons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.searchBox}>
-              <Ionicons name="search" size={18} color="#6b7280" />
+              <Ionicons name="search" size={18} color={colors.textMuted} />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search..."
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={colors.textMuted}
                 value={search}
                 onChangeText={setSearch}
                 autoCorrect={false}
@@ -325,18 +329,19 @@ export default function LocationPicker({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     marginBottom: 8,
   },
   label: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#e5e7eb",
+    color: c.textBody,
     marginBottom: 8,
   },
   required: {
-    color: "#ef4444",
+    color: c.error,
   },
   useLocationBtn: {
     flexDirection: "row",
@@ -345,9 +350,9 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: "rgba(168,85,247,0.1)",
+    backgroundColor: c.primaryFaded,
     borderWidth: 1,
-    borderColor: "rgba(168,85,247,0.3)",
+    borderColor: c.primaryBorder,
     marginBottom: 12,
   },
   useLocationText: {
@@ -359,12 +364,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     marginBottom: 10,
   },
   rowDisabled: {
@@ -374,10 +379,10 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
   },
   rowPlaceholder: {
-    color: "#6b7280",
+    color: c.textMuted,
   },
   overlay: {
     flex: 1,
@@ -385,10 +390,10 @@ const styles = StyleSheet.create({
   },
   overlayTouchable: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: c.modalOverlay,
   },
   content: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: "75%",
@@ -400,12 +405,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   title: {
     fontSize: 20,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   searchBox: {
     flexDirection: "row",
@@ -418,13 +423,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
     padding: 0,
   },
   item: {
@@ -436,11 +441,11 @@ const styles = StyleSheet.create({
   itemText: {
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#e5e7eb",
+    color: c.textBody,
   },
   empty: {
     textAlign: "center",
-    color: "#9ca3af",
+    color: c.textSecondary,
     fontFamily: Fonts.regular,
     marginTop: 24,
   },

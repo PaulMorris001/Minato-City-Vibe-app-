@@ -18,7 +18,12 @@ import { BASE_URL } from "@/constants/constants";
 import { PrimaryButton } from "@/components/shared";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
+import type { ThemeColors } from "@/constants/theme";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function VerifyOTP() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const { email } = useLocalSearchParams();
   const [otpValue, setOtpValue] = useState("");
@@ -117,17 +122,11 @@ export default function VerifyOTP() {
     >
       <View style={styles.content}>
         {/* Back Button */}
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => goBack()}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="arrow-back" size={24} color="#a855f7" />
-        </TouchableOpacity>
+        <GlassBackButton style={styles.backButton} />
 
         <View style={styles.header}>
           <View style={styles.iconContainer}>
-            <Ionicons name="mail" size={48} color="#a855f7" />
+            <Ionicons name="mail" size={48} color={colors.primary} />
           </View>
           <Text style={styles.title}>Verify Code</Text>
           <Text style={styles.subtitle}>
@@ -192,10 +191,11 @@ export default function VerifyOTP() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
   },
   content: {
     flex: 1,
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 24,
@@ -225,18 +225,18 @@ const styles = StyleSheet.create({
   title: {
     fontSize: scaleFontSize(28),
     fontWeight: "bold",
-    color: "#fff",
+    color: c.text,
     textAlign: "center",
     marginBottom: 12,
   },
   subtitle: {
     fontSize: scaleFontSize(15),
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     lineHeight: 22,
   },
   emailText: {
-    color: "#a855f7",
+    color: c.primary,
     fontWeight: "600",
   },
   hiddenInput: {
@@ -255,21 +255,21 @@ const styles = StyleSheet.create({
     width: 48,
     height: 56,
     borderRadius: 12,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderWidth: 2,
-    borderColor: "#374151",
+    borderColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
   otpBoxFilled: {
-    borderColor: "#a855f7",
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    borderColor: c.primary,
+    backgroundColor: c.primaryFaded,
   },
   otpBoxFocused: {
-    borderColor: "#a855f7",
+    borderColor: c.primary,
   },
   otpDigit: {
-    color: "#fff",
+    color: c.text,
     fontSize: scaleFontSize(24),
     fontWeight: "bold",
     textAlign: "center",
@@ -283,11 +283,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   footerText: {
-    color: "#9ca3af",
+    color: c.textSecondary,
     fontSize: scaleFontSize(15),
   },
   link: {
-    color: "#a855f7",
+    color: c.primary,
     fontWeight: "600",
     fontSize: scaleFontSize(15),
   },

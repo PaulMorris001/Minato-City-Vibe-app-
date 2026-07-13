@@ -46,16 +46,13 @@ import { uploadImage } from "@/utils/imageUpload";
 import { openUserProfile } from "@/utils/userNavigation";
 import { trackEvent } from "@/utils/analytics";
 
-const CH_BG = "#0B0613";
-const CH_TEXT = "#F4EEFF";
-const CH_TEXT_DIM = "rgba(244,238,255,0.62)";
-const CH_TEXT_MUTE = "rgba(244,238,255,0.42)";
-const CH_STROKE = "rgba(255,255,255,0.08)";
-const CH_STROKE_HI = "rgba(255,255,255,0.14)";
-const CH_PURPLE = "#A855F7";
-const CH_PURPLE_SOFT = "#C084FC";
+import type { ThemeColors } from "@/constants/theme";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 
 export default function ChatScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const [chat, setChat] = useState<Chat | null>(null);
@@ -1180,6 +1177,7 @@ export default function ChatScreen() {
       handleImagePress,
       handleMentionPress,
       handleReplyPress,
+      styles,
     ]
   );
 
@@ -1203,7 +1201,7 @@ export default function ChatScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={CH_PURPLE} />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading messages…</Text>
         </View>
       </View>
@@ -1220,13 +1218,7 @@ export default function ChatScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity
-              style={styles.iconBtn}
-              onPress={handleBack}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="chevron-back" size={18} color={CH_TEXT} />
-            </TouchableOpacity>
+            <GlassBackButton onPress={handleBack} size={36} />
 
             <TouchableOpacity
               style={styles.headerCenter}
@@ -1255,7 +1247,7 @@ export default function ChatScreen() {
               onPress={openSettings}
               activeOpacity={0.7}
             >
-              <Ionicons name="settings-outline" size={18} color={CH_TEXT} />
+              <Ionicons name="settings-outline" size={18} color={colors.textBright} />
             </TouchableOpacity>
           </View>
 
@@ -1267,7 +1259,7 @@ export default function ChatScreen() {
               onPress={() => router.push(`/event/${eventRef._id}` as any)}
             >
               <LinearGradient
-                colors={["rgba(168,85,247,0.18)", "rgba(236,72,153,0.12)"]}
+                colors={[colors.primaryFadedStrong, "rgba(236,72,153,0.12)"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.eventBanner}
@@ -1281,7 +1273,7 @@ export default function ChatScreen() {
                     />
                   ) : (
                     <LinearGradient
-                      colors={["#A855F7", "#7C3AED", "#EC4899"]}
+                      colors={[colors.primary, colors.primaryDark, colors.accentPink]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={StyleSheet.absoluteFillObject}
@@ -1318,7 +1310,7 @@ export default function ChatScreen() {
               activeOpacity={0.85}
               onPress={() => handleReplyPress((chat.pinnedMessage as any)._id)}
             >
-              <Ionicons name="pin" size={13} color="#a855f7" style={{ marginRight: 6 }} />
+              <Ionicons name="pin" size={13} color={colors.primary} style={{ marginRight: 6 }} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.pinnedBannerLabel}>Pinned message</Text>
                 <Text style={styles.pinnedBannerText} numberOfLines={1}>
@@ -1374,7 +1366,7 @@ export default function ChatScreen() {
                   activeOpacity={0.7}
                 >
                   {loadingOlder ? (
-                    <ActivityIndicator size="small" color={CH_PURPLE_SOFT} />
+                    <ActivityIndicator size="small" color={colors.primaryLight} />
                   ) : (
                     <Text style={styles.loadOlderText}>Load earlier messages</Text>
                   )}
@@ -1519,13 +1511,11 @@ export default function ChatScreen() {
               onSingleTap={() => setSelectedImage(null)}
             />
           )}
-          <TouchableOpacity
-            style={[styles.imageViewerClose, { top: insets.top + 8 }]}
+          <GlassBackButton
             onPress={() => setSelectedImage(null)}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <Ionicons name="arrow-back" size={22} color="#fff" />
-          </TouchableOpacity>
+            overMedia
+            style={[styles.imageViewerClose, { top: insets.top + 8 }]}
+          />
         </View>
       </Modal>
 
@@ -1572,7 +1562,7 @@ export default function ChatScreen() {
               }}
             >
               <LinearGradient
-                colors={["#A855F7", "#7C3AED"]}
+                colors={[colors.primary, colors.primaryDark]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.imagePreviewSend}
@@ -1604,7 +1594,7 @@ export default function ChatScreen() {
                 {isGroup ? "Group Settings" : "Chat Settings"}
               </Text>
               <TouchableOpacity onPress={() => setSettingsVisible(false)}>
-                <Ionicons name="close" size={22} color={CH_TEXT} />
+                <Ionicons name="close" size={22} color={colors.textBright} />
               </TouchableOpacity>
             </View>
 
@@ -1616,7 +1606,7 @@ export default function ChatScreen() {
                       <Image source={{ uri: editGroupImage }} style={styles.groupImagePreview} contentFit="cover" />
                     ) : (
                       <View style={styles.groupImagePlaceholder}>
-                        <Ionicons name="people" size={36} color={CH_TEXT_MUTE} />
+                        <Ionicons name="people" size={36} color={colors.textFaint} />
                       </View>
                     )}
                     <View style={styles.groupImageOverlay}>
@@ -1631,7 +1621,7 @@ export default function ChatScreen() {
                     value={editGroupName}
                     onChangeText={setEditGroupName}
                     placeholder="Enter group name"
-                    placeholderTextColor={CH_TEXT_MUTE}
+                    placeholderTextColor={colors.textFaint}
                     maxLength={50}
                   />
 
@@ -1664,7 +1654,7 @@ export default function ChatScreen() {
                 <Switch
                   value={isPinned}
                   onValueChange={togglePinned}
-                  trackColor={{ false: "rgba(255,255,255,0.1)", true: CH_PURPLE }}
+                  trackColor={{ false: colors.glassStroke, true: colors.primary }}
                   thumbColor="#fff"
                 />
               </View>
@@ -1679,7 +1669,7 @@ export default function ChatScreen() {
                 <Switch
                   value={isMuted}
                   onValueChange={toggleMuted}
-                  trackColor={{ false: "rgba(255,255,255,0.1)", true: CH_PURPLE }}
+                  trackColor={{ false: colors.glassStroke, true: colors.primary }}
                   thumbColor="#fff"
                 />
               </View>
@@ -1691,7 +1681,7 @@ export default function ChatScreen() {
                   activeOpacity={0.85}
                 >
                   <View style={styles.createEventIcon}>
-                    <Ionicons name="calendar" size={18} color={CH_PURPLE_SOFT} />
+                    <Ionicons name="calendar" size={18} color={colors.primaryLight} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.createEventTitle}>Create an event</Text>
@@ -1699,7 +1689,7 @@ export default function ChatScreen() {
                       Everyone in this group is added automatically.
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={CH_TEXT_MUTE} />
+                  <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
                 </TouchableOpacity>
               )}
 
@@ -1723,7 +1713,7 @@ export default function ChatScreen() {
                           hitSlop={8}
                           activeOpacity={0.7}
                         >
-                          <Ionicons name="remove-circle-outline" size={20} color="#ef4444" />
+                          <Ionicons name="remove-circle-outline" size={20} color={colors.error} />
                         </TouchableOpacity>
                       )}
                     </View>
@@ -1754,7 +1744,7 @@ export default function ChatScreen() {
                       activeOpacity={0.85}
                     >
                       <View style={styles.addMembersIcon}>
-                        <Ionicons name="person-add" size={18} color={CH_PURPLE_SOFT} />
+                        <Ionicons name="person-add" size={18} color={colors.primaryLight} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.createEventTitle}>Add members</Text>
@@ -1762,7 +1752,7 @@ export default function ChatScreen() {
                           Invited people join once they accept.
                         </Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={18} color={CH_TEXT_MUTE} />
+                      <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
                     </TouchableOpacity>
                   )}
                 </>
@@ -1774,7 +1764,7 @@ export default function ChatScreen() {
                 onPress={handleDeleteConversation}
                 activeOpacity={0.85}
               >
-                <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                <Ionicons name="trash-outline" size={18} color={colors.error} />
                 <Text style={styles.deleteChatText}>Delete conversation</Text>
               </TouchableOpacity>
             </ScrollView>
@@ -1803,14 +1793,14 @@ export default function ChatScreen() {
             <View style={styles.settingsHeader}>
               <Text style={styles.settingsTitle}>Add members</Text>
               <TouchableOpacity onPress={closeAddMembers}>
-                <Ionicons name="close" size={22} color={CH_TEXT} />
+                <Ionicons name="close" size={22} color={colors.textBright} />
               </TouchableOpacity>
             </View>
 
             <TextInput
               style={styles.memberSearchInput}
               placeholder="Search people who follow you back"
-              placeholderTextColor={CH_TEXT_MUTE}
+              placeholderTextColor={colors.textFaint}
               value={memberSearch}
               onChangeText={setMemberSearch}
               autoCapitalize="none"
@@ -1826,7 +1816,7 @@ export default function ChatScreen() {
                     activeOpacity={0.8}
                   >
                     <Text style={styles.selectedChipText}>{u.username}</Text>
-                    <Ionicons name="close-circle" size={16} color={CH_TEXT_DIM} />
+                    <Ionicons name="close-circle" size={16} color={colors.textDim} />
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1840,7 +1830,7 @@ export default function ChatScreen() {
               ListEmptyComponent={
                 <View style={styles.memberEmpty}>
                   {loadingMutuals ? (
-                    <ActivityIndicator size="small" color={CH_PURPLE_SOFT} />
+                    <ActivityIndicator size="small" color={colors.primaryLight} />
                   ) : (
                     <Text style={styles.memberEmptyText}>
                       {memberSearch.trim()
@@ -1863,7 +1853,7 @@ export default function ChatScreen() {
                     <Ionicons
                       name={selected ? "checkmark-circle" : "ellipse-outline"}
                       size={22}
-                      color={selected ? CH_PURPLE : CH_TEXT_MUTE}
+                      color={selected ? colors.primary : colors.textFaint}
                     />
                   </TouchableOpacity>
                 );
@@ -1906,7 +1896,7 @@ export default function ChatScreen() {
             <View style={styles.settingsHeader}>
               <Text style={styles.settingsTitle}>New group event</Text>
               <TouchableOpacity onPress={() => setCreateEventVisible(false)}>
-                <Ionicons name="close" size={22} color={CH_TEXT} />
+                <Ionicons name="close" size={22} color={colors.textBright} />
               </TouchableOpacity>
             </View>
 
@@ -1916,7 +1906,7 @@ export default function ChatScreen() {
                   <Image source={{ uri: evImage }} style={styles.evImagePreview} contentFit="cover" />
                 ) : (
                   <View style={styles.evImagePlaceholder}>
-                    <Ionicons name="image-outline" size={26} color={CH_TEXT_MUTE} />
+                    <Ionicons name="image-outline" size={26} color={colors.textFaint} />
                     <Text style={styles.evImagePlaceholderText}>Add a cover photo (optional)</Text>
                   </View>
                 )}
@@ -1926,7 +1916,7 @@ export default function ChatScreen() {
               <TextInput
                 style={styles.evInput}
                 placeholder="e.g. Saturday rooftop hang"
-                placeholderTextColor={CH_TEXT_MUTE}
+                placeholderTextColor={colors.textFaint}
                 value={evTitle}
                 onChangeText={setEvTitle}
                 maxLength={80}
@@ -1936,7 +1926,7 @@ export default function ChatScreen() {
               <TextInput
                 style={styles.evInput}
                 placeholder="Where is it?"
-                placeholderTextColor={CH_TEXT_MUTE}
+                placeholderTextColor={colors.textFaint}
                 value={evLocation}
                 onChangeText={setEvLocation}
                 maxLength={120}
@@ -1945,13 +1935,13 @@ export default function ChatScreen() {
               <Text style={[styles.settingsLabel, { marginTop: 16 }]}>When</Text>
               <View style={styles.evDateRow}>
                 <TouchableOpacity style={styles.evDateBtn} onPress={() => setShowEvDate(true)} activeOpacity={0.8}>
-                  <Ionicons name="calendar-outline" size={16} color={CH_PURPLE_SOFT} />
+                  <Ionicons name="calendar-outline" size={16} color={colors.primaryLight} />
                   <Text style={styles.evDateText}>
                     {evDate.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.evDateBtn} onPress={() => setShowEvTime(true)} activeOpacity={0.8}>
-                  <Ionicons name="time-outline" size={16} color={CH_PURPLE_SOFT} />
+                  <Ionicons name="time-outline" size={16} color={colors.primaryLight} />
                   <Text style={styles.evDateText}>
                     {evDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </Text>
@@ -2012,10 +2002,11 @@ export default function ChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: CH_BG,
+    backgroundColor: c.backgroundDeep,
   },
   safeArea: {
     flex: 1,
@@ -2032,7 +2023,7 @@ const styles = StyleSheet.create({
   loadingText: {
     fontFamily: "Outfit_500Medium",
     fontSize: 13,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
   },
 
   // Header
@@ -2043,16 +2034,16 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: CH_STROKE,
+    borderBottomColor: c.glassFill,
     gap: 10,
   },
   iconBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -2069,13 +2060,13 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 15,
-    color: CH_TEXT,
+    color: c.textBright,
     letterSpacing: -0.15,
   },
   headerSubtitle: {
     fontFamily: "Outfit_500Medium",
     fontSize: 11,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     marginTop: 2,
   },
 
@@ -2104,13 +2095,13 @@ const styles = StyleSheet.create({
   eventBannerKicker: {
     fontFamily: "Outfit_700Bold",
     fontSize: 9.5,
-    color: CH_PURPLE_SOFT,
+    color: c.primaryLight,
     letterSpacing: 1.2,
   },
   eventBannerTitle: {
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 13,
-    color: CH_TEXT,
+    color: c.textBright,
     letterSpacing: -0.15,
     marginTop: 2,
   },
@@ -2118,14 +2109,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: c.glassFill,
     borderWidth: 1,
-    borderColor: CH_STROKE_HI,
+    borderColor: c.glassStrokeStrong,
   },
   eventBannerCtaText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 10.5,
-    color: CH_TEXT,
+    color: c.textBright,
   },
 
   // Messages
@@ -2139,7 +2130,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: CH_PURPLE,
+    backgroundColor: c.primary,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
@@ -2148,7 +2139,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: c.glassStroke,
   },
   messagesList: {
     paddingVertical: 12,
@@ -2168,12 +2159,12 @@ const styles = StyleSheet.create({
   emptyText: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 20,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   emptySubtext: {
     fontFamily: "Outfit_500Medium",
     fontSize: 13,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     marginTop: 6,
   },
 
@@ -2188,20 +2179,20 @@ const styles = StyleSheet.create({
   dateSeparatorLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: c.glassStroke,
   },
   dateSeparatorPill: {
     paddingHorizontal: 11,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   dateSeparatorText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 10,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     letterSpacing: 0.6,
   },
 
@@ -2213,7 +2204,7 @@ const styles = StyleSheet.create({
   typingText: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 12,
-    color: CH_PURPLE_SOFT,
+    color: c.primaryLight,
     fontStyle: "italic",
   },
 
@@ -2225,19 +2216,13 @@ const styles = StyleSheet.create({
   imageViewerClose: {
     position: "absolute",
     left: 12,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    alignItems: "center",
     zIndex: 20,
   },
 
   // Confirm-before-send image preview
   imagePreviewOverlay: {
     flex: 1,
-    backgroundColor: "#0B0613",
+    backgroundColor: c.backgroundDeep,
   },
   imagePreviewImage: {
     flex: 1,
@@ -2253,15 +2238,15 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "rgba(255,255,255,0.06)",
+    borderColor: c.glassStrokeStrong,
+    backgroundColor: c.glassFillSubtle,
     alignItems: "center",
     justifyContent: "center",
   },
   imagePreviewCancelText: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 15,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   imagePreviewSend: {
     height: 48,
@@ -2274,13 +2259,13 @@ const styles = StyleSheet.create({
   imagePreviewSendText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 15,
-    color: "#fff",
+    color: c.text,
   },
 
   // Settings modal
   settingsOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: c.modalOverlay,
     justifyContent: "flex-end",
   },
   settingsBackdrop: { flex: 1 },
@@ -2290,7 +2275,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     maxHeight: "85%",
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   settingsHeader: {
     flexDirection: "row",
@@ -2298,12 +2283,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: CH_STROKE,
+    borderBottomColor: c.glassFill,
   },
   settingsTitle: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 20,
-    color: CH_TEXT,
+    color: c.textBright,
     letterSpacing: -0.5,
   },
   settingsBody: {
@@ -2319,15 +2304,15 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
   },
   groupImagePlaceholder: {
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -2335,7 +2320,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: -4,
     right: -4,
-    backgroundColor: CH_PURPLE,
+    backgroundColor: c.primary,
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 5,
@@ -2346,26 +2331,26 @@ const styles = StyleSheet.create({
   groupImageOverlayText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 11,
-    color: "#fff",
+    color: c.text,
   },
   settingsLabel: {
     fontFamily: "Outfit_700Bold",
     fontSize: 11,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     marginBottom: 8,
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
   settingsInput: {
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 11,
     fontFamily: "Outfit_500Medium",
     fontSize: 14,
-    color: CH_TEXT,
+    color: c.textBright,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
     marginBottom: 16,
   },
   // Create-event entry (settings) + quick-create form
@@ -2376,7 +2361,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     padding: 14,
     borderRadius: 16,
-    backgroundColor: "rgba(168,85,247,0.10)",
+    backgroundColor: c.primaryFaded,
     borderWidth: 1,
     borderColor: "rgba(168,85,247,0.28)",
   },
@@ -2384,19 +2369,19 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: "rgba(168,85,247,0.16)",
+    backgroundColor: c.primaryFadedStrong,
     alignItems: "center",
     justifyContent: "center",
   },
   createEventTitle: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 14,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   createEventHint: {
     fontFamily: "Outfit_400Regular",
     fontSize: 11.5,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     marginTop: 2,
   },
   deleteChatRow: {
@@ -2414,7 +2399,7 @@ const styles = StyleSheet.create({
   deleteChatText: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 14,
-    color: "#ef4444",
+    color: c.error,
   },
   evImagePicker: {
     width: "100%",
@@ -2422,27 +2407,27 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: "hidden",
     marginBottom: 18,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   evImagePreview: { width: "100%", height: "100%" },
   evImagePlaceholder: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
   evImagePlaceholderText: {
     fontFamily: "Outfit_500Medium",
     fontSize: 12.5,
-    color: CH_TEXT_MUTE,
+    color: c.textFaint,
   },
   evInput: {
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontFamily: "Outfit_500Medium",
     fontSize: 14,
-    color: CH_TEXT,
+    color: c.textBright,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   evDateRow: { flexDirection: "row", gap: 10 },
   evDateBtn: {
@@ -2453,31 +2438,31 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 12,
     borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   evDateText: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 13.5,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   evCreateBtn: {
     marginTop: 22,
     marginBottom: 28,
     height: 52,
     borderRadius: 16,
-    backgroundColor: CH_PURPLE,
+    backgroundColor: c.primary,
     alignItems: "center",
     justifyContent: "center",
   },
   evCreateBtnText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 14.5,
-    color: "#fff",
+    color: c.white,
   },
   saveButton: {
-    backgroundColor: CH_PURPLE,
+    backgroundColor: c.primary,
     borderRadius: 14,
     paddingVertical: 13,
     alignItems: "center",
@@ -2486,7 +2471,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 14,
-    color: "#fff",
+    color: c.white,
   },
   toggleRow: {
     flexDirection: "row",
@@ -2494,17 +2479,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 12,
     borderBottomWidth: 1,
-    borderBottomColor: CH_STROKE,
+    borderBottomColor: c.glassFill,
   },
   toggleLabel: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 14,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   toggleHint: {
     fontFamily: "Outfit_500Medium",
     fontSize: 11.5,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     marginTop: 2,
   },
   participantRow: {
@@ -2513,40 +2498,40 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 12,
     borderBottomWidth: 1,
-    borderBottomColor: CH_STROKE,
+    borderBottomColor: c.glassFill,
   },
   participantName: {
     flex: 1,
     fontFamily: "Outfit_500Medium",
     fontSize: 14,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   adminBadge: {
-    backgroundColor: "rgba(168,85,247,0.15)",
+    backgroundColor: c.primaryFadedStrong,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: CH_PURPLE,
+    borderColor: c.primary,
   },
   adminBadgeText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 10,
-    color: CH_PURPLE_SOFT,
+    color: c.primaryLight,
     letterSpacing: 0.4,
   },
   pendingBadge: {
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: c.glassFillSubtle,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: CH_STROKE_HI,
+    borderColor: c.glassStrokeStrong,
   },
   pendingBadgeText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 10,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     letterSpacing: 0.4,
   },
   addMembersRow: {
@@ -2556,7 +2541,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     padding: 14,
     borderRadius: 16,
-    backgroundColor: "rgba(168,85,247,0.10)",
+    backgroundColor: c.primaryFaded,
     borderWidth: 1,
     borderColor: "rgba(168,85,247,0.28)",
   },
@@ -2564,7 +2549,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: "rgba(168,85,247,0.16)",
+    backgroundColor: c.primaryFadedStrong,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -2575,14 +2560,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginVertical: 10,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   loadOlderText: {
     fontFamily: "Outfit_500Medium",
     fontSize: 12.5,
-    color: CH_PURPLE_SOFT,
+    color: c.primaryLight,
   },
   // Accept / decline invite banner (shown in place of the composer)
   inviteBanner: {
@@ -2590,18 +2575,18 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 18,
     borderTopWidth: 1,
-    borderTopColor: CH_STROKE,
+    borderTopColor: c.glassFill,
     backgroundColor: "rgba(168,85,247,0.06)",
   },
   inviteBannerTitle: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 14.5,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   inviteBannerHint: {
     fontFamily: "Outfit_400Regular",
     fontSize: 12,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     marginTop: 3,
   },
   inviteBannerActions: {
@@ -2614,38 +2599,38 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 14,
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: CH_STROKE_HI,
+    borderColor: c.glassStrokeStrong,
   },
   inviteDeclineText: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 14,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
   },
   inviteAcceptBtn: {
     flex: 1,
     paddingVertical: 12,
     borderRadius: 14,
     alignItems: "center",
-    backgroundColor: CH_PURPLE,
+    backgroundColor: c.primary,
   },
   inviteAcceptText: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 14,
-    color: "#fff",
+    color: c.text,
   },
   // Add-members modal
   memberSearchInput: {
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontFamily: "Outfit_500Medium",
     fontSize: 14,
-    color: CH_TEXT,
+    color: c.textBright,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
     marginBottom: 12,
   },
   selectedChipsRow: {
@@ -2663,12 +2648,12 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(168,85,247,0.14)",
     borderWidth: 1,
-    borderColor: "rgba(168,85,247,0.30)",
+    borderColor: c.primaryBorder,
   },
   selectedChipText: {
     fontFamily: "Outfit_500Medium",
     fontSize: 12.5,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   memberRow: {
     flexDirection: "row",
@@ -2676,13 +2661,13 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: CH_STROKE,
+    borderBottomColor: c.glassFill,
   },
   memberRowName: {
     flex: 1,
     fontFamily: "Outfit_500Medium",
     fontSize: 14,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   memberEmpty: {
     paddingVertical: 28,
@@ -2691,7 +2676,7 @@ const styles = StyleSheet.create({
   memberEmptyText: {
     fontFamily: "Outfit_400Regular",
     fontSize: 13,
-    color: CH_TEXT_MUTE,
+    color: c.textFaint,
     textAlign: "center",
     paddingHorizontal: 20,
   },
@@ -2700,14 +2685,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 14,
     paddingVertical: 8,
-    backgroundColor: "rgba(168,85,247,0.08)",
+    backgroundColor: c.primaryFaded,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(168,85,247,0.15)",
+    borderBottomColor: c.primaryFadedStrong,
   },
   pinnedBannerLabel: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 10,
-    color: "#a855f7",
+    color: c.primary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 1,
@@ -2715,6 +2700,6 @@ const styles = StyleSheet.create({
   pinnedBannerText: {
     fontFamily: "Outfit_400Regular",
     fontSize: 13,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
   },
 });

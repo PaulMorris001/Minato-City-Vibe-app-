@@ -27,14 +27,9 @@ import { displayName } from "@/utils/displayName";
 import socketService from "@/services/socket.service";
 import ChatListItemSkeleton from "@/components/skeletons/ChatListItemSkeleton";
 
-const CH_BG = "#0B0613";
-const CH_TEXT = "#F4EEFF";
-const CH_TEXT_DIM = "rgba(244,238,255,0.62)";
-const CH_TEXT_MUTE = "rgba(244,238,255,0.42)";
-const CH_STROKE = "rgba(255,255,255,0.08)";
-const CH_STROKE_HI = "rgba(255,255,255,0.14)";
-const CH_PURPLE = "#A855F7";
-const CH_PURPLE_SOFT = "#C084FC";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 
 function sortChats(chats: Chat[], currentUserId: string): Chat[] {
   const pinned: Chat[] = [];
@@ -53,6 +48,8 @@ function sortChats(chats: Chat[], currentUserId: string): Chat[] {
 }
 
 export default function MessagesScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [chats, setChats] = useState<Chat[]>([]);
   const [filteredChats, setFilteredChats] = useState<Chat[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -436,9 +433,7 @@ export default function MessagesScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={() => goHome()} style={styles.iconBtn} activeOpacity={0.7}>
-              <Ionicons name="chevron-back" size={18} color={CH_TEXT} />
-            </TouchableOpacity>
+            <GlassBackButton onPress={() => goHome()} size={36} />
             <View>
               <Text style={styles.headerTitle}>Messages</Text>
               <Text style={styles.headerSubtitle}>
@@ -454,7 +449,7 @@ export default function MessagesScreen() {
               accessibilityLabel="New group chat"
             >
               <View style={styles.groupBtn}>
-                <Ionicons name="people" size={18} color={CH_PURPLE_SOFT} />
+                <Ionicons name="people" size={18} color={colors.primaryLight} />
               </View>
             </TouchableOpacity>
 
@@ -464,7 +459,7 @@ export default function MessagesScreen() {
               accessibilityLabel="New message"
             >
               <LinearGradient
-                colors={["#A855F7", "#7C3AED"]}
+                colors={[colors.primary, colors.primaryDark]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.composeBtn}
@@ -477,17 +472,17 @@ export default function MessagesScreen() {
 
         {/* Search */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={14} color={CH_TEXT_MUTE} style={{ marginRight: 8 }} />
+          <Ionicons name="search" size={14} color={colors.textFaint} style={{ marginRight: 8 }} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search chats…"
-            placeholderTextColor={CH_TEXT_MUTE}
+            placeholderTextColor={colors.textFaint}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={8}>
-              <Ionicons name="close-circle" size={16} color={CH_TEXT_MUTE} />
+              <Ionicons name="close-circle" size={16} color={colors.textFaint} />
             </TouchableOpacity>
           )}
         </View>
@@ -510,8 +505,8 @@ export default function MessagesScreen() {
               <RefreshControl
                 refreshing={refreshing}
                 onRefresh={onRefresh}
-                tintColor={CH_PURPLE}
-                colors={[CH_PURPLE]}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
               />
             }
             ItemSeparatorComponent={() => <View style={{ height: 2 }} />}
@@ -543,16 +538,16 @@ export default function MessagesScreen() {
                   setSearchedUsers([]);
                 }}
               >
-                <Ionicons name="close" size={22} color={CH_TEXT} />
+                <Ionicons name="close" size={22} color={colors.textBright} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.modalSearchContainer}>
-              <Ionicons name="search" size={14} color={CH_TEXT_MUTE} style={{ marginRight: 8 }} />
+              <Ionicons name="search" size={14} color={colors.textFaint} style={{ marginRight: 8 }} />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search mutual follows…"
-                placeholderTextColor={CH_TEXT_MUTE}
+                placeholderTextColor={colors.textFaint}
                 value={userSearchQuery}
                 onChangeText={setUserSearchQuery}
                 autoFocus
@@ -561,7 +556,7 @@ export default function MessagesScreen() {
 
             {searchingUsers && (
               <View style={styles.searchingContainer}>
-                <ActivityIndicator size="small" color={CH_PURPLE} />
+                <ActivityIndicator size="small" color={colors.primary} />
               </View>
             )}
 
@@ -585,7 +580,7 @@ export default function MessagesScreen() {
                     </Text>
                   </View>
                   <View style={styles.mutualBadge}>
-                    <Ionicons name="checkmark-circle" size={12} color={CH_PURPLE_SOFT} />
+                    <Ionicons name="checkmark-circle" size={12} color={colors.primaryLight} />
                     <Text style={styles.mutualBadgeText}>Mutual</Text>
                   </View>
                 </TouchableOpacity>
@@ -593,7 +588,7 @@ export default function MessagesScreen() {
               ListEmptyComponent={
                 !searchingUsers && userSearchQuery.length >= 2 ? (
                   <View style={styles.emptySearchContainer}>
-                    <Ionicons name="people-outline" size={42} color={CH_TEXT_MUTE} />
+                    <Ionicons name="people-outline" size={42} color={colors.textFaint} />
                     <Text style={styles.emptySearchText}>No mutual follows found</Text>
                     <Text style={styles.emptySearchSubtext}>
                       You can only message users who follow you back.
@@ -601,7 +596,7 @@ export default function MessagesScreen() {
                   </View>
                 ) : !searchingUsers && userSearchQuery.length < 2 ? (
                   <View style={styles.emptySearchContainer}>
-                    <Ionicons name="search-outline" size={42} color={CH_TEXT_MUTE} />
+                    <Ionicons name="search-outline" size={42} color={colors.textFaint} />
                     <Text style={styles.emptySearchText}>
                       Search mutual follows to start chatting.
                     </Text>
@@ -626,17 +621,17 @@ export default function MessagesScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>New Group</Text>
               <TouchableOpacity onPress={closeGroupModal}>
-                <Ionicons name="close" size={22} color={CH_TEXT} />
+                <Ionicons name="close" size={22} color={colors.textBright} />
               </TouchableOpacity>
             </View>
 
             {/* Group name */}
             <View style={styles.modalSearchContainer}>
-              <Ionicons name="people" size={14} color={CH_TEXT_MUTE} style={{ marginRight: 8 }} />
+              <Ionicons name="people" size={14} color={colors.textFaint} style={{ marginRight: 8 }} />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Group name…"
-                placeholderTextColor={CH_TEXT_MUTE}
+                placeholderTextColor={colors.textFaint}
                 value={groupName}
                 onChangeText={setGroupName}
                 maxLength={50}
@@ -673,11 +668,11 @@ export default function MessagesScreen() {
 
             {/* Member search */}
             <View style={styles.modalSearchContainer}>
-              <Ionicons name="search" size={14} color={CH_TEXT_MUTE} style={{ marginRight: 8 }} />
+              <Ionicons name="search" size={14} color={colors.textFaint} style={{ marginRight: 8 }} />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Add mutual follows…"
-                placeholderTextColor={CH_TEXT_MUTE}
+                placeholderTextColor={colors.textFaint}
                 value={userSearchQuery}
                 onChangeText={setUserSearchQuery}
               />
@@ -685,7 +680,7 @@ export default function MessagesScreen() {
 
             {searchingUsers && (
               <View style={styles.searchingContainer}>
-                <ActivityIndicator size="small" color={CH_PURPLE} />
+                <ActivityIndicator size="small" color={colors.primary} />
               </View>
             )}
 
@@ -718,12 +713,12 @@ export default function MessagesScreen() {
               ListEmptyComponent={
                 !searchingUsers && userSearchQuery.length >= 2 ? (
                   <View style={styles.emptySearchContainer}>
-                    <Ionicons name="people-outline" size={42} color={CH_TEXT_MUTE} />
+                    <Ionicons name="people-outline" size={42} color={colors.textFaint} />
                     <Text style={styles.emptySearchText}>No mutual follows found</Text>
                   </View>
                 ) : !searchingUsers && userSearchQuery.length < 2 ? (
                   <View style={styles.emptySearchContainer}>
-                    <Ionicons name="search-outline" size={42} color={CH_TEXT_MUTE} />
+                    <Ionicons name="search-outline" size={42} color={colors.textFaint} />
                     <Text style={styles.emptySearchText}>
                       Search mutual follows to add them.
                     </Text>
@@ -782,7 +777,7 @@ export default function MessagesScreen() {
                         : "pin-outline"
                     }
                     size={20}
-                    color="#C084FC"
+                    color={colors.primaryLight}
                   />
                   <Text style={styles.sheetRowText}>
                     {(actionChat.pinnedBy || []).some((p) => p === currentUserId)
@@ -796,8 +791,8 @@ export default function MessagesScreen() {
                   activeOpacity={0.7}
                   onPress={() => handleDeleteChat(actionChat)}
                 >
-                  <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                  <Text style={[styles.sheetRowText, { color: "#ef4444" }]}>
+                  <Ionicons name="trash-outline" size={20} color={colors.error} />
+                  <Text style={[styles.sheetRowText, { color: colors.error }]}>
                     Delete conversation
                   </Text>
                 </TouchableOpacity>
@@ -810,10 +805,11 @@ export default function MessagesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: CH_BG,
+    backgroundColor: c.backgroundDeep,
   },
   sheetOverlay: {
     flex: 1,
@@ -821,14 +817,14 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   sheet: {
-    backgroundColor: "#1A1030",
+    backgroundColor: c.card,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     paddingTop: 8,
     paddingBottom: 34,
     paddingHorizontal: 8,
     borderTopWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: c.glassFill,
   },
   sheetRow: {
     flexDirection: "row",
@@ -840,7 +836,7 @@ const styles = StyleSheet.create({
   sheetRowText: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 15.5,
-    color: "#F4EEFF",
+    color: c.textBright,
   },
   sheetDivider: {
     height: 1,
@@ -857,7 +853,7 @@ const styles = StyleSheet.create({
     right: -60,
     height: 300,
     borderRadius: 9999,
-    backgroundColor: "rgba(168,85,247,0.18)",
+    backgroundColor: c.primaryFadedStrong,
     opacity: 0.7,
   },
 
@@ -873,27 +869,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 14,
   },
-  iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderWidth: 1,
-    borderColor: CH_STROKE,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   headerTitle: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 28,
-    color: CH_TEXT,
+    color: c.textBright,
     letterSpacing: -1,
     lineHeight: 30,
   },
   headerSubtitle: {
     fontFamily: "Outfit_500Medium",
     fontSize: 11.5,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     marginTop: 4,
   },
   headerActions: {
@@ -907,9 +893,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(168,85,247,0.12)",
+    backgroundColor: c.primaryFaded,
     borderWidth: 1,
-    borderColor: "rgba(168,85,247,0.3)",
+    borderColor: c.primaryBorder,
   },
   composeBtn: {
     width: 40,
@@ -917,7 +903,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#A855F7",
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.45,
     shadowRadius: 16,
@@ -940,17 +926,17 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: "#7C3AED",
+    backgroundColor: c.primaryDark,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1.5,
-    borderColor: CH_BG,
+    borderColor: c.backgroundDeep,
   },
   selectedChipText: {
     marginTop: 4,
     fontFamily: "Outfit_500Medium",
     fontSize: 11,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     maxWidth: 52,
     textAlign: "center",
   },
@@ -959,13 +945,13 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: CH_STROKE_HI,
+    borderColor: c.glassStrokeStrong,
     alignItems: "center",
     justifyContent: "center",
   },
   checkCircleOn: {
-    backgroundColor: CH_PURPLE,
-    borderColor: CH_PURPLE,
+    backgroundColor: c.primary,
+    borderColor: c.primary,
   },
   createGroupBtn: {
     marginHorizontal: 22,
@@ -973,7 +959,7 @@ const styles = StyleSheet.create({
     marginBottom: 28,
     height: 52,
     borderRadius: 16,
-    backgroundColor: CH_PURPLE,
+    backgroundColor: c.primary,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -983,7 +969,7 @@ const styles = StyleSheet.create({
   createGroupBtnText: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 15,
-    color: "#fff",
+    color: c.white,
     letterSpacing: -0.3,
   },
 
@@ -994,16 +980,16 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingHorizontal: 14,
     paddingVertical: 11,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: c.glassFillSubtle,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   searchInput: {
     flex: 1,
     fontFamily: "Outfit_500Medium",
     fontSize: 13,
-    color: CH_TEXT,
+    color: c.textBright,
     paddingVertical: 0,
   },
 
@@ -1037,19 +1023,19 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 20,
-    color: CH_TEXT,
+    color: c.textBright,
   },
   emptySubtitle: {
     fontFamily: "Outfit_500Medium",
     fontSize: 13,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     marginTop: 6,
   },
 
   // New chat modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: c.modalOverlay,
     justifyContent: "flex-end",
   },
   modalContent: {
@@ -1059,7 +1045,7 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     height: "85%",
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   modalHeader: {
     flexDirection: "row",
@@ -1071,7 +1057,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 22,
-    color: CH_TEXT,
+    color: c.textBright,
     letterSpacing: -0.6,
   },
   modalSearchContainer: {
@@ -1081,10 +1067,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingHorizontal: 14,
     paddingVertical: 11,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: c.glassFillSubtle,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: CH_STROKE,
+    borderColor: c.glassFill,
   },
   searchingContainer: {
     paddingVertical: 16,
@@ -1101,7 +1087,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 12,
     borderBottomWidth: 1,
-    borderBottomColor: CH_STROKE,
+    borderBottomColor: c.glassFill,
   },
   userInfo: {
     flex: 1,
@@ -1109,13 +1095,13 @@ const styles = StyleSheet.create({
   userName: {
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 15,
-    color: CH_TEXT,
+    color: c.textBright,
     letterSpacing: -0.1,
   },
   userEmail: {
     fontFamily: "Outfit_500Medium",
     fontSize: 12,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     marginTop: 2,
   },
   mutualBadge: {
@@ -1125,14 +1111,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: "rgba(168,85,247,0.15)",
+    backgroundColor: c.primaryFadedStrong,
     borderWidth: 1,
     borderColor: "rgba(192,132,252,0.3)",
   },
   mutualBadgeText: {
     fontFamily: "Outfit_700Bold",
     fontSize: 10,
-    color: CH_PURPLE_SOFT,
+    color: c.primaryLight,
   },
   emptySearchContainer: {
     paddingVertical: 50,
@@ -1141,14 +1127,14 @@ const styles = StyleSheet.create({
   emptySearchText: {
     fontFamily: "Outfit_600SemiBold",
     fontSize: 14,
-    color: CH_TEXT_DIM,
+    color: c.textDim,
     marginTop: 12,
     textAlign: "center",
   },
   emptySearchSubtext: {
     fontFamily: "Outfit_500Medium",
     fontSize: 12,
-    color: CH_TEXT_MUTE,
+    color: c.textFaint,
     marginTop: 6,
     textAlign: "center",
     paddingHorizontal: 30,

@@ -2,11 +2,14 @@ import React from "react";
 import { View, StyleSheet } from "react-native";
 import Skeleton from "../shared/Skeleton";
 
+import { useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface Props {
   count?: number;
 }
 
 function GuideCardItem() {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.card}>
       <Skeleton width="100%" height={150} borderRadius={0} />
@@ -23,6 +26,7 @@ function GuideCardItem() {
 }
 
 export default function GuideCardSkeleton({ count = 4 }: Props) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.container}>
       {Array.from({ length: count }).map((_, i) => (
@@ -32,14 +36,15 @@ export default function GuideCardSkeleton({ count = 4 }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     gap: 12,
     paddingHorizontal: 16,
     paddingTop: 8,
   },
   card: {
-    backgroundColor: "#1a1a2e",
+    backgroundColor: c.backgroundSecondary,
     borderRadius: 12,
     overflow: "hidden",
   },

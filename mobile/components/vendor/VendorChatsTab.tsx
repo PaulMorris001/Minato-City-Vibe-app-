@@ -25,6 +25,8 @@ import { scaleFontSize } from "@/utils/responsive";
 import socketService from "@/services/socket.service";
 import ChatListItemSkeleton from "@/components/skeletons/ChatListItemSkeleton";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface SearchUser {
   id: string;
   username: string;
@@ -35,6 +37,8 @@ interface SearchUser {
 }
 
 export default function VendorChatsTab() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [chats, setChats] = useState<Chat[]>([]);
   const [filteredChats, setFilteredChats] = useState<Chat[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -234,7 +238,7 @@ export default function VendorChatsTab() {
 
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
-      <Ionicons name="chatbubbles-outline" size={64} color="#6b7280" />
+      <Ionicons name="chatbubbles-outline" size={64} color={colors.textMuted} />
       <Text style={styles.emptyText}>No conversations yet</Text>
       <Text style={styles.emptySubtext}>
         Start messaging your customers
@@ -266,7 +270,7 @@ export default function VendorChatsTab() {
           style={styles.newChatButton}
           onPress={() => setNewChatModalVisible(true)}
         >
-          <Ionicons name="create-outline" size={24} color="#a855f7" />
+          <Ionicons name="create-outline" size={24} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -275,19 +279,19 @@ export default function VendorChatsTab() {
         <Ionicons
           name="search"
           size={20}
-          color="#6b7280"
+          color={colors.textMuted}
           style={styles.searchIcon}
         />
         <TextInput
           style={styles.searchInput}
           placeholder="Search conversations..."
-          placeholderTextColor="#6b7280"
+          placeholderTextColor={colors.textMuted}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => setSearchQuery("")}>
-            <Ionicons name="close-circle" size={20} color="#6b7280" />
+            <Ionicons name="close-circle" size={20} color={colors.textMuted} />
           </TouchableOpacity>
         )}
       </View>
@@ -307,8 +311,8 @@ export default function VendorChatsTab() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#a855f7"
-            colors={["#a855f7"]}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
           />
         }
         ListEmptyComponent={renderEmptyState}
@@ -345,13 +349,13 @@ export default function VendorChatsTab() {
               <Ionicons
                 name="search"
                 size={20}
-                color="#6b7280"
+                color={colors.textMuted}
                 style={styles.searchIcon}
               />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search users by username or email..."
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={colors.textMuted}
                 value={userSearchQuery}
                 onChangeText={setUserSearchQuery}
                 autoFocus
@@ -360,7 +364,7 @@ export default function VendorChatsTab() {
 
             {searchingUsers && (
               <View style={styles.searchLoadingContainer}>
-                <ActivityIndicator size="small" color="#a855f7" />
+                <ActivityIndicator size="small" color={colors.primary} />
               </View>
             )}
 
@@ -385,12 +389,12 @@ export default function VendorChatsTab() {
               ListEmptyComponent={
                 !searchingUsers && userSearchQuery.length >= 2 ? (
                   <View style={styles.emptySearchContainer}>
-                    <Ionicons name="people-outline" size={48} color="#6b7280" />
+                    <Ionicons name="people-outline" size={48} color={colors.textMuted} />
                     <Text style={styles.emptySearchText}>No users found</Text>
                   </View>
                 ) : !searchingUsers && userSearchQuery.length < 2 ? (
                   <View style={styles.emptySearchContainer}>
-                    <Ionicons name="search-outline" size={48} color="#6b7280" />
+                    <Ionicons name="search-outline" size={48} color={colors.textMuted} />
                     <Text style={styles.emptySearchText}>
                       Search for customers to message
                     </Text>
@@ -406,16 +410,17 @@ export default function VendorChatsTab() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0B0613",
+    backgroundColor: c.backgroundDeep,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#0B0613",
+    backgroundColor: c.backgroundDeep,
   },
   header: {
     flexDirection: "row",
@@ -428,14 +433,14 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   newChatButton: {
     width: 40,
     height: 40,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     borderRadius: 20,
   },
   searchContainer: {
@@ -444,7 +449,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginBottom: 16,
     paddingHorizontal: 16,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     borderRadius: 12,
     height: 48,
   },
@@ -455,7 +460,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
   },
   listContent: {
     paddingHorizontal: 20,
@@ -473,19 +478,19 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 18,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
     marginTop: 16,
   },
   emptySubtext: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     marginTop: 8,
   },
   startChatButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 12,
@@ -495,15 +500,15 @@ const styles = StyleSheet.create({
   startChatButtonText: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.white,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: c.modalOverlay,
     justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 20,
@@ -519,7 +524,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   modalSearchContainer: {
     flexDirection: "row",
@@ -527,7 +532,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginBottom: 16,
     paddingHorizontal: 16,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     borderRadius: 12,
     height: 48,
   },
@@ -544,19 +549,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   userAvatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
   },
   userAvatarPlaceholder: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -567,12 +572,12 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
   },
   userEmail: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     marginTop: 2,
   },
   emptySearchContainer: {
@@ -582,7 +587,7 @@ const styles = StyleSheet.create({
   emptySearchText: {
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     marginTop: 12,
     textAlign: "center",
   },

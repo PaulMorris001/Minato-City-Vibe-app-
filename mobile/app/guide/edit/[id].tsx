@@ -22,7 +22,12 @@ import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { Colors } from "@/constants/colors";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function CreateGuidePage() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [guide, setGuide] = useState<Guide>();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -252,12 +257,7 @@ export default function CreateGuidePage() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => goBack()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
+          <GlassBackButton style={styles.backButton} />
           <Text style={styles.headerTitle}>Edit Guide</Text>
         </View>
         <View style={styles.loadingScreen}>
@@ -274,12 +274,7 @@ export default function CreateGuidePage() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        <GlassBackButton style={styles.backButton} />
         <Text style={styles.headerTitle}>Edit Guide</Text>
       </View>
 
@@ -296,7 +291,7 @@ export default function CreateGuidePage() {
           <TextInput
             style={styles.input}
             placeholder='e.g., "Top 10 Pizza spots in New York City"'
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={colors.textMuted}
             value={title}
             onChangeText={setTitle}
           />
@@ -309,7 +304,7 @@ export default function CreateGuidePage() {
           <TextInput
             style={[styles.input, styles.textArea]}
             placeholder="Describe your guide..."
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={colors.textMuted}
             value={description}
             onChangeText={setDescription}
             multiline
@@ -324,7 +319,7 @@ export default function CreateGuidePage() {
           <TextInput
             style={styles.input}
             placeholder="0.00"
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={colors.textMuted}
             value={price}
             onChangeText={setPrice}
             keyboardType="decimal-pad"
@@ -352,7 +347,7 @@ export default function CreateGuidePage() {
             <Text style={[styles.dropdownText, !topic && styles.dropdownPlaceholder]}>
               {topic || "Select a topic..."}
             </Text>
-            <Ionicons name={showTopicDropdown ? "chevron-up" : "chevron-down"} size={20} color="#9ca3af" />
+            <Ionicons name={showTopicDropdown ? "chevron-up" : "chevron-down"} size={20} color={colors.textSecondary} />
           </TouchableOpacity>
           {showTopicDropdown && (
             <View style={styles.dropdown}>
@@ -409,7 +404,7 @@ export default function CreateGuidePage() {
                     onPress={() => removeSection(index)}
                     style={styles.removeSectionButton}
                   >
-                    <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                    <Ionicons name="trash-outline" size={20} color={colors.error} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -420,7 +415,7 @@ export default function CreateGuidePage() {
                   <TextInput
                     style={[styles.input, styles.rankInput]}
                     placeholder="Rank"
-                    placeholderTextColor="#6b7280"
+                    placeholderTextColor={colors.textMuted}
                     value={section.rank.toString()}
                     onChangeText={(text) =>
                       updateSection(index, "rank", parseInt(text) || 1)
@@ -430,7 +425,7 @@ export default function CreateGuidePage() {
                   <TextInput
                     style={[styles.input, styles.titleInput]}
                     placeholder="e.g., Hilton Double Tree Hotel"
-                    placeholderTextColor="#6b7280"
+                    placeholderTextColor={colors.textMuted}
                     value={section.title}
                     onChangeText={(text) => updateSection(index, "title", text)}
                   />
@@ -444,7 +439,7 @@ export default function CreateGuidePage() {
                 <TextInput
                   style={[styles.input, styles.textArea]}
                   placeholder="Describe this item..."
-                  placeholderTextColor="#6b7280"
+                  placeholderTextColor={colors.textMuted}
                   value={section.description}
                   onChangeText={(text) =>
                     updateSection(index, "description", text)
@@ -485,16 +480,22 @@ export default function CreateGuidePage() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
   },
   loadingScreen: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     gap: 16,
+  },
+  loadingText: {
+    fontSize: 14,
+    fontFamily: Fonts.regular,
+    color: c.textSecondary,
   },
   header: {
     flexDirection: "row",
@@ -503,7 +504,7 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   backButton: {
     marginRight: 16,
@@ -511,7 +512,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 24,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   scrollView: {
     flex: 1,
@@ -526,21 +527,21 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontFamily: Fonts.semiBold,
-    color: "#e5e7eb",
+    color: c.textBody,
     marginBottom: 8,
   },
   required: {
-    color: "#ef4444",
+    color: c.error,
   },
   input: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 14,
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   textArea: {
     minHeight: 100,
@@ -549,15 +550,15 @@ const styles = StyleSheet.create({
   hint: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     marginTop: 4,
   },
   dropdownButton: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 8,
     padding: 14,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -565,17 +566,17 @@ const styles = StyleSheet.create({
   dropdownText: {
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
   },
   dropdownPlaceholder: {
-    color: "#6b7280",
+    color: c.textMuted,
   },
   dropdown: {
     marginTop: 4,
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     maxHeight: 200,
   },
   dropdownScroll: {
@@ -584,15 +585,15 @@ const styles = StyleSheet.create({
   dropdownItem: {
     padding: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   dropdownItemSelected: {
-    backgroundColor: "rgba(168, 85, 247, 0.1)",
+    backgroundColor: c.primaryFaded,
   },
   dropdownItemText: {
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#e5e7eb",
+    color: c.textBody,
   },
   dropdownItemTextSelected: {
     color: Colors.primary,
@@ -610,7 +611,7 @@ const styles = StyleSheet.create({
   sectionsTitle: {
     fontSize: 18,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   addSectionButton: {
     flexDirection: "row",
@@ -623,12 +624,12 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
   sectionCard: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -662,7 +663,7 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 12,
     borderTopWidth: 1,
-    borderTopColor: "#374151",
+    borderTopColor: c.border,
   },
   button: {
     flex: 1,
@@ -674,7 +675,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   draftButton: {
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
   },
   publishButton: {
     backgroundColor: Colors.primary,
@@ -682,6 +683,6 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.white,
   },
 });

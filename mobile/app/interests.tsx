@@ -14,6 +14,8 @@ import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { LinearGradient } from "expo-linear-gradient";
 
+import type { ThemeColors } from "@/constants/theme";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 const INTERESTS = [
   { label: "Music", emoji: "🎵" },
   { label: "Food & Drink", emoji: "🍽️" },
@@ -30,6 +32,8 @@ const INTERESTS = [
 ];
 
 export default function InterestsScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [selected, setSelected] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -97,7 +101,7 @@ export default function InterestsScreen() {
           style={styles.continueWrap}
         >
           <LinearGradient
-            colors={["#a855f7", "#7c3aed"]}
+            colors={[colors.primary, colors.primaryDark]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.continueBtn}
@@ -124,10 +128,11 @@ export default function InterestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0b0613",
+    backgroundColor: c.backgroundDeep,
   },
   inner: {
     flex: 1,
@@ -138,7 +143,7 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 28,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 8,
   },
   sub: {
@@ -162,12 +167,12 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     borderRadius: 40,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: c.glassStroke,
+    backgroundColor: c.glassFillSubtle,
   },
   chipActive: {
-    backgroundColor: "rgba(168,85,247,0.18)",
-    borderColor: "#a855f7",
+    backgroundColor: c.primaryFadedStrong,
+    borderColor: c.primary,
   },
   chipEmoji: {
     fontSize: 16,
@@ -175,10 +180,10 @@ const styles = StyleSheet.create({
   chipLabel: {
     fontSize: 14,
     fontFamily: Fonts.medium,
-    color: "rgba(244,238,255,0.7)",
+    color: c.textDim,
   },
   chipLabelActive: {
-    color: "#e9d5ff",
+    color: c.primarySoft,
     fontFamily: Fonts.semiBold,
   },
   continueWrap: {
@@ -194,7 +199,7 @@ const styles = StyleSheet.create({
   continueBtnText: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.white,
   },
   skipBtn: {
     alignItems: "center",

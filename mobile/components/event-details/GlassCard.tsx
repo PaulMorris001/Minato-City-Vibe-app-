@@ -1,13 +1,16 @@
 import React from "react";
-import { StyleSheet, View, ViewProps, ViewStyle } from "react-native";
-import { AU } from "@/components/auth/tokens";
+import { View, ViewProps, ViewStyle } from "react-native";
+import { useTheme } from "@/contexts/ThemeContext";
 
 /**
  * Glassy info card used for stats, about, host, attendees, etc.
- * Background: rgba(26,16,48,0.75); 1px hairline; radius 16; padding 14.
+ * Dark: rgba(26,16,48,0.75) wash + hairline — reads as glass against the
+ * dark hero. Light: solid white card on the lavender surface. Both come from
+ * the cardGlass token so the vendor "bill" cards can match.
+ *
  * We don't apply backdrop blur because RN's BlurView under a translucent
  * background on dark performs worse than the equivalent flat fill on most
- * devices; the result reads as glass against the dark hero.
+ * devices.
  *
  * Deliberately NOT upgraded to expo-glass-effect's GlassView on iOS 26: the
  * event screen stacks 20+ of these in one scroll view, and that many live
@@ -16,8 +19,16 @@ import { AU } from "@/components/auth/tokens";
  * navbar pills, profile modal).
  */
 export function GlassCard({ style, children, ...rest }: ViewProps) {
+  const { colors } = useTheme();
+  const card: ViewStyle = {
+    backgroundColor: colors.cardGlass,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.glassStroke,
+    padding: 14,
+  };
   return (
-    <View style={[styles.card, style]} {...rest}>
+    <View style={[card, style]} {...rest}>
       {children}
     </View>
   );
@@ -28,13 +39,3 @@ export function GlassCard({ style, children, ...rest }: ViewProps) {
  * Inter 10/700, uppercase, letter-spacing 0.1em, color textMute.
  */
 export const microLabelStyle: ViewStyle = {};
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "rgba(26,16,48,0.75)",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: AU.stroke,
-    padding: 14,
-  },
-});

@@ -27,6 +27,8 @@ import { LocationFilterBar } from "@/components/shared";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 import { scaleFontSize } from "@/utils/responsive";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface BrowseVendor {
   _id: string;
   name: string;
@@ -38,6 +40,8 @@ interface BrowseVendor {
 }
 
 export default function VendorsPage() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [vendors, setVendors] = useState<BrowseVendor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -158,13 +162,13 @@ export default function VendorsPage() {
         <Image source={{ uri: item.images[0] }} style={styles.cardImage} />
       ) : (
         <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
-          <Ionicons name="business" size={26} color="#6b7280" />
+          <Ionicons name="business" size={26} color={colors.textMuted} />
         </View>
       )}
       <View style={styles.cardBody}>
         <View style={styles.cardNameRow}>
           <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-          {item.verified && <Ionicons name="checkmark-circle" size={14} color="#a855f7" />}
+          {item.verified && <Ionicons name="checkmark-circle" size={14} color={colors.primary} />}
         </View>
         {!!item.city?.name && (
           <Text style={styles.cardLocation} numberOfLines={1}>
@@ -173,7 +177,7 @@ export default function VendorsPage() {
         )}
         {typeof item.rating === "number" && item.rating > 0 && (
           <View style={styles.cardRatingRow}>
-            <Ionicons name="star" size={12} color="#f59e0b" />
+            <Ionicons name="star" size={12} color={colors.warning} />
             <Text style={styles.cardRating}>{item.rating.toFixed(1)}</Text>
           </View>
         )}
@@ -209,17 +213,17 @@ export default function VendorsPage() {
         </View>
 
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#6b7280" style={styles.searchIcon} />
+          <Ionicons name="search" size={20} color={colors.textMuted} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search vendors by name..."
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={colors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={20} color="#6b7280" />
+              <Ionicons name="close-circle" size={20} color={colors.textMuted} />
             </TouchableOpacity>
           )}
         </View>
@@ -240,7 +244,7 @@ export default function VendorsPage() {
                     <Image source={{ uri: item.images[0] }} style={styles.searchRowImage} />
                   ) : (
                     <View style={[styles.searchRowImage, styles.cardImagePlaceholder]}>
-                      <Ionicons name="business" size={24} color="#6b7280" />
+                      <Ionicons name="business" size={24} color={colors.textMuted} />
                     </View>
                   )}
                   <View style={{ flex: 1 }}>
@@ -248,7 +252,7 @@ export default function VendorsPage() {
                     <Text style={styles.cardType}>{item.vendorType || "Vendor"}</Text>
                     {item.location?.city && <Text style={styles.cardLocation}>{item.location.city}</Text>}
                   </View>
-                  <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                 </TouchableOpacity>
               )}
               showsVerticalScrollIndicator={false}
@@ -258,7 +262,7 @@ export default function VendorsPage() {
           )}
           {!searching && searchResults.length === 0 && (
             <View style={styles.emptyContainer}>
-              <Ionicons name="search-outline" size={48} color="#6b7280" />
+              <Ionicons name="search-outline" size={48} color={colors.textMuted} />
               <Text style={styles.emptyTitle}>No vendors found</Text>
               <Text style={styles.emptySubtext}>Try a different search term</Text>
             </View>
@@ -282,7 +286,7 @@ export default function VendorsPage() {
             <VendorCardSkeleton count={5} />
           ) : groups.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Ionicons name="business-outline" size={48} color="#4b5563" />
+              <Ionicons name="business-outline" size={48} color={colors.borderMuted} />
               <Text style={styles.emptyTitle}>No vendors yet</Text>
               <Text style={styles.emptySubtext}>
                 {locFilter ? "No vendors in this location — try a different one." : "Check back soon."}
@@ -292,7 +296,7 @@ export default function VendorsPage() {
             groups.map((g) => (
               <View key={g.type._id} style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <Ionicons name={(g.type.icon as any) || "business"} size={18} color="#a855f7" />
+                  <Ionicons name={(g.type.icon as any) || "business"} size={18} color={colors.primary} />
                   <Text style={styles.sectionTitle}>{g.type.name}</Text>
                 </View>
                 <FlatList
@@ -314,10 +318,11 @@ export default function VendorsPage() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
     paddingHorizontal: 20,
     paddingTop: 20,
   },
@@ -334,32 +339,33 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#a855f7",
+    backgroundColor: c.primary,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
     gap: 8,
   },
   becomeVendorText: {
-    color: "#fff",
+    color: c.text,
     fontSize: 13,
     fontFamily: Fonts.semiBold,
   },
   title: {
-    fontSize: scaleFontSize(28),
+    // Matches the other tab headers (Events, Best Of) and the home logo.
+    fontSize: scaleFontSize(24),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1a1a2e",
+    backgroundColor: c.backgroundSecondary,
     borderRadius: 12,
     paddingHorizontal: 12,
     marginTop: 16,
@@ -372,7 +378,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
   },
   section: {
     marginBottom: 24,
@@ -386,7 +392,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   carousel: {
     paddingRight: 8,
@@ -394,18 +400,18 @@ const styles = StyleSheet.create({
   },
   card: {
     width: 160,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: c.backgroundSecondary,
     borderRadius: 14,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#252538",
+    borderColor: c.glassStroke,
   },
   cardImage: {
     width: "100%",
     height: 100,
   },
   cardImagePlaceholder: {
-    backgroundColor: "#2a2a3e",
+    backgroundColor: c.cardAlt,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -422,18 +428,18 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
   },
   cardType: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 2,
   },
   cardLocation: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   cardRatingRow: {
     flexDirection: "row",
@@ -443,12 +449,12 @@ const styles = StyleSheet.create({
   cardRating: {
     fontSize: 12,
     fontFamily: Fonts.medium,
-    color: "#f59e0b",
+    color: c.warning,
   },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1a1a2e",
+    backgroundColor: c.backgroundSecondary,
     borderRadius: 12,
     padding: 12,
     marginBottom: 12,
@@ -469,13 +475,13 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
     marginTop: 12,
   },
   emptySubtext: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 4,
     textAlign: "center",
     paddingHorizontal: 24,

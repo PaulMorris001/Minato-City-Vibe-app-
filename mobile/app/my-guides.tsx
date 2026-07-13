@@ -21,9 +21,14 @@ import { BASE_URL } from "@/constants/constants";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 const { width: screenWidth } = Dimensions.get("window");
 
 export default function MyGuidesPage() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const formatPrice = useFormatPrice();
   const [guides, setGuides] = useState<Guide[]>([]);
@@ -116,7 +121,7 @@ export default function MyGuidesPage() {
             {item.title}
           </Text>
           <View style={styles.metadataRow}>
-            <Ionicons name="location-outline" size={14} color="#9ca3af" />
+            <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
             <Text style={styles.metadataText}>
               {item.city}, {item.cityState}
             </Text>
@@ -137,7 +142,7 @@ export default function MyGuidesPage() {
 
       <View style={styles.cardFooter}>
         <View style={styles.statsRow}>
-          <Ionicons name="eye-outline" size={14} color="#6b7280" />
+          <Ionicons name="eye-outline" size={14} color={colors.textMuted} />
           <Text style={styles.statsText}>{item.views} views</Text>
           <Text style={styles.statsSeparator}>•</Text>
           <Text style={styles.priceText}>
@@ -161,7 +166,7 @@ export default function MyGuidesPage() {
               handleDeleteGuide(item._id);
             }}
           >
-            <Ionicons name="trash-outline" size={18} color="#ef4444" />
+            <Ionicons name="trash-outline" size={18} color={colors.error} />
           </TouchableOpacity>
         </View>
       </View>
@@ -171,9 +176,7 @@ export default function MyGuidesPage() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        <GlassBackButton style={styles.backButton} />
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>My Guides</Text>
           <Text style={styles.headerSubtitle}>
@@ -207,7 +210,7 @@ export default function MyGuidesPage() {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="document-text-outline" size={64} color="#6b7280" />
+              <Ionicons name="document-text-outline" size={64} color={colors.textMuted} />
               <Text style={styles.emptyTitle}>No guides yet</Text>
               <Text style={styles.emptyText}>
                 Create your first guide to share your local knowledge!
@@ -226,10 +229,11 @@ export default function MyGuidesPage() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
   },
   header: {
     flexDirection: "row",
@@ -237,7 +241,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#374151",
+    borderBottomColor: c.border,
   },
   backButton: {
     marginRight: 12,
@@ -248,12 +252,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: screenWidth > 400 ? 28 : 24,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   headerSubtitle: {
     fontSize: screenWidth > 400 ? 13 : 12,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 2,
   },
   createButton: {
@@ -269,12 +273,12 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   guideCard: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   cardHeader: {
     flexDirection: "row",
@@ -289,7 +293,7 @@ const styles = StyleSheet.create({
   guideTitle: {
     fontSize: 18,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 6,
   },
   metadataRow: {
@@ -300,15 +304,15 @@ const styles = StyleSheet.create({
   metadataText: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   metadataSeparator: {
     fontSize: 12,
-    color: "#6b7280",
+    color: c.textMuted,
     marginHorizontal: 4,
   },
   draftBadge: {
-    backgroundColor: "#fbbf24",
+    backgroundColor: c.warningLight,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
@@ -316,12 +320,12 @@ const styles = StyleSheet.create({
   draftText: {
     fontSize: 11,
     fontFamily: Fonts.bold,
-    color: "#0f0f1a",
+    color: c.background,
   },
   guideDescription: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#d1d5db",
+    color: c.textTertiary,
     lineHeight: 20,
     marginBottom: 12,
   },
@@ -338,11 +342,11 @@ const styles = StyleSheet.create({
   statsText: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
   },
   statsSeparator: {
     fontSize: 12,
-    color: "#6b7280",
+    color: c.textMuted,
     marginHorizontal: 6,
   },
   priceText: {
@@ -358,7 +362,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -371,14 +375,14 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginTop: 16,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     paddingHorizontal: 40,
     marginBottom: 24,
@@ -392,6 +396,6 @@ const styles = StyleSheet.create({
   emptyCreateButtonText: {
     fontSize: 15,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.white,
   },
 });

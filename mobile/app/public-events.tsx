@@ -28,6 +28,9 @@ import { useStripePayment } from "@/hooks/useStripePayment";
 import { heroEmojiFor } from "@/utils/eventDetails";
 import { AU, AU_FONT } from "@/components/auth/tokens";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 const SCARCITY_WARN = "#FBA74A";
 const EVENTS_PER_PAGE = 10;
 
@@ -64,6 +67,8 @@ const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
 export default function PublicEventsPage() {
+  const { isDark, colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const { payForTicket } = useStripePayment();
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
@@ -94,11 +99,9 @@ export default function PublicEventsPage() {
     try {
       if (pageNum === 1) setLoading(true);
 
+      // Guest-accessible — the explore routes use optionalAuth on the server,
+      // so only attach the token when one exists.
       const token = await SecureStore.getItemAsync("token");
-      if (!token) {
-        router.push("/login");
-        return;
-      }
 
       const params = new URLSearchParams({ page: String(pageNum), limit: String(EVENTS_PER_PAGE) });
       if (online) {
@@ -114,7 +117,7 @@ export default function PublicEventsPage() {
       // Skipped for the Online filter — Ticketmaster events are always physical.
       const [nativeRes, externalRes] = await Promise.allSettled([
         fetch(`${BASE_URL}/events/public/explore?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
         }),
         pageNum === 1 && !online
           ? externalEventService.explore({
@@ -214,6 +217,10 @@ export default function PublicEventsPage() {
   }, [loading, hasMore, page, discoverLoc, onlineOnly]);
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
+    if (!(await SecureStore.getItemAsync("token"))) {
+      router.push("/login");
+      return;
+    }
     // The hook runs checkout AND confirms server-side before returning.
     const result = await payForTicket(eventId);
     if (!result.success) {
@@ -234,7 +241,10 @@ export default function PublicEventsPage() {
   const handleJoinFreeEvent = async (eventId: string, eventTitle: string) => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      if (!token) return;
+      if (!token) {
+        router.push("/login");
+        return;
+      }
       const response = await fetch(`${BASE_URL}/events/${eventId}/join`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -254,6 +264,11 @@ export default function PublicEventsPage() {
   };
 
   const toggleFavorite = async (id: string) => {
+    // Favorites need an account — don't flip local state for guests.
+    if (!(await SecureStore.getItemAsync("token"))) {
+      router.push("/login");
+      return;
+    }
     const isFav = favorites.has(id);
     setFavorites((prev) => {
       const n = new Set(prev);
@@ -410,12 +425,12 @@ export default function PublicEventsPage() {
             {!!ext.venueName && <Text style={styles.cardHost}>at {ext.venueName}</Text>}
 
             <View style={styles.metaRow}>
-              <Ionicons name="calendar-outline" size={13} color={AU.textDim} />
+              <Ionicons name="calendar-outline" size={13} color={colors.textDim} />
               <Text style={styles.metaText}>{formatDate(ext.date)}</Text>
               {!!ext.city && (
                 <>
                   <View style={styles.metaDot} />
-                  <Ionicons name="location-outline" size={14} color={AU.textDim} />
+                  <Ionicons name="location-outline" size={14} color={colors.textDim} />
                   <Text style={styles.metaText} numberOfLines={1}>
                     {ext.city}
                     {ext.state ? `, ${ext.state}` : ""}
@@ -445,7 +460,7 @@ export default function PublicEventsPage() {
                 }}
               >
                 <Text style={styles.ctaText}>Get tickets</Text>
-                <Ionicons name="arrow-forward" size={14} color={AU.bg} />
+                <Ionicons name="arrow-forward" size={14} color={colors.backgroundDeep} />
               </TouchableOpacity>
             </View>
           </View>
@@ -500,7 +515,7 @@ export default function PublicEventsPage() {
             hitSlop={8}
             accessibilityLabel={fav ? "Remove from favorites" : "Add to favorites"}
           >
-            <Ionicons name={fav ? "heart" : "heart-outline"} size={16} color={fav ? AU.pink : "#fff"} />
+            <Ionicons name={fav ? "heart" : "heart-outline"} size={16} color={fav ? colors.accentPink : "#fff"} />
           </TouchableOpacity>
         </View>
 
@@ -512,10 +527,10 @@ export default function PublicEventsPage() {
           )}
 
           <View style={styles.metaRow}>
-            <Ionicons name="calendar-outline" size={13} color={AU.textDim} />
+            <Ionicons name="calendar-outline" size={13} color={colors.textDim} />
             <Text style={styles.metaText}>{formatDate(item.date)}</Text>
             <View style={styles.metaDot} />
-            <Ionicons name={item.isVirtual ? "videocam-outline" : "location-outline"} size={14} color={AU.textDim} />
+            <Ionicons name={item.isVirtual ? "videocam-outline" : "location-outline"} size={14} color={colors.textDim} />
             <Text style={styles.metaText} numberOfLines={1}>
               {item.location}
             </Text>
@@ -541,7 +556,7 @@ export default function PublicEventsPage() {
               <Text style={styles.ctaText}>
                 {item.userHasPurchased ? "View" : isFree ? "Join free" : "Get ticket"}
               </Text>
-              <Ionicons name="arrow-forward" size={14} color={AU.bg} />
+              <Ionicons name="arrow-forward" size={14} color={colors.backgroundDeep} />
             </TouchableOpacity>
           </View>
         </View>
@@ -558,7 +573,7 @@ export default function PublicEventsPage() {
         onPress={() => setLocationSheetOpen(true)}
       >
         <View style={styles.locationIconBox}>
-          <Ionicons name="navigate" size={16} color={AU.purpleSoft} />
+          <Ionicons name="navigate" size={16} color={colors.primaryLight} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.locationKicker}>SHOWING EVENTS IN</Text>
@@ -566,7 +581,7 @@ export default function PublicEventsPage() {
             {locationLabel}
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={16} color={AU.textDim} />
+        <Ionicons name="chevron-forward" size={16} color={colors.textDim} />
       </TouchableOpacity>
 
       {/* Category row */}
@@ -601,7 +616,7 @@ export default function PublicEventsPage() {
           activeOpacity={0.7}
         >
           <Text style={styles.sortLinkText}>{SORT_LABEL[sort]}</Text>
-          <Ionicons name="chevron-down" size={12} color={AU.purpleSoft} />
+          <Ionicons name="chevron-down" size={12} color={colors.primaryLight} />
         </TouchableOpacity>
       </View>
     </View>
@@ -611,7 +626,7 @@ export default function PublicEventsPage() {
     if (loading) return null;
     return (
       <View style={styles.emptyContainer}>
-        <Ionicons name="compass-outline" size={56} color={AU.textMute} />
+        <Ionicons name="compass-outline" size={56} color={colors.textFaint} />
         <Text style={styles.emptyTitle}>No events nearby</Text>
         <Text style={styles.emptyText}>Try widening your location or clearing filters.</Text>
         {filtersActive && (
@@ -642,24 +657,22 @@ export default function PublicEventsPage() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      <LinearGradient colors={["#1A0B2E", AU.bg]} locations={[0, 0.55]} style={StyleSheet.absoluteFill} />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+      <LinearGradient colors={["#1A0B2E", colors.backgroundDeep]} locations={[0, 0.55]} style={StyleSheet.absoluteFill} />
       <View style={styles.ambientGlow} pointerEvents="none" />
 
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
         {/* Pinned header */}
         <View style={styles.header}>
           <View style={styles.headerTopRow}>
-            <TouchableOpacity style={styles.circleBtn} onPress={() => goBack()} hitSlop={6}>
-              <Ionicons name="arrow-back" size={20} color={AU.text} />
-            </TouchableOpacity>
+            <GlassBackButton size={38} />
             <TouchableOpacity
               style={styles.circleBtn}
               onPress={() => setSortSheetOpen(true)}
               hitSlop={6}
               accessibilityLabel="Filters"
             >
-              <Ionicons name="options-outline" size={18} color={AU.text} />
+              <Ionicons name="options-outline" size={18} color={colors.textBright} />
               {filtersActive && <View style={styles.filtersDot} />}
             </TouchableOpacity>
           </View>
@@ -698,8 +711,8 @@ export default function PublicEventsPage() {
               <RefreshControl
                 refreshing={refreshing}
                 onRefresh={handleRefresh}
-                tintColor={AU.purple}
-                colors={[AU.purple]}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
               />
             }
           />
@@ -720,7 +733,7 @@ export default function PublicEventsPage() {
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Filter by location</Text>
               <TouchableOpacity onPress={() => setLocationSheetOpen(false)} hitSlop={8}>
-                <Ionicons name="close" size={22} color={AU.text} />
+                <Ionicons name="close" size={22} color={colors.textBright} />
               </TouchableOpacity>
             </View>
             <TouchableOpacity
@@ -731,12 +744,12 @@ export default function PublicEventsPage() {
               }}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Ionicons name="videocam-outline" size={18} color={onlineOnly ? AU.purpleSoft : AU.textDim} />
-                <Text style={[styles.sortOptionText, onlineOnly && { color: AU.purpleSoft }]}>
+                <Ionicons name="videocam-outline" size={18} color={onlineOnly ? colors.primaryLight : colors.textDim} />
+                <Text style={[styles.sortOptionText, onlineOnly && { color: colors.primaryLight }]}>
                   Online events
                 </Text>
               </View>
-              {onlineOnly && <Ionicons name="checkmark" size={18} color={AU.purpleSoft} />}
+              {onlineOnly && <Ionicons name="checkmark" size={18} color={colors.primaryLight} />}
             </TouchableOpacity>
             <LocationPicker
               key={pickerKey}
@@ -752,7 +765,7 @@ export default function PublicEventsPage() {
                   applyLocation(null);
                 }}
               >
-                <Ionicons name="close-circle" size={16} color={AU.textDim} />
+                <Ionicons name="close-circle" size={16} color={colors.textDim} />
                 <Text style={styles.sheetClearText}>Show all locations</Text>
               </TouchableOpacity>
             )}
@@ -774,7 +787,7 @@ export default function PublicEventsPage() {
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Sort events</Text>
               <TouchableOpacity onPress={() => setSortSheetOpen(false)} hitSlop={8}>
-                <Ionicons name="close" size={22} color={AU.text} />
+                <Ionicons name="close" size={22} color={colors.textBright} />
               </TouchableOpacity>
             </View>
             {(Object.keys(SORT_LABEL) as SortKey[]).map((key) => {
@@ -788,10 +801,10 @@ export default function PublicEventsPage() {
                     setSortSheetOpen(false);
                   }}
                 >
-                  <Text style={[styles.sortOptionText, active && { color: AU.purpleSoft }]}>
+                  <Text style={[styles.sortOptionText, active && { color: colors.primaryLight }]}>
                     {SORT_LABEL[key]}
                   </Text>
-                  {active && <Ionicons name="checkmark" size={18} color={AU.purpleSoft} />}
+                  {active && <Ionicons name="checkmark" size={18} color={colors.primaryLight} />}
                 </TouchableOpacity>
               );
             })}
@@ -802,8 +815,9 @@ export default function PublicEventsPage() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: AU.bg },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.backgroundDeep },
   ambientGlow: {
     position: "absolute",
     top: -80,
@@ -811,7 +825,7 @@ const styles = StyleSheet.create({
     width: 240,
     height: 240,
     borderRadius: 120,
-    backgroundColor: "rgba(168,85,247,0.18)",
+    backgroundColor: c.primaryFadedStrong,
   },
 
   // Header
@@ -821,9 +835,9 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: AU.stroke,
+    borderColor: c.glassFill,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -834,19 +848,19 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 3.5,
-    backgroundColor: AU.pink,
+    backgroundColor: c.accentPink,
     borderWidth: 2,
-    borderColor: AU.bg,
+    borderColor: c.backgroundDeep,
   },
   title: {
     fontFamily: AU_FONT.display,
     fontSize: 32,
-    color: AU.text,
+    color: c.textBright,
     letterSpacing: -0.96,
     lineHeight: 33,
   },
-  subtitle: { fontFamily: AU_FONT.body, fontSize: 13, color: AU.textDim, marginTop: -8 },
-  subtitleCount: { fontFamily: AU_FONT.bodySemi, color: AU.purpleSoft },
+  subtitle: { fontFamily: AU_FONT.body, fontSize: 13, color: c.textDim, marginTop: -8 },
+  subtitleCount: { fontFamily: AU_FONT.bodySemi, color: c.primaryLight },
 
   listContent: { paddingTop: 14, paddingBottom: 40, gap: 14 },
 
@@ -856,7 +870,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 14,
-    backgroundColor: "rgba(168,85,247,0.08)",
+    backgroundColor: c.primaryFaded,
     borderWidth: 1,
     borderColor: "rgba(168,85,247,0.25)",
     flexDirection: "row",
@@ -867,7 +881,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 10,
-    backgroundColor: "rgba(168,85,247,0.18)",
+    backgroundColor: c.primaryFadedStrong,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -875,12 +889,12 @@ const styles = StyleSheet.create({
     fontFamily: AU_FONT.bodySemi,
     fontSize: 10.5,
     letterSpacing: 0.8,
-    color: AU.purpleSoft,
+    color: c.primaryLight,
   },
   locationValue: {
     fontFamily: AU_FONT.bold,
     fontSize: 15,
-    color: AU.text,
+    color: c.textBright,
     letterSpacing: -0.15,
     marginTop: 2,
   },
@@ -888,10 +902,10 @@ const styles = StyleSheet.create({
   // Category row
   categoryRow: { gap: 8, paddingHorizontal: 20 },
   catChip: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999 },
-  catChipActive: { backgroundColor: AU.text },
-  catChipIdle: { backgroundColor: "transparent", borderWidth: 1, borderColor: AU.strokeHi },
-  catChipText: { fontFamily: AU_FONT.body, fontSize: 12.5, color: AU.textDim, letterSpacing: -0.06 },
-  catChipTextActive: { fontFamily: AU_FONT.bodyBold, color: AU.bg },
+  catChipActive: { backgroundColor: c.textBright },
+  catChipIdle: { backgroundColor: "transparent", borderWidth: 1, borderColor: c.glassStrokeStrong },
+  catChipText: { fontFamily: AU_FONT.body, fontSize: 12.5, color: c.textDim, letterSpacing: -0.06 },
+  catChipTextActive: { fontFamily: AU_FONT.bodyBold, color: c.backgroundDeep },
 
   // Sort row
   sortRow: {
@@ -900,17 +914,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  sortLabel: { fontFamily: AU_FONT.bodySemi, fontSize: 11, letterSpacing: 0.8, color: AU.textMute },
+  sortLabel: { fontFamily: AU_FONT.bodySemi, fontSize: 11, letterSpacing: 0.8, color: c.textFaint },
   sortLink: { flexDirection: "row", alignItems: "center", gap: 4 },
-  sortLinkText: { fontFamily: AU_FONT.bodySemi, fontSize: 12, color: AU.purpleSoft },
+  sortLinkText: { fontFamily: AU_FONT.bodySemi, fontSize: 12, color: c.primaryLight },
 
   // Card
   card: {
     marginHorizontal: 20,
     borderRadius: 18,
-    backgroundColor: AU.surface,
+    backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: AU.stroke,
+    borderColor: c.glassFill,
     overflow: "hidden",
   },
   poster: { height: 180, overflow: "hidden", justifyContent: "center", alignItems: "center" },
@@ -929,10 +943,10 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 9,
     borderRadius: 6,
-    backgroundColor: "rgba(11,6,19,0.55)",
+    backgroundColor: c.imageScrim,
     maxWidth: "60%",
   },
-  tagPillText: { fontFamily: AU_FONT.bodyBold, fontSize: 10, color: "#fff", letterSpacing: 0.8 },
+  tagPillText: { fontFamily: AU_FONT.bodyBold, fontSize: 10, color: c.white, letterSpacing: 0.8 },
   heartBtn: {
     position: "absolute",
     top: 10,
@@ -940,28 +954,28 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: "rgba(11,6,19,0.55)",
+    backgroundColor: c.imageScrim,
     alignItems: "center",
     justifyContent: "center",
   },
   cardBody: { paddingTop: 14, paddingHorizontal: 16, paddingBottom: 16 },
-  cardTitle: { fontFamily: AU_FONT.bold, fontSize: 18, color: AU.text, letterSpacing: -0.36, lineHeight: 21 },
-  cardHost: { fontFamily: AU_FONT.body, fontSize: 12, color: AU.textMute, marginTop: 4 },
+  cardTitle: { fontFamily: AU_FONT.bold, fontSize: 18, color: c.textBright, letterSpacing: -0.36, lineHeight: 21 },
+  cardHost: { fontFamily: AU_FONT.body, fontSize: 12, color: c.textFaint, marginTop: 4 },
   metaRow: { flexDirection: "row", alignItems: "center", marginTop: 12, gap: 5 },
-  metaText: { fontFamily: AU_FONT.body, fontSize: 12, color: AU.textDim, flexShrink: 1 },
-  metaDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: AU.textDim, opacity: 0.55, marginHorizontal: 2 },
+  metaText: { fontFamily: AU_FONT.body, fontSize: 12, color: c.textDim, flexShrink: 1 },
+  metaDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: c.textDim, opacity: 0.55, marginHorizontal: 2 },
   cardFooter: {
     marginTop: 14,
     paddingTop: 14,
     borderTopWidth: 1,
-    borderTopColor: AU.stroke,
+    borderTopColor: c.glassFill,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
   priceCluster: { flexDirection: "row", alignItems: "baseline", gap: 8, flexShrink: 1 },
-  priceText: { fontFamily: AU_FONT.bold, fontSize: 20, color: AU.text, letterSpacing: -0.4 },
-  scarcityText: { fontFamily: AU_FONT.body, fontSize: 11, color: AU.textMute },
+  priceText: { fontFamily: AU_FONT.bold, fontSize: 20, color: c.textBright, letterSpacing: -0.4 },
+  scarcityText: { fontFamily: AU_FONT.body, fontSize: 11, color: c.textFaint },
   ctaBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -969,38 +983,38 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     paddingHorizontal: 14,
     borderRadius: 10,
-    backgroundColor: AU.text,
+    backgroundColor: c.textBright,
   },
-  ctaText: { fontFamily: AU_FONT.bodyBold, fontSize: 12.5, color: AU.bg, letterSpacing: -0.06 },
+  ctaText: { fontFamily: AU_FONT.bodyBold, fontSize: 12.5, color: c.backgroundDeep, letterSpacing: -0.06 },
 
   // Skeleton
-  skelLine: { height: 14, borderRadius: 7, backgroundColor: "rgba(255,255,255,0.08)", width: "70%" },
+  skelLine: { height: 14, borderRadius: 7, backgroundColor: c.glassFill, width: "70%" },
 
   // Empty
   emptyContainer: { alignItems: "center", paddingTop: 60, paddingHorizontal: 40, gap: 10 },
-  emptyTitle: { fontFamily: AU_FONT.bold, fontSize: 18, color: AU.text, marginTop: 6 },
-  emptyText: { fontFamily: AU_FONT.body, fontSize: 14, color: AU.textDim, textAlign: "center", lineHeight: 20 },
+  emptyTitle: { fontFamily: AU_FONT.bold, fontSize: 18, color: c.textBright, marginTop: 6 },
+  emptyText: { fontFamily: AU_FONT.body, fontSize: 14, color: c.textDim, textAlign: "center", lineHeight: 20 },
   resetBtn: {
     marginTop: 8,
     paddingVertical: 10,
     paddingHorizontal: 18,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: AU.strokeHi,
+    borderColor: c.glassStrokeStrong,
   },
-  resetBtnText: { fontFamily: AU_FONT.bodyBold, fontSize: 13, color: AU.text },
+  resetBtnText: { fontFamily: AU_FONT.bodyBold, fontSize: 13, color: c.textBright },
 
   footerLoader: { paddingVertical: 20, alignItems: "center" },
-  footerText: { fontFamily: AU_FONT.body, fontSize: 13, color: AU.textDim },
+  footerText: { fontFamily: AU_FONT.body, fontSize: 13, color: c.textDim },
 
   // Sheets
   sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)" },
   sheet: {
-    backgroundColor: AU.bg,
+    backgroundColor: c.backgroundDeep,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
-    borderColor: AU.stroke,
+    borderColor: c.glassFill,
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 34,
@@ -1010,20 +1024,20 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: AU.strokeHi,
+    backgroundColor: c.glassStrokeStrong,
     marginBottom: 14,
   },
   sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-  sheetTitle: { fontFamily: AU_FONT.bold, fontSize: 18, color: AU.text },
+  sheetTitle: { fontFamily: AU_FONT.bold, fontSize: 18, color: c.textBright },
   sheetClearBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 10, marginTop: 4 },
-  sheetClearText: { fontFamily: AU_FONT.body, fontSize: 14, color: AU.textDim },
+  sheetClearText: { fontFamily: AU_FONT.body, fontSize: 14, color: c.textDim },
   sortOption: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: AU.stroke,
+    borderBottomColor: c.glassFill,
   },
-  sortOptionText: { fontFamily: AU_FONT.bodySemi, fontSize: 15, color: AU.text },
+  sortOptionText: { fontFamily: AU_FONT.bodySemi, fontSize: 15, color: c.textBright },
 });

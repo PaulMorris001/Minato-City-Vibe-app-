@@ -22,7 +22,12 @@ import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCar
 import { useStripePayment } from "@/hooks/useStripePayment";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function FavoritesPage() {
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const { payForTicket } = useStripePayment();
   const [events, setEvents] = useState<PublicEvent[]>([]);
@@ -89,15 +94,13 @@ export default function FavoritesPage() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
       <LinearGradient
-        colors={["#0f0f1a", "#1a1a2e", "#16213e"]}
+        colors={[colors.background, colors.backgroundSecondary, colors.backgroundTertiary]}
         style={styles.header}
       >
-        <TouchableOpacity style={styles.backButton} onPress={() => goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+        <GlassBackButton style={styles.backButton} />
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Favorites</Text>
           <Text style={styles.headerSubtitle}>
@@ -125,7 +128,7 @@ export default function FavoritesPage() {
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="heart-outline" size={64} color="#374151" />
+              <Ionicons name="heart-outline" size={64} color={colors.border} />
               <Text style={styles.emptyTitle}>No favorites yet</Text>
               <Text style={styles.emptyText}>
                 Tap the heart icon on any event to save it here.
@@ -135,7 +138,7 @@ export default function FavoritesPage() {
                 onPress={() => router.push("/public-events" as any)}
               >
                 <LinearGradient
-                  colors={["#a855f7", "#7c3aed"]}
+                  colors={[colors.primary, colors.primaryDark]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.browseGradient}
@@ -149,8 +152,8 @@ export default function FavoritesPage() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => { setRefreshing(true); fetchFavorites(); }}
-              tintColor="#a855f7"
-              colors={["#a855f7"]}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
             />
           }
         />
@@ -159,10 +162,11 @@ export default function FavoritesPage() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
   },
   header: {
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight! + 16 : 60,
@@ -180,12 +184,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: scaleFontSize(26),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   headerSubtitle: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 2,
   },
   listContent: {
@@ -204,7 +208,7 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginTop: 12,
   },
   emptyContainer: {
@@ -216,14 +220,14 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: scaleFontSize(22),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginTop: 20,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     lineHeight: 22,
     marginBottom: 32,
@@ -239,6 +243,6 @@ const styles = StyleSheet.create({
   browseText: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
 });

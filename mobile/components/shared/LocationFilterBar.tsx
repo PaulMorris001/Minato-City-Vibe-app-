@@ -7,6 +7,8 @@ import { LocationSelection } from "@/libs/interfaces";
 import { formatLocation } from "@/utils/location";
 import LocationPicker from "./LocationPicker";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface LocationFilterBarProps {
   value: LocationSelection | null;
   onChange: (sel: LocationSelection) => void;
@@ -19,6 +21,8 @@ interface LocationFilterBarProps {
  * picker. Clearing remounts the picker so its internal state resets.
  */
 export default function LocationFilterBar({ value, onChange, onClear }: LocationFilterBarProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [open, setOpen] = useState(false);
   const [resetKey, setResetKey] = useState(0);
 
@@ -36,7 +40,7 @@ export default function LocationFilterBar({ value, onChange, onClear }: Location
         <TouchableOpacity style={styles.chip} onPress={() => setOpen((o) => !o)} activeOpacity={0.8}>
           <Ionicons name="location" size={16} color={Colors.primary} />
           <Text style={styles.chipText} numberOfLines={1}>{label}</Text>
-          <Ionicons name={open ? "chevron-up" : "chevron-down"} size={16} color="#9ca3af" />
+          <Ionicons name={open ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
         </TouchableOpacity>
         {hasFilter && (
           <TouchableOpacity style={styles.clearBtn} onPress={handleClear} activeOpacity={0.7}>
@@ -59,7 +63,8 @@ export default function LocationFilterBar({ value, onChange, onClear }: Location
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     marginBottom: 12,
   },
@@ -73,9 +78,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: c.backgroundSecondary,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 11,
@@ -84,7 +89,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontFamily: Fonts.medium,
-    color: "#fff",
+    color: c.text,
   },
   clearBtn: {
     paddingHorizontal: 12,

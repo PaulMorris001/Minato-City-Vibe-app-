@@ -30,6 +30,9 @@ import { BASE_URL } from "@/constants/constants";
 import { openUserProfile } from "@/utils/userNavigation";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
+import GlassBackButton from "@/components/shared/GlassBackButton";
 interface Review {
   _id: string;
   user: { _id: string; username: string; profilePicture?: string };
@@ -49,6 +52,7 @@ function timeAgo(dateStr: string) {
 }
 
 function StarRow({ rating, size = 16, onPress }: { rating: number; size?: number; onPress?: (r: number) => void }) {
+  const { colors } = useTheme();
   return (
     <View style={{ flexDirection: "row", gap: 4 }}>
       {[1, 2, 3, 4, 5].map((star) => (
@@ -56,7 +60,7 @@ function StarRow({ rating, size = 16, onPress }: { rating: number; size?: number
           <Ionicons
             name={star <= rating ? "star" : "star-outline"}
             size={size}
-            color={star <= rating ? "#f59e0b" : "#4b5563"}
+            color={star <= rating ? colors.warning : colors.borderMuted}
           />
         </TouchableOpacity>
       ))}
@@ -65,6 +69,8 @@ function StarRow({ rating, size = 16, onPress }: { rating: number; size?: number
 }
 
 export default function VendorDetails() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { vendorId, vendorName } = useLocalSearchParams();
   const router = useRouter();
   const formatPrice = useFormatPrice();
@@ -118,11 +124,11 @@ export default function VendorDetails() {
 
   const SOCIALS: { key: string; icon: any; color: string }[] = [
     { key: "instagram", icon: "logo-instagram", color: "#E1306C" },
-    { key: "tiktok", icon: "logo-tiktok", color: "#fff" },
+    { key: "tiktok", icon: "logo-tiktok", color: colors.text },
     { key: "twitter", icon: "logo-twitter", color: "#1DA1F2" },
     { key: "facebook", icon: "logo-facebook", color: "#1877F2" },
-    { key: "website", icon: "globe-outline", color: "#a855f7" },
-    { key: "phone", icon: "call-outline", color: "#22c55e" },
+    { key: "website", icon: "globe-outline", color: colors.primary },
+    { key: "phone", icon: "call-outline", color: colors.success },
   ];
 
   const renderVendorHeader = () => {
@@ -133,7 +139,7 @@ export default function VendorDetails() {
       <View>
         {vendor && !vendor.verified && (
           <View style={styles.unverifiedBanner}>
-            <Ionicons name="warning-outline" size={16} color="#f59e0b" />
+            <Ionicons name="warning-outline" size={16} color={colors.warning} />
             <Text style={styles.unverifiedText}>
               This vendor is not yet verified by OurCityvibe. Proceed with caution.
             </Text>
@@ -300,10 +306,10 @@ export default function VendorDetails() {
 
   const getAvailabilityColor = (availability: string) => {
     switch (availability) {
-      case "available": return "#22c55e";
-      case "unavailable": return "#ef4444";
-      case "coming_soon": return "#f59e0b";
-      default: return "#9ca3af";
+      case "available": return colors.success;
+      case "unavailable": return colors.error;
+      case "coming_soon": return colors.warning;
+      default: return colors.textSecondary;
     }
   };
 
@@ -353,7 +359,7 @@ export default function VendorDetails() {
 
         {item.category && (
           <View style={styles.categoryContainer}>
-            <Ionicons name="pricetag-outline" size={14} color="#9ca3af" />
+            <Ionicons name="pricetag-outline" size={14} color={colors.textSecondary} />
             <Text style={styles.categoryText}>{item.category}</Text>
           </View>
         )}
@@ -362,7 +368,7 @@ export default function VendorDetails() {
           <View style={styles.priceContainer}>
             <Text style={styles.priceLabel}>Price:</Text>
             <LinearGradient
-              colors={["#a855f7", "#7c3aed"]}
+              colors={[colors.primary, colors.primaryDark]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.priceGradient}
@@ -375,7 +381,7 @@ export default function VendorDetails() {
 
           {item.duration && (
             <View style={styles.durationContainer}>
-              <Ionicons name="time-outline" size={16} color="#9ca3af" />
+              <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
               <Text style={styles.durationText}>
                 {item.duration.value} {item.duration.unit}
               </Text>
@@ -388,7 +394,7 @@ export default function VendorDetails() {
             <Text style={styles.featuresTitle}>Features:</Text>
             {item.features.slice(0, 3).map((feature, index) => (
               <View key={index} style={styles.featureRow}>
-                <Ionicons name="checkmark-circle" size={14} color="#a855f7" />
+                <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
                 <Text style={styles.featureText}>{feature}</Text>
               </View>
             ))}
@@ -407,12 +413,12 @@ export default function VendorDetails() {
             activeOpacity={0.8}
           >
             <LinearGradient
-              colors={["#a855f7", "#7c3aed"]}
+              colors={[colors.primary, colors.primaryDark]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.bookGradient}
             >
-              <Ionicons name="calendar-outline" size={18} color="#fff" />
+              <Ionicons name="calendar-outline" size={18} color={colors.white} />
               <Text style={styles.bookButtonText}>Book Service</Text>
             </LinearGradient>
           </TouchableOpacity>
@@ -430,7 +436,7 @@ export default function VendorDetails() {
           onPress={() => setRatingModalVisible(true)}
           activeOpacity={0.8}
         >
-          <Ionicons name="star-outline" size={16} color="#f59e0b" />
+          <Ionicons name="star-outline" size={16} color={colors.warning} />
           <Text style={styles.rateButtonText}>
             {userReview ? "Edit Rating" : "Rate Vendor"}
           </Text>
@@ -438,7 +444,7 @@ export default function VendorDetails() {
       </View>
 
       {reviewsLoading ? (
-        <ActivityIndicator color="#a855f7" style={{ marginVertical: 16 }} />
+        <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
       ) : reviews.length === 0 ? (
         <Text style={styles.noReviewsText}>No reviews yet. Be the first!</Text>
       ) : (
@@ -486,13 +492,11 @@ export default function VendorDetails() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={["#1a1a2e", "#16213e"]}
+        colors={[colors.backgroundSecondary, colors.backgroundTertiary]}
         style={styles.header}
       >
         <View style={styles.headerContent}>
-          <TouchableOpacity onPress={() => goBack()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
+          <GlassBackButton style={styles.backButton} />
           <View style={styles.titleContainer}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
               <Text style={styles.title}>{vendorName || "Vendor Services"}</Text>
@@ -505,7 +509,7 @@ export default function VendorDetails() {
             </Text>
             {totalReviews > 0 && (
               <View style={styles.ratingRow}>
-                <Ionicons name="star" size={14} color="#f59e0b" />
+                <Ionicons name="star" size={14} color={colors.warning} />
                 <Text style={styles.ratingText}>{avgRating} ({totalReviews} review{totalReviews !== 1 ? "s" : ""})</Text>
               </View>
             )}
@@ -524,7 +528,7 @@ export default function VendorDetails() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <LinearGradient
-              colors={["#a855f7", "#7c3aed"]}
+              colors={[colors.primary, colors.primaryDark]}
               style={styles.emptyIconContainer}
             >
               <Ionicons name="briefcase-outline" size={48} color="white" />
@@ -575,7 +579,7 @@ export default function VendorDetails() {
             <TextInput
               style={[styles.modalInput, styles.modalTextArea]}
               placeholder="Any special requests or details..."
-              placeholderTextColor="#6b7280"
+              placeholderTextColor={colors.textMuted}
               value={bookingMessage}
               onChangeText={setBookingMessage}
               multiline
@@ -589,7 +593,7 @@ export default function VendorDetails() {
               activeOpacity={0.8}
             >
               <LinearGradient
-                colors={["#a855f7", "#7c3aed"]}
+                colors={[colors.primary, colors.primaryDark]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.submitGradient}
@@ -640,7 +644,7 @@ export default function VendorDetails() {
             <TextInput
               style={[styles.modalInput, styles.modalTextArea]}
               placeholder="Share your experience..."
-              placeholderTextColor="#6b7280"
+              placeholderTextColor={colors.textMuted}
               value={reviewText}
               onChangeText={setReviewText}
               multiline
@@ -655,7 +659,7 @@ export default function VendorDetails() {
               activeOpacity={0.8}
             >
               <LinearGradient
-                colors={["#f59e0b", "#d97706"]}
+                colors={[colors.warning, "#d97706"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.submitGradient}
@@ -674,16 +678,17 @@ export default function VendorDetails() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.darkBackground,
+    backgroundColor: c.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: Colors.darkBackground,
+    backgroundColor: c.background,
   },
   header: {
     paddingTop: 60,
@@ -704,13 +709,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
   },
   ratingRow: {
     flexDirection: "row",
@@ -721,7 +726,7 @@ const styles = StyleSheet.create({
   ratingText: {
     fontSize: 13,
     fontFamily: Fonts.medium,
-    color: "#f59e0b",
+    color: c.warning,
   },
   listContent: {
     padding: 16,
@@ -730,17 +735,17 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === "ios" ? 24 : 100,
   },
   serviceCard: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 16,
     marginBottom: 16,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   serviceImage: {
     width: "100%",
     height: 200,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
   },
   serviceContent: {
     padding: 16,
@@ -754,7 +759,7 @@ const styles = StyleSheet.create({
   serviceName: {
     fontSize: 20,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     flex: 1,
     marginRight: 12,
   },
@@ -778,7 +783,7 @@ const styles = StyleSheet.create({
   serviceDescription: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginBottom: 12,
     lineHeight: 20,
   },
@@ -790,7 +795,7 @@ const styles = StyleSheet.create({
   categoryText: {
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginLeft: 6,
   },
   serviceFooter: {
@@ -806,7 +811,7 @@ const styles = StyleSheet.create({
   priceLabel: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginRight: 8,
   },
   priceGradient: {
@@ -817,12 +822,12 @@ const styles = StyleSheet.create({
   price: {
     fontSize: 18,
     fontFamily: Fonts.bold,
-    color: "white",
+    color: c.text,
   },
   durationContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
@@ -830,11 +835,11 @@ const styles = StyleSheet.create({
   durationText: {
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginLeft: 6,
   },
   featuresContainer: {
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
     padding: 12,
     borderRadius: 12,
     marginTop: 4,
@@ -842,7 +847,7 @@ const styles = StyleSheet.create({
   featuresTitle: {
     fontSize: 14,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 8,
   },
   featureRow: {
@@ -853,14 +858,14 @@ const styles = StyleSheet.create({
   featureText: {
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#e5e7eb",
+    color: c.textBody,
     marginLeft: 8,
     flex: 1,
   },
   moreFeatures: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: "#a855f7",
+    color: c.primary,
     marginTop: 4,
     marginLeft: 22,
   },
@@ -880,13 +885,13 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 22,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 15,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     textAlign: "center",
     lineHeight: 22,
   },
@@ -905,7 +910,7 @@ const styles = StyleSheet.create({
   bookButtonText: {
     fontSize: 15,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.white,
   },
   unverifiedBanner: {
     flexDirection: "row",
@@ -922,7 +927,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#f59e0b",
+    color: c.warning,
     lineHeight: 18,
   },
   errorBanner: {
@@ -939,7 +944,7 @@ const styles = StyleSheet.create({
   errorBannerText: {
     fontSize: 13,
     fontFamily: Fonts.regular,
-    color: "#ef4444",
+    color: c.error,
   },
   retryBtn: {
     paddingHorizontal: 12,
@@ -950,20 +955,20 @@ const styles = StyleSheet.create({
   retryBtnText: {
     fontSize: 13,
     fontFamily: Fonts.semiBold,
-    color: "#ef4444",
+    color: c.error,
   },
   vendorHeaderCard: {
-    backgroundColor: "#1a1a2e",
+    backgroundColor: c.backgroundSecondary,
     borderRadius: 14,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#252538",
+    borderColor: c.glassStroke,
   },
   vendorDescription: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#d1d5db",
+    color: c.textTertiary,
     lineHeight: 20,
     marginBottom: 12,
   },
@@ -976,9 +981,9 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 12,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: c.background,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -987,7 +992,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 20,
     borderTopWidth: 1,
-    borderTopColor: "#374151",
+    borderTopColor: c.border,
   },
   reviewsHeader: {
     flexDirection: "row",
@@ -998,7 +1003,7 @@ const styles = StyleSheet.create({
   reviewsTitle: {
     fontSize: 18,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   rateButton: {
     flexDirection: "row",
@@ -1014,22 +1019,22 @@ const styles = StyleSheet.create({
   rateButtonText: {
     fontSize: 13,
     fontFamily: Fonts.semiBold,
-    color: "#f59e0b",
+    color: c.warning,
   },
   noReviewsText: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     textAlign: "center",
     paddingVertical: 24,
   },
   reviewCard: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderRadius: 12,
     padding: 14,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: c.border,
   },
   reviewTop: {
     flexDirection: "row",
@@ -1046,36 +1051,36 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
   },
   reviewAvatarPlaceholder: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     justifyContent: "center",
     alignItems: "center",
   },
   reviewAvatarLetter: {
     fontSize: 14,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   reviewUsername: {
     fontSize: 14,
     fontFamily: Fonts.semiBold,
-    color: "#fff",
+    color: c.text,
   },
   reviewTime: {
     fontSize: 11,
     fontFamily: Fonts.regular,
-    color: "#6b7280",
+    color: c.textMuted,
     marginTop: 1,
   },
   reviewText: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: "#9ca3af",
+    color: c.textSecondary,
     lineHeight: 20,
   },
   // Rating modal specifics
@@ -1086,14 +1091,14 @@ const styles = StyleSheet.create({
   // Modals
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: c.modalOverlay,
     justifyContent: "flex-end",
   },
   modalBackdrop: {
     flex: 1,
   },
   modalContent: {
-    backgroundColor: "#1f1f2e",
+    backgroundColor: c.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -1108,31 +1113,31 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 22,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
   modalServiceName: {
     fontSize: 15,
     fontFamily: Fonts.medium,
-    color: "#a855f7",
+    color: c.primary,
     marginBottom: 20,
   },
   inputLabel: {
     fontSize: 13,
     fontFamily: Fonts.semiBold,
-    color: "#9ca3af",
+    color: c.textSecondary,
     marginBottom: 6,
   },
   modalInput: {
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#4b5563",
+    borderColor: c.borderMuted,
   },
   modalTextArea: {
     height: 100,
@@ -1142,19 +1147,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    backgroundColor: "#374151",
+    backgroundColor: c.border,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 14,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#4b5563",
+    borderColor: c.borderMuted,
   },
   datePickerText: {
     flex: 1,
     fontSize: 15,
     fontFamily: Fonts.regular,
-    color: "#fff",
+    color: c.text,
   },
   submitButton: {
     borderRadius: 12,
@@ -1171,6 +1176,6 @@ const styles = StyleSheet.create({
   submitText: {
     fontSize: 16,
     fontFamily: Fonts.bold,
-    color: "#fff",
+    color: c.text,
   },
 });

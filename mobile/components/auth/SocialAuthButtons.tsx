@@ -23,6 +23,7 @@ import { registerForPushNotifications } from "@/utils/pushNotifications";
 import { remoteLog } from "@/utils/remoteLog";
 import { AU } from "@/components/auth/tokens";
 
+import { darkColors, type ThemeColors } from "@/constants/theme";
 // `isUnexpectedAuthError` decides whether a sign-in failure deserves a
 // Sentry alert vs. just a Render log. The rule of thumb: anything we can
 // explain (user cancel, expected server-side rejection, missing entitlement)
@@ -330,7 +331,8 @@ export function SocialAuthButtons() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   divider: {
     flexDirection: "row",
     alignItems: "center",
@@ -352,7 +354,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     flexDirection: "row",
     gap: 8,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
     borderColor: AU.stroke,
     alignItems: "center",
@@ -407,7 +409,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: "rgba(168,85,247,0.12)",
+    backgroundColor: c.primaryFaded,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -423,3 +425,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
+
+// Auth/poster surface: always renders the dark palette.
+const styles = createStyles(darkColors);
