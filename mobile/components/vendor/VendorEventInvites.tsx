@@ -13,9 +13,9 @@ import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
-import { VN, VNF } from "./vendorTheme";
+import { VNF } from "./vendorTheme";
 
-import { useThemedStyles } from "@/contexts/ThemeContext";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 interface EventInvite {
   eventId: string;
@@ -32,6 +32,7 @@ interface EventInvite {
  * into the dashboard without reserving space.
  */
 export default function VendorEventInvites() {
+  const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [invites, setInvites] = useState<EventInvite[]>([]);
@@ -90,7 +91,7 @@ export default function VendorEventInvites() {
                 <Image source={{ uri: inv.image }} style={styles.thumb} contentFit="cover" />
               ) : (
                 <View style={styles.thumbFallback}>
-                  <Ionicons name="calendar-outline" size={20} color={VN.purpleSoft} />
+                  <Ionicons name="calendar-outline" size={20} color={colors.primaryLight} />
                 </View>
               )}
               <View style={{ flex: 1, minWidth: 0 }}>
@@ -142,16 +143,16 @@ const createStyles = (c: ThemeColors) =>
   title: {
     fontFamily: VNF.heading,
     fontSize: 18,
-    color: VN.text,
+    color: c.textBright,
     letterSpacing: -0.4,
     marginBottom: 12,
   },
   card: {
     padding: 12,
     borderRadius: 14,
-    backgroundColor: VN.surface,
+    backgroundColor: c.cardGlass,
     borderWidth: 1,
-    borderColor: VN.strokeHi,
+    borderColor: c.glassStrokeStrong,
     gap: 12,
   },
   head: { flexDirection: "row", alignItems: "center", gap: 12 },
@@ -164,8 +165,8 @@ const createStyles = (c: ThemeColors) =>
     alignItems: "center",
     justifyContent: "center",
   },
-  eventTitle: { fontFamily: VNF.sub, fontSize: 14.5, color: VN.text },
-  eventMeta: { fontFamily: VNF.medium, fontSize: 11.5, color: VN.textDim, marginTop: 3 },
+  eventTitle: { fontFamily: VNF.sub, fontSize: 14.5, color: c.textBright },
+  eventMeta: { fontFamily: VNF.medium, fontSize: 11.5, color: c.textDim, marginTop: 3 },
   actions: { flexDirection: "row", gap: 8 },
   btn: {
     flex: 1,
@@ -177,9 +178,9 @@ const createStyles = (c: ThemeColors) =>
   decline: {
     backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: VN.strokeHi,
+    borderColor: c.glassStrokeStrong,
   },
-  declineText: { fontFamily: VNF.bold, fontSize: 13, color: VN.textDim },
-  accept: { backgroundColor: VN.purple },
-  acceptText: { fontFamily: VNF.bold, fontSize: 13, color: c.text },
+  declineText: { fontFamily: VNF.bold, fontSize: 13, color: c.textDim },
+  accept: { backgroundColor: c.primary },
+  acceptText: { fontFamily: VNF.bold, fontSize: 13, color: c.white },
 });

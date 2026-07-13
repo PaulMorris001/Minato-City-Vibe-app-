@@ -126,7 +126,7 @@ export default function DashboardTab({
       contentContainerStyle={{ paddingBottom: 24 }}
       showsVerticalScrollIndicator={false}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={VN.purple} />
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
       }
     >
       {/* Aurora glow */}
@@ -182,7 +182,7 @@ export default function DashboardTab({
                   { height: `${h}%` },
                   i > 8
                     ? { backgroundColor: VN.pink }
-                    : { backgroundColor: colors.glassStrokeStrong },
+                    : { backgroundColor: "rgba(255,255,255,0.16)" },
                 ]}
               />
             ))}
@@ -240,7 +240,7 @@ export default function DashboardTab({
             </LinearGradient>
           </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.85} style={styles.glassBtn} onPress={onGoToAccount}>
-            <Ionicons name="cash-outline" size={16} color={VN.text} />
+            <Ionicons name="cash-outline" size={16} color={colors.textBright} />
             <Text style={styles.glassBtnText}>View payouts</Text>
           </TouchableOpacity>
         </View>
@@ -316,16 +316,16 @@ export default function DashboardTab({
                       styles.statusPill,
                       available
                         ? { backgroundColor: "rgba(52,211,153,0.16)" }
-                        : { backgroundColor: "rgba(244,238,255,0.06)" },
+                        : { backgroundColor: colors.glassFillSubtle },
                     ]}
                   >
                     <View
                       style={[
                         styles.statusDot,
-                        { backgroundColor: available ? VN.green : VN.textMute },
+                        { backgroundColor: available ? colors.successLight : colors.textFaint },
                       ]}
                     />
-                    <Text style={[styles.statusText, { color: available ? VN.greenSoft : VN.textMute }]}>
+                    <Text style={[styles.statusText, { color: available ? colors.successLight : colors.textFaint }]}>
                       {available ? "available" : "unavailable"}
                     </Text>
                   </View>
@@ -345,7 +345,7 @@ export default function DashboardTab({
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-  container: { flex: 1, backgroundColor: VN.bg },
+  container: { flex: 1, backgroundColor: c.backgroundDeep },
   aurora: {
     position: "absolute",
     top: -160,
@@ -357,16 +357,18 @@ const createStyles = (c: ThemeColors) =>
   },
   section: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 18 },
   sectionH: { paddingHorizontal: 18, paddingBottom: 18 },
-  kicker: { fontFamily: VNF.medium, fontSize: 12, color: VN.textDim, marginBottom: 4 },
-  greetingHeadline: { fontFamily: VNF.display, fontSize: 30, color: VN.text, letterSpacing: -0.8, lineHeight: 33 },
-  greetingName: { color: VN.purpleSoft },
+  kicker: { fontFamily: VNF.medium, fontSize: 12, color: c.textDim, marginBottom: 4 },
+  greetingHeadline: { fontFamily: VNF.display, fontSize: 30, color: c.textBright, letterSpacing: -0.8, lineHeight: 33 },
+  greetingName: { color: c.primaryLight },
 
   earningsCard: {
     borderRadius: 20,
     overflow: "hidden",
     padding: 18,
     borderWidth: 1,
-    borderColor: VN.strokeHi,
+    // The earnings hero keeps its dark gradient in both schemes, so its
+    // border and text stay pinned to the dark-mode values.
+    borderColor: "rgba(255,255,255,0.14)",
     shadowColor: VN.purpleDeep,
     shadowOffset: { width: 0, height: 20 },
     shadowOpacity: 0.45,
@@ -375,10 +377,10 @@ const createStyles = (c: ThemeColors) =>
   },
   blob: { position: "absolute", width: 200, height: 200, borderRadius: 100 },
   earningsTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  earningsKicker: { fontFamily: VNF.bold, fontSize: 10, color: c.textDim, letterSpacing: 1.2 },
+  earningsKicker: { fontFamily: VNF.bold, fontSize: 10, color: "rgba(244,238,255,0.62)", letterSpacing: 1.2 },
   trendChip: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1 },
   trendText: { fontFamily: VNF.bold, fontSize: 10 },
-  earningsAmount: { fontFamily: VNF.display, fontSize: 42, color: c.text, letterSpacing: -1.6, marginTop: 6 },
+  earningsAmount: { fontFamily: VNF.display, fontSize: 42, color: "#F4EEFF", letterSpacing: -1.6, marginTop: 6 },
   earningsDelta: { fontFamily: VNF.medium, fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 4 },
   sparkline: { flexDirection: "row", alignItems: "flex-end", gap: 3, height: 28, marginTop: 14 },
   bar: { flex: 1, borderRadius: 2 },
@@ -389,19 +391,19 @@ const createStyles = (c: ThemeColors) =>
     flexGrow: 1,
     padding: 12,
     borderRadius: 14,
-    backgroundColor: VN.surface,
+    backgroundColor: c.cardGlass,
     borderWidth: 1,
-    borderColor: VN.stroke,
+    borderColor: c.glassStroke,
   },
   statTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   statIcon: { width: 28, height: 28, borderRadius: 8, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  statValue: { fontFamily: VNF.heading, fontSize: 22, color: VN.text, letterSpacing: -0.4 },
-  statLabel: { fontFamily: VNF.semibold, fontSize: 11.5, color: VN.text, marginTop: 8 },
-  statSub: { fontFamily: VNF.medium, fontSize: 10.5, color: VN.textMute, marginTop: 2 },
+  statValue: { fontFamily: VNF.heading, fontSize: 22, color: c.textBright, letterSpacing: -0.4 },
+  statLabel: { fontFamily: VNF.semibold, fontSize: 11.5, color: c.textBright, marginTop: 8 },
+  statSub: { fontFamily: VNF.medium, fontSize: 10.5, color: c.textFaint, marginTop: 2 },
 
-  sectionTitle: { fontFamily: VNF.heading, fontSize: 18, color: VN.text, letterSpacing: -0.4, marginBottom: 12 },
+  sectionTitle: { fontFamily: VNF.heading, fontSize: 18, color: c.textBright, letterSpacing: -0.4, marginBottom: 12 },
   sectionTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  actionLink: { fontFamily: VNF.bold, fontSize: 11.5, color: VN.purpleSoft, marginBottom: 12 },
+  actionLink: { fontFamily: VNF.bold, fontSize: 11.5, color: c.primaryLight, marginBottom: 12 },
 
   actionsRow: { flexDirection: "row", gap: 8 },
   primaryBtn: {
@@ -428,9 +430,9 @@ const createStyles = (c: ThemeColors) =>
     gap: 6,
     backgroundColor: c.glassFillSubtle,
     borderWidth: 1,
-    borderColor: VN.strokeHi,
+    borderColor: c.glassStrokeStrong,
   },
-  glassBtnText: { fontFamily: VNF.sub, fontSize: 13, color: VN.text },
+  glassBtnText: { fontFamily: VNF.sub, fontSize: 13, color: c.textBright },
 
   catRow: {
     flexDirection: "row",
@@ -438,9 +440,9 @@ const createStyles = (c: ThemeColors) =>
     gap: 12,
     padding: 12,
     borderRadius: 14,
-    backgroundColor: VN.surface,
+    backgroundColor: c.cardGlass,
     borderWidth: 1,
-    borderColor: VN.stroke,
+    borderColor: c.glassStroke,
   },
   catIcon: {
     width: 38,
@@ -451,8 +453,8 @@ const createStyles = (c: ThemeColors) =>
     alignItems: "center",
     justifyContent: "center",
   },
-  catName: { fontFamily: VNF.sub, fontSize: 14, color: VN.text },
-  catSub: { fontFamily: VNF.medium, fontSize: 11, color: VN.textDim, marginTop: 2 },
+  catName: { fontFamily: VNF.sub, fontSize: 14, color: c.textBright },
+  catSub: { fontFamily: VNF.medium, fontSize: 11, color: c.textDim, marginTop: 2 },
   catPill: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999, borderWidth: 1 },
   catPillText: { fontFamily: VNF.bold, fontSize: 11 },
 
@@ -462,20 +464,20 @@ const createStyles = (c: ThemeColors) =>
     gap: 12,
     padding: 10,
     borderRadius: 14,
-    backgroundColor: VN.surface,
+    backgroundColor: c.cardGlass,
     borderWidth: 1,
-    borderColor: VN.stroke,
+    borderColor: c.glassStroke,
   },
   recentThumb: { width: 52, height: 52, borderRadius: 12, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   recentThumbEmoji: { fontSize: 26 },
-  recentTitle: { fontFamily: VNF.sub, fontSize: 14.5, color: VN.text },
+  recentTitle: { fontFamily: VNF.sub, fontSize: 14.5, color: c.textBright },
   recentMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3 },
-  recentMetaText: { fontFamily: VNF.medium, fontSize: 11.5, color: VN.textDim, flexShrink: 1 },
-  metaDot: { width: 2.5, height: 2.5, borderRadius: 2, backgroundColor: VN.textMute },
-  recentPrice: { fontFamily: VNF.bold, fontSize: 11.5, color: VN.purpleSoft },
+  recentMetaText: { fontFamily: VNF.medium, fontSize: 11.5, color: c.textDim, flexShrink: 1 },
+  metaDot: { width: 2.5, height: 2.5, borderRadius: 2, backgroundColor: c.textFaint },
+  recentPrice: { fontFamily: VNF.bold, fontSize: 11.5, color: c.primaryLight },
   statusPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 },
   statusDot: { width: 5, height: 5, borderRadius: 3 },
   statusText: { fontFamily: VNF.bold, fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase" },
   recentEmpty: { paddingVertical: 24, alignItems: "center" },
-  recentEmptyText: { fontFamily: VNF.bold, fontSize: 14, color: VN.purpleSoft },
+  recentEmptyText: { fontFamily: VNF.bold, fontSize: 14, color: c.primaryLight },
 });

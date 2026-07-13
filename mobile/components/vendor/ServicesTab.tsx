@@ -125,7 +125,7 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
                 styles.statusPill,
                 active
                   ? { backgroundColor: "rgba(52,211,153,0.22)", borderColor: "rgba(52,211,153,0.4)" }
-                  : { backgroundColor: "rgba(0,0,0,0.4)", borderColor: colors.glassStrokeStrong },
+                  : { backgroundColor: "rgba(0,0,0,0.4)", borderColor: "rgba(255,255,255,0.16)" },
               ]}
             >
               <View style={[styles.statusDot, { backgroundColor: active ? VN.green : VN.textMute }]} />
@@ -150,14 +150,14 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
           <View style={styles.metaRow}>
             {item.duration && (
               <View style={styles.metaItem}>
-                <Ionicons name="time-outline" size={12} color={VN.purpleSoft} />
+                <Ionicons name="time-outline" size={12} color={colors.primaryLight} />
                 <Text style={styles.metaText}>
                   {item.duration.value} {item.duration.unit}
                 </Text>
               </View>
             )}
             <View style={styles.metaItem}>
-              <Ionicons name="pricetag-outline" size={12} color={VN.purpleSoft} />
+              <Ionicons name="pricetag-outline" size={12} color={colors.primaryLight} />
               <Text style={styles.metaText}>{item.currency || "USD"}</Text>
             </View>
           </View>
@@ -168,17 +168,17 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
 
           <View style={styles.actions}>
             <TouchableOpacity style={styles.editBtn} onPress={() => handleEditService(item)} activeOpacity={0.8}>
-              <Ionicons name="create-outline" size={14} color={VN.purpleSoft} />
+              <Ionicons name="create-outline" size={14} color={colors.primaryLight} />
               <Text style={styles.editBtnText}>Edit</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.pauseBtn} onPress={() => handleToggleActive(item)} activeOpacity={0.8}>
-              <Ionicons name={active ? "eye-off-outline" : "eye-outline"} size={14} color={active ? VN.textDim : VN.purpleSoft} />
-              <Text style={[styles.pauseBtnText, !active && { color: VN.purpleSoft }]}>
+              <Ionicons name={active ? "eye-off-outline" : "eye-outline"} size={14} color={active ? colors.textDim : colors.primaryLight} />
+              <Text style={[styles.pauseBtnText, !active && { color: colors.primaryLight }]}>
                 {active ? "Pause" : "Resume"}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeleteService(item)} activeOpacity={0.8}>
-              <Ionicons name="trash-outline" size={15} color={VN.pink} />
+              <Ionicons name="trash-outline" size={15} color={colors.accentPink} />
             </TouchableOpacity>
           </View>
         </View>
@@ -201,7 +201,7 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={VN.purple} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         ListHeaderComponent={
           <View>
             {/* Title row */}
@@ -232,18 +232,18 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
                     style={[
                       styles.filterPill,
                       on
-                        ? { backgroundColor: colors.primaryFadedStrong, borderColor: "rgba(192,132,252,0.4)" }
-                        : { backgroundColor: colors.glassFillSubtle, borderColor: VN.stroke },
+                        ? { backgroundColor: colors.primaryFadedStrong, borderColor: colors.primaryBorder }
+                        : { backgroundColor: colors.glassFillSubtle, borderColor: colors.glassStroke },
                     ]}
                   >
-                    <Text style={[styles.filterLabel, { color: on ? VN.purpleSoft : VN.textDim }]}>{f.label}</Text>
+                    <Text style={[styles.filterLabel, { color: on ? colors.primaryLight : colors.textDim }]}>{f.label}</Text>
                     <View
                       style={[
                         styles.filterCount,
                         { backgroundColor: on ? "rgba(168,85,247,0.2)" : colors.glassFillSubtle },
                       ]}
                     >
-                      <Text style={[styles.filterCountText, { color: on ? VN.purpleSoft : VN.textMute }]}>{f.n}</Text>
+                      <Text style={[styles.filterCountText, { color: on ? colors.primaryLight : colors.textFaint }]}>{f.n}</Text>
                     </View>
                   </TouchableOpacity>
                 );
@@ -285,12 +285,12 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-  container: { flex: 1, backgroundColor: VN.bg },
+  container: { flex: 1, backgroundColor: c.backgroundDeep },
   listContent: { padding: 18, paddingBottom: 32 },
 
   titleRow: { flexDirection: "row", alignItems: "center", marginBottom: 16, gap: 12 },
-  title: { fontFamily: VNF.display, fontSize: 30, color: VN.text, letterSpacing: -0.9 },
-  subtitle: { fontFamily: VNF.medium, fontSize: 12, color: VN.textDim, marginTop: 4 },
+  title: { fontFamily: VNF.display, fontSize: 30, color: c.textBright, letterSpacing: -0.9 },
+  subtitle: { fontFamily: VNF.medium, fontSize: 12, color: c.textDim, marginTop: 4 },
   newBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -315,9 +315,9 @@ const createStyles = (c: ThemeColors) =>
   card: {
     borderRadius: 18,
     overflow: "hidden",
-    backgroundColor: VN.surface,
+    backgroundColor: c.cardGlass,
     borderWidth: 1,
-    borderColor: VN.strokeHi,
+    borderColor: c.glassStrokeStrong,
     marginBottom: 12,
     shadowColor: VN.purpleDeep,
     shadowOffset: { width: 0, height: 16 },
@@ -331,28 +331,30 @@ const createStyles = (c: ThemeColors) =>
   statusPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
   statusDot: { width: 5, height: 5, borderRadius: 3 },
   statusText: { fontFamily: VNF.bold, fontSize: 10, letterSpacing: 0.5 },
-  priceChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.45)", borderWidth: 1, borderColor: c.glassStrokeStrong },
+  // Cover chips/text sit on the photo + dark scrim, so they stay pinned light
+  // in both schemes.
+  priceChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.45)", borderWidth: 1, borderColor: "rgba(255,255,255,0.16)" },
   priceChipText: { fontFamily: VNF.heading, fontSize: 13, color: c.white },
   coverBottom: { position: "absolute", left: 14, right: 14, bottom: 12 },
-  coverTitle: { fontFamily: VNF.display, fontSize: 22, color: c.text, letterSpacing: -0.6, lineHeight: 24 },
+  coverTitle: { fontFamily: VNF.display, fontSize: 22, color: "#F4EEFF", letterSpacing: -0.6, lineHeight: 24 },
   coverSub: { fontFamily: VNF.semibold, fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 4 },
 
   body: { padding: 14 },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 14 },
   metaItem: { flexDirection: "row", alignItems: "center", gap: 5 },
-  metaText: { fontFamily: VNF.medium, fontSize: 12, color: VN.textDim },
-  description: { fontFamily: VNF.body, fontSize: 13, color: VN.text, lineHeight: 19, marginTop: 10 },
-  actions: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: VN.stroke },
-  editBtn: { flex: 1, height: 38, borderRadius: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: c.primaryFadedStrong, borderWidth: 1, borderColor: "rgba(192,132,252,0.3)" },
-  editBtnText: { fontFamily: VNF.bold, fontSize: 12, color: VN.purpleSoft },
-  pauseBtn: { height: 38, paddingHorizontal: 12, borderRadius: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: c.glassFillSubtle, borderWidth: 1, borderColor: VN.strokeHi },
-  pauseBtnText: { fontFamily: VNF.bold, fontSize: 12, color: VN.textDim },
+  metaText: { fontFamily: VNF.medium, fontSize: 12, color: c.textDim },
+  description: { fontFamily: VNF.body, fontSize: 13, color: c.textBright, lineHeight: 19, marginTop: 10 },
+  actions: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: c.glassStroke },
+  editBtn: { flex: 1, height: 38, borderRadius: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: c.primaryFadedStrong, borderWidth: 1, borderColor: c.primaryBorder },
+  editBtnText: { fontFamily: VNF.bold, fontSize: 12, color: c.primaryLight },
+  pauseBtn: { height: 38, paddingHorizontal: 12, borderRadius: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: c.glassFillSubtle, borderWidth: 1, borderColor: c.glassStrokeStrong },
+  pauseBtnText: { fontFamily: VNF.bold, fontSize: 12, color: c.textDim },
   deleteBtn: { width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(236,72,153,0.10)", borderWidth: 1, borderColor: "rgba(236,72,153,0.3)" },
 
   empty: { alignItems: "center", paddingVertical: 60 },
   emptyEmoji: { fontSize: 80, opacity: 0.3 },
-  emptyTitle: { fontFamily: VNF.heading, fontSize: 20, color: VN.text, marginTop: 8 },
-  emptySub: { fontFamily: VNF.body, fontSize: 13, color: VN.textDim, marginTop: 6, textAlign: "center", paddingHorizontal: 40 },
+  emptyTitle: { fontFamily: VNF.heading, fontSize: 20, color: c.textBright, marginTop: 8 },
+  emptySub: { fontFamily: VNF.body, fontSize: 13, color: c.textDim, marginTop: 6, textAlign: "center", paddingHorizontal: 40 },
   emptyCta: { flexDirection: "row", alignItems: "center", gap: 6, height: 44, paddingHorizontal: 20, borderRadius: 12, marginTop: 20 },
   emptyCtaText: { fontFamily: VNF.heading, fontSize: 14, color: c.white },
 });
