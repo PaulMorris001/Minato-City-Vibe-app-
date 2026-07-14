@@ -298,6 +298,12 @@ export function transformCloudinaryUrl(
     crop?: 'fill' | 'fit' | 'crop' | 'scale' | 'thumb';
     circle?: boolean;
     gravity?: 'auto' | 'face' | 'center';
+    /**
+     * Force an output format instead of f_auto. Use 'png' when the consumer
+     * needs a real alpha channel (e.g. circular tab-bar icons) — f_auto can
+     * negotiate down to JPEG, which fills transparent corners.
+     */
+    format?: 'png' | 'jpg' | 'webp';
   }
 ): string {
   if (!url || !url.includes('cloudinary.com')) {
@@ -317,7 +323,7 @@ export function transformCloudinaryUrl(
   if (!options?.quality) {
     transformations.push('q_auto');
   }
-  transformations.push('f_auto');
+  transformations.push(options?.format ? `f_${options.format}` : 'f_auto');
 
   if (transformations.length === 0) {
     return url;

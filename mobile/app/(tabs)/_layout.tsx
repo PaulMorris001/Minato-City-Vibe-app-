@@ -29,6 +29,7 @@ import { useUnread } from "@/contexts/UnreadContext";
 import socketService from "@/services/socket.service";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "@/components/shared/Avatar";
+import { transformCloudinaryUrl } from "@/utils/imageUpload";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -255,15 +256,22 @@ export default function TabsLayout() {
         style={styles.menuItem}
         onPress={() => {
           setIsProfileModalVisible(false);
-          router.push("/messages" as any);
+          router.push("/notifications" as any);
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="chatbubbles-outline" size={20} color={colors.primary} />
+          <Ionicons name="notifications-outline" size={20} color={colors.primary} />
         </View>
         <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
-          Messages
+          Notifications
         </Text>
+        {notifUnread > 0 && (
+          <View style={styles.menuBadge}>
+            <Text style={styles.menuBadgeText}>
+              {notifUnread > 99 ? "99+" : notifUnread}
+            </Text>
+          </View>
+        )}
         <Ionicons
           name="chevron-forward"
           size={20}
@@ -275,15 +283,22 @@ export default function TabsLayout() {
         style={styles.menuItem}
         onPress={() => {
           setIsProfileModalVisible(false);
-          router.push("/(tabs)/events");
+          router.push("/messages" as any);
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+          <Ionicons name="chatbubbles-outline" size={20} color={colors.primary} />
         </View>
         <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
-          My Events
+          Messages
         </Text>
+        {totalUnread > 0 && (
+          <View style={styles.menuBadge}>
+            <Text style={styles.menuBadgeText}>
+              {totalUnread > 99 ? "99+" : totalUnread}
+            </Text>
+          </View>
+        )}
         <Ionicons
           name="chevron-forward"
           size={20}
@@ -398,38 +413,6 @@ export default function TabsLayout() {
             ) : (
               <>
             <TouchableOpacity
-              onPress={() => router.push("/notifications" as any)}
-              style={styles.ticketButton}
-              activeOpacity={0.7}
-            >
-              <PillSurface glass={isGlassAvailable} gradientColors={[colors.border, colors.cardAlt]}>
-                <Ionicons name="notifications-outline" size={20} color={colors.text} />
-                {notifUnread > 0 && (
-                  <View style={styles.unreadBadge}>
-                    <Text style={styles.unreadBadgeText}>
-                      {notifUnread > 99 ? "99+" : notifUnread}
-                    </Text>
-                  </View>
-                )}
-              </PillSurface>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => router.push("/messages" as any)}
-              style={styles.ticketButton}
-              activeOpacity={0.7}
-            >
-              <PillSurface glass={isGlassAvailable} gradientColors={[colors.border, colors.cardAlt]}>
-                <Ionicons name="chatbubbles-outline" size={20} color={colors.text} />
-                {totalUnread > 0 && (
-                  <View style={styles.unreadBadge}>
-                    <Text style={styles.unreadBadgeText}>
-                      {totalUnread > 99 ? "99+" : totalUnread}
-                    </Text>
-                  </View>
-                )}
-              </PillSurface>
-            </TouchableOpacity>
-            <TouchableOpacity
               onPress={() => router.push("/passes" as any)}
               style={styles.ticketButton}
               activeOpacity={0.7}
@@ -448,6 +431,13 @@ export default function TabsLayout() {
               activeOpacity={0.7}
             >
               <Avatar uri={user.profilePicture} name={user.username} size={36} />
+              {notifUnread + totalUnread > 0 && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadBadgeText}>
+                    {notifUnread + totalUnread > 99 ? "99+" : notifUnread + totalUnread}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
               </>
             )}
@@ -510,9 +500,39 @@ export default function TabsLayout() {
             <Label>Events</Label>
             <Icon sf="calendar" />
           </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="profile">
+          <NativeTabs.Trigger
+            name="profile"
+            // With a profile picture, the icon is a circular Cloudinary render
+            // of the photo (r_max + png keeps the corners transparent), passed
+            // through our expo-router patch (`original: true`) so UIKit shows
+            // it untinted instead of as a template silhouette. 27pt @3x.
+            options={
+              user.profilePicture
+                ? ({
+                    icon: {
+                      src: {
+                        uri: transformCloudinaryUrl(user.profilePicture, {
+                          width: 81,
+                          height: 81,
+                          crop: "fill",
+                          gravity: "face",
+                          circle: true,
+                          format: "png",
+                        }),
+                        width: 27,
+                        height: 27,
+                        scale: 3,
+                      },
+                      original: true,
+                    },
+                  } as any)
+                : undefined
+            }
+          >
             <Label>Profile</Label>
-            <Icon sf={{ default: "person", selected: "person.fill" }} />
+            {!user.profilePicture && (
+              <Icon sf={{ default: "person", selected: "person.fill" }} />
+            )}
           </NativeTabs.Trigger>
         </NativeTabs>
       ) : (
@@ -594,13 +614,26 @@ export default function TabsLayout() {
             name="profile"
             options={{
               title: "Profile",
-              tabBarIcon: ({ focused, color }) => (
-                <Ionicons
-                  name={focused ? "person" : "person-outline"}
-                  size={20}
-                  color={color}
-                />
-              ),
+              tabBarIcon: ({ focused, color }) =>
+                user.profilePicture ? (
+                  <Image
+                    source={{ uri: user.profilePicture }}
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 12,
+                      borderWidth: focused ? 1.5 : 0,
+                      borderColor: color,
+                    }}
+                    contentFit="cover"
+                  />
+                ) : (
+                  <Ionicons
+                    name={focused ? "person" : "person-outline"}
+                    size={20}
+                    color={color}
+                  />
+                ),
             }}
           />
         </Tabs>
@@ -697,8 +730,9 @@ const createStyles = (c: ThemeColors) =>
     alignItems: "center",
   },
   profileButton: {
+    // No overflow clipping here — the Avatar rounds itself, and the unread
+    // badge hangs over the top-right edge.
     borderRadius: 20,
-    overflow: "hidden",
     shadowColor: c.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -826,6 +860,21 @@ const createStyles = (c: ThemeColors) =>
     color: c.textBody,
     fontFamily: Fonts.medium,
   },
+  menuBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: c.accentPink,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 5,
+  },
+  menuBadgeText: {
+    color: c.white,
+    fontSize: 10,
+    fontFamily: Fonts.bold,
+    lineHeight: 12,
+  },
   logoutButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -843,8 +892,8 @@ const createStyles = (c: ThemeColors) =>
   },
   unreadBadge: {
     position: "absolute",
-    top: 4,
-    right: 4,
+    top: -4,
+    right: -4,
     minWidth: 18,
     height: 18,
     borderRadius: 9,

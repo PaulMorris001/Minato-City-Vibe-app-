@@ -17,7 +17,8 @@
     "build:test": "eas build --profile production --platform ios && eas build --profile preview --platform android",
     "ota:production:ios": "eas update --branch production --platform ios",
     "ota:production:android": "eas update --branch production --platform android",
-    "ota:rollback": "eas update:rollback"
+    "ota:rollback": "eas update:rollback",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@expo-google-fonts/bricolage-grotesque": "^0.4.1",
@@ -88,6 +89,7 @@
     "babel-plugin-transform-remove-console": "^6.9.4",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
+    "patch-package": "^8.0.1",
     "typescript": "~5.9.2"
   },
   "private": true
