@@ -11,7 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 
 import type { ThemeColors } from "@/constants/theme";
-import { useThemedStyles } from "@/contexts/ThemeContext";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 interface PickerItem {
   _id: string;
   [key: string]: any;
@@ -38,6 +38,7 @@ export default function PickerModal<T extends PickerItem>({
   renderItem,
   keyExtractor = (item) => item._id,
 }: PickerModalProps<T>) {
+  const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   return (
     <Modal
@@ -56,7 +57,7 @@ export default function PickerModal<T extends PickerItem>({
           <View style={styles.header}>
             <Text style={styles.title}>{title}</Text>
             <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={24} color="#fff" />
+              <Ionicons name="close" size={24} color={colors.text} />
             </TouchableOpacity>
           </View>
           <FlatList

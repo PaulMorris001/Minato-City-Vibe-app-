@@ -29,7 +29,7 @@ import { useUnread } from "@/contexts/UnreadContext";
 import socketService from "@/services/socket.service";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "@/components/shared/Avatar";
-import { transformCloudinaryUrl } from "@/utils/imageUpload";
+import { getCircularAvatarUrl } from "@/utils/imageUpload";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -49,13 +49,13 @@ function PillSurface({
   const styles = useThemedStyles(createStyles);
   if (glass) {
     return (
-      <GlassView style={styles.ticketGlass} tintColor={tintColor} isInteractive>
+      <GlassView style={styles.pillGlass} tintColor={tintColor} isInteractive>
         {children}
       </GlassView>
     );
   }
   return (
-    <LinearGradient colors={gradientColors} style={styles.ticketGradient}>
+    <LinearGradient colors={gradientColors} style={styles.pillGradient}>
       {children}
     </LinearGradient>
   );
@@ -191,6 +191,12 @@ export default function TabsLayout() {
     );
   }
 
+  // Circular bitmap for the iOS native profile tab icon (27pt @3x = 81px);
+  // null when the host can't bake a circle, which falls back to the SF symbol.
+  const tabAvatarUrl = user.profilePicture
+    ? getCircularAvatarUrl(user.profilePicture, 81)
+    : null;
+
   const handleProfilePress = () => {
     if (isGuest) {
       router.push("/login");
@@ -283,22 +289,15 @@ export default function TabsLayout() {
         style={styles.menuItem}
         onPress={() => {
           setIsProfileModalVisible(false);
-          router.push("/messages" as any);
+          router.push("/passes" as any);
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="chatbubbles-outline" size={20} color={colors.primary} />
+          <Ionicons name="qr-code-outline" size={20} color={colors.primary} />
         </View>
         <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
-          Messages
+          My Passes
         </Text>
-        {totalUnread > 0 && (
-          <View style={styles.menuBadge}>
-            <Text style={styles.menuBadgeText}>
-              {totalUnread > 99 ? "99+" : totalUnread}
-            </Text>
-          </View>
-        )}
         <Ionicons
           name="chevron-forward"
           size={20}
@@ -413,8 +412,8 @@ export default function TabsLayout() {
             ) : (
               <>
             <TouchableOpacity
-              onPress={() => router.push("/passes" as any)}
-              style={styles.ticketButton}
+              onPress={() => router.push("/messages" as any)}
+              style={styles.chatButton}
               activeOpacity={0.7}
             >
               <PillSurface
@@ -422,8 +421,15 @@ export default function TabsLayout() {
                 tintColor={colors.primary}
                 gradientColors={[colors.primary, colors.primaryDark]}
               >
-                <Ionicons name="qr-code" size={20} color="#fff" />
+                <Ionicons name="chatbubbles" size={20} color="#fff" />
               </PillSurface>
+              {totalUnread > 0 && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadBadgeText}>
+                    {totalUnread > 99 ? "99+" : totalUnread}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleProfilePress}
@@ -431,10 +437,10 @@ export default function TabsLayout() {
               activeOpacity={0.7}
             >
               <Avatar uri={user.profilePicture} name={user.username} size={36} />
-              {notifUnread + totalUnread > 0 && (
+              {notifUnread > 0 && (
                 <View style={styles.unreadBadge}>
                   <Text style={styles.unreadBadgeText}>
-                    {notifUnread + totalUnread > 99 ? "99+" : notifUnread + totalUnread}
+                    {notifUnread > 99 ? "99+" : notifUnread}
                   </Text>
                 </View>
               )}
@@ -502,27 +508,17 @@ export default function TabsLayout() {
           </NativeTabs.Trigger>
           <NativeTabs.Trigger
             name="profile"
-            // With a profile picture, the icon is a circular Cloudinary render
-            // of the photo (r_max + png keeps the corners transparent), passed
-            // through our expo-router patch (`original: true`) so UIKit shows
-            // it untinted instead of as a template silhouette. 27pt @3x.
+            // With a profile picture, the icon is a circular render of the
+            // photo (UIKit won't mask tab images, so the circle is baked into
+            // the bitmap by the image host), passed through our expo-router
+            // patch (`original: true`) so UIKit shows it untinted instead of
+            // as a template silhouette. 27pt @3x. When the host can't bake a
+            // circle, tabAvatarUrl is null and the SF symbol renders instead.
             options={
-              user.profilePicture
+              tabAvatarUrl
                 ? ({
                     icon: {
-                      src: {
-                        uri: transformCloudinaryUrl(user.profilePicture, {
-                          width: 81,
-                          height: 81,
-                          crop: "fill",
-                          gravity: "face",
-                          circle: true,
-                          format: "png",
-                        }),
-                        width: 27,
-                        height: 27,
-                        scale: 3,
-                      },
+                      src: { uri: tabAvatarUrl, width: 27, height: 27, scale: 3 },
                       original: true,
                     },
                   } as any)
@@ -530,7 +526,7 @@ export default function TabsLayout() {
             }
           >
             <Label>Profile</Label>
-            {!user.profilePicture && (
+            {!tabAvatarUrl && (
               <Icon sf={{ default: "person", selected: "person.fill" }} />
             )}
           </NativeTabs.Trigger>
@@ -659,13 +655,12 @@ const createStyles = (c: ThemeColors) =>
     borderBottomWidth: 1,
     borderBottomColor: c.card,
   },
+  // Matches the vendor navbar logo (app/(vendor)/_layout.tsx) — no glow.
   logoText: {
-    fontFamily: Fonts.black,
-    fontSize: 24,
-    color: c.primary,
-    textShadowColor: c.primaryBorder,
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
+    fontFamily: "BricolageGrotesque_800ExtraBold",
+    fontSize: 22,
+    color: c.primaryLight,
+    letterSpacing: -0.6,
   },
   // iPad: the native tab bar capsule is centered in this same top row, so the
   // navbar keeps only its left/right content and lets the capsule show
@@ -705,24 +700,26 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.bold,
     fontSize: 13.5,
   },
-  ticketButton: {
+  chatButton: {
+    // No overflow clipping — the pill surfaces round themselves so the
+    // unread badge can hang over the top-right edge (same as profileButton).
     borderRadius: 20,
-    overflow: "hidden",
     shadowColor: c.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
   },
-  ticketGradient: {
+  pillGradient: {
     width: 40,
     height: 40,
+    borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
   },
-  // Same footprint as ticketGradient; the radius lives on the glass view so
+  // Same footprint as pillGradient; the radius lives on the glass view so
   // the material itself is circular, not just clipped by the wrapper.
-  ticketGlass: {
+  pillGlass: {
     width: 40,
     height: 40,
     borderRadius: 20,

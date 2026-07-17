@@ -20,7 +20,8 @@ import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
 import { payoutOnboardingRoute } from "@/constants/payments";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
-import { ImagePickerButton } from "@/components/shared";
+import { ImagePickerButton, LocationPicker } from "@/components/shared";
+import type { LocationSelection } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { useAccount } from "@/contexts/AccountContext";
 import { uploadImage } from "@/utils/imageUpload";
@@ -44,6 +45,7 @@ export default function SettingsScreen() {
   const [saving, setSaving] = useState(false);
   const [profilePicture, setProfilePicture] = useState("");
   const [bio, setBio] = useState("");
+  const [location, setLocation] = useState<Partial<LocationSelection> | null>(null);
   const [user, setUser] = useState({
     username: "",
     email: "",
@@ -91,6 +93,13 @@ export default function SettingsScreen() {
       });
       setProfilePicture(userData.profilePicture || "");
       setBio(userData.bio || "");
+      if (userData.location?.country) {
+        setLocation({
+          country: userData.location.country,
+          state: userData.location.state || "",
+          city: userData.location.city || "",
+        });
+      }
 
       const verifData = verifRes.data;
       setVerificationStatus(verifData.status || "none");
@@ -192,7 +201,20 @@ export default function SettingsScreen() {
     try {
       const token = await SecureStore.getItemAsync("token");
 
-      const payload: { profilePicture?: string; bio: string } = { bio };
+      const payload: {
+        profilePicture?: string;
+        bio: string;
+        location?: Partial<LocationSelection>;
+      } = { bio };
+
+      // Only send location once a country is chosen — never wipe a saved one.
+      if (location?.country) {
+        payload.location = {
+          country: location.country,
+          state: location.state || "",
+          city: location.city || "",
+        };
+      }
 
       // Upload a newly-picked photo, otherwise keep the existing URL
       if (profilePicture) {
@@ -215,6 +237,10 @@ export default function SettingsScreen() {
       await axios.put(`${BASE_URL}/profile/picture`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      // Keep the Payouts row's provider routing in sync with the new country.
+      if (payload.location?.country) {
+        setUser((prev) => ({ ...prev, country: payload.location!.country! }));
+      }
       showSuccess("Profile updated successfully");
     } catch (error: any) {
       const errorMessage =
@@ -271,6 +297,18 @@ export default function SettingsScreen() {
           maxLength={500}
         />
         <Text style={styles.bioCount}>{bio.length}/500</Text>
+
+        {/* Account location — drives which events are surfaced and, for
+            sellers, the selling currency and payout provider. */}
+        <LocationPicker
+          value={location ?? undefined}
+          onChange={setLocation}
+          label="Location"
+        />
+        <Text style={styles.locationHint}>
+          Used to show what's happening near you. If you sell tickets or
+          services, it also sets your selling currency and payout method.
+        </Text>
 
         <TouchableOpacity
           style={[styles.saveButton, saving && styles.saveButtonDisabled]}
@@ -648,6 +686,13 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.regular,
     color: c.textMuted,
     alignSelf: "flex-end",
+    marginTop: 4,
+  },
+  locationHint: {
+    fontSize: 12,
+    fontFamily: Fonts.regular,
+    color: c.textMuted,
+    lineHeight: 17,
     marginTop: 4,
   },
   saveButton: {

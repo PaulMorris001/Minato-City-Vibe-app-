@@ -1,11 +1,11 @@
 /**
  * Wise controller.
  *
- * Vendor onboarding for the Wise settlement rail (international vendors that
- * collect via Stripe but are paid out through Wise). Onboarding creates a Wise
- * recipient account from country-specific bank fields; the webhook reconciles
- * payout state. Shapes mirror the Flutterwave controller so the mobile client
- * can treat all three rails uniformly.
+ * Vendor onboarding for the Wise settlement rail (every vendor that collects
+ * via Stripe is paid out through Wise). Onboarding creates a Wise recipient
+ * account from country-specific bank fields; the webhook reconciles payout
+ * state. Shapes mirror the Paystack controller so the mobile client can treat
+ * both rails uniformly.
  */
 
 import crypto from "crypto";
@@ -74,7 +74,7 @@ export const saveRecipient = async (req, res) => {
 };
 
 /**
- * Onboarding status (shape mirrors /flutterwave/connect/status).
+ * Onboarding status (shape mirrors /paystack/connect/status).
  * GET /wise/connect/status
  */
 export const getStatus = async (req, res) => {

@@ -25,6 +25,7 @@ import { LocationPicker } from "@/components/shared";
 import { PublicEvent } from "@/components/shared/PublicEventCard";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { useStripePayment } from "@/hooks/useStripePayment";
+import { currencyPrefix } from "@/constants/payments";
 import { heroEmojiFor } from "@/utils/eventDetails";
 import { AU, AU_FONT } from "@/components/auth/tokens";
 
@@ -224,6 +225,11 @@ export default function PublicEventsPage() {
     // The hook runs checkout AND confirms server-side before returning.
     const result = await payForTicket(eventId);
     if (!result.success) {
+      if (result.code === "tier_required") {
+        // Multi-tier event — the detail screen owns the tier picker.
+        router.push({ pathname: "/event/[id]", params: { id: eventId } });
+        return;
+      }
       if (result.error) Alert.alert("Payment Failed", result.error);
       return;
     }
@@ -381,12 +387,13 @@ export default function PublicEventsPage() {
   }) => {
     if (feedItem._kind === "external") {
       const ext = feedItem.data;
+      const extSym = currencyPrefix(ext.currency);
       const priceLine =
         ext.priceMin == null && ext.priceMax == null
           ? "See tickets"
           : ext.priceMin != null && ext.priceMax != null && ext.priceMin !== ext.priceMax
-          ? `$${Math.round(ext.priceMin)}–$${Math.round(ext.priceMax)}`
-          : `From $${Math.round((ext.priceMin ?? ext.priceMax) as number)}`;
+          ? `${extSym}${Math.round(ext.priceMin)}–${extSym}${Math.round(ext.priceMax)}`
+          : `From ${extSym}${Math.round((ext.priceMin ?? ext.priceMax) as number)}`;
       const moreDates = ext.additionalDates ?? 0;
 
       // Same outer shape, poster, body, footer layout as the native renderCard
@@ -538,7 +545,9 @@ export default function PublicEventsPage() {
 
           <View style={styles.cardFooter}>
             <View style={styles.priceCluster}>
-              <Text style={styles.priceText}>{isFree ? "Free" : `$${priceOf(item)}`}</Text>
+              <Text style={styles.priceText}>
+                {isFree ? "Free" : `${currencyPrefix(item.currency)}${priceOf(item)}`}
+              </Text>
               {typeof left === "number" && (
                 <Text style={[styles.scarcityText, scarce && { color: SCARCITY_WARN }]}>
                   {scarce ? `Only ${left} left` : `${left} spots`}

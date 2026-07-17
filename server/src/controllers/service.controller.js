@@ -1,4 +1,5 @@
 import { Service } from "../models/service.model.js";
+import { currencyForUser } from "../services/payments/resolveProvider.js";
 import User from "../models/user.model.js";
 import { Vendor } from "../models/vendor.model.js";
 import { Booking } from "../models/booking.model.js";
@@ -59,7 +60,11 @@ export async function createService(req, res) {
 
     const serviceData = {
       ...req.body,
-      vendor: req.user.id
+      vendor: req.user.id,
+      // Priced in the vendor's local currency (NGN for Nigerian vendors, USD
+      // otherwise). Server-authoritative: it must match the provider the
+      // vendor collects through, so any client-sent currency is ignored.
+      currency: currencyForUser(user),
     };
 
     const service = new Service(serviceData);
@@ -86,9 +91,10 @@ export async function updateService(req, res) {
       return res.status(404).json({ message: "Service not found" });
     }
 
-    // Update fields
+    // Update fields (vendor is immutable; currency is server-assigned at
+    // creation and must keep matching the vendor's collection provider)
     Object.keys(req.body).forEach(key => {
-      if (key !== 'vendor') { // Prevent changing vendor
+      if (key !== 'vendor' && key !== 'currency') {
         service[key] = req.body[key];
       }
     });

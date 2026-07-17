@@ -56,8 +56,19 @@ const eventSchema = mongoose.Schema({
   // Pricing options (only for public events)
   isPaid: { type: Boolean, default: false },
   ticketPrice: { type: Number, default: 0 },
+  // Named price tiers ("Basic", "VIP", …) for public paid events — max 10,
+  // organizer-defined names and prices, all in the event's `currency`.
+  // When present, buyers pick a tier at checkout and `ticketPrice` mirrors the
+  // cheapest tier so legacy display/sort code keeps working. Subdocument _ids
+  // are the tierIds the payment flow references.
+  ticketTiers: [
+    {
+      name: { type: String, trim: true, maxlength: 40 },
+      price: { type: Number, min: 0 },
+    },
+  ],
   // Currency the organizer prices tickets in (USD for Stripe sellers, e.g. NGN
-  // for Flutterwave sellers). Drives the provider charge currency.
+  // for Paystack sellers). Drives the provider charge currency.
   currency: { type: String, default: "USD" },
   maxGuests: { type: Number, default: 0 },
 

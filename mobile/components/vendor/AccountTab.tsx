@@ -46,7 +46,7 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [stripeOnboardingComplete, setStripeOnboardingComplete] = useState(false);
+  const [payoutOnboardingComplete, setPayoutOnboardingComplete] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [vendorTypes, setVendorTypes] = useState<VendorType[]>([]);
@@ -81,22 +81,19 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
     fetchStats();
   }, []);
 
-  // Check the right provider's payout status for this vendor's country (Stripe
-  // for US, Flutterwave for African vendors). Called once the country is known.
+  // Check the right provider's payout status for this vendor's country
+  // (Paystack for Nigerian vendors, Wise for everyone else). Called once the
+  // country is known.
   const fetchPayoutStatus = async (country: string) => {
     try {
       const token = await SecureStore.getItemAsync("token");
       const provider = payoutProviderForCountry(country);
       const path =
-        provider === "flutterwave"
-          ? "/flutterwave/connect/status"
-          : provider === "wise"
-          ? "/wise/connect/status"
-          : "/stripe/connect/status";
+        provider === "paystack" ? "/paystack/connect/status" : "/wise/connect/status";
       const res = await axios.get(`${BASE_URL}${path}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setStripeOnboardingComplete(res.data.onboardingComplete ?? false);
+      setPayoutOnboardingComplete(res.data.onboardingComplete ?? false);
     } catch {
       // Non-critical — silently ignore
     }
@@ -361,10 +358,10 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
                 label={profile.verified ? "Verified" : "Verification pending"}
               />
               <StatusPill
-                tone={stripeOnboardingComplete ? "green" : "amber"}
+                tone={payoutOnboardingComplete ? "green" : "amber"}
                 icon="cash-outline"
-                label={stripeOnboardingComplete ? "Payouts active" : "Set up payouts →"}
-                onPress={stripeOnboardingComplete ? undefined : () => router.push("/settings")}
+                label={payoutOnboardingComplete ? "Payouts active" : "Set up payouts →"}
+                onPress={payoutOnboardingComplete ? undefined : () => router.push("/settings")}
               />
               <StatusPill tone="purple" icon="star" label={`${rating.toFixed(1)} · ${ratingCount}`} />
             </View>

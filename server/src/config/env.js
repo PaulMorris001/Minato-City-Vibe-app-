@@ -87,6 +87,13 @@ export const config = {
     newOrganizerMaxTicketPriceUsd: parseFloat(
       process.env.NEW_ORGANIZER_MAX_TICKET_PRICE_USD || "50"
     ),
+    // Local-currency equivalents of the USD cap, for sellers who price in
+    // their own currency (see currencyForUser). Rough conversions — they gate
+    // trust, not accounting, so precision doesn't matter.
+    newOrganizerMaxTicketPriceByCurrency: {
+      USD: parseFloat(process.env.NEW_ORGANIZER_MAX_TICKET_PRICE_USD || "50"),
+      NGN: parseFloat(process.env.NEW_ORGANIZER_MAX_TICKET_PRICE_NGN || "75000"),
+    },
     newOrganizerMaxGuests: parseInt(
       process.env.NEW_ORGANIZER_MAX_GUESTS || "50",
       10
@@ -120,28 +127,23 @@ export const config = {
     publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || "",
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
     platformFeePercent: parseFloat(process.env.PLATFORM_FEE_PERCENT || "10"),
-    // Deep-link scheme used for Stripe Connect onboarding redirect
-    appUrl: process.env.APP_URL || "nightvibe://",
-    // HTTPS server URL used as Stripe's required return/refresh URLs
+    // Public HTTPS base URL of this server — used for provider checkout
+    // return/callback URLs (e.g. the Paystack redirect).
     serverUrl: process.env.SERVER_URL || "https://api.ourcityvibe.com",
   },
 
-  // Flutterwave Configuration — secondary provider for African vendors who
-  // can't onboard to Stripe Connect. Collects (cards/mobile money/NGN) into the
-  // platform balance and pays out to vendors' local banks via the Transfers API.
-  flutterwave: {
-    secretKey: process.env.FLW_SECRET_KEY || "",
-    publicKey: process.env.FLW_PUBLIC_KEY || "",
-    encryptionKey: process.env.FLW_ENCRYPTION_KEY || "",
-    // Shared secret set in the Flutterwave dashboard; compared against the
-    // `verif-hash` header on incoming webhooks.
-    secretHash: process.env.FLW_SECRET_HASH || "",
+  // Paystack Configuration — collection + payout rail for Nigerian sellers.
+  // Collects NGN (cards/bank/USSD) via hosted checkout into the platform
+  // balance and pays out to sellers' local banks via the Transfers API.
+  paystack: {
+    secretKey: process.env.PAYSTACK_SECRET_KEY || "",
+    publicKey: process.env.PAYSTACK_PUBLIC_KEY || "",
   },
 
-  // Wise (Wise Platform Payouts API) — third settlement rail for international
-  // vendors outside the Stripe/Flutterwave footprint. Payout-only: these vendors
-  // still COLLECT via Stripe (USD into the platform balance); Wise then settles
-  // their net to a local bank in ~40 currencies.
+  // Wise (Wise Platform Payouts API) — the settlement rail for every seller who
+  // collects via Stripe (i.e. everyone outside the Paystack footprint). Payout-
+  // only: Stripe collects USD into the platform balance; Wise then settles the
+  // seller's net to a local bank in ~40 currencies.
   wise: {
     apiToken: process.env.WISE_API_TOKEN || "",
     profileId: process.env.WISE_PROFILE_ID || "",
@@ -151,11 +153,6 @@ export const config = {
     baseUrl: process.env.WISE_BASE_URL || "https://api.sandbox.transferwise.tech",
     // Currency the platform balance is funded in / quotes source from.
     sourceCurrency: (process.env.WISE_SOURCE_CURRENCY || "USD").toUpperCase(),
-    // Comma-separated country names/ISO codes routed to Wise (lowercased on use).
-    countries: (process.env.WISE_COUNTRIES || "")
-      .split(",")
-      .map((c) => c.trim().toLowerCase())
-      .filter(Boolean),
   },
 
   // Sign in with Apple. For native iOS sign-in, the identity token's `aud`

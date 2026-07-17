@@ -20,6 +20,7 @@ import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { Service } from "@/libs/interfaces";
 import { BASE_URL } from "@/constants/constants";
+import { sellingCurrencyForCountry } from "@/constants/payments";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { uploadMultipleImages } from "@/utils/imageUpload";
 
@@ -73,8 +74,27 @@ export default function ServiceModal({
       setImages(service.images || []);
     } else {
       resetForm();
+      loadSellingCurrency();
     }
   }, [service, visible]);
+
+  // The currency is server-assigned from the vendor's country (NGN for
+  // Nigerian vendors, USD otherwise) — shown here read-only so the vendor
+  // knows what their price means.
+  const loadSellingCurrency = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) return;
+      const res = await fetch(`${BASE_URL}/profile`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const cur = sellingCurrencyForCountry(data.user?.location?.country);
+        setFormData((prev) => ({ ...prev, currency: cur }));
+      }
+    } catch {}
+  };
 
   const resetForm = () => {
     setFormData({
@@ -321,12 +341,12 @@ export default function ServiceModal({
                 placeholderTextColor={colors.textMuted}
                 keyboardType="decimal-pad"
               />
+              {/* Read-only: the selling currency follows the vendor's country
+                  and payment provider; the server enforces it. */}
               <TextInput
-                style={[styles.input, styles.currencyInput]}
+                style={[styles.input, styles.currencyInput, { opacity: 0.6 }]}
                 value={formData.currency}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, currency: text.toUpperCase() })
-                }
+                editable={false}
                 placeholder="USD"
                 placeholderTextColor={colors.textMuted}
                 maxLength={3}

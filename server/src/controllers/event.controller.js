@@ -46,6 +46,7 @@ export const createEvent = async (req, res) => {
       isPublic,
       isPaid,
       ticketPrice,
+      ticketTiers,
       maxGuests,
       venueProofImage,
       isVirtual,
@@ -76,9 +77,39 @@ export const createEvent = async (req, res) => {
     // paid events once we've loaded the organizer).
     let ticketCurrency = "USD";
 
+    // Named ticket tiers (public paid events only) — normalized here,
+    // validated below. Empty for single-price and free events.
+    let tiers = [];
+
     // Validate pricing options for public paid events
     if (isPublic && isPaid) {
-      if (!ticketPrice || ticketPrice <= 0) {
+      if (Array.isArray(ticketTiers) && ticketTiers.length > 0) {
+        if (ticketTiers.length > 10) {
+          return res.status(400).json({ message: "You can create up to 10 ticket tiers." });
+        }
+        tiers = ticketTiers.map((t) => ({
+          name: String(t?.name || "").trim(),
+          price: Number(t?.price),
+        }));
+        if (tiers.some((t) => !t.name)) {
+          return res.status(400).json({ message: "Every ticket tier needs a name." });
+        }
+        if (tiers.some((t) => t.name.length > 40)) {
+          return res.status(400).json({ message: "Tier names must be 40 characters or fewer." });
+        }
+        const tierNames = new Set(tiers.map((t) => t.name.toLowerCase()));
+        if (tierNames.size !== tiers.length) {
+          return res.status(400).json({ message: "Tier names must be unique." });
+        }
+        if (tiers.some((t) => !Number.isFinite(t.price) || t.price <= 0)) {
+          return res.status(400).json({ message: "Every ticket tier needs a price greater than 0." });
+        }
+        assertClean(tiers.map((t) => ({ field: "Tier name", value: t.name })));
+      }
+
+      // With tiers, the headline ticketPrice is derived (cheapest tier); a
+      // client-sent ticketPrice is ignored. Without tiers, it's required.
+      if (!tiers.length && (!ticketPrice || ticketPrice <= 0)) {
         return res.status(400).json({ message: "Ticket price must be greater than 0 for paid events" });
       }
       if (!maxGuests || maxGuests <= 0) {
@@ -93,11 +124,11 @@ export const createEvent = async (req, res) => {
       }
 
       // Trust gates for sellers: must have verified their email AND submitted ID
-      // AND completed payout onboarding (Stripe for US sellers, Flutterwave for
-      // African sellers) so ticket revenue has a payout destination. Without this
+      // AND completed payout onboarding (Paystack for Nigerian sellers, Wise for
+      // everyone else) so ticket revenue has a payout destination. Without this
       // gate, the failure surfaces to the *buyer* at checkout — the wrong layer.
       const organizer = await User.findById(userId).select(
-        "verified paidEventsApproved paidEventsCount emailVerifiedAt location stripeAccountId stripeOnboardingComplete flutterwaveOnboardingComplete"
+        "verified paidEventsApproved paidEventsCount emailVerifiedAt location paystackRecipientCode paystackOnboardingComplete wiseRecipientId wiseOnboardingComplete"
       );
       if (!organizer?.emailVerifiedAt) {
         return res.status(403).json({
@@ -119,16 +150,35 @@ export const createEvent = async (req, res) => {
         });
       }
 
-      ticketCurrency = req.body.currency || currencyForUser(organizer);
+      // The selling currency is server-authoritative — it must match the
+      // provider the seller collects through (Stripe charges USD, Paystack
+      // charges the local currency), so a client-picked currency can't be
+      // honored. Reject a mismatch instead of silently repricing.
+      ticketCurrency = currencyForUser(organizer);
+      if (req.body.currency && req.body.currency !== ticketCurrency) {
+        return res.status(400).json({
+          message: `Tickets for your account are priced in ${ticketCurrency}.`,
+        });
+      }
 
       // New-organizer caps — until the user has had `newOrganizerThreshold`
       // approved paid events, ticket price and guest count are capped.
       const isNewOrganizer =
         (organizer.paidEventsCount || 0) < config.trust.newOrganizerThreshold;
       if (isNewOrganizer) {
-        if (ticketPrice > config.trust.newOrganizerMaxTicketPriceUsd) {
+        const maxTicketPrice =
+          config.trust.newOrganizerMaxTicketPriceByCurrency[ticketCurrency] ??
+          config.trust.newOrganizerMaxTicketPriceUsd;
+        const highestPrice = tiers.length
+          ? Math.max(...tiers.map((t) => t.price))
+          : ticketPrice;
+        if (highestPrice > maxTicketPrice) {
+          const capLabel =
+            ticketCurrency === "USD"
+              ? `$${maxTicketPrice}`
+              : `${maxTicketPrice.toLocaleString()} ${ticketCurrency}`;
           return res.status(400).json({
-            message: `New organizers can charge up to $${config.trust.newOrganizerMaxTicketPriceUsd} per ticket. This cap is removed after ${config.trust.newOrganizerThreshold} successful paid events.`,
+            message: `New organizers can charge up to ${capLabel} per ticket. This cap is removed after ${config.trust.newOrganizerThreshold} successful paid events.`,
           });
         }
         if (maxGuests > config.trust.newOrganizerMaxGuests) {
@@ -212,7 +262,13 @@ export const createEvent = async (req, res) => {
       createdBy: userId,
       isPublic: isPublic || false,
       isPaid: isPublic && isPaid ? isPaid : false,
-      ticketPrice: isPublic && isPaid ? ticketPrice : 0,
+      ticketPrice:
+        isPublic && isPaid
+          ? tiers.length
+            ? Math.min(...tiers.map((t) => t.price))
+            : ticketPrice
+          : 0,
+      ticketTiers: isPublic && isPaid ? tiers : [],
       currency: ticketCurrency,
       maxGuests: isPublic && isPaid ? maxGuests : 0,
       venueProofImage: venueProofUrl,
@@ -469,7 +525,7 @@ export const getEventById = async (req, res) => {
     // auto-routes to `/event/[id]`) resolve correctly without bouncing the
     // user through a 404 alert.
     const POPULATIONS = [
-      ['createdBy', 'username email profilePicture verified location stripeAccountId stripeOnboardingComplete flutterwaveOnboardingComplete'],
+      ['createdBy', 'username email profilePicture verified location paystackRecipientCode paystackOnboardingComplete wiseRecipientId wiseOnboardingComplete'],
       ['cohosts', 'username email profilePicture'],
       ['invitedUsers', 'username email profilePicture'],
       ['pendingInvites', 'username email profilePicture'],
@@ -597,7 +653,7 @@ export const getEventById = async (req, res) => {
 
     // Derived: is this paid event actually purchasable right now? Folds the
     // approval gate AND the organizer's payout-onboarding status into one flag
-    // (Stripe for US sellers, Flutterwave for African sellers) so the client can
+    // (Paystack for Nigerian sellers, Wise for everyone else) so the client can
     // show a graceful "tickets not on sale yet" state instead of letting the
     // user tap "Buy" and bounce off a provider error.
     if (event.isPaid) {
@@ -609,9 +665,10 @@ export const getEventById = async (req, res) => {
 
     // Never leak the organizer's payout IDs/status to the client.
     if (eventObj.createdBy) {
-      delete eventObj.createdBy.stripeAccountId;
-      delete eventObj.createdBy.stripeOnboardingComplete;
-      delete eventObj.createdBy.flutterwaveOnboardingComplete;
+      delete eventObj.createdBy.paystackRecipientCode;
+      delete eventObj.createdBy.paystackOnboardingComplete;
+      delete eventObj.createdBy.wiseRecipientId;
+      delete eventObj.createdBy.wiseOnboardingComplete;
       delete eventObj.createdBy.location;
     }
 
@@ -1476,7 +1533,10 @@ export const getEventTicketSales = async (req, res) => {
       ticketsRemaining,
       maxGuests: event.maxGuests,
       ticketPrice: event.ticketPrice,
-      totalRevenue: soldTickets * event.ticketPrice,
+      ticketTiers: event.ticketTiers || [],
+      // Sum what each ticket actually sold for — with tiers (and legacy price
+      // edits) tickets in the same event carry different prices.
+      totalRevenue: tickets.reduce((sum, t) => sum + (t.ticketPrice || 0), 0),
       tickets
     });
   } catch (error) {

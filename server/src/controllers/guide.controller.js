@@ -98,9 +98,10 @@ export const createGuide = async (req, res) => {
       authorName: user.username,
       description,
       price: parseFloat(price),
-      // Price in the author's local currency (NGN for Nigerian vendors, etc.)
-      // unless explicitly provided. Drives the provider charge currency.
-      currency: req.body.currency || currencyForUser(user),
+      // Price in the author's local currency (NGN for Nigerian vendors, etc.).
+      // Server-authoritative — it must match the provider the seller collects
+      // through, so a client-sent currency is ignored.
+      currency: currencyForUser(user),
       city,
       cityState,
       country: country || "United States",

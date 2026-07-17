@@ -6,14 +6,13 @@ import { createPayout } from "../services/payments/payout.service.js";
 
 /**
  * Convert a ticket-sales net (held in the collection provider's units) into the
- * settlement provider's payout units.
- *  - Stripe-collected nets are cents. Settling via Stripe keeps cents; settling
- *    via Wise needs major USD (cents / 100).
- *  - Flutterwave-collected nets are already major local units.
+ * settlement provider's payout units (major).
+ *  - Stripe-collected nets are cents; Wise settles them as major USD (÷ 100).
+ *  - Paystack-collected nets are already major local units.
  */
 function ticketPayoutAmount(totalNet, settlement) {
   if (settlement === "wise") return totalNet / 100; // cents → major USD
-  return totalNet; // stripe: cents; flutterwave: major
+  return totalNet; // paystack: major
 }
 
 /**
@@ -49,7 +48,7 @@ async function releaseDuePayouts() {
   for (const evt of due) {
     try {
       const seller = await User.findById(evt.createdBy).select(
-        "location stripeAccountId stripeOnboardingComplete flutterwaveBank flutterwaveOnboardingComplete wiseRecipientId wiseRecipientCurrency wiseOnboardingComplete username"
+        "location paystackRecipientCode paystackBank paystackOnboardingComplete wiseRecipientId wiseRecipientCurrency wiseOnboardingComplete username"
       );
 
       if (!hasPayoutOnboarding(seller)) {
@@ -81,7 +80,7 @@ async function releaseDuePayouts() {
 
       const totalNet = unsettled.reduce((sum, t) => sum + t.sellerNetCents, 0);
       const amount = ticketPayoutAmount(totalNet, settlement);
-      const currency = settlement === "flutterwave" ? unsettled[0].currency || "NGN" : "USD";
+      const currency = settlement === "paystack" ? unsettled[0].currency || "NGN" : "USD";
 
       // Idempotent on the event — re-runs return the existing payout.
       await createPayout({
@@ -100,9 +99,7 @@ async function releaseDuePayouts() {
       );
 
       console.log(
-        `[PayoutRelease] Event ${evt._id} — payout queued for approval (${currency} ${
-          settlement === "stripe" ? (amount / 100).toFixed(2) : amount
-        }, ${unsettled.length} tickets)`
+        `[PayoutRelease] Event ${evt._id} — payout queued for approval (${currency} ${amount}, ${unsettled.length} tickets)`
       );
     } catch (err) {
       console.error(`[PayoutRelease] Error queuing event ${evt._id}:`, err?.message ?? err);

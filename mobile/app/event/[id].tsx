@@ -97,6 +97,7 @@ interface Event {
   isPublic: boolean;
   isPaid: boolean;
   ticketPrice?: number;
+  ticketTiers?: { _id: string; name: string; price: number }[];
   currency?: string;
   maxGuests?: number;
   ticketsSold?: number;
@@ -235,6 +236,8 @@ export default function EventDetailsPage() {
   const [addingVendor, setAddingVendor] = useState<string | null>(null);
   const [reportSheetVisible, setReportSheetVisible] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
+  // Tier chooser shown before checkout when the event has multiple tiers.
+  const [tierPickerVisible, setTierPickerVisible] = useState(false);
   const [refunding, setRefunding] = useState(false);
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
   const [shareSheetVisible, setShareSheetVisible] = useState(false);
@@ -609,11 +612,24 @@ export default function EventDetailsPage() {
   const handlePurchaseTicket = async () => {
     if (!event) return;
     if (!requireAuth("purchase a ticket")) return;
+    const tiers = event.ticketTiers || [];
+    if (tiers.length > 1) {
+      // Multiple tiers — the buyer picks one first.
+      setTierPickerVisible(true);
+      return;
+    }
+    // Single tier or legacy single price — charge directly.
+    await purchaseTier(tiers.length === 1 ? tiers[0]._id : undefined);
+  };
+
+  const purchaseTier = async (tierId?: string) => {
+    if (!event) return;
+    setTierPickerVisible(false);
     setPurchasing(true);
     try {
       // The hook runs the provider checkout AND confirms server-side (issuing
       // the ticket) before returning, so success here means the ticket is ready.
-      const result = await payForTicket(event._id);
+      const result = await payForTicket(event._id, tierId);
       if (!result.success) {
         if (result.error) showError(result.error, "Payment Failed");
         return;
@@ -948,7 +964,8 @@ export default function EventDetailsPage() {
             {event.isPaid && (
               <View style={[styles.chip, styles.chipDark]}>
                 <Text style={[styles.chipText, { color: colors.textBright }]}>
-                  TICKETED · {currencyPrefix(event.currency)}{event.ticketPrice?.toFixed(0) ?? "—"}
+                  TICKETED · {(event.ticketTiers?.length ?? 0) > 1 ? "FROM " : ""}
+                  {currencyPrefix(event.currency)}{event.ticketPrice?.toFixed(0) ?? "—"}
                 </Text>
               </View>
             )}
@@ -1609,6 +1626,39 @@ export default function EventDetailsPage() {
         </View>
       )}
 
+      {/* ─── TICKET TIER PICKER ────────────────────────────── */}
+      <Modal
+        visible={tierPickerVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setTierPickerVisible(false)}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={() => setTierPickerVisible(false)} />
+        <SafeAreaView edges={["bottom"]} style={styles.sheetWrap}>
+          <View style={styles.sheetCard}>
+            <Text style={styles.tierPickerTitle}>Choose your ticket</Text>
+            {(event?.ticketTiers || []).map((tier) => (
+              <TouchableOpacity
+                key={tier._id}
+                style={styles.tierPickerRow}
+                onPress={() => purchaseTier(tier._id)}
+                disabled={purchasing}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.tierPickerName} numberOfLines={1}>
+                  {tier.name}
+                </Text>
+                <Text style={styles.tierPickerPrice}>
+                  {currencyPrefix(event?.currency)}
+                  {tier.price.toLocaleString()}
+                </Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </SafeAreaView>
+      </Modal>
+
       {/* ─── OVERFLOW ⋯ ACTION SHEET ───────────────────────── */}
       <Modal
         visible={actionSheetVisible}
@@ -2166,7 +2216,9 @@ function PriceBlock({ event }: { event: Event }) {
   const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.priceBlock}>
-      <Text style={styles.priceLabel}>{event.isPaid ? "TICKET" : "FREE"}</Text>
+      <Text style={styles.priceLabel}>
+        {!event.isPaid ? "FREE" : (event.ticketTiers?.length ?? 0) > 1 ? "TICKETS FROM" : "TICKET"}
+      </Text>
       {event.isPaid && (
         <Text style={styles.priceValue}>{currencyPrefix(event.currency)}{event.ticketPrice?.toFixed(0) ?? "—"}</Text>
       )}
@@ -2794,7 +2846,7 @@ const createStyles = (c: ThemeColors) =>
   // Action sheet
   sheetBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: c.modalOverlay,
   },
   sheetWrap: {
     position: "absolute",
@@ -2806,10 +2858,39 @@ const createStyles = (c: ThemeColors) =>
     marginHorizontal: 12,
     marginBottom: 8,
     borderRadius: 18,
-    backgroundColor: "rgba(26,16,48,0.96)",
+    backgroundColor: c.cardGlass,
     borderWidth: 1,
     borderColor: c.glassStrokeStrong,
     paddingVertical: 6,
+  },
+  // ── Ticket tier picker sheet ──
+  tierPickerTitle: {
+    fontSize: 16,
+    fontFamily: Fonts.bold,
+    color: c.textBright,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 6,
+  },
+  tierPickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: c.glassFill,
+  },
+  tierPickerName: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: Fonts.semiBold,
+    color: c.textBright,
+  },
+  tierPickerPrice: {
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: c.primaryLight,
   },
   sheetGrabber: {
     alignSelf: "center",

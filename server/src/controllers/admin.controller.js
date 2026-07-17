@@ -12,6 +12,7 @@ import Report from "../models/report.model.js";
 import Message from "../models/message.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
 import { getSocketInstance } from "../services/socket.service.js";
+import { hasPayoutOnboarding } from "../services/payments/resolveProvider.js";
 
 export async function adminLogin(req, res) {
   const { username, password } = req.body;
@@ -532,7 +533,7 @@ export async function getPendingPaidEvents(req, res) {
         .limit(Number(limit))
         .populate(
           "createdBy",
-          "username email profilePicture verified paidEventsApproved paidEventsCount stripeOnboardingComplete contactInfo emailVerifiedAt"
+          "username email profilePicture verified paidEventsApproved paidEventsCount location paystackRecipientCode paystackOnboardingComplete wiseRecipientId wiseOnboardingComplete contactInfo emailVerifiedAt"
         ),
       Event.countDocuments(query),
     ]);
@@ -557,6 +558,16 @@ export async function getPendingPaidEvents(req, res) {
     const enriched = events.map((e) => {
       const obj = e.toObject();
       obj.fraudReportCount = fraudCountMap[String(e._id)] || 0;
+      // Collapse the provider-specific fields into one flag for the admin UI
+      // and keep the raw payout identifiers out of the payload.
+      if (obj.createdBy) {
+        obj.createdBy.payoutOnboarded = hasPayoutOnboarding(e.createdBy);
+        delete obj.createdBy.location;
+        delete obj.createdBy.paystackRecipientCode;
+        delete obj.createdBy.paystackOnboardingComplete;
+        delete obj.createdBy.wiseRecipientId;
+        delete obj.createdBy.wiseOnboardingComplete;
+      }
       return obj;
     });
 

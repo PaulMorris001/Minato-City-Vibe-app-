@@ -52,23 +52,21 @@ const userSchema = mongoose.Schema({
   },
   verified: { type: Boolean, default: false },
 
-  // Stripe Connect fields (for US sellers receiving payouts)
-  stripeAccountId: { type: String },
-  stripeOnboardingComplete: { type: Boolean, default: false },
-
-  // Flutterwave payout fields (for African sellers who can't use Stripe Connect).
-  // Collected during vendor onboarding; transfers are sent directly to this bank.
-  flutterwaveBank: {
+  // Paystack payout fields (Nigerian sellers). Collected during vendor
+  // onboarding; the bank is registered as a Paystack transfer recipient and
+  // payouts are sent to that recipient code.
+  paystackBank: {
     accountNumber: { type: String },
     bankCode: { type: String },
     bankName: { type: String },
     accountName: { type: String },
   },
-  flutterwaveOnboardingComplete: { type: Boolean, default: false },
+  paystackRecipientCode: { type: String },
+  paystackOnboardingComplete: { type: Boolean, default: false },
 
-  // Wise payout fields (for international vendors outside the Stripe/Flutterwave
-  // footprint). These vendors collect via Stripe (USD) but settle via Wise: the
-  // recipient account is created once during onboarding and reused for transfers.
+  // Wise payout fields (every seller outside the Paystack footprint). These
+  // vendors collect via Stripe (USD) but settle via Wise: the recipient account
+  // is created once during onboarding and reused for transfers.
   wiseRecipientId: { type: String },
   wiseRecipientCurrency: { type: String },
   wiseOnboardingComplete: { type: Boolean, default: false },

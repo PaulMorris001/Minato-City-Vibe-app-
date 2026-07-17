@@ -28,6 +28,8 @@ interface Pass {
   type: "rsvp" | "ticket";
   status: AttendanceStatus;
   attendedAt: string | null;
+  /** Ticket tier purchased ("VIP", …) — null for RSVP passes and single-price tickets. */
+  tierName?: string | null;
   qr: string; // data URL
   event: {
     _id: string;
@@ -129,6 +131,7 @@ export default function PassesScreen() {
                     <View style={styles.cardHeader}>
                       <Text style={styles.eventTitle} numberOfLines={2}>
                         {pass.event.title}
+                        {pass.tierName ? ` · ${pass.tierName}` : ""}
                       </Text>
                       <View style={[styles.badge, { backgroundColor: meta.bg }]}>
                         <Ionicons name={meta.icon} size={12} color={meta.color} />

@@ -8,10 +8,11 @@ import mongoose from "mongoose";
  * and approves — only then does the actual provider transfer run. This is the
  * single gate the "admins approve payouts" flow hinges on.
  *
- * `amount` is stored in the SETTLEMENT provider's native execution unit:
- *   - stripe      → cents (USD)
- *   - flutterwave → major units (local currency)
- *   - wise        → major units (USD source amount; Wise converts on the quote)
+ * `amount` is stored in MAJOR units of `currency` for both live rails:
+ *   - wise     → major USD (source amount; Wise converts on the quote)
+ *   - paystack → major NGN (converted to kobo at the API boundary)
+ * (Legacy docs may carry provider "stripe" — cents — or "flutterwave" — major;
+ * neither can be executed anymore.)
  * `displayAmount`/`displayCurrency` are the human-readable major-unit values for
  * the admin dashboard.
  */
@@ -23,8 +24,14 @@ const payoutSchema = new mongoose.Schema(
     relatedType: { type: String, enum: ["ticket", "guide", "booking"], required: true },
     relatedId: { type: mongoose.Schema.Types.ObjectId, required: true },
 
-    // Settlement rail used to pay the vendor out.
-    provider: { type: String, enum: ["stripe", "flutterwave", "wise"], required: true },
+    // Settlement rail used to pay the vendor out. "stripe" and "flutterwave"
+    // are legacy-read-only values (old docs must still save, e.g. on rejection);
+    // executePayout refuses to run them.
+    provider: {
+      type: String,
+      enum: ["wise", "paystack", "stripe", "flutterwave"],
+      required: true,
+    },
 
     amount: { type: Number, required: true }, // execution-native units (see model doc)
     currency: { type: String, required: true },

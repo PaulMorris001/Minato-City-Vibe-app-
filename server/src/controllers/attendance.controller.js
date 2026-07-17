@@ -137,6 +137,8 @@ export const getMyPasses = async (req, res) => {
     const userId = req.user.id;
     const passes = await Attendance.find({ user: userId })
       .populate("event", "title date location address image isPaid")
+      // Tier name so ticket passes can show "VIP" etc. at the door.
+      .populate("ticket", "tierName")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -150,6 +152,7 @@ export const getMyPasses = async (req, res) => {
         status: computeAttendanceStatus(p, p.event?.date),
         attendedAt: p.attendedAt || null,
         event: p.event,
+        tierName: p.ticket?.tierName || null,
         qr: await passQrDataUrl(p.code),
       }))
     );

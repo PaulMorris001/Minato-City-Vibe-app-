@@ -32,7 +32,7 @@ type WiseField = {
 type WiseRequirement = { type: string; title: string; fields: { group: WiseField[] }[] };
 
 /**
- * Wise payout onboarding for international vendors. Unlike the Flutterwave screen
+ * Wise payout onboarding for international vendors. Unlike the Paystack screen
  * (fixed account-number + bank fields), Wise's required fields vary by currency,
  * so we fetch them dynamically from /wise/account-requirements and render a form.
  */

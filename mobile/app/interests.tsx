@@ -13,6 +13,8 @@ import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { LinearGradient } from "expo-linear-gradient";
+import { LocationPicker } from "@/components/shared";
+import type { LocationSelection } from "@/libs/interfaces";
 
 import type { ThemeColors } from "@/constants/theme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -36,6 +38,7 @@ export default function InterestsScreen() {
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [selected, setSelected] = useState<string[]>([]);
+  const [location, setLocation] = useState<LocationSelection | null>(null);
   const [saving, setSaving] = useState(false);
 
   const toggle = (label: string) => {
@@ -47,7 +50,7 @@ export default function InterestsScreen() {
   const handleContinue = async () => {
     setSaving(true);
     try {
-      if (selected.length > 0) {
+      if (selected.length > 0 || location?.country) {
         const token = await SecureStore.getItemAsync("token");
         await fetch(`${BASE_URL}/profile/picture`, {
           method: "PUT",
@@ -55,7 +58,20 @@ export default function InterestsScreen() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ preferences: selected }),
+          body: JSON.stringify({
+            ...(selected.length > 0 ? { preferences: selected } : {}),
+            // Sets the account's home location — drives what's surfaced nearby
+            // and, for sellers, the selling currency / payout provider.
+            ...(location?.country
+              ? {
+                  location: {
+                    country: location.country,
+                    state: location.state || "",
+                    city: location.city || "",
+                  },
+                }
+              : {}),
+          }),
         });
       }
     } catch {
@@ -72,11 +88,17 @@ export default function InterestsScreen() {
         <Text style={styles.heading}>What are you into?</Text>
         <Text style={styles.sub}>Pick your interests so we can surface events and guides you'll love.</Text>
 
-        <ScrollView
-          contentContainerStyle={styles.grid}
-          showsVerticalScrollIndicator={false}
-        >
-          {INTERESTS.map((item) => {
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={styles.locationField}>
+            <LocationPicker
+              value={location ?? undefined}
+              onChange={setLocation}
+              label="Where are you based?"
+            />
+          </View>
+
+          <View style={styles.grid}>
+            {INTERESTS.map((item) => {
             const active = selected.includes(item.label);
             return (
               <TouchableOpacity
@@ -91,7 +113,8 @@ export default function InterestsScreen() {
                 </Text>
               </TouchableOpacity>
             );
-          })}
+            })}
+          </View>
         </ScrollView>
 
         <TouchableOpacity
@@ -152,6 +175,9 @@ const createStyles = (c: ThemeColors) =>
     color: "rgba(244,238,255,0.6)",
     lineHeight: 22,
     marginBottom: 28,
+  },
+  locationField: {
+    marginBottom: 20,
   },
   grid: {
     flexDirection: "row",

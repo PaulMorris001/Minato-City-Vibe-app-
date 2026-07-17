@@ -2,7 +2,7 @@
  * Wise (Wise Platform) API client.
  *
  * Thin wrapper over the Wise REST API using the platform API token. Native fetch
- * (Node 18+), mirroring the Flutterwave client in ./flutterwave.js so the rest of
+ * (Node 18+), mirroring the Paystack client in ./paystack.js so the rest of
  * the server makes outbound calls the same way.
  *
  * Wise is a PAYOUT-only rail: we create recipient accounts and send transfers,

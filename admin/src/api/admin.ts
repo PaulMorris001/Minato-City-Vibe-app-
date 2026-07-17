@@ -155,7 +155,9 @@ export interface AdminPayout {
   };
   relatedType: "ticket" | "guide" | "booking";
   relatedId: string;
-  provider: "stripe" | "flutterwave" | "wise";
+  // "stripe" / "flutterwave" only appear on legacy docs from before the
+  // Paystack/Wise remap.
+  provider: "wise" | "paystack" | "stripe" | "flutterwave";
   amount: number;
   currency: string;
   displayAmount?: number;

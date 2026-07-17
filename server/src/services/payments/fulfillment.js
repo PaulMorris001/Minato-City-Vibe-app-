@@ -1,7 +1,7 @@
 /**
  * Provider-agnostic fulfillment.
  *
- * Once a payment is verified (by Stripe or Flutterwave), these helpers grant the
+ * Once a payment is verified (by Stripe or Paystack), these helpers grant the
  * buyer access and run the side effects (passes, attendee lists, cache busting,
  * push notifications). Keeping this logic in one place means both providers
  * behave identically — the only provider-specific work is verifying the payment
@@ -23,8 +23,8 @@ import { invalidateCachePattern } from "../../utils/cache.js";
  * @param {object} args
  * @param {string} args.eventId
  * @param {string} args.userId            buyer
- * @param {"stripe"|"flutterwave"} args.provider
- * @param {string} args.paymentRef        provider charge id (PaymentIntent / FLW tx id)
+ * @param {"stripe"|"paystack"} args.provider
+ * @param {string} args.paymentRef        provider charge ref (PaymentIntent id / Paystack reference)
  * @param {string} [args.currency]
  * @param {number} [args.platformFeeCents] platform cut (provider native units)
  * @param {number} [args.sellerNetCents]   seller share  (provider native units)
@@ -39,6 +39,7 @@ export async function fulfillTicket({
   currency,
   platformFeeCents = 0,
   sellerNetCents = 0,
+  tierId,
 }) {
   const existing = await Ticket.findOne({ event: eventId, user: userId, isValid: true });
   if (existing) return { ticket: existing, alreadyExisted: true };
@@ -46,18 +47,24 @@ export async function fulfillTicket({
   const event = await Event.findById(eventId);
   if (!event) throw new Error("Event not found");
 
+  // Tiered events: snapshot the purchased tier's name/price onto the ticket.
+  // The tierId comes from payment metadata (Stripe) or the confirm body after
+  // amount verification (Paystack), both established at init time.
+  const tier = tierId && event.ticketTiers?.length ? event.ticketTiers.id(tierId) : null;
+
   const ticketData = {
     event: eventId,
     user: userId,
-    ticketPrice: event.ticketPrice,
+    ticketPrice: tier ? tier.price : event.ticketPrice,
+    ...(tier ? { tierId: tier._id, tierName: tier.name } : {}),
     provider,
-    // Defaults to the collection provider; differs only for Wise vendors.
-    payoutProvider: payoutProvider || provider,
+    // Stripe-collected sales settle via Wise; Paystack settles its own.
+    payoutProvider: payoutProvider || (provider === "stripe" ? "wise" : provider),
     currency: currency || event.currency || "usd",
     platformFeeCents,
     sellerNetCents,
   };
-  if (provider === "flutterwave") ticketData.flutterwaveTxId = paymentRef;
+  if (provider === "paystack") ticketData.paystackReference = paymentRef;
   else ticketData.stripePaymentIntentId = paymentRef;
 
   const ticket = await Ticket.create(ticketData);
@@ -137,7 +144,7 @@ export async function fulfillGuide({ guideId, userId }) {
  *
  * @param {object} args
  * @param {string} args.bookingId
- * @param {"stripe"|"flutterwave"} args.provider
+ * @param {"stripe"|"paystack"} args.provider
  * @param {string} args.paymentRef
  * @param {number} [args.platformFee]
  * @param {number} [args.vendorNet]
@@ -157,7 +164,8 @@ export async function fulfillBooking({
 
   booking.paymentStatus = "paid";
   booking.provider = provider;
-  booking.payoutProvider = payoutProvider || provider;
+  // Stripe-collected bookings settle via Wise; Paystack settles its own.
+  booking.payoutProvider = payoutProvider || (provider === "stripe" ? "wise" : provider);
   booking.paymentRef = paymentRef;
   booking.platformFee = platformFee;
   booking.vendorNet = vendorNet;

@@ -286,6 +286,11 @@ export default function EventsPage() {
     // The hook runs checkout AND confirms server-side before returning.
     const result = await payForTicket(eventId);
     if (!result.success) {
+      if (result.code === "tier_required") {
+        // Multi-tier event — the detail screen owns the tier picker.
+        router.push(`/event/${eventId}`);
+        return;
+      }
       if (result.error) Alert.alert("Payment Failed", result.error);
       return;
     }

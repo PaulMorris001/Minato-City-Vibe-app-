@@ -333,6 +333,6 @@ const createStyles = (c: ThemeColors) =>
     color: c.textBright,
   },
   placeholder: {
-    color: "rgba(244,238,255,0.35)",
+    color: c.textFaint,
   },
 });

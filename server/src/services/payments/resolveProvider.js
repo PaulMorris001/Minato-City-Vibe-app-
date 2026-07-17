@@ -1,112 +1,72 @@
 /**
  * Payment provider routing.
  *
- * Two distinct decisions, historically conflated:
+ * Two distinct decisions:
  *  - COLLECTION provider (`getPayoutProvider`): how we charge the buyer. Stripe
- *    (card, USD) or Flutterwave (African local methods).
- *  - SETTLEMENT provider (`getSettlementProvider`): how the seller's net is paid
- *    out. Stripe Connect, Flutterwave transfers, or Wise (international vendors
- *    outside both footprints). Wise is payout-only, so its vendors COLLECT via
- *    Stripe but SETTLE via Wise.
+ *    (card, USD, into the PLATFORM balance) or Paystack (NGN local methods).
+ *  - SETTLEMENT provider (`getSettlementProvider`): how the seller's net is
+ *    paid out once an admin approves. Wise for every Stripe-collected seller
+ *    (Wise is payout-only: those sellers COLLECT via Stripe but SETTLE via
+ *    Wise), Paystack transfers for Nigerian sellers.
  *
- * This module reads the Wise routing knobs straight from process.env (rather than
- * importing the validated config) so it stays free of env-validation side effects
- * and its unit test needs no setup.
+ * This module reads its rollout knob straight from process.env (rather than
+ * importing the validated config) so it stays free of env-validation side
+ * effects and its unit test needs no setup.
  */
 
-// Wise routing knobs, read lazily so import order / env-load timing don't matter.
-function wiseRouting() {
-  const enabled = !!process.env.WISE_API_TOKEN;
-  const countries = new Set(
-    (process.env.WISE_COUNTRIES || "")
-      .split(",")
-      .map((c) => c.trim().toLowerCase())
-      .filter(Boolean)
-  );
-  return { enabled, countries };
+// ── Paystack rollout ─────────────────────────────────────────────────────────
+// Local-currency selling runs on Paystack. Launch scope is Nigeria only
+// (USD + NGN): Nigerian sellers price and collect in NGN and are settled by
+// Paystack transfers; everyone else is on the Stripe(USD)+Wise path. Grow
+// PAYSTACK_LAUNCH_COUNTRIES as each additional currency's checkout + payout is
+// verified. The mobile mirror of these knobs lives in
+// mobile/constants/payments.ts — keep them in sync.
+const PAYSTACK_ENABLED = process.env.PAYSTACK_ENABLED !== "false";
+const PAYSTACK_LAUNCH_COUNTRIES = new Set(["nigeria", "ng"]);
+
+function isPaystackCountry(country) {
+  return PAYSTACK_ENABLED && PAYSTACK_LAUNCH_COUNTRIES.has(country);
 }
-
-// Countries we route to Flutterwave. Lowercased on lookup so we tolerate
-// "Nigeria" / "nigeria" and both names + ISO codes that may appear in user data.
-const FLUTTERWAVE_COUNTRIES = new Set([
-  "nigeria",
-  "ng",
-  "ghana",
-  "gh",
-  "kenya",
-  "ke",
-  "south africa",
-  "za",
-  "uganda",
-  "ug",
-  "tanzania",
-  "tz",
-  "rwanda",
-  "rw",
-  "zambia",
-  "zm",
-]);
-
-// US sellers settle through Stripe Connect (collect + pay out unified).
-const US_COUNTRIES = new Set(["united states", "united states of america", "usa", "us"]);
-
-// ── Flutterwave temporarily disabled (Wise-first rollout) ────────────────────
-// While Wise is the rail we're setting up first, Flutterwave is hidden: EVERYONE
-// collects via Stripe (USD) and non-US vendors settle via Wise (which converts
-// USD → their local currency on the payout). This keeps collection and payout in
-// the same currency pot. To bring Flutterwave back, flip this to `true` — the
-// FLUTTERWAVE_COUNTRIES branches below (and currencyForUser) re-activate.
-const FLUTTERWAVE_ENABLED = false;
 
 /**
  * Resolve the COLLECTION provider for a seller (how we charge the buyer).
- * With Flutterwave hidden, everyone collects via Stripe (USD).
  * @param {object} user - a populated user/seller document
- * @returns {"stripe" | "flutterwave"}
+ * @returns {"stripe" | "paystack"}
  */
 export function getPayoutProvider(user) {
   const country = (user?.location?.country || "").trim().toLowerCase();
-  if (FLUTTERWAVE_ENABLED && FLUTTERWAVE_COUNTRIES.has(country)) return "flutterwave";
+  if (isPaystackCountry(country)) return "paystack";
   return "stripe";
 }
 
 /**
  * Resolve the SETTLEMENT provider for a seller (how their net is paid out).
- * With Flutterwave hidden: US → Stripe Connect, everyone else → Wise.
+ * Nigerian sellers settle via Paystack transfers; everyone else via Wise.
  * @param {object} user
- * @returns {"wise" | "stripe" | "flutterwave"}
+ * @returns {"wise" | "paystack"}
  */
 export function getSettlementProvider(user) {
   const country = (user?.location?.country || "").trim().toLowerCase();
-  if (FLUTTERWAVE_ENABLED && FLUTTERWAVE_COUNTRIES.has(country)) return "flutterwave";
-  if (US_COUNTRIES.has(country)) return "stripe";
-  // International vendor. Route to Wise when it's configured and either no
-  // allowlist is set (Wise covers all international) or this country is on it.
-  const { enabled, countries } = wiseRouting();
-  if (enabled && (countries.size === 0 || countries.has(country))) return "wise";
-  // Legacy fallback (Wise not configured): Stripe, as before.
-  return "stripe";
+  if (isPaystackCountry(country)) return "paystack";
+  return "wise";
 }
 
 /**
  * Whether a seller has completed onboarding for the provider that settles them.
- * Generalizes the previous Stripe-only `stripeOnboardingComplete` gate.
  * @param {object} user
  * @returns {boolean}
  */
 export function hasPayoutOnboarding(user) {
   const provider = getSettlementProvider(user);
-  if (provider === "wise") {
-    return !!(user?.wiseRecipientId && user?.wiseOnboardingComplete);
+  if (provider === "paystack") {
+    return !!(user?.paystackRecipientCode && user?.paystackOnboardingComplete);
   }
-  if (provider === "flutterwave") {
-    return !!user?.flutterwaveOnboardingComplete;
-  }
-  return !!(user?.stripeAccountId && user?.stripeOnboardingComplete);
+  return !!(user?.wiseRecipientId && user?.wiseOnboardingComplete);
 }
 
 // Country (lowercased) → default selling currency. Drives the currency a
-// vendor's tickets/guides are priced in when they don't specify one.
+// vendor's tickets/guides are priced in when they don't specify one. Only
+// launch-scope Paystack countries ever reach this map.
 const COUNTRY_CURRENCY = {
   nigeria: "NGN",
   ng: "NGN",
@@ -116,34 +76,24 @@ const COUNTRY_CURRENCY = {
   ke: "KES",
   "south africa": "ZAR",
   za: "ZAR",
-  uganda: "UGX",
-  ug: "UGX",
-  tanzania: "TZS",
-  tz: "TZS",
-  rwanda: "RWF",
-  rw: "RWF",
-  zambia: "ZMW",
-  zm: "ZMW",
 };
 
 /**
- * Default selling currency for a user. With Flutterwave hidden, everyone
- * collects via Stripe in USD (Wise converts to the vendor's local currency on
- * payout), so pricing is USD across the board.
+ * Default selling currency for a user. Paystack-country sellers price in
+ * their local currency (launch scope: Nigeria → NGN); everyone else collects
+ * via Stripe in USD (Wise converts to the vendor's local currency on payout).
  * @param {object} user
  * @returns {string} ISO currency code
  */
 export function currencyForUser(user) {
-  if (!FLUTTERWAVE_ENABLED) return "USD";
   const country = (user?.location?.country || "").trim().toLowerCase();
+  if (!isPaystackCountry(country)) return "USD";
   return COUNTRY_CURRENCY[country] || "USD";
 }
 
-export { FLUTTERWAVE_COUNTRIES };
 export default {
   getPayoutProvider,
   getSettlementProvider,
   hasPayoutOnboarding,
   currencyForUser,
-  FLUTTERWAVE_COUNTRIES,
 };

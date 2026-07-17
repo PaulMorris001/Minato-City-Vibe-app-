@@ -32,7 +32,8 @@ interface PaidEvent {
     verified?: boolean;
     paidEventsApproved?: boolean;
     paidEventsCount?: number;
-    stripeOnboardingComplete?: boolean;
+    /** Computed server-side: vendor has completed Paystack or Wise payout setup. */
+    payoutOnboarded?: boolean;
     emailVerifiedAt?: string;
     contactInfo?: { phone?: string };
   };
@@ -236,8 +237,8 @@ export default function PaidEvents() {
                   </div>
                   <div style={styles.trustChipRow}>
                     <TrustChip
-                      ok={!!e.createdBy?.stripeOnboardingComplete}
-                      label="Stripe onboarded"
+                      ok={!!e.createdBy?.payoutOnboarded}
+                      label="Payouts onboarded"
                     />
                     <TrustChip
                       ok={!!e.createdBy?.verified}

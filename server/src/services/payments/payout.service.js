@@ -1,13 +1,13 @@
 /**
  * Payout service — the admin-approval gate.
  *
- * Every paid sale now collects into the platform balance and creates a Payout
+ * Every paid sale collects into the platform balance and creates a Payout
  * record (status "awaiting_approval") instead of transferring money. An admin
- * approves, and only then does `executePayout` run the real provider transfer.
+ * approves, and only then does `executePayout` run the real provider transfer:
+ * Wise for Stripe-collected (USD) sellers, Paystack for Nigerian sellers.
  * No vendor money leaves the platform without an explicit approval.
  */
 
-import stripe from "../../config/stripe.js";
 import config from "../../config/env.js";
 import Payout from "../../models/payout.model.js";
 import User from "../../models/user.model.js";
@@ -15,7 +15,10 @@ import Event from "../../models/event.model.js";
 import Ticket from "../../models/ticket.model.js";
 import { Booking } from "../../models/booking.model.js";
 import { sendPushNotification } from "../notification.service.js";
-import { createFlutterwaveTransfer } from "../../controllers/flutterwave.controller.js";
+import {
+  createPaystackTransfer,
+  getPaystackBalance,
+} from "../../controllers/paystack.controller.js";
 import { createWiseTransfer, getWiseBalance } from "./wise.js";
 
 /**
@@ -26,13 +29,13 @@ import { createWiseTransfer, getWiseBalance } from "./wise.js";
  * @param {string} args.vendor        seller user id
  * @param {"ticket"|"guide"|"booking"} args.relatedType
  * @param {string} args.relatedId     event (for tickets) / guide / booking id
- * @param {"stripe"|"flutterwave"|"wise"} args.provider  settlement rail
- * @param {number} args.amount        seller net in the provider's native unit
- *                                    (stripe=cents, flutterwave/wise=major)
+ * @param {"wise"|"paystack"} args.provider  settlement rail
+ * @param {number} args.amount        seller net in MAJOR units (USD for wise,
+ *                                    local currency for paystack)
  * @param {string} args.currency      settlement currency
  * @param {string} args.reference     idempotency key + provider transfer ref
  * @param {string} [args.buyer]
- * @param {string} [args.stripePaymentIntentId]  for Stripe source_transaction
+ * @param {string} [args.stripePaymentIntentId]  collection audit trail
  * @returns {Promise<object>} the Payout doc
  */
 export async function createPayout({
@@ -47,7 +50,6 @@ export async function createPayout({
   stripePaymentIntentId,
 }) {
   const cur = (currency || "").toUpperCase();
-  const displayAmount = provider === "stripe" ? amount / 100 : amount;
   try {
     return await Payout.create({
       vendor,
@@ -56,7 +58,7 @@ export async function createPayout({
       provider,
       amount,
       currency: cur,
-      displayAmount,
+      displayAmount: amount, // both live rails store major units
       displayCurrency: cur,
       reference,
       buyer,
@@ -72,7 +74,7 @@ export async function createPayout({
 
 /**
  * Run the real provider transfer for an approved payout. Centralizes the money
- * movement for all three rails so the admin endpoint stays thin. Transitions the
+ * movement for both rails so the admin endpoint stays thin. Transitions the
  * payout through processing → paid (or failed) and settles the related records.
  *
  * @param {string} payoutId
@@ -98,7 +100,7 @@ export async function executePayout(payoutId, { approvedBy } = {}) {
 
   try {
     const vendor = await User.findById(payout.vendor).select(
-      "stripeAccountId flutterwaveBank wiseRecipientId wiseRecipientCurrency fcmToken username"
+      "paystackRecipientCode paystackBank wiseRecipientId wiseRecipientCurrency fcmToken username"
     );
     const transferId = await runTransfer(payout, vendor);
 
@@ -137,33 +139,27 @@ async function runTransfer(payout, vendor) {
     return t.id;
   }
 
-  if (payout.provider === "flutterwave") {
-    if (!vendor?.flutterwaveBank?.accountNumber) throw new Error("Vendor has no bank on file");
-    const t = await createFlutterwaveTransfer({
-      bank: vendor.flutterwaveBank,
+  if (payout.provider === "paystack") {
+    if (!vendor?.paystackRecipientCode) throw new Error("Vendor has no Paystack payout account");
+    const balance = await getPaystackBalance(payout.currency);
+    if (balance < payout.amount) {
+      throw new Error(
+        `Paystack balance ${balance} ${payout.currency} < payout ${payout.amount} — top up the Paystack balance`
+      );
+    }
+    const t = await createPaystackTransfer({
+      recipientCode: vendor.paystackRecipientCode,
       amount: payout.amount, // major units
       currency: payout.currency,
       reference: payout.reference,
-      narration: "OurCityvibe payout",
+      reason: "OurCityvibe payout",
     });
     return t.id;
   }
 
-  // Stripe Connect transfer from the platform balance to the vendor's account.
-  if (!vendor?.stripeAccountId) throw new Error("Vendor has no Stripe account");
-  const params = {
-    amount: payout.amount, // cents
-    currency: "usd",
-    destination: vendor.stripeAccountId,
-    metadata: { payoutId: String(payout._id), reference: payout.reference },
-  };
-  // Tie the transfer to the original charge when we have one (single-sale payouts).
-  if (payout.stripePaymentIntentId) {
-    const pi = await stripe.paymentIntents.retrieve(payout.stripePaymentIntentId);
-    if (pi.latest_charge) params.source_transaction = pi.latest_charge;
-  }
-  const t = await stripe.transfers.create(params, { idempotencyKey: payout.reference });
-  return t.id;
+  // "stripe" / "flutterwave" docs predate the Wise+Paystack remap and their
+  // rails no longer exist here.
+  throw new Error(`Payout provider "${payout.provider}" is a legacy rail and can't be executed`);
 }
 
 /** Mark the originating record(s) settled once the transfer succeeds. */

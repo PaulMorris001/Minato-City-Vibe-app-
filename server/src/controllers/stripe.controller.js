@@ -1,14 +1,20 @@
+/**
+ * Stripe controller — collection-side only.
+ *
+ * Stripe's job in this architecture is to CHARGE buyers into the platform
+ * balance (via the unified /payments dispatcher) and to REFUND those charges.
+ * It never moves money to sellers: settlement runs through the admin-approved
+ * Payout queue (Wise for Stripe-collected sales, Paystack for NGN).
+ */
+
 import stripe from "../config/stripe.js";
 import config from "../config/env.js";
 import User from "../models/user.model.js";
 import Event from "../models/event.model.js";
-import Guide from "../models/guide.model.js";
 import Ticket from "../models/ticket.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
 import { fulfillTicket, fulfillGuide } from "../services/payments/fulfillment.js";
-import { refundFlutterwaveCharge } from "./flutterwave.controller.js";
-
-const PLATFORM_FEE_PERCENT = config.stripe.platformFeePercent; // e.g. 10
+import { refundPaystackCharge } from "./paystack.controller.js";
 
 /**
  * Return the publishable key that matches THIS server's secret key (same
@@ -27,431 +33,12 @@ export const getStripeConfig = async (req, res) => {
   }
 };
 
-/**
- * Translate a Stripe SDK error into something safe to return to the client.
- * We pass through Stripe's `code` and `message` so the mobile app can show
- * the real reason ("No such account...", "Your platform has not been activated
- * for live mode", etc.) instead of a generic "Failed to ..." string.
- */
-function stripeErrorPayload(error, fallback) {
-  const code = error?.code || error?.raw?.code;
-  const stripeMessage = error?.raw?.message || error?.message;
-  return {
-    message: stripeMessage || fallback,
-    code: code || undefined,
-  };
-}
-
-/**
- * True when a Stripe error indicates the saved Connect account ID is no
- * longer reachable by the current API key. Two sibling cases:
- *   · `resource_missing` — the account ID doesn't exist in this mode at all.
- *   · `account_invalid` — the ID exists but belongs to a different platform
- *     (e.g. the secret key was rotated from a different Stripe account, or
- *     swapped between test and live).
- * Either way the recovery is the same: wipe the stale ID and create a new
- * account under the current key.
- */
-function isStaleAccountError(err) {
-  const code = err?.code || err?.raw?.code;
-  if (code === "resource_missing" || code === "account_invalid") return true;
-  // Some platform-mismatch errors don't carry a clean code in older SDK
-  // versions — fall back to a message-substring check as a safety net.
-  const msg = (err?.raw?.message || err?.message || "").toLowerCase();
-  return (
-    msg.includes("not connected to your platform") ||
-    msg.includes("no such account")
-  );
-}
-
-// ─── Seller Connect Onboarding ───────────────────────────────────────────────
-
-/**
- * Create a Stripe Express account for the current user (seller)
- */
-export const createConnectAccount = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    // If they already have an account, return it
-    if (user.stripeAccountId) {
-      return res.status(200).json({ accountId: user.stripeAccountId });
-    }
-
-    const account = await stripe.accounts.create({
-      type: "express",
-      country: "US",
-      email: user.email,
-      capabilities: {
-        card_payments: { requested: true },
-        transfers: { requested: true },
-      },
-    });
-
-    user.stripeAccountId = account.id;
-    await user.save();
-
-    res.status(201).json({ accountId: account.id });
-  } catch (error) {
-    console.error("Create connect account error:", error?.raw || error);
-    res.status(500).json(stripeErrorPayload(error, "Failed to create Stripe account"));
-  }
-};
-
-/**
- * Generate a Stripe-hosted onboarding link for the seller.
- *
- * If the stored `stripeAccountId` no longer exists in the current Stripe
- * mode (the classic "test acct saved before going live" footgun), we
- * automatically clear it and create a fresh account so the user can
- * proceed without us having to clean the DB by hand.
- */
-export const getAccountLink = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
-    if (!user.stripeAccountId) {
-      return res.status(400).json({ message: "No Stripe account found. Create one first." });
-    }
-
-    const buildLink = (accountId) =>
-      stripe.accountLinks.create({
-        account: accountId,
-        refresh_url: `${config.stripe.serverUrl}/api/stripe/connect/refresh`,
-        return_url: `${config.stripe.serverUrl}/api/stripe/connect/return`,
-        type: "account_onboarding",
-      });
-
-    let accountLink;
-    try {
-      accountLink = await buildLink(user.stripeAccountId);
-    } catch (err) {
-      // Stale account ID — either it doesn't exist in this Stripe mode, or
-      // it belongs to a different Connect platform than the current secret
-      // key. Recover transparently: mint a fresh account and retry once.
-      if (isStaleAccountError(err)) {
-        console.warn(
-          `[Stripe Connect] saved accountId ${user.stripeAccountId} is stale (${
-            err?.code || err?.raw?.code || "no-code"
-          }) — recreating under the current API key`
-        );
-        const account = await stripe.accounts.create({
-          type: "express",
-          country: "US",
-          email: user.email,
-          capabilities: {
-            card_payments: { requested: true },
-            transfers: { requested: true },
-          },
-        });
-        user.stripeAccountId = account.id;
-        user.stripeOnboardingComplete = false;
-        await user.save();
-        accountLink = await buildLink(account.id);
-      } else {
-        throw err;
-      }
-    }
-
-    res.status(200).json({ url: accountLink.url });
-  } catch (error) {
-    console.error("Get account link error:", error?.raw || error);
-    res.status(500).json(stripeErrorPayload(error, "Failed to generate onboarding link"));
-  }
-};
-
-/**
- * Get the current Stripe Connect account status for the logged-in user
- */
-export const getAccountStatus = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    if (!user.stripeAccountId) {
-      return res.status(200).json({ connected: false, onboardingComplete: false });
-    }
-
-    let account;
-    try {
-      account = await stripe.accounts.retrieve(user.stripeAccountId);
-    } catch (err) {
-      // Saved account ID is unreachable under the current key — wipe it and
-      // report disconnected so the UI shows the "Set Up Payouts" CTA, which
-      // will mint a fresh account on the next tap.
-      if (isStaleAccountError(err)) {
-        console.warn(
-          `[Stripe Connect] saved accountId ${user.stripeAccountId} unreachable on retrieve (${
-            err?.code || err?.raw?.code || "no-code"
-          }) — clearing`
-        );
-        user.stripeAccountId = null;
-        user.stripeOnboardingComplete = false;
-        await user.save();
-        return res.status(200).json({ connected: false, onboardingComplete: false });
-      }
-      throw err;
-    }
-
-    const onboardingComplete = account.details_submitted && account.charges_enabled;
-
-    // Persist the status so we can use it without calling Stripe every time
-    if (onboardingComplete && !user.stripeOnboardingComplete) {
-      user.stripeOnboardingComplete = true;
-      await user.save();
-    }
-
-    res.status(200).json({
-      connected: true,
-      onboardingComplete,
-      chargesEnabled: account.charges_enabled,
-      payoutsEnabled: account.payouts_enabled,
-    });
-  } catch (error) {
-    console.error("Get account status error:", error?.raw || error);
-    res.status(500).json(stripeErrorPayload(error, "Failed to retrieve account status"));
-  }
-};
-
-// ─── Connect Redirect Endpoints ──────────────────────────────────────────────
-// Stripe requires HTTPS return/refresh URLs. These endpoints redirect back to
-// the mobile app via its deep link scheme.
-
-export const stripeConnectReturn = (req, res) => {
-  res.redirect(`${config.stripe.appUrl}stripe-onboarding?success=true`);
-};
-
-export const stripeConnectRefresh = (req, res) => {
-  res.redirect(`${config.stripe.appUrl}stripe-onboarding?refresh=true`);
-};
-
-// ─── Payment Intents ──────────────────────────────────────────────────────────
-
-/**
- * Create a PaymentIntent for purchasing an event ticket
- */
-export const createTicketPaymentIntent = async (req, res) => {
-  try {
-    const { eventId } = req.params;
-    const userId = req.user.id;
-
-    const event = await Event.findById(eventId).populate("createdBy");
-    if (!event) return res.status(404).json({ message: "Event not found" });
-    if (!event.isPublic || !event.isPaid) {
-      return res.status(400).json({ message: "This event does not require payment" });
-    }
-
-    // Trust gate: organizers can't sell tickets until their event is approved
-    if (event.approvalStatus !== "approved") {
-      return res.status(403).json({
-        message:
-          event.approvalStatus === "pending"
-            ? "This event is awaiting organizer approval and is not yet on sale."
-            : "Ticket sales are not available for this event.",
-      });
-    }
-
-    const seller = event.createdBy;
-    if (!seller) return res.status(400).json({ message: "Event organizer not found" });
-    if (!seller.stripeAccountId || !seller.stripeOnboardingComplete) {
-      // The createEvent gate should prevent this from ever being reachable,
-      // but if an organizer disconnects Stripe after listing, we don't want
-      // to expose that to the buyer. Show a generic, on-brand message.
-      return res.status(409).json({
-        message: "Tickets aren't on sale yet — check back soon.",
-        code: "ticketing_not_ready",
-      });
-    }
-
-    // Check if user already has a ticket
-    const existingTicket = await Ticket.findOne({ event: eventId, user: userId, isValid: true });
-    if (existingTicket) {
-      return res.status(400).json({ message: "You already have a ticket for this event" });
-    }
-
-    // Check ticket availability
-    const soldTickets = await Ticket.countDocuments({ event: eventId, isValid: true });
-    if (soldTickets >= event.maxGuests) {
-      return res.status(400).json({ message: "No tickets available" });
-    }
-
-    const amountCents = Math.round(event.ticketPrice * 100);
-    const feeCents = Math.round(amountCents * (PLATFORM_FEE_PERCENT / 100));
-    const sellerNetCents = amountCents - feeCents;
-
-    // Delayed-payout model: charge to the platform account (NO transfer_data /
-    // application_fee_amount). The payout job creates a Transfer to the seller's
-    // Connect account `payoutDelayHours` after the event date.
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amountCents,
-      currency: "usd",
-      metadata: {
-        type: "ticket",
-        eventId: eventId.toString(),
-        buyerId: userId.toString(),
-        sellerId: seller._id.toString(),
-        platformFeeCents: feeCents.toString(),
-        sellerNetCents: sellerNetCents.toString(),
-      },
-      // transfer_group lets us look up all charges tied to this event when
-      // releasing the payout.
-      transfer_group: `event_${eventId}`,
-    });
-
-    res.status(200).json({ clientSecret: paymentIntent.client_secret });
-  } catch (error) {
-    console.error("Create ticket payment intent error:", error);
-    res.status(500).json({ message: "Failed to create payment intent" });
-  }
-};
-
-/**
- * Create a PaymentIntent for purchasing a guide
- */
-export const createGuidePaymentIntent = async (req, res) => {
-  try {
-    const { guideId } = req.params;
-    const userId = req.user.id;
-
-    const guide = await Guide.findById(guideId).populate("author");
-    if (!guide) return res.status(404).json({ message: "Guide not found" });
-    if (guide.isDraft) return res.status(400).json({ message: "Cannot purchase a draft guide" });
-    if (guide.price === 0) return res.status(400).json({ message: "This guide is free" });
-
-    if (guide.author._id.toString() === userId) {
-      return res.status(400).json({ message: "You cannot purchase your own guide" });
-    }
-    if (guide.purchasedBy.includes(userId)) {
-      return res.status(400).json({ message: "You have already purchased this guide" });
-    }
-
-    const amountCents = Math.round(guide.price * 100);
-    const feeCents = Math.round(amountCents * (PLATFORM_FEE_PERCENT / 100));
-
-    const seller = guide.author;
-    if (!seller) return res.status(400).json({ message: "Guide author not found" });
-
-    const paymentIntentParams = {
-      amount: amountCents,
-      currency: "usd",
-      metadata: {
-        type: "guide",
-        guideId: guideId.toString(),
-        buyerId: userId.toString(),
-        sellerId: seller._id.toString(),
-      },
-    };
-
-    if (seller?.stripeAccountId && seller?.stripeOnboardingComplete) {
-      paymentIntentParams.application_fee_amount = feeCents;
-      paymentIntentParams.transfer_data = { destination: seller.stripeAccountId };
-    }
-
-    const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
-
-    res.status(200).json({ clientSecret: paymentIntent.client_secret });
-  } catch (error) {
-    console.error("Create guide payment intent error:", error);
-    res.status(500).json({ message: "Failed to create payment intent" });
-  }
-};
-
-// ─── Purchase Confirmation (called immediately after payment sheet) ───────────
-
-/**
- * Confirm a guide purchase after a successful Stripe payment.
- * Verifies the PaymentIntent is actually succeeded before granting access.
- */
-export const confirmGuidePurchase = async (req, res) => {
-  try {
-    const { guideId } = req.params;
-    const { paymentIntentId } = req.body;
-    const userId = req.user.id;
-
-    if (!paymentIntentId) {
-      return res.status(400).json({ message: "paymentIntentId is required" });
-    }
-
-    // Verify with Stripe that payment actually succeeded
-    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-    if (paymentIntent.status !== "succeeded") {
-      return res.status(400).json({ message: "Payment has not been completed" });
-    }
-
-    // Verify the PaymentIntent belongs to this guide and buyer
-    if (
-      paymentIntent.metadata?.guideId !== guideId ||
-      paymentIntent.metadata?.buyerId !== userId
-    ) {
-      return res.status(403).json({ message: "PaymentIntent does not match this purchase" });
-    }
-
-    await fulfillGuide({ guideId, userId });
-
-    res.status(200).json({ message: "Guide purchase confirmed", hasPurchased: true });
-  } catch (error) {
-    console.error("Confirm guide purchase error:", error);
-    res.status(500).json({ message: "Failed to confirm purchase" });
-  }
-};
-
-/**
- * Confirm a ticket purchase after a successful Stripe payment.
- * Verifies the PaymentIntent is actually succeeded before creating the ticket.
- */
-export const confirmTicketPurchase = async (req, res) => {
-  try {
-    const { eventId } = req.params;
-    const { paymentIntentId } = req.body;
-    const userId = req.user.id;
-
-    if (!paymentIntentId) {
-      return res.status(400).json({ message: "paymentIntentId is required" });
-    }
-
-    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-    if (paymentIntent.status !== "succeeded") {
-      return res.status(400).json({ message: "Payment has not been completed" });
-    }
-
-    if (
-      paymentIntent.metadata?.eventId !== eventId ||
-      paymentIntent.metadata?.buyerId !== userId
-    ) {
-      return res.status(403).json({ message: "PaymentIntent does not match this purchase" });
-    }
-
-    const platformFeeCents = Number(paymentIntent.metadata?.platformFeeCents || 0);
-    const sellerNetCents = Number(paymentIntent.metadata?.sellerNetCents || 0);
-
-    const { ticket, alreadyExisted } = await fulfillTicket({
-      eventId,
-      userId,
-      provider: "stripe",
-      paymentRef: paymentIntentId,
-      currency: "usd",
-      platformFeeCents,
-      sellerNetCents,
-    });
-
-    res
-      .status(alreadyExisted ? 200 : 201)
-      .json({ message: alreadyExisted ? "Ticket already exists" : "Ticket confirmed", ticket });
-  } catch (error) {
-    console.error("Confirm ticket purchase error:", error);
-    res.status(500).json({ message: "Failed to confirm ticket" });
-  }
-};
-
 // ─── Refunds ─────────────────────────────────────────────────────────────────
 
 /**
- * Issue a Stripe refund for a ticket and mark the ticket as refunded.
- * Internal helper — used by buyer / organizer / admin refund endpoints.
+ * Refund a ticket through whichever provider collected it and mark the ticket
+ * refunded. Internal helper — used by buyer / organizer / admin refund
+ * endpoints.
  */
 async function refundTicket(ticket, { reason } = {}) {
   if (ticket.refunded) return { ok: true, alreadyRefunded: true };
@@ -462,15 +49,15 @@ async function refundTicket(ticket, { reason } = {}) {
         "Payout for this ticket has already been released to the organizer. Contact support to coordinate a refund.",
     };
   }
-  // Flutterwave tickets refund through the Flutterwave API instead of Stripe.
-  if (ticket.provider === "flutterwave") {
-    if (!ticket.flutterwaveTxId) {
+  // Paystack tickets refund through the Paystack API instead of Stripe.
+  if (ticket.provider === "paystack") {
+    if (!ticket.paystackReference) {
       return { ok: false, message: "No payment record found for this ticket." };
     }
-    const refund = await refundFlutterwaveCharge({ transactionId: ticket.flutterwaveTxId });
+    const refund = await refundPaystackCharge({ reference: ticket.paystackReference });
     ticket.refunded = true;
     ticket.refundedAt = new Date();
-    ticket.flutterwaveRefundId = refund.id;
+    ticket.paystackRefundId = refund.id;
     ticket.isValid = false;
     await ticket.save();
     return { ok: true, refund };
@@ -671,10 +258,14 @@ export const stripeWebhook = async (req, res) => {
           eventId,
           userId: buyerId,
           provider: "stripe",
+          // Stripe-collected sales settle via Wise regardless of what older
+          // PIs' metadata says.
+          payoutProvider: "wise",
           paymentRef: paymentIntent.id,
           currency: "usd",
           platformFeeCents: Number(paymentIntent.metadata?.platformFeeCents || 0),
           sellerNetCents: Number(paymentIntent.metadata?.sellerNetCents || 0),
+          tierId: paymentIntent.metadata?.tierId,
         });
       }
 
@@ -683,16 +274,6 @@ export const stripeWebhook = async (req, res) => {
       }
     } catch (fulfillErr) {
       console.error("Fulfillment error after payment:", fulfillErr);
-    }
-  }
-
-  if (event.type === "account.updated") {
-    const account = event.data.object;
-    if (account.details_submitted && account.charges_enabled) {
-      await User.findOneAndUpdate(
-        { stripeAccountId: account.id },
-        { stripeOnboardingComplete: true }
-      );
     }
   }
 

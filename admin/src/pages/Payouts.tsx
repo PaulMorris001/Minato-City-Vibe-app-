@@ -24,8 +24,11 @@ const statusColor: Record<string, string> = {
   rejected: "#9ca3af",
 };
 
+// stripe/flutterwave remain only so legacy payout docs created before the
+// Paystack/Wise remap still render with a color.
 const providerColor: Record<string, string> = {
   wise: "#9c40ff",
+  paystack: "#09a5db",
   stripe: "#635bff",
   flutterwave: "#f5a623",
 };
@@ -105,7 +108,7 @@ export default function Payouts() {
           <p style={styles.subtitle}>
             Vendor earnings are held in the platform balance until you approve them.
             Approving runs the actual transfer{" "}
-            <strong style={{ color: colors.text }}>(Stripe / Flutterwave / Wise)</strong>.
+            <strong style={{ color: colors.text }}>(Paystack / Wise)</strong>.
             Nothing leaves the platform without approval.
           </p>
         </div>

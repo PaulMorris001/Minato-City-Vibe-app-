@@ -16,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { Avatar } from "@/components/shared/Avatar";
+import { currencyPrefix } from "@/constants/payments";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
 import type { ThemeColors } from "@/constants/theme";
@@ -32,6 +33,7 @@ interface Event {
   isPublic: boolean;
   isPaid: boolean;
   ticketPrice?: number;
+  currency?: string;
   maxGuests?: number;
   ticketsRemaining?: number;
   createdBy: {
@@ -203,7 +205,9 @@ export default function ShareEventScreen() {
             </View>
             {event.isPaid && (
               <View style={[styles.badge, styles.badgePaid]}>
-                <Text style={styles.badgeText}>£{event.ticketPrice}</Text>
+                <Text style={styles.badgeText}>
+                  {currencyPrefix(event.currency)}{event.ticketPrice}
+                </Text>
               </View>
             )}
           </View>

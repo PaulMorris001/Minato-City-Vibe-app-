@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Fonts } from "@/constants/fonts";
+import { currencyPrefix } from "@/constants/payments";
 import { scaleFontSize } from "@/utils/responsive";
 import type { ExternalEvent } from "@/services/externalEvent.service";
 
@@ -29,7 +30,7 @@ interface ExternalEventCardProps {
 
 function formatPriceLine(event: ExternalEvent): string | null {
   if (event.priceMin == null && event.priceMax == null) return null;
-  const sym = event.currency === "USD" ? "$" : event.currency + " ";
+  const sym = currencyPrefix(event.currency);
   if (event.priceMin != null && event.priceMax != null && event.priceMin !== event.priceMax) {
     return `${sym}${Math.round(event.priceMin)} – ${sym}${Math.round(event.priceMax)}`;
   }

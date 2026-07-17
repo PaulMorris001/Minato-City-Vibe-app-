@@ -585,7 +585,7 @@ export async function getProfile(req, res) {
 
 // Update profile picture and/or bio (for both clients and vendors)
 export async function updateProfilePicture(req, res) {
-  const { profilePicture, bio, preferences } = req.body;
+  const { profilePicture, bio, preferences, location } = req.body;
 
   try {
     const user = await User.findById(req.user.id);
@@ -625,6 +625,19 @@ export async function updateProfilePicture(req, res) {
       user.preferences = preferences;
     }
 
+    // Account location (country → state → city). Any user can set this — not
+    // just vendors — because payment routing and selling currency key off
+    // location.country (see services/payments/resolveProvider.js). The vendor
+    // street address, when present, is preserved.
+    if (location && typeof location === "object" && location.country) {
+      user.location = {
+        country: String(location.country || "").trim(),
+        state: String(location.state || "").trim(),
+        city: String(location.city || "").trim(),
+        address: user.location?.address || "",
+      };
+    }
+
     await user.save();
 
     res.json({
@@ -635,6 +648,7 @@ export async function updateProfilePicture(req, res) {
         email: user.email,
         profilePicture: user.profilePicture,
         bio: user.bio,
+        location: user.location,
         isVendor: user.isVendor
       }
     });

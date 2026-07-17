@@ -19,6 +19,11 @@ const ticketSchema = mongoose.Schema({
   purchaseDate: { type: Date, default: Date.now },
   ticketPrice: { type: Number, required: true },
 
+  // Tier purchased (events with ticketTiers). Name/price are snapshotted so the
+  // ticket stays meaningful even if the event's tiers are later edited.
+  tierId: { type: mongoose.Schema.Types.ObjectId },
+  tierName: { type: String },
+
   // Ticket status
   isValid: { type: Boolean, default: true },
 
@@ -26,26 +31,25 @@ const ticketSchema = mongoose.Schema({
   ticketCode: { type: String, unique: true, sparse: true },
 
   // Which provider collected this payment. Drives how refunds are issued.
-  provider: { type: String, enum: ["stripe", "flutterwave"], default: "stripe" },
+  provider: { type: String, enum: ["stripe", "paystack"], default: "stripe" },
 
-  // Which provider settles the seller's share — usually the same as `provider`,
-  // but Wise vendors collect via Stripe and settle via Wise, so the two differ.
-  // Drives the payout job's transfer branch.
-  payoutProvider: { type: String, enum: ["stripe", "flutterwave", "wise"], default: "stripe" },
+  // Which provider settles the seller's share. Stripe-collected sales settle
+  // via Wise; Paystack collects and settles its own. Drives the payout job's
+  // transfer branch.
+  payoutProvider: { type: String, enum: ["wise", "paystack"], default: "wise" },
 
   // Stripe payment tracking
   stripePaymentIntentId: { type: String },
 
-  // Flutterwave payment tracking. amounts below are interpreted in the ticket's
-  // `currency` major units for Flutterwave (whole NGN, not kobo), and in cents
+  // Paystack payment tracking. Amounts below are interpreted in the ticket's
+  // `currency` major units for Paystack (whole NGN, not kobo), and in cents
   // for Stripe — `currency` disambiguates.
-  flutterwaveTxId: { type: String },
-  flutterwaveTransferId: { type: String },
-  flutterwaveRefundId: { type: String },
+  paystackReference: { type: String },
+  paystackRefundId: { type: String },
   currency: { type: String, default: "usd" },
 
   // Platform-charge / delayed-payout accounting.
-  // Stripe: cents. Flutterwave: major currency units.
+  // Stripe: cents. Paystack: major currency units.
   // Set when the ticket is created so the payout job knows what to transfer.
   platformFeeCents: { type: Number, default: 0 },
   sellerNetCents: { type: Number, default: 0 },

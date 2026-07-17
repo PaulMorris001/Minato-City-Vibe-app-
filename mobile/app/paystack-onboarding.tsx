@@ -11,11 +11,9 @@ import {
   Modal,
   FlatList,
 } from "react-native";
-import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
-import { FLUTTERWAVE_COUNTRY_CODES } from "@/constants/payments";
 import { Fonts } from "@/constants/fonts";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -23,7 +21,17 @@ import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 type Bank = { code: string; name: string };
 
-export default function FlutterwaveOnboardingScreen() {
+// Country (lowercased) → ISO code for the banks endpoint. Mirrors the server's
+// BANK_COUNTRY_NAMES map (controllers/paystack.controller.js); launch scope is
+// Nigeria only.
+const PAYSTACK_BANK_COUNTRY_CODES: Record<string, string> = {
+  nigeria: "NG",
+  ghana: "GH",
+  kenya: "KE",
+  "south africa": "ZA",
+};
+
+export default function PaystackOnboardingScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const [loading, setLoading] = useState(true);
@@ -33,7 +41,6 @@ export default function FlutterwaveOnboardingScreen() {
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [savedBank, setSavedBank] = useState<any>(null);
 
-  const [countryCode, setCountryCode] = useState("NG");
   const [banks, setBanks] = useState<Bank[]>([]);
   const [bankPickerOpen, setBankPickerOpen] = useState(false);
   const [bankSearch, setBankSearch] = useState("");
@@ -55,15 +62,14 @@ export default function FlutterwaveOnboardingScreen() {
       if (userJson) {
         const user = JSON.parse(userJson);
         const country = (user?.location?.country || "").trim().toLowerCase();
-        if (FLUTTERWAVE_COUNTRY_CODES[country]) code = FLUTTERWAVE_COUNTRY_CODES[country];
+        if (PAYSTACK_BANK_COUNTRY_CODES[country]) code = PAYSTACK_BANK_COUNTRY_CODES[country];
       }
-      setCountryCode(code);
 
       const [statusRes, banksRes] = await Promise.all([
-        fetch(`${BASE_URL}/flutterwave/connect/status`, {
+        fetch(`${BASE_URL}/paystack/connect/status`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch(`${BASE_URL}/flutterwave/banks?country=${code}`, {
+        fetch(`${BASE_URL}/paystack/banks?country=${code}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);
@@ -90,7 +96,7 @@ export default function FlutterwaveOnboardingScreen() {
     setAccountName("");
     try {
       const token = await SecureStore.getItemAsync("token");
-      const res = await fetch(`${BASE_URL}/flutterwave/connect/resolve`, {
+      const res = await fetch(`${BASE_URL}/paystack/connect/resolve`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ accountNumber, bankCode: selectedBank.code }),
@@ -113,7 +119,7 @@ export default function FlutterwaveOnboardingScreen() {
     setSaving(true);
     try {
       const token = await SecureStore.getItemAsync("token");
-      const res = await fetch(`${BASE_URL}/flutterwave/connect/save`, {
+      const res = await fetch(`${BASE_URL}/paystack/connect/save`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -264,7 +270,7 @@ export default function FlutterwaveOnboardingScreen() {
           <View style={styles.infoRow}>
             <Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} />
             <Text style={styles.infoText}>
-              <Text style={styles.infoLabel}>Powered by Flutterwave: </Text>
+              <Text style={styles.infoLabel}>Powered by Paystack: </Text>
               Trusted across Africa
             </Text>
           </View>

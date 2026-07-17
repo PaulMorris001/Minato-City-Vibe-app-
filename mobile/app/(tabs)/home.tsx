@@ -20,6 +20,7 @@ import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
+import { currencyPrefix } from "@/constants/payments";
 import CreateEventModal from "@/components/client/CreateEventModal";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
@@ -103,6 +104,7 @@ interface TopGuide {
   title: string;
   authorName: string;
   price: number;
+  currency?: string;
   city: string;
   coverImage?: string;
   topic: string;
@@ -192,7 +194,7 @@ function SmallEventCard({
           {/* Price badge */}
           <View style={[styles.smallCardBadge, event.isPaid ? styles.smallCardBadgePaid : styles.smallCardBadgeFree]}>
             <Text style={styles.smallCardBadgeText}>
-              {event.isPaid ? `$${event.ticketPrice ?? ""}` : "FREE"}
+              {event.isPaid ? `${currencyPrefix(event.currency)}${event.ticketPrice ?? ""}` : "FREE"}
             </Text>
           </View>
         </View>
@@ -246,7 +248,7 @@ function SmallExternalEventCard({
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const sym = event.currency === "USD" ? "$" : `${event.currency} `;
+  const sym = currencyPrefix(event.currency);
   const priceLabel =
     event.priceMin != null ? `${sym}${Math.round(event.priceMin)}` : "TICKETS";
 
@@ -335,7 +337,7 @@ function GuideCard({ guide, onPress }: { guide: TopGuide; onPress: () => void })
             <Text style={styles.guideTopicText} numberOfLines={1}>{guide.topic}</Text>
           </View>
           <Text style={styles.guideCardPrice}>
-            {guide.price === 0 ? "FREE" : `$${guide.price}`}
+            {guide.price === 0 ? "FREE" : `${currencyPrefix(guide.currency)}${guide.price}`}
           </Text>
         </View>
       </View>
@@ -535,6 +537,11 @@ export default function Home() {
     // The hook runs checkout AND confirms server-side before returning.
     const result = await payForTicket(eventId);
     if (!result.success) {
+      if (result.code === "tier_required") {
+        // Multi-tier event — the detail screen owns the tier picker.
+        router.push(`/event/${eventId}` as any);
+        return;
+      }
       if (result.error) Alert.alert("Payment Failed", result.error);
       return;
     }

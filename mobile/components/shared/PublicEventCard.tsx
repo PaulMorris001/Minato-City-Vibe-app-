@@ -10,6 +10,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Fonts } from "@/constants/fonts";
+import { currencyPrefix } from "@/constants/payments";
 import { scaleFontSize } from "@/utils/responsive";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import * as SecureStore from "expo-secure-store";
@@ -28,6 +29,10 @@ export interface PublicEvent {
   isPublic: boolean;
   isPaid: boolean;
   ticketPrice?: number;
+  /** ISO code the ticket is priced in (USD, NGN, …). Absent on legacy events → USD. */
+  currency?: string;
+  /** Named price tiers; when >1 the card shows "From <cheapest>" and buying routes to the detail screen's tier picker. */
+  ticketTiers?: { _id: string; name: string; price: number }[];
   maxGuests?: number;
   ticketsSold?: number;
   ticketsRemaining?: number;
@@ -152,7 +157,8 @@ export default function PublicEventCard({
                   >
                     <Ionicons name="pricetag" size={12} color="#fff" />
                     <Text style={styles.eventCardPriceText}>
-                      ${formatPrice(event.ticketPrice)}
+                      {(event.ticketTiers?.length ?? 0) > 1 ? "From " : ""}
+                      {currencyPrefix(event.currency)}{formatPrice(event.ticketPrice)}
                     </Text>
                   </LinearGradient>
 
@@ -169,6 +175,11 @@ export default function PublicEventCard({
                     style={styles.buyTicketButton}
                     onPress={(e) => {
                       e.stopPropagation();
+                      if ((event.ticketTiers?.length ?? 0) > 1) {
+                        // Tiered event — the detail screen owns the tier picker.
+                        router.push(`/event/${event._id}` as any);
+                        return;
+                      }
                       onPurchaseTicket(event._id, event.title);
                     }}
                     activeOpacity={0.8}

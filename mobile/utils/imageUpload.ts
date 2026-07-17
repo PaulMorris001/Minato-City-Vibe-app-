@@ -346,6 +346,37 @@ export function getThumbnailUrl(url: string): string {
 }
 
 /**
+ * Circular-bitmap avatar URL for consumers that can't mask the image
+ * themselves (e.g. native tab-bar icons — UIKit renders the bitmap as-is).
+ * The circle has to be baked into the file, so this only works for hosts
+ * with a circular-crop transform:
+ *   - Cloudinary: r_max + f_png (f_auto could negotiate down to JPEG, which
+ *     has no alpha and fills the corners)
+ *   - Google avatars (lh3.googleusercontent.com): the `-cc` sizing param
+ * Returns null for any other host — callers must fall back to a non-photo
+ * icon rather than render a square.
+ */
+export function getCircularAvatarUrl(url: string, sizePx: number): string | null {
+  if (!url) return null;
+  if (url.includes('cloudinary.com')) {
+    return transformCloudinaryUrl(url, {
+      width: sizePx,
+      height: sizePx,
+      crop: 'fill',
+      gravity: 'face',
+      circle: true,
+      format: 'png',
+    });
+  }
+  if (/^https:\/\/lh\d+\.googleusercontent\.com\//.test(url)) {
+    // Replace any existing sizing suffix (e.g. "=s96-c") with a circular crop.
+    const base = url.replace(/=[^=/]*$/, '');
+    return `${base}=s${sizePx}-cc`;
+  }
+  return null;
+}
+
+/**
  * Get profile picture URL (circular, auto-cropped to face)
  */
 export function getProfilePictureUrl(url: string, size: number = 200): string {

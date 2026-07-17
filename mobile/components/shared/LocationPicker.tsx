@@ -416,7 +416,7 @@ const createStyles = (c: ThemeColors) =>
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#161620",
+    backgroundColor: c.background,
     margin: 16,
     marginBottom: 8,
     paddingHorizontal: 14,
@@ -436,7 +436,7 @@ const createStyles = (c: ThemeColors) =>
     paddingHorizontal: 16,
     paddingVertical: 15,
     borderBottomWidth: 1,
-    borderBottomColor: "#2a2a3a",
+    borderBottomColor: c.border,
   },
   itemText: {
     fontSize: 16,
