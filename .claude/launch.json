@@ -6,6 +6,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "4988", "--directory", "server/public"],
       "port": 4988
+    },
+    {
+      "name": "cityvibe-api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "server", "run", "dev"],
+      "port": 3100
     }
   ]
 }

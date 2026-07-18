@@ -140,7 +140,9 @@ interface SearchedUser {
   businessName?: string;
 }
 
-const HERO_HEIGHT = 380;
+// Height of the cover image block. The title/meta sit below it in normal
+// flow (not overlaid), so this is shorter than the old text-over-image hero.
+const HERO_HEIGHT = 300;
 
 // ─── Pulsing pink dot used by the live countdown chip ────────────────────────
 function PulseDot({ color = AU.pink, size = 6 }: { color?: string; size?: number }) {
@@ -892,6 +894,9 @@ export default function EventDetailsPage() {
         showsVerticalScrollIndicator={false}
       >
         {/* ─── HERO ─────────────────────────────────────────── */}
+        {/* Pure media block. The title, chips and meta all live BELOW the
+            photo on the screen background, so text never fights the image
+            for contrast and the layout reads the same in light and dark. */}
         <View style={styles.hero}>
           {/* Cover image (or fallback gradient) */}
           {event.image ? (
@@ -917,14 +922,6 @@ export default function EventDetailsPage() {
           {/* Emoji watermark */}
           <Text style={styles.heroEmoji}>{heroEmoji}</Text>
 
-          {/* Bottom readability fade */}
-          <LinearGradient
-            colors={["rgba(11,6,19,0)", colors.imageScrim, colors.backgroundDeep]}
-            locations={[0, 0.5, 1]}
-            style={styles.heroFade}
-            pointerEvents="none"
-          />
-
           {/* Top chrome — over hero */}
           <SafeAreaView
             edges={["top"]}
@@ -948,34 +945,6 @@ export default function EventDetailsPage() {
             </View>
           </SafeAreaView>
 
-          {/* Chip row */}
-          <View style={styles.chipRow}>
-            {!!countdown && (
-              <View style={[styles.chip, styles.chipPink]}>
-                <PulseDot />
-                <Text style={[styles.chipText, { color: AU.pinkSoft }]}>{countdown}</Text>
-              </View>
-            )}
-            <View style={[styles.chip, styles.chipDark]}>
-              <Text style={[styles.chipText, { color: colors.textBright }]}>
-                {event.isPublic ? "PUBLIC" : "INVITE ONLY"}
-              </Text>
-            </View>
-            {event.isPaid && (
-              <View style={[styles.chip, styles.chipDark]}>
-                <Text style={[styles.chipText, { color: colors.textBright }]}>
-                  TICKETED · {(event.ticketTiers?.length ?? 0) > 1 ? "FROM " : ""}
-                  {currencyPrefix(event.currency)}{event.ticketPrice?.toFixed(0) ?? "—"}
-                </Text>
-              </View>
-            )}
-            {soldOut && (
-              <View style={[styles.chip, styles.chipDark]}>
-                <Text style={[styles.chipText, { color: colors.textBright }]}>SOLD OUT</Text>
-              </View>
-            )}
-          </View>
-
           {/* Expand cover to full-screen viewer */}
           {!!event.image && (
             <TouchableOpacity
@@ -986,62 +955,93 @@ export default function EventDetailsPage() {
               <Ionicons name="expand-outline" size={18} color="#fff" />
             </TouchableOpacity>
           )}
+        </View>
 
-          {/* Title + meta */}
-          <View style={styles.heroBottom}>
-            {isCreator && editingTitle ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <TextInput
-                  style={[styles.heroTitle, { flex: 1, borderBottomWidth: 1, borderBottomColor: "rgba(168,85,247,0.6)", paddingBottom: 2 }]}
-                  value={titleDraft}
-                  onChangeText={setTitleDraft}
-                  autoFocus
-                  multiline
-                  returnKeyType="done"
-                  blurOnSubmit
-                  onBlur={handleSaveTitle}
-                  editable={!savingTitle}
-                />
-                {savingTitle ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <TouchableOpacity onPress={handleSaveTitle} hitSlop={8}>
-                    <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
-                  </TouchableOpacity>
-                )}
+        {/* ─── TITLE / META — on the constant screen background ── */}
+        <View style={styles.heroInfo}>
+          {/* Chip row */}
+          <View style={styles.chipRow}>
+            {!!countdown && (
+              <View style={[styles.chip, styles.chipPink]}>
+                <PulseDot color={colors.accentPink} />
+                <Text style={[styles.chipText, { color: colors.accentPink }]}>{countdown}</Text>
               </View>
-            ) : (
-              <TouchableOpacity
-                onPress={isCreator ? () => { setTitleDraft(event.title); setEditingTitle(true); } : undefined}
-                activeOpacity={isCreator ? 0.7 : 1}
-                style={{ flexDirection: "row", alignItems: "flex-start", gap: 6 }}
-              >
-                <Text style={[styles.heroTitle, { flex: 1 }]} numberOfLines={3}>{event.title}</Text>
-                {isCreator && <Ionicons name="pencil-outline" size={16} color={colors.textFaint} style={{ marginTop: 4 }} />}
-              </TouchableOpacity>
             )}
-            <View style={styles.heroMetaRow}>
-              <Ionicons name="calendar-outline" size={14} color={colors.primaryLight} />
-              <Text style={styles.heroMetaText}>{dateLine}</Text>
-              {!!neighborhood && (
-                <>
-                  <View style={styles.metaDot} />
-                  <Ionicons
-                    name={event.isVirtual ? "videocam-outline" : "location-outline"}
-                    size={14}
-                    color={colors.primaryLight}
-                  />
-                  <Text style={styles.heroMetaText}>{neighborhood}</Text>
-                </>
-              )}
-              {isCreator && (
-                <>
-                  <View style={styles.metaDot} />
-                  <Ionicons name="eye-outline" size={14} color={colors.primaryLight} />
-                  <Text style={styles.heroMetaText}>{event.seenCount ?? 0} seen</Text>
-                </>
+            <View style={[styles.chip, styles.chipNeutral]}>
+              <Text style={[styles.chipText, { color: colors.textBright }]}>
+                {event.isPublic ? "PUBLIC" : "INVITE ONLY"}
+              </Text>
+            </View>
+            {event.isPaid && (
+              <View style={[styles.chip, styles.chipNeutral]}>
+                <Text style={[styles.chipText, { color: colors.textBright }]}>
+                  TICKETED · {(event.ticketTiers?.length ?? 0) > 1 ? "FROM " : ""}
+                  {currencyPrefix(event.currency)}{event.ticketPrice?.toFixed(0) ?? "—"}
+                </Text>
+              </View>
+            )}
+            {soldOut && (
+              <View style={[styles.chip, styles.chipNeutral]}>
+                <Text style={[styles.chipText, { color: colors.textBright }]}>SOLD OUT</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Title */}
+          {isCreator && editingTitle ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <TextInput
+                style={[styles.heroTitle, { flex: 1, borderBottomWidth: 1, borderBottomColor: "rgba(168,85,247,0.6)", paddingBottom: 2 }]}
+                value={titleDraft}
+                onChangeText={setTitleDraft}
+                autoFocus
+                multiline
+                returnKeyType="done"
+                blurOnSubmit
+                onBlur={handleSaveTitle}
+                editable={!savingTitle}
+              />
+              {savingTitle ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <TouchableOpacity onPress={handleSaveTitle} hitSlop={8}>
+                  <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                </TouchableOpacity>
               )}
             </View>
+          ) : (
+            <TouchableOpacity
+              onPress={isCreator ? () => { setTitleDraft(event.title); setEditingTitle(true); } : undefined}
+              activeOpacity={isCreator ? 0.7 : 1}
+              style={{ flexDirection: "row", alignItems: "flex-start", gap: 6 }}
+            >
+              <Text style={[styles.heroTitle, { flex: 1 }]} numberOfLines={3}>{event.title}</Text>
+              {isCreator && <Ionicons name="pencil-outline" size={16} color={colors.textFaint} style={{ marginTop: 4 }} />}
+            </TouchableOpacity>
+          )}
+
+          {/* Meta */}
+          <View style={styles.heroMetaRow}>
+            <Ionicons name="calendar-outline" size={14} color={colors.primaryLight} />
+            <Text style={styles.heroMetaText}>{dateLine}</Text>
+            {!!neighborhood && (
+              <>
+                <View style={styles.metaDot} />
+                <Ionicons
+                  name={event.isVirtual ? "videocam-outline" : "location-outline"}
+                  size={14}
+                  color={colors.primaryLight}
+                />
+                <Text style={styles.heroMetaText}>{neighborhood}</Text>
+              </>
+            )}
+            {isCreator && (
+              <>
+                <View style={styles.metaDot} />
+                <Ionicons name="eye-outline" size={14} color={colors.primaryLight} />
+                <Text style={styles.heroMetaText}>{event.seenCount ?? 0} seen</Text>
+              </>
+            )}
           </View>
         </View>
 
@@ -2275,13 +2275,6 @@ const createStyles = (c: ThemeColors) =>
     opacity: 0.22,
     transform: [{ rotate: "-12deg" }],
   },
-  heroFade: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 220,
-  },
   topChromeSafe: {
     position: "absolute",
     top: 0,
@@ -2298,14 +2291,10 @@ const createStyles = (c: ThemeColors) =>
   },
   topChromeRight: { flexDirection: "row", gap: 8 },
   chipRow: {
-    position: "absolute",
-    top: 110,
-    left: 18,
-    right: 18,
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 6,
-    zIndex: 5,
+    marginBottom: 12,
   },
   chip: {
     flexDirection: "row",
@@ -2317,11 +2306,13 @@ const createStyles = (c: ThemeColors) =>
     borderWidth: 1,
   },
   chipPink: {
-    backgroundColor: "rgba(236,72,153,0.18)",
+    backgroundColor: "rgba(236,72,153,0.14)",
     borderColor: "rgba(236,72,153,0.3)",
   },
-  chipDark: {
-    backgroundColor: "rgba(0,0,0,0.4)",
+  // Chips sit on the screen background (not the photo), so they use the
+  // theme's glass fills instead of a black photo-scrim.
+  chipNeutral: {
+    backgroundColor: c.glassFillSubtle,
     borderColor: c.glassStrokeStrong,
   },
   chipText: {
@@ -2331,7 +2322,7 @@ const createStyles = (c: ThemeColors) =>
   },
   heroExpandButton: {
     position: "absolute",
-    bottom: 96,
+    bottom: 14,
     right: 18,
     width: 36,
     height: 36,
@@ -2341,22 +2332,18 @@ const createStyles = (c: ThemeColors) =>
     justifyContent: "center",
     zIndex: 3,
   },
-  heroBottom: {
-    position: "absolute",
-    left: 22,
-    right: 22,
-    bottom: 24,
-    zIndex: 2,
+  // Title / chips / meta block below the cover image, in normal flow on the
+  // screen background — themed text, no shadows needed for legibility.
+  heroInfo: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
   },
   heroTitle: {
     color: c.text,
     fontFamily: "BricolageGrotesque_800ExtraBold",
-    fontSize: 38,
-    lineHeight: 38 * 0.94,
-    letterSpacing: -1.33,
-    textShadowColor: "rgba(0,0,0,0.4)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 18,
+    fontSize: 34,
+    lineHeight: 34 * 0.98,
+    letterSpacing: -1.1,
   },
   heroMetaRow: {
     flexDirection: "row",
@@ -2366,7 +2353,7 @@ const createStyles = (c: ThemeColors) =>
     flexWrap: "wrap",
   },
   heroMetaText: {
-    color: "rgba(255,255,255,0.9)",
+    color: c.textDim,
     fontFamily: Fonts.semiBold,
     fontSize: 13,
   },
@@ -2374,7 +2361,7 @@ const createStyles = (c: ThemeColors) =>
     width: 3,
     height: 3,
     borderRadius: 1.5,
-    backgroundColor: "rgba(255,255,255,0.45)",
+    backgroundColor: c.textFaint,
     marginHorizontal: 4,
   },
 

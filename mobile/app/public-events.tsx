@@ -667,7 +667,13 @@ export default function PublicEventsPage() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
-      <LinearGradient colors={["#1A0B2E", colors.backgroundDeep]} locations={[0, 0.55]} style={StyleSheet.absoluteFill} />
+      {/* Ambient header wash — deep purple on dark, soft lavender on light so
+          the top of the page doesn't clash with the light background. */}
+      <LinearGradient
+        colors={[isDark ? "#1A0B2E" : "#EDE9FE", colors.backgroundDeep]}
+        locations={[0, 0.55]}
+        style={StyleSheet.absoluteFill}
+      />
       <View style={styles.ambientGlow} pointerEvents="none" />
 
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
@@ -696,7 +702,12 @@ export default function PublicEventsPage() {
             {ListHeader}
             {[0, 1, 2].map((i) => (
               <View key={i} style={[styles.card, { marginBottom: 0 }]}>
-                <View style={[styles.poster, { backgroundColor: "#241540" }]} />
+                <View
+                  style={[
+                    styles.poster,
+                    { backgroundColor: isDark ? "#241540" : colors.cardAlt },
+                  ]}
+                />
                 <View style={styles.cardBody}>
                   <View style={styles.skelLine} />
                   <View style={[styles.skelLine, { width: "40%", marginTop: 8 }]} />
@@ -1017,7 +1028,7 @@ const createStyles = (c: ThemeColors) =>
   footerText: { fontFamily: AU_FONT.body, fontSize: 13, color: c.textDim },
 
   // Sheets
-  sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)" },
+  sheetOverlay: { flex: 1, backgroundColor: c.modalOverlay },
   sheet: {
     backgroundColor: c.backgroundDeep,
     borderTopLeftRadius: 24,

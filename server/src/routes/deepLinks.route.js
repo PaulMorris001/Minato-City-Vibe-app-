@@ -43,6 +43,28 @@ function toSocialPreviewImage(url) {
   return url.replace('/upload/', '/upload/w_1200,h_630,c_fill,q_auto:eco,f_jpg/');
 }
 
+// Display symbols for the currencies we support — mirrors the mobile app's
+// constants/payments.ts so a naira event never previews with a "$". Unknown
+// codes fall back to "CODE amount" (e.g. "GHS 50").
+const CURRENCY_SYMBOLS = {
+  USD: '$',
+  NGN: '₦',
+  GHS: '₵',
+  KES: 'KSh ',
+  ZAR: 'R',
+  UGX: 'USh ',
+  TZS: 'TSh ',
+  RWF: 'FRw ',
+  ZMW: 'ZK ',
+};
+
+function formatPrice(amount, currency) {
+  const code = String(currency || 'USD').toUpperCase();
+  const sym = CURRENCY_SYMBOLS[code] || `${code} `;
+  const n = Number(amount);
+  return `${sym}${Number.isFinite(n) ? n.toLocaleString('en-US') : amount}`;
+}
+
 function formatEventWhen(dateValue) {
   if (!dateValue) return '';
   const d = new Date(dateValue);
@@ -351,7 +373,7 @@ router.get('/event/:token', async (req, res) => {
   const venue = event.location || '';
   const host = event.createdBy?.username ? `Hosted by ${event.createdBy.username}` : '';
   const priceLine = event.isPaid && event.ticketPrice
-    ? `From $${event.ticketPrice}`
+    ? `From ${formatPrice(event.ticketPrice, event.currency)}`
     : (!event.isPaid && event.isPublic ? 'Free entry' : '');
 
   // Description used for previewers — kept tight so WhatsApp / iMessage show
@@ -430,7 +452,7 @@ router.get('/guide/:id', async (req, res) => {
     ? `${guide.city}${guide.cityState ? ', ' + guide.cityState : ''}`
     : '';
   const author = guide.authorName ? `By ${guide.authorName}` : '';
-  const priceLine = guide.price > 0 ? `$${guide.price}` : 'Free';
+  const priceLine = guide.price > 0 ? formatPrice(guide.price, guide.currency) : 'Free';
 
   const descBits = [cityLine, guide.topic, author, priceLine].filter(Boolean);
   const description = truncate(
