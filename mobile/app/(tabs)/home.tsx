@@ -616,16 +616,18 @@ export default function Home() {
   // public-events list), minus whatever is shown as the hero so it isn't dupes.
   const nativePool = highlights.upcoming.length ? highlights.upcoming : publicEvents;
 
+  // In-app events lead the feed (date-asc); external (Ticketmaster etc.)
+  // suggestions only follow after every native event. This also means the
+  // hero promotion below prefers a native event whenever one exists.
   const baseFeed = [
     ...nativePool
       .filter((e) => e._id !== myHero?._id)
-      .map((e) => ({ _kind: "native" as const, data: e, sort: new Date(e.date).getTime() })),
-    ...externalEvents.map((e) => ({
-      _kind: "external" as const,
-      data: e,
-      sort: new Date(e.date).getTime(),
-    })),
-  ].sort((a, b) => a.sort - b.sort);
+      .map((e) => ({ _kind: "native" as const, data: e, sort: new Date(e.date).getTime() }))
+      .sort((a, b) => a.sort - b.sort),
+    ...externalEvents
+      .map((e) => ({ _kind: "external" as const, data: e, sort: new Date(e.date).getTime() }))
+      .sort((a, b) => a.sort - b.sort),
+  ];
 
   // Resolve hero + the carousel feed. When there's no personal event, the first
   // feed item is promoted to the hero and removed from the carousel.
@@ -868,8 +870,8 @@ export default function Home() {
             />
             <FlatList
               horizontal
-              // Mixed feed (native + external), date-sorted, with the hero item
-              // already removed when it was promoted from this carousel.
+              // Mixed feed — in-app events first, then external — with the hero
+              // item already removed when it was promoted from this carousel.
               data={mixedFeed}
               keyExtractor={(item) => `${item._kind}-${item.data._id}`}
               showsHorizontalScrollIndicator={false}

@@ -585,13 +585,39 @@ export async function getProfile(req, res) {
 
 // Update profile picture and/or bio (for both clients and vendors)
 export async function updateProfilePicture(req, res) {
-  const { profilePicture, bio, preferences, location } = req.body;
+  const { profilePicture, bio, preferences, location, username } = req.body;
 
   try {
     const user = await User.findById(req.user.id);
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
+    }
+
+    // Username change — validated before any other mutation (notably the
+    // Cloudinary upload below) so a rejected name can't leave side effects
+    // behind. Mirrors register's rules: trim, 2–30 chars, content filter,
+    // case-insensitive uniqueness. Excluding self allows display-case changes.
+    if (username !== undefined) {
+      const normalizedUsername = String(username).trim();
+      if (normalizedUsername.length < 2 || normalizedUsername.length > 30) {
+        return res
+          .status(400)
+          .json({ message: "Username must be between 2 and 30 characters." });
+      }
+      assertClean([{ field: "Username", value: normalizedUsername }]);
+      const taken = await User.findOne({
+        _id: { $ne: user._id },
+        username: exactCaseInsensitive(normalizedUsername),
+      })
+        .select("_id")
+        .lean();
+      if (taken) {
+        return res
+          .status(409)
+          .json({ message: "This username is already taken." });
+      }
+      user.username = normalizedUsername;
     }
 
     // Only touch the picture when the client actually sends one — otherwise a

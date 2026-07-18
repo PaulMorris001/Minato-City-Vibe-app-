@@ -35,6 +35,12 @@ const THEME_OPTIONS = [
   { value: "dark", label: "Dark", icon: "moon-outline" },
 ] as const;
 
+// Same format rule as the signup wizard — new usernames stay clean even though
+// the server (matching /register) only enforces 2–30 chars.
+const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
+
+type UsernameStatus = "idle" | "invalid" | "checking" | "available" | "taken";
+
 export default function SettingsScreen() {
   const { colors, preference, setPreference } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -57,6 +63,91 @@ export default function SettingsScreen() {
   const [verificationNotes, setVerificationNotes] = useState("");
   const [licenseImage, setLicenseImage] = useState("");
   const [submittingVerification, setSubmittingVerification] = useState(false);
+
+  // Inline username editing (client account only).
+  const [editingUsername, setEditingUsername] = useState(false);
+  const [usernameDraft, setUsernameDraft] = useState("");
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
+  const [savingUsername, setSavingUsername] = useState(false);
+
+  // Debounced live availability check while the username editor is open —
+  // same flow as the signup wizard. A network hiccup stays non-blocking; the
+  // final PUT is authoritative and surfaces a clear 409.
+  useEffect(() => {
+    if (!editingUsername) return;
+    const raw = usernameDraft.trim().replace(/^@+/, "");
+    // Unchanged (ignoring case) means "no rename" — nothing to check.
+    if (!raw || raw.toLowerCase() === user.username.toLowerCase()) {
+      setUsernameStatus("idle");
+      return;
+    }
+    if (!USERNAME_RE.test(raw)) {
+      setUsernameStatus("invalid");
+      return;
+    }
+    setUsernameStatus("checking");
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const res = await axios.get(`${BASE_URL}/auth/check-availability`, {
+          params: { username: raw },
+        });
+        const info = res.data?.username;
+        if (!cancelled) {
+          setUsernameStatus(info ? (info.available ? "available" : "taken") : "idle");
+        }
+      } catch {
+        if (!cancelled) setUsernameStatus("idle");
+      }
+    }, 450);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [usernameDraft, editingUsername, user.username]);
+
+  const openUsernameEditor = () => {
+    setUsernameDraft(user.username);
+    setUsernameStatus("idle");
+    setEditingUsername(true);
+  };
+
+  const handleSaveUsername = async () => {
+    const next = usernameDraft.trim().replace(/^@+/, "");
+    if (next === user.username) {
+      setEditingUsername(false);
+      return;
+    }
+    if (!USERNAME_RE.test(next)) {
+      showError("3–20 characters — letters, numbers and underscores only.");
+      return;
+    }
+    setSavingUsername(true);
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      await axios.put(
+        `${BASE_URL}/profile/picture`,
+        { username: next },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setUser((prev) => ({ ...prev, username: next }));
+      // Keep the cached user JSON (home greeting etc.) in sync.
+      try {
+        const cached = await SecureStore.getItemAsync("user");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          parsed.username = next;
+          await SecureStore.setItemAsync("user", JSON.stringify(parsed));
+        }
+      } catch {}
+      setEditingUsername(false);
+      showSuccess("Username updated");
+    } catch (error: any) {
+      showError(error.response?.data?.message || "Failed to update username");
+    } finally {
+      setSavingUsername(false);
+    }
+  };
 
   useEffect(() => {
     fetchProfile();
@@ -336,8 +427,84 @@ export default function SettingsScreen() {
           </View>
           <View style={styles.infoContent}>
             <Text style={styles.infoLabel}>Username</Text>
-            <Text style={styles.infoValue}>{user.username}</Text>
+            {editingUsername ? (
+              <View style={styles.usernameEditWrap}>
+                <TextInput
+                  style={styles.usernameInput}
+                  value={usernameDraft}
+                  onChangeText={(t) => setUsernameDraft(t.replace(/^@+/, ""))}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoFocus
+                  maxLength={20}
+                  editable={!savingUsername}
+                  placeholder="username"
+                  placeholderTextColor={colors.textMuted}
+                />
+                {usernameStatus !== "idle" && (
+                  <Text
+                    style={[
+                      styles.usernameHint,
+                      usernameStatus === "invalid" && { color: colors.warning },
+                      usernameStatus === "checking" && { color: colors.textMuted },
+                      usernameStatus === "available" && { color: "#22c55e" },
+                      usernameStatus === "taken" && { color: colors.error },
+                    ]}
+                  >
+                    {usernameStatus === "invalid" &&
+                      "3–20 characters — letters, numbers, underscores."}
+                    {usernameStatus === "checking" && "Checking availability…"}
+                    {usernameStatus === "available" && "Available"}
+                    {usernameStatus === "taken" && "That username is taken."}
+                  </Text>
+                )}
+                <View style={styles.usernameActions}>
+                  <TouchableOpacity
+                    style={styles.usernameCancelBtn}
+                    onPress={() => setEditingUsername(false)}
+                    disabled={savingUsername}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.usernameCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.usernameSaveBtn,
+                      (savingUsername ||
+                        usernameStatus === "taken" ||
+                        usernameStatus === "invalid") &&
+                        styles.saveButtonDisabled,
+                    ]}
+                    onPress={handleSaveUsername}
+                    disabled={
+                      savingUsername ||
+                      usernameStatus === "taken" ||
+                      usernameStatus === "invalid"
+                    }
+                    activeOpacity={0.8}
+                  >
+                    {savingUsername ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.usernameSaveText}>Save</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <Text style={styles.infoValue}>{user.username}</Text>
+            )}
           </View>
+          {activeAccount === "client" && !editingUsername && (
+            <TouchableOpacity
+              style={styles.usernameEditBtn}
+              onPress={openUsernameEditor}
+              activeOpacity={0.7}
+              accessibilityLabel="Change username"
+            >
+              <Ionicons name="pencil-outline" size={16} color={Colors.primary} />
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.infoRow}>
@@ -747,6 +914,65 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 13,
     fontFamily: Fonts.regular,
     color: c.textSecondary,
+  },
+  usernameEditWrap: {
+    marginTop: 2,
+  },
+  usernameInput: {
+    backgroundColor: c.card,
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    fontFamily: Fonts.medium,
+    color: c.text,
+  },
+  usernameHint: {
+    fontSize: 12,
+    fontFamily: Fonts.regular,
+    marginTop: 6,
+  },
+  usernameActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 10,
+  },
+  usernameCancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  usernameCancelText: {
+    fontSize: 13,
+    fontFamily: Fonts.semiBold,
+    color: c.textSecondary,
+  },
+  usernameSaveBtn: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    minWidth: 64,
+    alignItems: "center",
+  },
+  usernameSaveText: {
+    fontSize: 13,
+    fontFamily: Fonts.semiBold,
+    color: c.white,
+  },
+  usernameEditBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: c.primaryFaded,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
   },
   preferenceItem: {
     flexDirection: "row",
