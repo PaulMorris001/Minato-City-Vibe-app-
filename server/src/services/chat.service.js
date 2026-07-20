@@ -17,7 +17,7 @@ class ChatService {
   /**
    * Create or get existing direct chat between two users
    */
-  async getOrCreateDirectChat(userId1, userId2) {
+  async getOrCreateDirectChat(userId1, userId2, skipMutualCheck = false) {
     // Check if chat already exists
     let chat = await Chat.findOne({
       type: 'direct',
@@ -31,12 +31,15 @@ class ChatService {
       });
 
     if (!chat) {
-      // Only mutual follows can start new direct chats
-      const isMutual = await areMutualFollows(userId1, userId2);
-      if (!isMutual) {
-        const error = new Error("You can only chat with mutual follows. Both users must follow each other.");
-        error.statusCode = 403;
-        throw error;
+      // Only mutual follows can start new direct chats — unless this is a
+      // trusted commerce-initiated chat (see getOrCreateDirectChatForOrder).
+      if (!skipMutualCheck) {
+        const isMutual = await areMutualFollows(userId1, userId2);
+        if (!isMutual) {
+          const error = new Error("You can only chat with mutual follows. Both users must follow each other.");
+          error.statusCode = 403;
+          throw error;
+        }
       }
 
       // Create new chat
@@ -53,6 +56,16 @@ class ChatService {
     }
 
     return chat;
+  }
+
+  /**
+   * Open (or reuse) a client↔vendor direct chat for an order checkout.
+   * Placing an order is a legitimate reason to start the conversation, so this
+   * bypasses the mutual-follow gate. Only the order controller calls this — the
+   * general POST /chats/direct endpoint keeps the gate.
+   */
+  async getOrCreateDirectChatForOrder(clientId, vendorId) {
+    return this.getOrCreateDirectChat(clientId, vendorId, true);
   }
 
   /**
@@ -129,7 +142,7 @@ class ChatService {
    * Send a message in a chat
    */
   async sendMessage(chatId, senderId, messageData) {
-    const { type, content, imageUrl, eventId, guideId, replyTo } = messageData;
+    const { type, content, imageUrl, eventId, guideId, orderId, replyTo } = messageData;
 
     // Verify chat exists and user is participant
     const chat = await Chat.findById(chatId);
@@ -181,6 +194,7 @@ class ChatService {
       imageUrl: finalImageUrl,
       event: eventId,
       guide: guideId,
+      order: orderId,
       replyTo,
       mentions
     });
@@ -214,6 +228,7 @@ class ChatService {
     });
     await message.populate('event');
     await message.populate('guide', 'title authorName city cityState topic price');
+    await message.populate('order');
 
     // Emit message via Socket.IO to the active chat room
     emitNewMessage(chatId.toString(), message);
@@ -302,6 +317,7 @@ class ChatService {
       })
       .populate('event')
       .populate('guide', 'title authorName city cityState topic price')
+      .populate('order')
       .populate('reactions.user', 'username profilePicture');
 
     const total = await Message.countDocuments({
@@ -466,6 +482,7 @@ class ChatService {
     });
     await message.populate('event');
     await message.populate('guide', 'title authorName city cityState topic price');
+    await message.populate('order');
     await message.populate('reactions.user', 'username profilePicture');
 
     const io = getSocketInstance();

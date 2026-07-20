@@ -14,6 +14,7 @@ import User from "../../models/user.model.js";
 import Event from "../../models/event.model.js";
 import Ticket from "../../models/ticket.model.js";
 import { Booking } from "../../models/booking.model.js";
+import { Order } from "../../models/order.model.js";
 import { sendPushNotification } from "../notification.service.js";
 import {
   createPaystackTransfer,
@@ -181,6 +182,8 @@ async function markRelatedSettled(payout, transferId) {
     );
   } else if (payout.relatedType === "booking") {
     await Booking.updateOne({ _id: payout.relatedId }, { transferRef: transferId });
+  } else if (payout.relatedType === "order") {
+    await Order.updateOne({ _id: payout.relatedId }, { transferRef: transferId });
   }
   // guide: the purchase is already recorded on the guide; nothing else to mark.
 }

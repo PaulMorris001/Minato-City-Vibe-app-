@@ -18,6 +18,12 @@ const serviceSchema = mongoose.Schema({
         type: String,
         required: true
     },
+    // Optional grouping label so a vendor can organise their catalogue into
+    // sections (e.g. "Foods", "Drinks", "Birthday Party"). Empty = ungrouped.
+    section: {
+        type: String,
+        default: ""
+    },
     price: {
         type: Number,
         required: true

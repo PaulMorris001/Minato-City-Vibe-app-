@@ -50,6 +50,7 @@ export default function ServiceModal({
     name: "",
     description: "",
     category: "",
+    section: "",
     price: "",
     currency: "USD",
     durationValue: "",
@@ -64,6 +65,7 @@ export default function ServiceModal({
         name: service.name,
         description: service.description,
         category: service.category,
+        section: service.section || "",
         price: service.price.toString(),
         currency: service.currency,
         durationValue: service.duration?.value.toString() || "",
@@ -101,6 +103,7 @@ export default function ServiceModal({
       name: "",
       description: "",
       category: "",
+      section: "",
       price: "",
       currency: "USD",
       durationValue: "",
@@ -177,6 +180,7 @@ export default function ServiceModal({
         name: formData.name.trim(),
         description: formData.description.trim(),
         category: formData.category.trim(),
+        section: formData.section.trim(),
         price: parseFloat(formData.price),
         currency: formData.currency,
         availability: formData.availability,
@@ -273,6 +277,23 @@ export default function ServiceModal({
                 setFormData({ ...formData, category: text })
               }
               placeholder="e.g., Photography, Catering, Music"
+              placeholderTextColor={colors.textMuted}
+            />
+          </View>
+
+          {/* Section — groups items in the catalogue (Foods, Drinks, etc.) */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Section (Optional)</Text>
+            <Text style={styles.hint}>
+              Groups this item in your catalogue, e.g. "Foods", "Drinks", "Birthday Party"
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={formData.section}
+              onChangeText={(text) =>
+                setFormData({ ...formData, section: text })
+              }
+              placeholder="e.g., Foods"
               placeholderTextColor={colors.textMuted}
             />
           </View>

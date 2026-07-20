@@ -53,7 +53,7 @@ export interface Message {
   _id: string;
   chat: string;
   sender: User;
-  type: "text" | "image" | "event" | "guide" | "system";
+  type: "text" | "image" | "event" | "guide" | "system" | "order";
   content?: string;
   imageUrl?: string;
   event?: any;
@@ -66,6 +66,7 @@ export interface Message {
     topic?: string;
     price?: number;
   };
+  order?: import("@/libs/interfaces").Order;
   status: "sent" | "delivered" | "read" | "sending" | "failed";
   readBy?: Array<{ user: string; readAt: string }>;
   replyTo?: Message;

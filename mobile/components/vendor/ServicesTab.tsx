@@ -48,6 +48,36 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
     return services;
   }, [services, filter]);
 
+  // Interleave section headers with cards. When every item is ungrouped we
+  // render a flat list (no headers); otherwise ungrouped items fall under "Other".
+  const listData = useMemo(() => {
+    const hasSections = filtered.some((s) => (s.section || "").trim());
+    if (!hasSections) {
+      return filtered.map((s) => ({ kind: "card" as const, service: s }));
+    }
+    const order: string[] = [];
+    const groups: Record<string, Service[]> = {};
+    for (const s of filtered) {
+      const key = (s.section || "").trim() || "Other";
+      if (!groups[key]) {
+        groups[key] = [];
+        order.push(key);
+      }
+      groups[key].push(s);
+    }
+    // Keep "Other" last if present.
+    order.sort((a, b) => (a === "Other" ? 1 : b === "Other" ? -1 : 0));
+    const rows: (
+      | { kind: "header"; section: string; count: number }
+      | { kind: "card"; service: Service }
+    )[] = [];
+    for (const key of order) {
+      rows.push({ kind: "header", section: key, count: groups[key].length });
+      for (const s of groups[key]) rows.push({ kind: "card", service: s });
+    }
+    return rows;
+  }, [filtered]);
+
   const handleAddService = () => {
     setSelectedService(null);
     setModalVisible(true);
@@ -97,7 +127,19 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
     }
   };
 
-  const renderCard = ({ item }: { item: Service }) => {
+  const renderRow = ({ item: row }: { item: any }) => {
+    if (row.kind === "header") {
+      return (
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionHeaderText}>{row.section}</Text>
+          <Text style={styles.sectionHeaderCount}>{row.count}</Text>
+        </View>
+      );
+    }
+    return renderCard(row.service);
+  };
+
+  const renderCard = (item: Service) => {
     const active = item.isActive;
     const [c1, c2] = coverGradient(item._id);
     const hasImg = item.images && item.images.length > 0;
@@ -195,9 +237,11 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
   return (
     <View style={styles.container}>
       <FlatList
-        data={filtered}
-        renderItem={renderCard}
-        keyExtractor={(item) => item._id}
+        data={listData}
+        renderItem={renderRow}
+        keyExtractor={(row: any) =>
+          row.kind === "header" ? `h:${row.section}` : row.service._id
+        }
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.listContent}
@@ -207,9 +251,9 @@ export default function ServicesTab({ services, onRefresh, refreshing }: Service
             {/* Title row */}
             <View style={styles.titleRow}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.title}>My services</Text>
+                <Text style={styles.title}>My catalogue</Text>
                 <Text style={styles.subtitle}>
-                  {counts.all} service{counts.all !== 1 ? "s" : ""} · {counts.active} active
+                  {counts.all} item{counts.all !== 1 ? "s" : ""} · {counts.active} active
                 </Text>
               </View>
               <TouchableOpacity activeOpacity={0.85} onPress={handleAddService}>
@@ -311,6 +355,10 @@ const createStyles = (c: ThemeColors) =>
   filterLabel: { fontFamily: VNF.bold, fontSize: 12 },
   filterCount: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999 },
   filterCountText: { fontFamily: VNF.bold, fontSize: 10 },
+
+  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10, marginTop: 4 },
+  sectionHeaderText: { fontFamily: VNF.heading, fontSize: 15, color: c.textBright, letterSpacing: -0.2 },
+  sectionHeaderCount: { fontFamily: VNF.bold, fontSize: 11, color: c.textFaint, backgroundColor: c.glassFillSubtle, paddingHorizontal: 7, paddingVertical: 1, borderRadius: 999, overflow: "hidden" },
 
   card: {
     borderRadius: 18,

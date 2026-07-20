@@ -18,17 +18,18 @@ import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
 import Ticket from "../models/ticket.model.js";
 import { Booking } from "../models/booking.model.js";
+import { Order } from "../models/order.model.js";
 import {
   getPayoutProvider,
   hasPayoutOnboarding,
 } from "../services/payments/resolveProvider.js";
-import { fulfillTicket, fulfillGuide, fulfillBooking } from "../services/payments/fulfillment.js";
+import { fulfillTicket, fulfillGuide, fulfillBooking, fulfillOrder } from "../services/payments/fulfillment.js";
 import { computeSplit } from "../services/payments/split.js";
 import { buildPaystackInit, verifyPaystackCharge } from "./paystack.controller.js";
 import { createPayout } from "../services/payments/payout.service.js";
 
 const PLATFORM_FEE_PERCENT = config.stripe.platformFeePercent;
-const TYPES = new Set(["ticket", "guide", "booking"]);
+const TYPES = new Set(["ticket", "guide", "booking", "order"]);
 
 /**
  * Resolve which tier a ticket purchase is for. Tiered events REQUIRE a valid
@@ -117,6 +118,26 @@ async function resolvePurchase(type, id, userId, res, tierId) {
     };
   }
 
+  if (type === "order") {
+    const order = await Order.findById(id).populate("vendor");
+    if (!order) return res.status(404).json({ message: "Order not found" }) && null;
+    if (order.client.toString() !== userId) {
+      return res.status(403).json({ message: "This order isn't yours" }) && null;
+    }
+    if (order.status !== "quoted") {
+      return res.status(400).json({ message: "This order isn't ready for payment yet" }) && null;
+    }
+    if (order.paymentStatus === "paid") {
+      return res.status(400).json({ message: "This order is already paid" }) && null;
+    }
+    return {
+      seller: order.vendor,
+      amount: order.total || 0,
+      currency: order.currency || "USD",
+      item: order,
+    };
+  }
+
   return res.status(400).json({ message: "Unknown purchase type" }) && null;
 }
 
@@ -189,6 +210,8 @@ export const initPayment = async (req, res) => {
       params.metadata.guideId = id.toString();
     } else if (type === "booking") {
       params.metadata.bookingId = id.toString();
+    } else if (type === "order") {
+      params.metadata.orderId = id.toString();
     }
 
     const paymentIntent = await stripe.paymentIntents.create(params);
@@ -314,6 +337,33 @@ async function confirmStripe(type, id, paymentIntentId, userId, res) {
     });
     return res.status(200).json({ message: "Booking paid", booking });
   }
+
+  if (type === "order") {
+    if (pi.metadata?.orderId !== id) {
+      return res.status(403).json({ message: "Payment does not match this order" });
+    }
+    const { order } = await fulfillOrder({
+      orderId: id,
+      provider: "stripe",
+      payoutProvider: settlement,
+      paymentRef: paymentIntentId,
+      platformFee: Number(pi.metadata?.platformFeeCents || 0),
+      vendorNet: sellerNetCents,
+    });
+    // Unconditional for the same webhook-race reason as guides.
+    await createPayout({
+      vendor: pi.metadata?.sellerId,
+      relatedType: "order",
+      relatedId: id,
+      provider: settlement,
+      amount: payoutAmount,
+      currency: payoutCurrency,
+      reference: `order_${id}`,
+      buyer: userId,
+      stripePaymentIntentId: paymentIntentId,
+    });
+    return res.status(200).json({ message: "Order paid", order });
+  }
 }
 
 async function confirmPaystack(type, id, reference, userId, res, tierId) {
@@ -384,6 +434,27 @@ async function confirmPaystack(type, id, reference, userId, res, tierId) {
     });
     return res.status(200).json({ message: "Booking paid", booking });
   }
+
+  if (type === "order") {
+    const { order } = await fulfillOrder({
+      orderId: id,
+      provider: "paystack",
+      paymentRef: reference,
+      platformFee,
+      vendorNet: sellerNet,
+    });
+    await createPayout({
+      vendor: seller._id,
+      relatedType: "order",
+      relatedId: id,
+      provider: "paystack",
+      amount: sellerNet, // major units
+      currency,
+      reference: `order_${id}`,
+      buyer: userId,
+    });
+    return res.status(200).json({ message: "Order paid", order });
+  }
 }
 
 /**
@@ -419,6 +490,18 @@ async function resolvePurchaseForConfirm(type, id, userId, res, tierId) {
       seller: booking.vendor,
       amount: booking.priceSnapshot?.amount || 0,
       currency: booking.priceSnapshot?.currency || "USD",
+    };
+  }
+  if (type === "order") {
+    const order = await Order.findById(id).populate("vendor");
+    if (!order) return res.status(404).json({ message: "Order not found" }) && null;
+    if (order.client.toString() !== userId) {
+      return res.status(403).json({ message: "This order isn't yours" }) && null;
+    }
+    return {
+      seller: order.vendor,
+      amount: order.total || 0,
+      currency: order.currency || "USD",
     };
   }
   return res.status(400).json({ message: "Unknown purchase type" }) && null;

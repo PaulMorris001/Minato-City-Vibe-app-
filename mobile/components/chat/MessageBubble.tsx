@@ -27,6 +27,8 @@ import type { Message } from "@/services/chat.service";
 import { groupReactions } from "@/utils/reactions";
 import { openUserProfile } from "@/utils/userNavigation";
 import { Avatar } from "@/components/shared/Avatar";
+import { currencyPrefix } from "@/constants/payments";
+import { useFormatPrice } from "@/hooks/useFormatPrice";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -75,6 +77,10 @@ interface MessageBubbleProps {
   mentionUsernames?: string[];
   /** Briefly flag this bubble after the user jumps to it from a reply. */
   isHighlighted?: boolean;
+  /** Client taps "Pay" on a quoted order invoice card. */
+  onOrderPay?: (order: any) => void;
+  /** Vendor taps "Send invoice" on an order request card. */
+  onOrderQuote?: (order: any) => void;
 }
 
 /**
@@ -91,6 +97,8 @@ export function replyPreviewLabel(msg: any): string {
       return "📅 Event";
     case "guide":
       return "📖 Guide";
+    case "order":
+      return "🛒 Order";
     default:
       return "Message";
   }
@@ -115,10 +123,13 @@ function MessageBubble({
   onMentionPress,
   mentionUsernames,
   isHighlighted = false,
+  onOrderPay,
+  onOrderQuote,
 }: MessageBubbleProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
+  const formatPrice = useFormatPrice();
 
   // NOTE: all hooks must run unconditionally (no early return before them) —
   // FlashList recycles cell instances, so a system message and a text message
@@ -449,6 +460,144 @@ function MessageBubble({
         );
       }
 
+      case "order": {
+        const order: any = message.order;
+        if (!order) {
+          return (
+            <View style={styles.orderCard}>
+              <Text style={styles.orderKicker}>ORDER</Text>
+              <Text style={styles.orderUnavailable}>Order details unavailable.</Text>
+            </View>
+          );
+        }
+
+        const vendorId =
+          typeof order.vendor === "object" ? order.vendor?._id : order.vendor;
+        const clientId =
+          typeof order.client === "object" ? order.client?._id : order.client;
+        const isVendor = !!currentUserId && String(vendorId) === String(currentUserId);
+        const isClient = !!currentUserId && String(clientId) === String(currentUserId);
+        // The request card is always sent by the client; the invoice card by the
+        // vendor. Keying off the sender is robust even before order.invoiceMessage
+        // is persisted (it's set right after this message is emitted).
+        const isInvoiceCard = String(message.sender?._id) === String(vendorId);
+        const prefix = currencyPrefix(order.currency);
+        const money = (n: number) => `${prefix}${formatPrice(n || 0)}`;
+
+        const kicker = isInvoiceCard ? "INVOICE" : "ORDER REQUEST";
+
+        // Decide the footer: CTA button, or a status label.
+        let cta: React.ReactNode = null;
+        if (order.status === "requested" && isVendor && !isInvoiceCard) {
+          cta = (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => onOrderQuote?.(order)}
+            >
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark, colors.accentPink]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.orderCta}
+              >
+                <Text style={styles.orderCtaText}>Send invoice</Text>
+                <Ionicons name="arrow-forward" size={14} color="#fff" />
+              </LinearGradient>
+            </TouchableOpacity>
+          );
+        } else if (order.status === "quoted" && isClient && isInvoiceCard) {
+          cta = (
+            <TouchableOpacity activeOpacity={0.85} onPress={() => onOrderPay?.(order)}>
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark, colors.accentPink]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.orderCta}
+              >
+                <Ionicons name="card-outline" size={15} color="#fff" />
+                <Text style={styles.orderCtaText}>Pay {money(order.total)}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          );
+        } else {
+          const label =
+            order.status === "paid"
+              ? "Paid ✓"
+              : order.status === "declined"
+              ? "Order declined"
+              : order.status === "cancelled"
+              ? "Order cancelled"
+              : order.status === "quoted"
+              ? isVendor
+                ? "Invoice sent"
+                : "Awaiting payment"
+              : isVendor
+              ? "New order"
+              : "Waiting for vendor's invoice";
+          cta = (
+            <View
+              style={[
+                styles.orderStatusPill,
+                order.status === "paid" && styles.orderStatusPaid,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.orderStatusText,
+                  order.status === "paid" && styles.orderStatusTextPaid,
+                ]}
+              >
+                {label}
+              </Text>
+            </View>
+          );
+        }
+
+        return (
+          <Pressable onLongPress={handleLongPress} style={styles.orderCard}>
+            <View style={styles.orderHeader}>
+              <Ionicons name="receipt-outline" size={12} color={colors.primaryLight} />
+              <Text style={styles.orderKicker}>{kicker}</Text>
+            </View>
+
+            {(order.items || []).map((it: any, i: number) => (
+              <View key={i} style={styles.orderItemRow}>
+                <Text style={styles.orderItemQty}>{it.quantity}×</Text>
+                <Text style={styles.orderItemName} numberOfLines={1}>
+                  {it.name}
+                </Text>
+                <Text style={styles.orderItemPrice}>
+                  {money((it.priceSnapshot?.amount || 0) * (it.quantity || 1))}
+                </Text>
+              </View>
+            ))}
+
+            <View style={styles.orderDivider} />
+
+            <View style={styles.orderTotalRow}>
+              <Text style={styles.orderSubLabel}>Subtotal</Text>
+              <Text style={styles.orderSubValue}>{money(order.itemsSubtotal)}</Text>
+            </View>
+
+            {(order.additionalFees || []).map((f: any, i: number) => (
+              <View key={i} style={styles.orderTotalRow}>
+                <Text style={styles.orderSubLabel}>{f.label}</Text>
+                <Text style={styles.orderSubValue}>{money(f.amount)}</Text>
+              </View>
+            ))}
+
+            {order.status === "quoted" || order.status === "paid" ? (
+              <View style={styles.orderTotalRow}>
+                <Text style={styles.orderTotalLabel}>Total</Text>
+                <Text style={styles.orderTotalValue}>{money(order.total)}</Text>
+              </View>
+            ) : null}
+
+            <View style={{ marginTop: 12 }}>{cta}</View>
+          </Pressable>
+        );
+      }
+
       case "text":
       default:
         return (
@@ -532,8 +681,8 @@ function MessageBubble({
   // Bubble container — gradient for outgoing text/text-like; image bubble = thumbnail only;
   // event bubble = the event card (no surrounding bubble).
   const renderBubble = () => {
-    if (message.type === "event" || message.type === "guide") {
-      // Event / guide card stands alone — no surrounding bubble
+    if (message.type === "event" || message.type === "guide" || message.type === "order") {
+      // Event / guide / order card stands alone — no surrounding bubble
       return renderBubbleBody();
     }
     if (message.type === "image") {
@@ -957,6 +1106,59 @@ const createStyles = (c: ThemeColors) =>
     color: c.white,
     letterSpacing: 0.2,
   },
+
+  // Order / invoice card
+  orderCard: {
+    width: 268,
+    borderRadius: 18,
+    padding: 14,
+    backgroundColor: c.card,
+    borderWidth: 1,
+    borderColor: c.glassStroke,
+  },
+  orderHeader: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 10 },
+  orderKicker: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 10,
+    letterSpacing: 0.8,
+    color: c.primaryLight,
+  },
+  orderUnavailable: { fontFamily: "Outfit_400Regular", fontSize: 13, color: c.textSecondary },
+  orderItemRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 },
+  orderItemQty: { fontFamily: "Outfit_700Bold", fontSize: 13, color: c.textSecondary, minWidth: 24 },
+  orderItemName: { flex: 1, fontFamily: "Outfit_500Medium", fontSize: 14, color: c.text },
+  orderItemPrice: { fontFamily: "Outfit_600SemiBold", fontSize: 13, color: c.text },
+  orderDivider: { height: 1, backgroundColor: c.glassStroke, marginVertical: 8 },
+  orderTotalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  orderSubLabel: { fontFamily: "Outfit_400Regular", fontSize: 13, color: c.textSecondary },
+  orderSubValue: { fontFamily: "Outfit_500Medium", fontSize: 13, color: c.textBody },
+  orderTotalLabel: { fontFamily: "Outfit_700Bold", fontSize: 15, color: c.text, marginTop: 2 },
+  orderTotalValue: { fontFamily: "Outfit_700Bold", fontSize: 16, color: c.text, marginTop: 2 },
+  orderCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  orderCtaText: { fontFamily: "Outfit_700Bold", fontSize: 14, color: c.white },
+  orderStatusPill: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: c.glassFillSubtle,
+    borderWidth: 1,
+    borderColor: c.glassStroke,
+  },
+  orderStatusPaid: {
+    backgroundColor: "rgba(52,211,153,0.15)",
+    borderColor: "rgba(52,211,153,0.4)",
+  },
+  orderStatusText: { fontFamily: "Outfit_600SemiBold", fontSize: 12, color: c.textSecondary },
+  orderStatusTextPaid: { color: "#34D399" },
 
   // Reactions
   reactionsChip: {

@@ -10,7 +10,7 @@ interface PaymentResult {
   code?: string;
 }
 
-type PurchaseType = "ticket" | "guide" | "booking";
+type PurchaseType = "ticket" | "guide" | "booking" | "order";
 
 /**
  * Provider-agnostic payment hook.
@@ -164,8 +164,9 @@ export function useStripePayment() {
   const payForTicket = (eventId: string, tierId?: string) => pay("ticket", eventId, tierId);
   const payForGuide = (guideId: string) => pay("guide", guideId);
   const payForBooking = (bookingId: string) => pay("booking", bookingId);
+  const payForOrder = (orderId: string) => pay("order", orderId);
 
-  return { payForTicket, payForGuide, payForBooking };
+  return { payForTicket, payForGuide, payForBooking, payForOrder };
 }
 
 /** Parse the query string off a redirect URL into a plain object. */

@@ -20,8 +20,8 @@ const payoutSchema = new mongoose.Schema(
   {
     vendor: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true },
 
-    // What was sold. `relatedId` points at the ticket-bearing event, guide, or booking.
-    relatedType: { type: String, enum: ["ticket", "guide", "booking"], required: true },
+    // What was sold. `relatedId` points at the ticket-bearing event, guide, booking, or order.
+    relatedType: { type: String, enum: ["ticket", "guide", "booking", "order"], required: true },
     relatedId: { type: mongoose.Schema.Types.ObjectId, required: true },
 
     // Settlement rail used to pay the vendor out. "stripe" and "flutterwave"

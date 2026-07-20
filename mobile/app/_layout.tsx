@@ -35,6 +35,7 @@ import { PortalProvider } from "@gorhom/portal";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AccountProvider } from "@/contexts/AccountContext";
 import { UnreadProvider } from "@/contexts/UnreadContext";
+import { CartProvider } from "@/contexts/CartContext";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import socketService from "@/services/socket.service";
 import { StripeProvider } from "@stripe/stripe-react-native";
@@ -348,10 +349,12 @@ export default Sentry.wrap(function RootLayout() {
           <ThemeProvider>
             <AccountProvider>
               <UnreadProvider>
+              <CartProvider>
               <PortalProvider>
                 <ThemedNavigation />
                 <Toast />
               </PortalProvider>
+              </CartProvider>
               </UnreadProvider>
             </AccountProvider>
           </ThemeProvider>
