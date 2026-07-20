@@ -13,6 +13,9 @@ import Event from "../../models/event.model.js";
 import Guide from "../../models/guide.model.js";
 import Ticket from "../../models/ticket.model.js";
 import { Booking } from "../../models/booking.model.js";
+import { Order } from "../../models/order.model.js";
+import Chat from "../../models/chat.model.js";
+import chatService from "../chat.service.js";
 import { sendPushNotification } from "../notification.service.js";
 import { issueEventPass } from "../pass.service.js";
 import { invalidateCachePattern } from "../../utils/cache.js";
@@ -185,4 +188,63 @@ export async function fulfillBooking({
   return { booking, alreadyPaid: false };
 }
 
-export default { fulfillTicket, fulfillGuide, fulfillBooking };
+/**
+ * Mark a multi-item order paid after a verified payment. Idempotent on
+ * paymentStatus. Mirrors fulfillBooking, plus a "Payment received" system
+ * message posted into the order's chat.
+ *
+ * @param {object} args
+ * @param {string} args.orderId
+ * @param {"stripe"|"paystack"} args.provider
+ * @param {string} args.paymentRef
+ * @param {number} [args.platformFee]
+ * @param {number} [args.vendorNet]
+ * @returns {Promise<{ order: object, alreadyPaid: boolean }>}
+ */
+export async function fulfillOrder({
+  orderId,
+  provider,
+  payoutProvider,
+  paymentRef,
+  platformFee = 0,
+  vendorNet = 0,
+}) {
+  const order = await Order.findById(orderId);
+  if (!order) throw new Error("Order not found");
+  if (order.paymentStatus === "paid") return { order, alreadyPaid: true };
+
+  order.paymentStatus = "paid";
+  order.status = "paid";
+  order.provider = provider;
+  // Stripe-collected orders settle via Wise; Paystack settles its own.
+  order.payoutProvider = payoutProvider || (provider === "stripe" ? "wise" : provider);
+  order.paymentRef = paymentRef;
+  order.platformFee = platformFee;
+  order.vendorNet = vendorNet;
+  order.paidAt = new Date();
+  await order.save();
+
+  // Post a "Payment received" line into the chat (best-effort).
+  if (order.chat) {
+    try {
+      const chat = await Chat.findById(order.chat);
+      if (chat) await chatService.postSystemMessage(chat, order.client, "Payment received ✓");
+    } catch (e) {
+      console.error("fulfillOrder system message failed:", e);
+    }
+  }
+
+  // Notify the vendor that the client has paid.
+  const client = await User.findById(order.client).select("username");
+  const vendor = await User.findById(order.vendor).select("fcmToken");
+  await sendPushNotification(
+    vendor?.fcmToken,
+    "💳 Order Paid",
+    `${client?.username || "A client"} just paid for their order`,
+    { type: "order_paid", orderId: orderId.toString() }
+  );
+
+  return { order, alreadyPaid: false };
+}
+
+export default { fulfillTicket, fulfillGuide, fulfillBooking, fulfillOrder };

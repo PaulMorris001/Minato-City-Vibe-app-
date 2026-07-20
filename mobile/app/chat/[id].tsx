@@ -45,6 +45,10 @@ import { displayName } from "@/utils/displayName";
 import { uploadImage } from "@/utils/imageUpload";
 import { openUserProfile } from "@/utils/userNavigation";
 import { trackEvent } from "@/utils/analytics";
+import { useStripePayment } from "@/hooks/useStripePayment";
+import { useFormatPrice } from "@/hooks/useFormatPrice";
+import { currencyPrefix } from "@/constants/payments";
+import { showError, showSuccess } from "@/utils/toast";
 
 import type { ThemeColors } from "@/constants/theme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -72,6 +76,13 @@ export default function ChatScreen() {
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [showScrollDown, setShowScrollDown] = useState(false);
+  // Order invoice flow: the vendor's "Send invoice" fee sheet + the pay guard.
+  const [quoteOrder, setQuoteOrder] = useState<any | null>(null);
+  const [feeRows, setFeeRows] = useState<{ label: string; amount: string }[]>([]);
+  const [quoteSubmitting, setQuoteSubmitting] = useState(false);
+  const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
+  const { payForOrder } = useStripePayment();
+  const formatPrice = useFormatPrice();
   // Long-press action menu + reactions sheet are single, screen-level instances
   // (not one per bubble) — opened for whichever message the user targeted.
   const [menuMessage, setMenuMessage] = useState<Message | null>(null);
@@ -1133,6 +1144,68 @@ export default function ChatScreen() {
 
   const pinnedMessageId = (chat?.pinnedMessage as any)?._id;
 
+  // Client pays a quoted order invoice; on success re-pull so the card flips to Paid.
+  const handleOrderPay = useCallback(
+    async (order: any) => {
+      if (payingOrderId) return;
+      setPayingOrderId(order._id);
+      try {
+        const result = await payForOrder(order._id);
+        if (result.success) {
+          showSuccess("Payment complete", "Paid");
+          refreshMessages();
+        } else if (result.error) {
+          showError(result.error);
+        }
+      } finally {
+        setPayingOrderId(null);
+      }
+    },
+    [payingOrderId, payForOrder, refreshMessages]
+  );
+
+  // Vendor opens the fee sheet to turn a request into a payable invoice.
+  const handleOrderQuote = useCallback((order: any) => {
+    setFeeRows(
+      (order.additionalFees || []).map((f: any) => ({
+        label: f.label,
+        amount: String(f.amount),
+      }))
+    );
+    setQuoteOrder(order);
+  }, []);
+
+  const submitQuote = useCallback(async () => {
+    if (!quoteOrder) return;
+    setQuoteSubmitting(true);
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const additionalFees = feeRows
+        .map((r) => ({ label: r.label.trim(), amount: parseFloat(r.amount) }))
+        .filter((r) => r.label && Number.isFinite(r.amount) && r.amount >= 0);
+      const res = await fetch(`${BASE_URL}/orders/${quoteOrder._id}/quote`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ additionalFees }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setQuoteOrder(null);
+        setFeeRows([]);
+        refreshMessages();
+      } else {
+        showError(data.message || "Couldn't send the invoice.");
+      }
+    } catch {
+      showError("Network error. Please try again.");
+    } finally {
+      setQuoteSubmitting(false);
+    }
+  }, [quoteOrder, feeRows, refreshMessages]);
+
   const renderMessage = useCallback(
     ({ item }: { item: MessageSection }) => {
       if ("type" in item && item.type === "date") {
@@ -1166,6 +1239,8 @@ export default function ChatScreen() {
           onReplyPress={handleReplyPress}
           onMentionPress={handleMentionPress}
           mentionUsernames={participantUsernames}
+          onOrderPay={handleOrderPay}
+          onOrderQuote={handleOrderQuote}
         />
       );
     },
@@ -1177,6 +1252,8 @@ export default function ChatScreen() {
       handleImagePress,
       handleMentionPress,
       handleReplyPress,
+      handleOrderPay,
+      handleOrderQuote,
       styles,
     ]
   );
@@ -1342,6 +1419,8 @@ export default function ChatScreen() {
                 ? "date"
                 : item.type === "system"
                 ? "system"
+                : item.type === "order"
+                ? "order"
                 : "message"
             }
             contentContainerStyle={styles.messagesList}
@@ -1495,6 +1574,124 @@ export default function ChatScreen() {
         onClose={() => setReactionsMessage(null)}
         onReact={handleQuickReact}
       />
+
+      {/* Vendor invoice sheet — add fees and send a payable invoice card. */}
+      <Modal
+        visible={!!quoteOrder}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setQuoteOrder(null)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.quoteOverlay}
+        >
+          <Pressable style={{ flex: 1 }} onPress={() => setQuoteOrder(null)} />
+          <View style={styles.quoteSheet}>
+            <View style={styles.quoteHeader}>
+              <Text style={styles.quoteTitle}>Send invoice</Text>
+              <TouchableOpacity onPress={() => setQuoteOrder(null)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {(() => {
+              const prefix = currencyPrefix(quoteOrder?.currency);
+              const subtotal = quoteOrder?.itemsSubtotal || 0;
+              const feesTotal = feeRows.reduce(
+                (s, r) => s + (parseFloat(r.amount) || 0),
+                0
+              );
+              return (
+                <ScrollView keyboardShouldPersistTaps="handled">
+                  <View style={styles.quoteRow}>
+                    <Text style={styles.quoteSubLabel}>Items subtotal</Text>
+                    <Text style={styles.quoteSubValue}>
+                      {prefix}
+                      {formatPrice(subtotal)}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.quoteSectionLabel}>Additional fees</Text>
+                  {feeRows.map((row, idx) => (
+                    <View key={idx} style={styles.feeRow}>
+                      <TextInput
+                        style={[styles.feeInput, { flex: 1 }]}
+                        placeholder="e.g. Delivery"
+                        placeholderTextColor={colors.textMuted}
+                        value={row.label}
+                        onChangeText={(t) =>
+                          setFeeRows((rows) =>
+                            rows.map((r, i) => (i === idx ? { ...r, label: t } : r))
+                          )
+                        }
+                      />
+                      <TextInput
+                        style={[styles.feeInput, { width: 96 }]}
+                        placeholder="0.00"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="decimal-pad"
+                        value={row.amount}
+                        onChangeText={(t) =>
+                          setFeeRows((rows) =>
+                            rows.map((r, i) => (i === idx ? { ...r, amount: t } : r))
+                          )
+                        }
+                      />
+                      <TouchableOpacity
+                        onPress={() =>
+                          setFeeRows((rows) => rows.filter((_, i) => i !== idx))
+                        }
+                        hitSlop={8}
+                      >
+                        <Ionicons name="trash-outline" size={20} color={colors.accentPink} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+
+                  <TouchableOpacity
+                    style={styles.addFeeBtn}
+                    onPress={() =>
+                      setFeeRows((rows) => [...rows, { label: "", amount: "" }])
+                    }
+                  >
+                    <Ionicons name="add" size={18} color={colors.primary} />
+                    <Text style={styles.addFeeText}>Add a fee</Text>
+                  </TouchableOpacity>
+
+                  <View style={[styles.quoteRow, { marginTop: 12 }]}>
+                    <Text style={styles.quoteTotalLabel}>Total</Text>
+                    <Text style={styles.quoteTotalValue}>
+                      {prefix}
+                      {formatPrice(subtotal + feesTotal)}
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    onPress={submitQuote}
+                    disabled={quoteSubmitting}
+                    style={{ marginTop: 16, marginBottom: 8 }}
+                  >
+                    <LinearGradient
+                      colors={[colors.primary, colors.primaryDark]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.quoteSubmit}
+                    >
+                      {quoteSubmitting ? (
+                        <ActivityIndicator color={colors.white} />
+                      ) : (
+                        <Text style={styles.quoteSubmitText}>Send invoice</Text>
+                      )}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </ScrollView>
+              );
+            })()}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Full-screen image viewer — pinch, pan and double-tap to zoom */}
       <Modal
@@ -2004,6 +2201,39 @@ export default function ChatScreen() {
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
+  quoteOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  quoteSheet: {
+    backgroundColor: c.card,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: Platform.OS === "ios" ? 36 : 24,
+    maxHeight: "80%",
+  },
+  quoteHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+  quoteTitle: { fontFamily: "Outfit_700Bold", fontSize: 20, color: c.text },
+  quoteRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  quoteSubLabel: { fontFamily: "Outfit_400Regular", fontSize: 14, color: c.textSecondary },
+  quoteSubValue: { fontFamily: "Outfit_500Medium", fontSize: 14, color: c.text },
+  quoteSectionLabel: { fontFamily: "Outfit_600SemiBold", fontSize: 13, color: c.textSecondary, marginTop: 12, marginBottom: 8 },
+  feeRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  feeInput: {
+    backgroundColor: c.background,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontFamily: "Outfit_400Regular",
+    color: c.text,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  addFeeBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 8, alignSelf: "flex-start" },
+  addFeeText: { fontFamily: "Outfit_600SemiBold", fontSize: 14, color: c.primary },
+  quoteTotalLabel: { fontFamily: "Outfit_700Bold", fontSize: 16, color: c.text },
+  quoteTotalValue: { fontFamily: "Outfit_700Bold", fontSize: 18, color: c.text },
+  quoteSubmit: { paddingVertical: 15, borderRadius: 14, alignItems: "center" },
+  quoteSubmitText: { fontFamily: "Outfit_700Bold", fontSize: 16, color: c.white },
   container: {
     flex: 1,
     backgroundColor: c.backgroundDeep,

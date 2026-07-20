@@ -67,6 +67,8 @@ export interface Service {
   name: string;
   description: string;
   category: string;
+  /** Optional grouping label organising the catalogue (e.g. "Foods", "Drinks"). */
+  section?: string;
   price: number;
   currency: string;
   images: string[];
@@ -77,6 +79,57 @@ export interface Service {
   availability: "available" | "unavailable" | "coming_soon";
   features: string[];
   isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// A single line in the client-side cart. One cart is scoped to one vendor.
+export interface CartItem {
+  serviceId: string;
+  name: string;
+  price: number;
+  currency: string;
+  image?: string;
+  section?: string;
+  quantity: number;
+  note?: string;
+}
+
+export type OrderStatus =
+  | "requested"
+  | "quoted"
+  | "paid"
+  | "cancelled"
+  | "declined";
+
+export interface OrderItem {
+  service: string | { _id: string; name: string; images?: string[] };
+  name: string;
+  priceSnapshot: { amount: number; currency: string };
+  quantity: number;
+  note?: string;
+}
+
+export interface OrderFee {
+  label: string;
+  amount: number;
+}
+
+// The server-side, payable counterpart of a cart (see server/models/order.model.js).
+export interface Order {
+  _id: string;
+  client: string | { _id: string; username?: string; profilePicture?: string };
+  vendor: string | { _id: string; username?: string; businessName?: string };
+  chat?: string;
+  items: OrderItem[];
+  itemsSubtotal: number;
+  additionalFees: OrderFee[];
+  total: number;
+  currency: string;
+  status: OrderStatus;
+  paymentStatus: "unpaid" | "paid" | "refunded";
+  requestMessage?: string;
+  invoiceMessage?: string;
   createdAt: string;
   updatedAt: string;
 }

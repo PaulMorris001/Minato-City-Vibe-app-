@@ -254,7 +254,7 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={VN.purple} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -268,13 +268,13 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={styles.fieldLabel}>{label}</Text>
         <Text
-          style={[styles.fieldValue, link && { color: VN.purpleSoft, fontFamily: VNF.semibold }]}
+          style={[styles.fieldValue, link && { color: colors.primaryLight, fontFamily: VNF.semibold }]}
           numberOfLines={multi ? undefined : 1}
         >
           {value || "—"}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={14} color={VN.textMute} />
+      <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
     </TouchableOpacity>
   );
 
@@ -287,9 +287,9 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
 
   const StatusPill = ({ tone, icon, label, onPress }: { tone: "green" | "amber" | "purple"; icon: keyof typeof Ionicons.glyphMap; label: string; onPress?: () => void }) => {
     const pal = {
-      green: { bg: "rgba(52,211,153,0.16)", br: "rgba(52,211,153,0.35)", tx: VN.greenSoft },
-      amber: { bg: "rgba(245,158,11,0.16)", br: "rgba(245,158,11,0.35)", tx: VN.amberSoft },
-      purple: { bg: colors.primaryFadedStrong, br: "rgba(192,132,252,0.35)", tx: VN.purpleSoft },
+      green: { bg: "rgba(52,211,153,0.16)", br: "rgba(52,211,153,0.35)", tx: colors.success },
+      amber: { bg: "rgba(245,158,11,0.16)", br: "rgba(245,158,11,0.35)", tx: colors.warning },
+      purple: { bg: colors.primaryFadedStrong, br: "rgba(192,132,252,0.35)", tx: colors.primaryLight },
     }[tone];
     return (
       <TouchableOpacity
@@ -378,17 +378,17 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
           </View>
 
           <Text style={styles.inputLabel}>Business name</Text>
-          <TextInput style={styles.input} value={profile.businessName} onChangeText={(t) => setProfile({ ...profile, businessName: t })} placeholder="Business name" placeholderTextColor={VN.textMute} />
+          <TextInput style={styles.input} value={profile.businessName} onChangeText={(t) => setProfile({ ...profile, businessName: t })} placeholder="Business name" placeholderTextColor={colors.textFaint} />
 
           <Text style={styles.inputLabel}>Vendor type</Text>
           <TouchableOpacity style={styles.input} onPress={() => setShowTypePicker(true)}>
-            <Text style={{ color: profile.vendorTypeName ? VN.text : VN.textMute, fontFamily: VNF.body, fontSize: 15 }}>
+            <Text style={{ color: profile.vendorTypeName ? colors.textBright : colors.textFaint, fontFamily: VNF.body, fontSize: 15 }}>
               {profile.vendorTypeName || "Select vendor type"}
             </Text>
           </TouchableOpacity>
 
           <Text style={styles.inputLabel}>Description</Text>
-          <TextInput style={[styles.input, styles.multiline]} value={profile.businessDescription} onChangeText={(t) => setProfile({ ...profile, businessDescription: t })} placeholder="Describe your business..." placeholderTextColor={VN.textMute} multiline />
+          <TextInput style={[styles.input, styles.multiline]} value={profile.businessDescription} onChangeText={(t) => setProfile({ ...profile, businessDescription: t })} placeholder="Describe your business..." placeholderTextColor={colors.textFaint} multiline />
 
           <Text style={styles.inputLabel}>Location</Text>
           <LocationPicker
@@ -398,13 +398,13 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
           />
 
           <Text style={styles.inputLabel}>Address</Text>
-          <TextInput style={styles.input} value={profile.address} onChangeText={(t) => setProfile({ ...profile, address: t })} placeholder="Address" placeholderTextColor={VN.textMute} />
+          <TextInput style={styles.input} value={profile.address} onChangeText={(t) => setProfile({ ...profile, address: t })} placeholder="Address" placeholderTextColor={colors.textFaint} />
 
           <Text style={styles.inputLabel}>Phone</Text>
-          <TextInput style={styles.input} value={profile.phone} onChangeText={(t) => setProfile({ ...profile, phone: t })} placeholder="Phone" placeholderTextColor={VN.textMute} keyboardType="phone-pad" />
+          <TextInput style={styles.input} value={profile.phone} onChangeText={(t) => setProfile({ ...profile, phone: t })} placeholder="Phone" placeholderTextColor={colors.textFaint} keyboardType="phone-pad" />
 
           <Text style={styles.inputLabel}>Website</Text>
-          <TextInput style={styles.input} value={profile.website} onChangeText={(t) => setProfile({ ...profile, website: t })} placeholder="Website" placeholderTextColor={VN.textMute} autoCapitalize="none" />
+          <TextInput style={styles.input} value={profile.website} onChangeText={(t) => setProfile({ ...profile, website: t })} placeholder="Website" placeholderTextColor={colors.textFaint} autoCapitalize="none" />
 
           {SOCIAL_META.map((s) => (
             <View key={s.key}>
@@ -414,7 +414,7 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
                 value={(profile as any)[s.key]}
                 onChangeText={(t) => setProfile({ ...profile, [s.key]: t })}
                 placeholder="@username or link"
-                placeholderTextColor={VN.textMute}
+                placeholderTextColor={colors.textFaint}
                 autoCapitalize="none"
               />
             </View>
@@ -464,15 +464,15 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
                 return (
                   <TouchableOpacity key={s.key} style={styles.socialRow} activeOpacity={0.7} onPress={() => setIsEditing(true)}>
                     <View style={[styles.socialIcon, empty ? styles.socialIconEmpty : styles.socialIconSet]}>
-                      <Ionicons name={s.icon} size={14} color={empty ? VN.textMute : VN.purpleSoft} />
+                      <Ionicons name={s.icon} size={14} color={empty ? colors.textFaint : colors.primaryLight} />
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={styles.fieldLabel}>{s.label}</Text>
-                      <Text style={[styles.fieldValue, empty && { color: VN.textMute, fontStyle: "italic", fontFamily: VNF.body }]} numberOfLines={1}>
+                      <Text style={[styles.fieldValue, empty && { color: colors.textFaint, fontStyle: "italic", fontFamily: VNF.body }]} numberOfLines={1}>
                         {empty ? "Not set · tap to add" : value}
                       </Text>
                     </View>
-                    <Ionicons name="chevron-forward" size={14} color={VN.textMute} />
+                    <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
                   </TouchableOpacity>
                 );
               })}
@@ -483,10 +483,10 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
           <View style={styles.logoutWrap}>
             <TouchableOpacity style={styles.logoutRow} activeOpacity={0.8} onPress={handleLogout}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <Ionicons name="log-out-outline" size={16} color={VN.textDim} />
+                <Ionicons name="log-out-outline" size={16} color={colors.textDim} />
                 <Text style={styles.logoutText}>Log out</Text>
               </View>
-              <Ionicons name="chevron-forward" size={14} color={VN.textMute} />
+              <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
             </TouchableOpacity>
           </View>
         </>
@@ -500,7 +500,7 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select vendor type</Text>
               <TouchableOpacity onPress={() => setShowTypePicker(false)}>
-                <Ionicons name="close" size={24} color="#fff" />
+                <Ionicons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
             <FlatList
@@ -508,8 +508,8 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
               keyExtractor={(item) => item._id}
               renderItem={({ item }) => (
                 <TouchableOpacity style={styles.typeRow} onPress={() => selectVendorType(item)}>
-                  <Ionicons name={(item.icon as any) || "briefcase"} size={20} color={profile.vendorType === item._id ? VN.purple : VN.textDim} />
-                  <Text style={[styles.typeRowText, profile.vendorType === item._id && { color: VN.purpleSoft }]}>{item.name}</Text>
+                  <Ionicons name={(item.icon as any) || "briefcase"} size={20} color={profile.vendorType === item._id ? colors.primary : colors.textDim} />
+                  <Text style={[styles.typeRowText, profile.vendorType === item._id && { color: colors.primaryLight }]}>{item.name}</Text>
                 </TouchableOpacity>
               )}
             />
@@ -522,57 +522,57 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-  container: { flex: 1, backgroundColor: VN.bg },
-  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: VN.bg },
+  container: { flex: 1, backgroundColor: c.backgroundDeep },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: c.backgroundDeep },
 
   heroWrap: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 14 },
-  heroCard: { borderRadius: 20, overflow: "hidden", borderWidth: 1, borderColor: VN.strokeHi, shadowColor: VN.purpleDeep, shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.45, shadowRadius: 28, elevation: 8 },
+  heroCard: { borderRadius: 20, overflow: "hidden", borderWidth: 1, borderColor: c.glassStrokeStrong, shadowColor: VN.purpleDeep, shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.45, shadowRadius: 28, elevation: 8 },
   cover: { height: 96, position: "relative" },
   editCoverBtn: { position: "absolute", right: 12, top: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(0,0,0,0.4)", borderWidth: 1, borderColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
-  heroBody: { backgroundColor: VN.surfaceHi, paddingHorizontal: 16, paddingBottom: 16 },
-  avatar: { width: 76, height: 76, borderRadius: 38, marginTop: -38, marginBottom: 8, borderWidth: 3, borderColor: VN.bg, overflow: "hidden" },
+  heroBody: { backgroundColor: c.cardGlass, paddingHorizontal: 16, paddingBottom: 16 },
+  avatar: { width: 76, height: 76, borderRadius: 38, marginTop: -38, marginBottom: 8, borderWidth: 3, borderColor: c.backgroundDeep, overflow: "hidden" },
   avatarImg: { width: "100%", height: "100%", alignItems: "center", justifyContent: "center" },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
-  bizName: { fontFamily: VNF.display, fontSize: 26, color: VN.text, letterSpacing: -0.8 },
+  bizName: { fontFamily: VNF.display, fontSize: 26, color: c.textBright, letterSpacing: -0.8 },
   verifiedBadge: { width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  verifiedGlyph: { color: c.text, fontSize: 11 },
-  bizSub: { fontFamily: VNF.medium, fontSize: 12.5, color: VN.textDim, marginTop: 4 },
+  verifiedGlyph: { color: "#fff", fontSize: 11 },
+  bizSub: { fontFamily: VNF.medium, fontSize: 12.5, color: c.textDim, marginTop: 4 },
   pillsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 14 },
   statusPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1 },
   statusPillText: { fontFamily: VNF.bold, fontSize: 11 },
 
   sectionWrap: { paddingHorizontal: 18, paddingTop: 4, paddingBottom: 14 },
-  sectionKicker: { fontFamily: VNF.bold, fontSize: 10, color: VN.textMute, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 10, paddingLeft: 2 },
-  group: { borderRadius: 16, overflow: "hidden", backgroundColor: VN.surface, borderWidth: 1, borderColor: VN.stroke },
-  fieldRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: VN.stroke },
-  fieldLabel: { fontFamily: VNF.medium, fontSize: 11, color: VN.textMute },
-  fieldValue: { fontFamily: VNF.medium, fontSize: 14, color: VN.text, marginTop: 2, lineHeight: 20 },
+  sectionKicker: { fontFamily: VNF.bold, fontSize: 10, color: c.textFaint, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 10, paddingLeft: 2 },
+  group: { borderRadius: 16, overflow: "hidden", backgroundColor: c.cardGlass, borderWidth: 1, borderColor: c.glassStroke },
+  fieldRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: c.glassStroke },
+  fieldLabel: { fontFamily: VNF.medium, fontSize: 11, color: c.textFaint },
+  fieldValue: { fontFamily: VNF.medium, fontSize: 14, color: c.textBright, marginTop: 2, lineHeight: 20 },
 
-  socialRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: VN.stroke },
+  socialRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: c.glassStroke },
   socialIcon: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   socialIconSet: { backgroundColor: c.primaryFadedStrong, borderColor: "rgba(192,132,252,0.3)" },
-  socialIconEmpty: { backgroundColor: c.glassFillSubtle, borderColor: VN.stroke },
+  socialIconEmpty: { backgroundColor: c.glassFillSubtle, borderColor: c.glassStroke },
 
   logoutWrap: { paddingHorizontal: 18, paddingTop: 4, paddingBottom: 8 },
-  logoutRow: { height: 48, paddingHorizontal: 14, borderRadius: 14, backgroundColor: c.glassFillSubtle, borderWidth: 1, borderColor: VN.strokeHi, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  logoutText: { fontFamily: VNF.bold, fontSize: 13.5, color: VN.text },
+  logoutRow: { height: 48, paddingHorizontal: 14, borderRadius: 14, backgroundColor: c.glassFillSubtle, borderWidth: 1, borderColor: c.glassStrokeStrong, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  logoutText: { fontFamily: VNF.bold, fontSize: 13.5, color: c.textBright },
 
   // Edit mode
   editWrap: { paddingHorizontal: 18, paddingTop: 4 },
   imagePickers: { flexDirection: "row", justifyContent: "space-around", marginBottom: 8 },
-  inputLabel: { fontFamily: VNF.semibold, fontSize: 12, color: VN.textDim, marginBottom: 6, marginTop: 14 },
-  input: { backgroundColor: VN.surface, borderWidth: 1, borderColor: VN.stroke, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, fontFamily: VNF.body, fontSize: 15, color: VN.text },
+  inputLabel: { fontFamily: VNF.semibold, fontSize: 12, color: c.textDim, marginBottom: 6, marginTop: 14 },
+  input: { backgroundColor: c.cardGlass, borderWidth: 1, borderColor: c.glassStroke, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, fontFamily: VNF.body, fontSize: 15, color: c.textBright },
   multiline: { minHeight: 90, textAlignVertical: "top" },
   editActions: { flexDirection: "row", gap: 10, marginTop: 20 },
-  cancelBtn: { height: 48, paddingHorizontal: 18, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: c.glassFillSubtle, borderWidth: 1, borderColor: VN.strokeHi },
-  cancelBtnText: { fontFamily: VNF.bold, fontSize: 14, color: VN.textDim },
+  cancelBtn: { height: 48, paddingHorizontal: 18, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: c.glassFillSubtle, borderWidth: 1, borderColor: c.glassStrokeStrong },
+  cancelBtnText: { fontFamily: VNF.bold, fontSize: 14, color: c.textDim },
   saveBtn: { height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   saveBtnText: { fontFamily: VNF.heading, fontSize: 14, color: c.white },
 
   modalOverlay: { flex: 1, backgroundColor: c.modalOverlay, justifyContent: "flex-end" },
   modalSheet: { backgroundColor: c.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "70%", paddingBottom: 30 },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: VN.stroke },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: c.glassStroke },
   modalTitle: { fontFamily: VNF.heading, fontSize: 20, color: c.text },
-  typeRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderBottomWidth: 1, borderBottomColor: VN.stroke },
-  typeRowText: { fontFamily: VNF.body, fontSize: 16, color: VN.text },
+  typeRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderBottomWidth: 1, borderBottomColor: c.glassStroke },
+  typeRowText: { fontFamily: VNF.body, fontSize: 16, color: c.textBright },
 });

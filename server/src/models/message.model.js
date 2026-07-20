@@ -18,7 +18,7 @@ const messageSchema = mongoose.Schema({
   // Message content and type
   type: {
     type: String,
-    enum: ['text', 'image', 'event', 'guide', 'system'],
+    enum: ['text', 'image', 'event', 'guide', 'system', 'order'],
     default: 'text'
   },
 
@@ -47,6 +47,12 @@ const messageSchema = mongoose.Schema({
   guide: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "guide"
+  },
+
+  // For order / invoice cards (cart checkout + vendor quote)
+  order: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "order"
   },
 
   // Message status

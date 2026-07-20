@@ -18,7 +18,6 @@ import {
   Linking,
 } from "react-native";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
-import { DateTimeDropdown } from "@/components/shared";
 import { Service } from "@/libs/interfaces";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "@/constants/colors";
@@ -27,6 +26,9 @@ import { Fonts } from "@/constants/fonts";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
+import { useCart } from "@/contexts/CartContext";
+import { currencyPrefix } from "@/constants/payments";
+import { Alert } from "react-native";
 import { openUserProfile } from "@/utils/userNavigation";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 
@@ -35,7 +37,8 @@ import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 interface Review {
   _id: string;
-  user: { _id: string; username: string; profilePicture?: string };
+  // Null when the reviewer's account has been deleted.
+  user: { _id: string; username: string; profilePicture?: string } | null;
   rating: number;
   review: string;
   createdAt: string;
@@ -84,11 +87,8 @@ export default function VendorDetails() {
   const [loading, setLoading] = useState(true);
   const [servicesLoadError, setServicesLoadError] = useState(false);
 
-  // Booking
-  const [bookingService, setBookingService] = useState<Service | null>(null);
-  const [bookingMessage, setBookingMessage] = useState("");
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [submitting, setSubmitting] = useState(false);
+  // Cart (single-vendor)
+  const cart = useCart();
 
   // Reviews + Rating
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -267,42 +267,73 @@ export default function VendorDetails() {
     }
   };
 
-  const handleBookService = async () => {
-    if (selectedDate <= new Date()) {
-      showInfo("Please select a future date and time.");
+  const vId = vendorId as string;
+  const vName = (vendorName as string) || vendor?.name || "Vendor";
+
+  // Quantity of each service currently in the cart (only when this cart is for
+  // this vendor), for the storefront steppers.
+  const cartQtyByService = React.useMemo(() => {
+    const map: Record<string, number> = {};
+    if (cart.vendorId === vId) {
+      for (const it of cart.items) map[it.serviceId] = it.quantity;
+    }
+    return map;
+  }, [cart.items, cart.vendorId, vId]);
+
+  const addToCart = (item: Service) => {
+    const doAdd = () =>
+      cart.addItem(vId, vName, {
+        serviceId: item._id,
+        name: item.name,
+        price: item.price,
+        currency: item.currency,
+        image: item.images?.[0],
+        section: item.section,
+        quantity: 1,
+      });
+
+    if (cart.isDifferentVendor(vId)) {
+      Alert.alert(
+        "Start a new cart?",
+        `Your cart has items from ${cart.vendorName}. Adding this will clear it and start a cart with ${vName}.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Start new cart", style: "destructive", onPress: doAdd },
+        ]
+      );
       return;
     }
-    setSubmitting(true);
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      const res = await fetch(`${BASE_URL}/bookings`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          vendorId,
-          serviceId: bookingService?._id,
-          preferredDate: selectedDate.toISOString(),
-          message: bookingMessage,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showSuccess("The vendor will get back to you soon.", "Booking Sent!");
-        setBookingService(null);
-        setBookingMessage("");
-        setSelectedDate(new Date());
-      } else {
-        showError(data.message || "Failed to send booking request");
-      }
-    } catch {
-      showError("Failed to send booking request");
-    } finally {
-      setSubmitting(false);
-    }
+    doAdd();
   };
+
+  // Interleave section headers with service cards (see ServicesTab). Flat when
+  // no item declares a section.
+  const listData = React.useMemo(() => {
+    const hasSections = services.some((s) => (s.section || "").trim());
+    if (!hasSections) {
+      return services.map((s) => ({ kind: "card" as const, service: s }));
+    }
+    const order: string[] = [];
+    const groups: Record<string, Service[]> = {};
+    for (const s of services) {
+      const key = (s.section || "").trim() || "Other";
+      if (!groups[key]) {
+        groups[key] = [];
+        order.push(key);
+      }
+      groups[key].push(s);
+    }
+    order.sort((a, b) => (a === "Other" ? 1 : b === "Other" ? -1 : 0));
+    const rows: (
+      | { kind: "header"; section: string }
+      | { kind: "card"; service: Service }
+    )[] = [];
+    for (const key of order) {
+      rows.push({ kind: "header", section: key });
+      for (const s of groups[key]) rows.push({ kind: "card", service: s });
+    }
+    return rows;
+  }, [services]);
 
   const getAvailabilityColor = (availability: string) => {
     switch (availability) {
@@ -407,21 +438,41 @@ export default function VendorDetails() {
         )}
 
         {item.availability === "available" && (
-          <TouchableOpacity
-            style={styles.bookButton}
-            onPress={() => setBookingService(item)}
-            activeOpacity={0.8}
-          >
-            <LinearGradient
-              colors={[colors.primary, colors.primaryDark]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.bookGradient}
+          cartQtyByService[item._id] ? (
+            <View style={styles.stepperRow}>
+              <TouchableOpacity
+                style={styles.stepperBtn}
+                onPress={() => cart.setQuantity(item._id, cartQtyByService[item._id] - 1)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="remove" size={20} color={colors.primary} />
+              </TouchableOpacity>
+              <Text style={styles.stepperQty}>{cartQtyByService[item._id]} in cart</Text>
+              <TouchableOpacity
+                style={styles.stepperBtn}
+                onPress={() => cart.setQuantity(item._id, cartQtyByService[item._id] + 1)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add" size={20} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.bookButton}
+              onPress={() => addToCart(item)}
+              activeOpacity={0.8}
             >
-              <Ionicons name="calendar-outline" size={18} color={colors.white} />
-              <Text style={styles.bookButtonText}>Book Service</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.bookGradient}
+              >
+                <Ionicons name="cart-outline" size={18} color={colors.white} />
+                <Text style={styles.bookButtonText}>Add to cart</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )
         )}
       </View>
     </View>
@@ -454,19 +505,20 @@ export default function VendorDetails() {
               <TouchableOpacity
                 style={styles.reviewUser}
                 activeOpacity={0.7}
-                onPress={() => openUserProfile(review.user._id)}
+                disabled={!review.user?._id}
+                onPress={() => review.user?._id && openUserProfile(review.user._id)}
               >
-                {review.user.profilePicture ? (
+                {review.user?.profilePicture ? (
                   <Image source={{ uri: review.user.profilePicture }} style={styles.reviewAvatar} />
                 ) : (
                   <View style={styles.reviewAvatarPlaceholder}>
                     <Text style={styles.reviewAvatarLetter}>
-                      {review.user.username?.[0]?.toUpperCase() || "?"}
+                      {review.user?.username?.[0]?.toUpperCase() || "?"}
                     </Text>
                   </View>
                 )}
                 <View>
-                  <Text style={styles.reviewUsername}>{review.user.username}</Text>
+                  <Text style={styles.reviewUsername}>{review.user?.username || "Deleted user"}</Text>
                   <Text style={styles.reviewTime}>{timeAgo(review.createdAt)}</Text>
                 </View>
               </TouchableOpacity>
@@ -518,9 +570,19 @@ export default function VendorDetails() {
       </LinearGradient>
 
       <FlatList
-        data={services}
-        keyExtractor={(item) => item._id}
-        renderItem={renderServiceCard}
+        data={listData}
+        keyExtractor={(row: any) =>
+          row.kind === "header" ? `h:${row.section}` : row.service._id
+        }
+        renderItem={({ item: row }: { item: any }) =>
+          row.kind === "header" ? (
+            <View style={styles.storeSectionHeader}>
+              <Text style={styles.storeSectionText}>{row.section}</Text>
+            </View>
+          ) : (
+            renderServiceCard({ item: row.service })
+          )
+        }
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
@@ -542,70 +604,31 @@ export default function VendorDetails() {
         ListFooterComponent={<ReviewsSection />}
       />
 
-      {/* Booking Modal */}
-      <Modal
-        visible={!!bookingService}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setBookingService(null)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.modalOverlay}
+      {/* Floating cart bar — appears when this vendor's cart has items */}
+      {cart.vendorId === vId && cart.count > 0 && (
+        <TouchableOpacity
+          style={styles.cartBar}
+          activeOpacity={0.9}
+          onPress={() => router.push("/cart" as any)}
         >
-          <TouchableOpacity
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={() => setBookingService(null)}
-          />
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Book Service</Text>
-              <TouchableOpacity onPress={() => setBookingService(null)}>
-                <Ionicons name="close" size={24} color="#fff" />
-              </TouchableOpacity>
+          <LinearGradient
+            colors={[colors.primary, colors.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.cartBarInner}
+          >
+            <View style={styles.cartBarBadge}>
+              <Text style={styles.cartBarBadgeText}>{cart.count}</Text>
             </View>
-
-            <Text style={styles.modalServiceName}>{bookingService?.name}</Text>
-
-            <Text style={styles.inputLabel}>Preferred Date & Time</Text>
-            <DateTimeDropdown
-              value={selectedDate}
-              onChange={setSelectedDate}
-              minimumDate={new Date()}
-            />
-
-            <Text style={styles.inputLabel}>Message (optional)</Text>
-            <TextInput
-              style={[styles.modalInput, styles.modalTextArea]}
-              placeholder="Any special requests or details..."
-              placeholderTextColor={colors.textMuted}
-              value={bookingMessage}
-              onChangeText={setBookingMessage}
-              multiline
-              numberOfLines={4}
-            />
-
-            <TouchableOpacity
-              style={styles.submitButton}
-              onPress={handleBookService}
-              disabled={submitting}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={[colors.primary, colors.primaryDark]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.submitGradient}
-              >
-                <Text style={styles.submitText}>
-                  {submitting ? "Sending..." : "Send Booking Request"}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+            <Text style={styles.cartBarText}>View cart</Text>
+            <Text style={styles.cartBarTotal}>
+              {currencyPrefix(cart.items[0]?.currency)}
+              {formatPrice(cart.subtotal)}
+            </Text>
+            <Ionicons name="arrow-forward" size={18} color={colors.white} />
+          </LinearGradient>
+        </TouchableOpacity>
+      )}
 
       {/* Rating Modal */}
       <Modal
@@ -894,6 +917,86 @@ const createStyles = (c: ThemeColors) =>
     color: c.textSecondary,
     textAlign: "center",
     lineHeight: 22,
+  },
+  storeSectionHeader: {
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  storeSectionText: {
+    fontSize: 17,
+    fontFamily: Fonts.bold,
+    color: c.text,
+    letterSpacing: -0.2,
+  },
+  stepperRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+    backgroundColor: c.background,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: c.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  stepperBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: `${Colors.primary}18`,
+  },
+  stepperQty: {
+    fontSize: 15,
+    fontFamily: Fonts.semiBold,
+    color: c.text,
+  },
+  cartBar: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: Platform.OS === "ios" ? 32 : 24,
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  cartBarInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+  },
+  cartBarBadge: {
+    minWidth: 26,
+    height: 26,
+    borderRadius: 13,
+    paddingHorizontal: 7,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cartBarBadgeText: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: c.white,
+  },
+  cartBarText: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: Fonts.bold,
+    color: c.white,
+  },
+  cartBarTotal: {
+    fontSize: 16,
+    fontFamily: Fonts.bold,
+    color: c.white,
   },
   bookButton: {
     borderRadius: 12,
