@@ -315,7 +315,7 @@ const createStyles = (c: ThemeColors) =>
     paddingVertical: 6,
   },
   loginLinkText: {
-    fontSize: scaleFontSize(14),
+    fontSize: scaleFontSize(16),
     fontFamily: Fonts.regular,
     color: c.textSecondary,
   },
