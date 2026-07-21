@@ -54,6 +54,11 @@ export const config = {
     options: {
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
+      // Fail queries immediately when disconnected instead of silently
+      // queuing them until the mongoose buffering timeout (10s default) —
+      // that used to surface as "buffering timed out" errors that looked
+      // like a query bug when the real problem was a dead connection.
+      bufferCommands: false,
     },
   },
 

@@ -24,7 +24,6 @@ import { remoteLog } from "@/utils/remoteLog";
 import { passwordError } from "@/utils/passwordPolicy";
 import { PosterBackground } from "@/components/auth/PosterBackground";
 import {
-  GradientAccent,
   GlassRoundButton,
   PrimaryCTA,
   ProgressArc,
@@ -51,7 +50,7 @@ type StepDef = {
 const STEPS: StepDef[] = [
   {
     key: "username",
-    question: "What's your\nnight name?",
+    question: "What's your\nuser name?",
     hint: "Show up as @___ on RSVPs and parties.",
     placeholder: "@nightowl",
     autoComplete: "username",
@@ -797,7 +796,7 @@ const createStyles = (c: ThemeColors) =>
   dotIdle: { backgroundColor: c.glassStrokeStrong },
   footerText: {
     fontFamily: "Outfit_500Medium",
-    fontSize: 12.5,
+    fontSize: 14,
     color: AU.textDim,
     textAlign: "center",
     marginTop: 14,

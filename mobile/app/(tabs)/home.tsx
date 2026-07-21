@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
@@ -43,7 +43,7 @@ function Skeleton({ width, height, borderRadius = 10, style }: { width: number |
         Animated.timing(opacity, { toValue: 0.4, duration: 800, useNativeDriver: true }),
       ])
     ).start();
-  }, []);
+  }, [opacity]);
 
   return (
     <Animated.View
@@ -140,13 +140,6 @@ const TOPIC_EMOJI: Record<string, string> = {
 // layout), so the scroll content pads itself below it; the automatic content
 // inset already contributes the top safe area, hence the subtraction.
 const NAVBAR_OVERLAY_HEIGHT = 106;
-
-const QUICK_ACTIONS = [
-  { icon: "home-outline" as const, label: "House Party", color: "#A855F7" },
-  { icon: "ticket-outline" as const, label: "Ticketed Event", color: "#EC4899" },
-  { icon: "walk-outline" as const, label: "Bar Crawl", color: "#22D3EE" },
-  { icon: "briefcase-outline" as const, label: "Book Vendor", color: "#F59E0B" },
-];
 
 function SectionHeader({ title, subtitle, onAction, actionLabel }: { title: string; subtitle?: string; onAction?: () => void; actionLabel?: string }) {
   const styles = useThemedStyles(createStyles);
@@ -398,6 +391,17 @@ export default function Home() {
     return "🌙";
   };
 
+  const loadSelectedCity = useCallback(async () => {
+    try {
+      const savedCity = await SecureStore.getItemAsync("selectedCity");
+      if (savedCity) {
+        setSelectedCity(savedCity);
+      } else {
+        setSelectedCity(null);
+      }
+    } catch {}
+  }, []);
+
   const fetchPublicEvents = async (city?: string | null, silent = false) => {
     try {
       const token = await SecureStore.getItemAsync("token");
@@ -505,11 +509,19 @@ export default function Home() {
     setRefreshing(false);
   };
 
+  useFocusEffect(
+    useCallback(() => {
+      loadSelectedCity();
+      return () => {};
+    }, [loadSelectedCity])
+  );
+
   useEffect(() => {
+    loadSelectedCity();
     fetchUsername();
     Promise.all([
-      fetchPublicEvents(null),
-      fetchExternalEvents(null),
+      fetchPublicEvents(selectedCity),
+      fetchExternalEvents(selectedCity),
       fetchHighlights(),
       fetchVendors(),
       fetchTopGuides(),
@@ -530,7 +542,7 @@ export default function Home() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       subscription.remove();
     };
-  }, []);
+  }, [loadSelectedCity, selectedCity]);
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
     if (!(await ensureAuth("buy a ticket"))) return;
@@ -645,6 +657,11 @@ export default function Home() {
   const heroExternal = resolvedExternal;
   const mixedFeed = resolvedFeed;
 
+  const trendingFeed = [
+    ...highlights.trending.map((e) => ({ _kind: "native" as const, data: e, sort: new Date(e.date).getTime() })),
+    ...externalEvents.map((e) => ({ _kind: "external" as const, data: e, sort: new Date(e.date).getTime() })),
+  ].sort((a, b) => a.sort - b.sort);
+
   return (
     <>
       <ScrollView
@@ -682,13 +699,38 @@ export default function Home() {
           </View>
         </View>
 
-        {/* Hero Card */}
-        {initialLoading ? (
-          <HeroSkeleton />
-        ) : heroEvent ? (
+        <View style={styles.searchSection}>
           <TouchableOpacity
-            style={styles.heroCard}
-            activeOpacity={0.92}
+            style={styles.locationPill}
+            activeOpacity={0.85}
+            onPress={() => router.push("/select-location" as any)}
+          >
+            <Ionicons name="location-outline" size={18} color={colors.primary} />
+            <View style={styles.locationTextWrap}>
+              <Text style={styles.locationLabel}>Location</Text>
+              <Text style={styles.locationValue}>{selectedCity || "All"}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textDim} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.searchBar}
+            activeOpacity={0.85}
+            onPress={() => router.push("/search" as any)}
+          >
+            <Ionicons name="search-outline" size={18} color={colors.textDim} />
+            <Text style={styles.searchPlaceholder}>Search events & guides</Text>
+          </TouchableOpacity>
+        </View>
+
+        <>
+            {/* Hero Card */}
+            {initialLoading ? (
+              <HeroSkeleton />
+            ) : heroEvent ? (
+              <TouchableOpacity
+                style={styles.heroCard}
+                activeOpacity={0.92}
             onPress={() => router.push(`/event/${heroEvent._id}` as any)}
           >
             <LinearGradient
@@ -847,20 +889,20 @@ export default function Home() {
           </TouchableOpacity>
         ) : null}
 
-        {/* After That */}
-        {initialLoading ? (
-          <View style={styles.section}>
-            <SectionHeader title="After that →" subtitle="This week's calendar" />
-            <FlatList
-              horizontal
-              data={[1, 2, 3, 4]}
-              keyExtractor={(item) => String(item)}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-              renderItem={() => <SmallCardSkeleton />}
-            />
-          </View>
-        ) : mixedFeed.length > 0 && (
+            {/* After That */}
+            {initialLoading ? (
+              <View style={styles.section}>
+                <SectionHeader title="After that →" subtitle="This week's calendar" />
+                <FlatList
+                  horizontal
+                  data={[1, 2, 3, 4]}
+                  keyExtractor={(item) => String(item)}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={() => <SmallCardSkeleton />}
+                />
+              </View>
+            ) : mixedFeed.length > 0 && (
           <View style={styles.section}>
             <SectionHeader
               title="After that →"
@@ -895,20 +937,23 @@ export default function Home() {
           </View>
         )}
 
-        {/* Trending Now */}
-        {initialLoading ? (
-          <View style={styles.section}>
-            <SectionHeader title="Trending Now 🔥" subtitle="Hot in your city" />
-            <FlatList
-              horizontal
-              data={[1, 2, 3]}
-              keyExtractor={(item) => String(item)}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-              renderItem={() => <Skeleton width={300} height={200} borderRadius={16} style={{ marginRight: 12 }} />}
-            />
-          </View>
-        ) : (highlights.trending.length > 0 || externalEvents.length > 0) && (
+            {/* Trending Now */}
+            {initialLoading ? (
+              <View style={styles.section}>
+                <SectionHeader title="Trending Now 🔥" subtitle="Hot in your city" />
+                <View style={styles.verticalStack}>
+                  {[1, 2, 3].map((item) => (
+                    <View key={item} style={styles.verticalCard}>
+                      <Skeleton width="100%" height={170} borderRadius={16} />
+                      <View style={{ padding: 12, gap: 8 }}>
+                        <Skeleton width="100%" height={14} />
+                        <Skeleton width={140} height={12} />
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : (highlights.trending.length > 0 || externalEvents.length > 0) && (
           <View style={styles.section}>
             <SectionHeader
               title="Trending Now 🔥"
@@ -916,49 +961,39 @@ export default function Home() {
               onAction={() => router.push("/public-events" as any)}
               actionLabel="All"
             />
-            <FlatList
-              horizontal
-              data={[
-                // Mixed feed: native trending + external events, deduped by id
-                // and tagged with `_kind` so the render branches to the right
-                // card component below.
-                ...highlights.trending.map((e) => ({ _kind: "native" as const, data: e, sort: new Date(e.date).getTime() })),
-                ...externalEvents.map((e) => ({ _kind: "external" as const, data: e, sort: new Date(e.date).getTime() })),
-              ].sort((a, b) => a.sort - b.sort)}
-              keyExtractor={(item) => `${item._kind}-${item.data._id}`}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-              renderItem={({ item }) => (
-                <View style={{ width: 300, marginRight: 12 }}>
+            <View style={styles.verticalStack}>
+              {trendingFeed.map((item) => (
+                <View key={`${item._kind}-${item.data._id}`} style={styles.verticalCard}>
                   {item._kind === "native" ? (
                     <PublicEventCard
                       event={item.data}
                       onPurchaseTicket={handlePurchaseTicket}
                       onJoinFreeEvent={handleJoinFreeEvent}
+                      style={styles.verticalEventCard}
                     />
                   ) : (
                     <ExternalEventCard event={item.data} />
                   )}
                 </View>
-              )}
-            />
+              ))}
+            </View>
           </View>
         )}
 
-        {/* Where the city's at — vendors */}
-        {initialLoading ? (
-          <View style={styles.section}>
-            <SectionHeader title="Where the city's at" subtitle="Vendors & venues near you" />
-            <FlatList
-              horizontal
-              data={[1, 2, 3, 4]}
-              keyExtractor={(item) => String(item)}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-              renderItem={() => <VendorCardSkeleton />}
-            />
-          </View>
-        ) : vendors.length > 0 && (
+            {/* Where the city's at — vendors */}
+            {initialLoading ? (
+              <View style={styles.section}>
+                <SectionHeader title="Where the city's at" subtitle="Vendors & venues near you" />
+                <FlatList
+                  horizontal
+                  data={[1, 2, 3, 4]}
+                  keyExtractor={(item) => String(item)}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={() => <VendorCardSkeleton />}
+                />
+              </View>
+            ) : vendors.length > 0 && (
           <View style={styles.section}>
             <SectionHeader
               title="Where the city's at"
@@ -982,20 +1017,20 @@ export default function Home() {
           </View>
         )}
 
-        {/* Top guides — best-selling city guides */}
-        {initialLoading ? (
-          <View style={styles.section}>
-            <SectionHeader title="Top guides" subtitle="Best-selling city guides" />
-            <FlatList
-              horizontal
-              data={[1, 2, 3, 4]}
-              keyExtractor={(item) => String(item)}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-              renderItem={() => <GuideCardSkeleton />}
-            />
-          </View>
-        ) : topGuides.length > 0 && (
+            {/* Top guides — best-selling city guides */}
+            {initialLoading ? (
+              <View style={styles.section}>
+                <SectionHeader title="Top guides" subtitle="Best-selling city guides" />
+                <FlatList
+                  horizontal
+                  data={[1, 2, 3, 4]}
+                  keyExtractor={(item) => String(item)}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={() => <GuideCardSkeleton />}
+                />
+              </View>
+            ) : topGuides.length > 0 && (
           <View style={styles.section}>
             <SectionHeader
               title="Top guides"
@@ -1017,7 +1052,8 @@ export default function Home() {
               )}
             />
           </View>
-        )}
+            )}
+          </>
 
       </ScrollView>
 
@@ -1067,7 +1103,56 @@ const createStyles = (c: ThemeColors) =>
     gap: 12,
     paddingHorizontal: 20,
     paddingTop: 8,
+    paddingBottom: 12,
+  },
+  searchSection: {
+    paddingHorizontal: 20,
     paddingBottom: 20,
+    gap: 10,
+  },
+  locationPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: c.card,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  locationTextWrap: {
+    flex: 1,
+  },
+  locationLabel: {
+    fontFamily: Fonts.regular,
+    fontSize: 11,
+    color: c.textDim,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  locationValue: {
+    fontFamily: Fonts.semiBold,
+    fontSize: 14,
+    color: c.textBright,
+    marginTop: 2,
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: c.card,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  searchPlaceholder: {
+    flex: 1,
+    fontFamily: Fonts.regular,
+    fontSize: 15,
+    color: c.textDim,
   },
   greetingText: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
@@ -1314,6 +1399,17 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 11,
     color: c.primary,
   },
+  verticalStack: {
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  verticalCard: {
+    width: "100%",
+  },
+  verticalEventCard: {
+    height: 280,
+    borderRadius: 18,
+  },
   quickGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1374,7 +1470,7 @@ const createStyles = (c: ThemeColors) =>
   },
   guideCard: {
     width: 220,
-    marginRight: 16,
+    marginRight: 12,
     borderRadius: 16,
     backgroundColor: c.card,
     borderWidth: 1,

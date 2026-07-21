@@ -432,7 +432,7 @@ const createStyles = (c: ThemeColors) =>
     textAlign: "center",
     marginTop: 18,
     fontFamily: "Outfit_500Medium",
-    fontSize: 12.5,
+    fontSize: 16,
     color: AU.textDim,
   },
   footerLink: { color: AU.purpleSoft, fontFamily: "Outfit_700Bold" },
@@ -504,7 +504,7 @@ const createStyles = (c: ThemeColors) =>
   },
   roleDescription: {
     fontFamily: "Outfit_500Medium",
-    fontSize: 12.5,
+    fontSize: 18,
     color: AU.textDim,
     marginTop: 2,
   },
