@@ -94,6 +94,29 @@ const html = `
   }
   .nav-cta:hover { border-color: rgba(255,255,255,0.3); background: var(--surface); }
 
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .nav-link {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--dim);
+    text-decoration: none;
+    padding: 10px 14px;
+    border-radius: 999px;
+    transition: color 0.2s, background 0.2s;
+    white-space: nowrap;
+  }
+  .nav-link:hover { color: var(--text); background: var(--surface); }
+  .nav-signup {
+    color: #fff;
+    background: linear-gradient(100deg, var(--purple), var(--pink));
+    box-shadow: 0 8px 22px rgba(168, 85, 247, 0.32);
+  }
+  .nav-signup:hover { color: #fff; }
+
   .hero { padding: 70px 0 64px; max-width: 760px; }
   .eyebrow {
     display: inline-flex;
@@ -293,7 +316,9 @@ const html = `
     .grid { grid-template-columns: 1fr; }
     .panel { padding: 30px 24px; }
     .hero { padding: 48px 0 40px; }
-    .nav-cta { display: none; }
+    .nav-cta, .nav-browse { display: none; }
+    .nav-links { gap: 6px; }
+    .nav-link { padding: 9px 12px; }
   }
 </style>
 
@@ -306,7 +331,11 @@ const html = `
         <small>by Obito Ventures</small>
       </span>
     </div>
-    <a class="nav-cta" href="#tickets">How tickets work</a>
+    <nav class="nav-links">
+      <a class="nav-link nav-browse" href="/events">Browse events</a>
+      <a class="nav-link" href="/login">Log in</a>
+      <a class="nav-link nav-signup" href="/signup">Sign up</a>
+    </nav>
   </header>
 
   <div class="hero">
@@ -322,7 +351,19 @@ const html = `
       recommendations that get smarter every time you use it.
     </p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="#" aria-label="Download on the App Store">
+      <a class="btn btn-primary" href="/events">
+        🎟️ Browse &amp; buy tickets
+      </a>
+      <a class="btn btn-ghost" href="/login">Log in</a>
+    </div>
+    <div class="cta-row" style="margin-top: 14px;">
+      <a
+        class="btn btn-ghost"
+        href="https://apps.apple.com/us/app/ourcityvibe/id6787367889"
+        target="_blank"
+        rel="noopener"
+        aria-label="Download on the App Store"
+      >
         Download on the App Store
       </a>
       <a

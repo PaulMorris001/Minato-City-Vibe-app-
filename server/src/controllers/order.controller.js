@@ -182,6 +182,33 @@ export async function quoteOrder(req, res) {
       .map((f) => ({ label: String(f?.label || "").trim(), amount: Number(f?.amount) }))
       .filter((f) => f.label && Number.isFinite(f.amount) && f.amount >= 0);
 
+    // The vendor may add items from their own catalogue to the invoice before
+    // sending it (e.g. the client asked for extras in chat). Prices are
+    // re-derived server-side from the vendor's live Service docs and snapshotted
+    // alongside the client's original items — never trusted from the request.
+    const rawAdded = Array.isArray(req.body?.addedItems) ? req.body.addedItems : [];
+    for (const raw of rawAdded) {
+      const serviceId = raw?.serviceId;
+      if (!serviceId) continue;
+      const service = await Service.findOne({
+        _id: serviceId,
+        vendor: req.user.id,
+        isActive: true,
+      });
+      if (!service) {
+        return res.status(404).json({ message: "One or more catalogue items are no longer available" });
+      }
+      const quantity = Math.max(1, Math.floor(Number(raw.quantity) || 1));
+      order.items.push({
+        service: service._id,
+        name: service.name,
+        priceSnapshot: { amount: service.price, currency: order.currency },
+        quantity,
+        note: typeof raw.note === "string" ? raw.note.slice(0, 500) : "",
+        addedByVendor: true,
+      });
+    }
+
     order.additionalFees = fees;
     order.status = "quoted";
     computeTotals(order);

@@ -104,8 +104,17 @@ export async function fetchVendors(cityId: string, vendorTypeId: string) {
   return res.json();
 }
 
-export async function fetchVendorServices(vendorId: string) {
-  const res = await fetch(`${BASE_URL}/vendors/${vendorId}/services`, {
+export async function fetchVendorServices(vendorId: string, categoryId?: string) {
+  const qs = categoryId ? `?category=${categoryId}` : "";
+  const res = await fetch(`${BASE_URL}/vendors/${vendorId}/services${qs}`, {
+    headers: await authHeaders(),
+  });
+  return res.json();
+}
+
+// Top-level catalogue categories for a vendor's public storefront.
+export async function fetchVendorCategories(vendorId: string) {
+  const res = await fetch(`${BASE_URL}/vendors/${vendorId}/categories`, {
     headers: await authHeaders(),
   });
   return res.json();
