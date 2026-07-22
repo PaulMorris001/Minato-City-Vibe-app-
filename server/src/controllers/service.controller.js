@@ -1,4 +1,5 @@
 import { Service } from "../models/service.model.js";
+import { CatalogueCategory } from "../models/catalogueCategory.model.js";
 import { currencyForUser } from "../services/payments/resolveProvider.js";
 import User from "../models/user.model.js";
 import { Vendor } from "../models/vendor.model.js";
@@ -14,7 +15,11 @@ export async function getServicesByVendorId(req, res) {
     const vendorDoc = await Vendor.findById(vendorId).select("user");
     const userId = vendorDoc?.user || vendorId;
 
-    const services = await Service.find({ vendor: userId, isActive: true }).sort({ createdAt: -1 });
+    // Optionally scope to a single catalogue category (?category=<id>).
+    const filter = { vendor: userId, isActive: true };
+    if (req.query.category) filter.catalogueCategory = req.query.category;
+
+    const services = await Service.find(filter).sort({ createdAt: -1 });
     res.status(200).json(services);
   } catch (error) {
     res.status(500).json({ message: "Error fetching services", details: error.message });
@@ -24,7 +29,10 @@ export async function getServicesByVendorId(req, res) {
 // Get all services for the authenticated vendor
 export async function getVendorServices(req, res) {
   try {
-    const services = await Service.find({ vendor: req.user.id }).sort({ createdAt: -1 });
+    const filter = { vendor: req.user.id };
+    if (req.query.category) filter.catalogueCategory = req.query.category;
+
+    const services = await Service.find(filter).sort({ createdAt: -1 });
     res.status(200).json(services);
   } catch (error) {
     res.status(500).json({ message: "Error fetching services", details: error.message });
@@ -58,9 +66,31 @@ export async function createService(req, res) {
       return res.status(403).json({ message: "Only vendors can create services" });
     }
 
+    // Every item lives inside a catalogue category the vendor owns. The item's
+    // `kind` is derived from that category (never trusted from the client) so
+    // the product/service field shape can't drift from its parent.
+    const { catalogueCategory: categoryId } = req.body;
+    if (!categoryId) {
+      return res
+        .status(400)
+        .json({ message: "A catalogueCategory is required to create an item" });
+    }
+    const category = await CatalogueCategory.findOne({
+      _id: categoryId,
+      vendor: req.user.id,
+    });
+    if (!category) {
+      return res
+        .status(404)
+        .json({ message: "Catalogue category not found" });
+    }
+
     const serviceData = {
       ...req.body,
       vendor: req.user.id,
+      catalogueCategory: category._id,
+      // Locked to the parent category's kind — decides product vs service fields.
+      kind: category.kind,
       // Priced in the vendor's local currency (NGN for Nigerian vendors, USD
       // otherwise). Server-authoritative: it must match the provider the
       // vendor collects through, so any client-sent currency is ignored.
@@ -91,10 +121,12 @@ export async function updateService(req, res) {
       return res.status(404).json({ message: "Service not found" });
     }
 
-    // Update fields (vendor is immutable; currency is server-assigned at
-    // creation and must keep matching the vendor's collection provider)
+    // Update fields. Immutable: `vendor`; `currency` (server-assigned, must keep
+    // matching the vendor's collection provider); `kind` and `catalogueCategory`
+    // (an item can't change its category/kind or its field shape would break).
+    const IMMUTABLE = ["vendor", "currency", "kind", "catalogueCategory"];
     Object.keys(req.body).forEach(key => {
-      if (key !== 'vendor' && key !== 'currency') {
+      if (!IMMUTABLE.includes(key)) {
         service[key] = req.body[key];
       }
     });

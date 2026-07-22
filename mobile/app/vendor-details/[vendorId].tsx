@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { goBack } from "@/utils/navigation";
-import { fetchVendorServices } from "@/libs/api";
+import { fetchVendorServices, fetchVendorCategories } from "@/libs/api";
 import {
   View,
   Text,
@@ -18,7 +18,7 @@ import {
   Linking,
 } from "react-native";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
-import { Service } from "@/libs/interfaces";
+import { Service, CatalogueCategory } from "@/libs/interfaces";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "@/constants/colors";
 import { LinearGradient } from "expo-linear-gradient";
@@ -82,8 +82,9 @@ export default function VendorDetails() {
   const [vendor, setVendor] = useState<any>(null);
   const [vendorLoadError, setVendorLoadError] = useState(false);
 
-  // Services
+  // Services + their parent catalogue categories
   const [services, setServices] = useState<Service[]>([]);
+  const [categories, setCategories] = useState<CatalogueCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [servicesLoadError, setServicesLoadError] = useState(false);
 
@@ -184,6 +185,9 @@ export default function VendorDetails() {
       .then((data) => setServices(data))
       .catch(() => setServicesLoadError(true))
       .finally(() => setLoading(false));
+    fetchVendorCategories(vendorId as string)
+      .then((data) => setCategories(Array.isArray(data) ? data : []))
+      .catch(() => {});
     fetch(`${BASE_URL}/vendors/${vendorId}`)
       .then((r) => r.json())
       .then((data) => {
@@ -205,6 +209,9 @@ export default function VendorDetails() {
       }
     };
     loadServices();
+    fetchVendorCategories(vendorId as string)
+      .then((data) => setCategories(Array.isArray(data) ? data : []))
+      .catch(() => {});
     fetch(`${BASE_URL}/vendors/${vendorId}`)
       .then((r) => r.json())
       .then((data) => { if (data && data._id) setVendor(data); else setVendorLoadError(true); })
@@ -306,34 +313,55 @@ export default function VendorDetails() {
     doAdd();
   };
 
-  // Interleave section headers with service cards (see ServicesTab). Flat when
-  // no item declares a section.
+  // Interleave category headers with item cards. Items are grouped under their
+  // parent catalogue category (in the vendor's category order); anything not yet
+  // linked to a category falls back to its legacy `section`, then to "Other".
   const listData = React.useMemo(() => {
-    const hasSections = services.some((s) => (s.section || "").trim());
-    if (!hasSections) {
-      return services.map((s) => ({ kind: "card" as const, service: s }));
-    }
-    const order: string[] = [];
-    const groups: Record<string, Service[]> = {};
-    for (const s of services) {
-      const key = (s.section || "").trim() || "Other";
-      if (!groups[key]) {
-        groups[key] = [];
-        order.push(key);
-      }
-      groups[key].push(s);
-    }
-    order.sort((a, b) => (a === "Other" ? 1 : b === "Other" ? -1 : 0));
-    const rows: (
+    type Row =
       | { kind: "header"; section: string }
-      | { kind: "card"; service: Service }
-    )[] = [];
-    for (const key of order) {
-      rows.push({ kind: "header", section: key });
-      for (const s of groups[key]) rows.push({ kind: "card", service: s });
+      | { kind: "card"; service: Service };
+
+    // Category id → items.
+    const byCatId: Record<string, Service[]> = {};
+    const legacy: Service[] = [];
+    for (const s of services) {
+      if (s.catalogueCategory) (byCatId[s.catalogueCategory] ||= []).push(s);
+      else legacy.push(s);
     }
+
+    const rows: Row[] = [];
+    // Real categories first, in the vendor's defined order.
+    for (const cat of categories) {
+      const items = byCatId[cat._id];
+      if (!items || items.length === 0) continue;
+      rows.push({ kind: "header", section: cat.name });
+      for (const s of items) rows.push({ kind: "card", service: s });
+    }
+
+    // Legacy / unlinked items grouped by their old section string.
+    if (legacy.length) {
+      const order: string[] = [];
+      const groups: Record<string, Service[]> = {};
+      for (const s of legacy) {
+        const key = (s.section || "").trim() || "Other";
+        if (!groups[key]) {
+          groups[key] = [];
+          order.push(key);
+        }
+        groups[key].push(s);
+      }
+      order.sort((a, b) => (a === "Other" ? 1 : b === "Other" ? -1 : 0));
+      // If everything is a single "Other" bucket and there are no real
+      // categories, render a flat list (no lone header).
+      const flat = rows.length === 0 && order.length === 1 && order[0] === "Other";
+      for (const key of order) {
+        if (!flat) rows.push({ kind: "header", section: key });
+        for (const s of groups[key]) rows.push({ kind: "card", service: s });
+      }
+    }
+
     return rows;
-  }, [services]);
+  }, [services, categories]);
 
   const getAvailabilityColor = (availability: string) => {
     switch (availability) {
@@ -406,6 +434,7 @@ export default function VendorDetails() {
             >
               <Text style={styles.price}>
                 {item.currency} {formatPrice(item.price)}
+                {item.kind === "product" && item.unit ? ` ${item.unit}` : ""}
               </Text>
             </LinearGradient>
           </View>
@@ -415,6 +444,14 @@ export default function VendorDetails() {
               <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
               <Text style={styles.durationText}>
                 {item.duration.value} {item.duration.unit}
+              </Text>
+            </View>
+          )}
+          {item.kind === "service" && item.leadTime && (
+            <View style={styles.durationContainer}>
+              <Ionicons name="hourglass-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.durationText}>
+                {item.leadTime.value} {item.leadTime.unit} lead
               </Text>
             </View>
           )}

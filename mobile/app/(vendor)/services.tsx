@@ -5,47 +5,52 @@ import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
 import { VENDOR_NAVBAR_HEIGHT } from "@/constants/vendorChrome";
-import { Service } from "@/libs/interfaces";
+import { CatalogueCategory, Service } from "@/libs/interfaces";
 import ServicesTab from "@/components/vendor/ServicesTab";
 
 import { useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 export default function VendorServices() {
   const styles = useThemedStyles(createStyles);
+  const [categories, setCategories] = useState<CatalogueCategory[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchServices = async () => {
+  const fetchCatalogue = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      const res = await axios.get(`${BASE_URL}/vendor/services`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setServices(res.data);
+      const headers = { Authorization: `Bearer ${token}` };
+      const [cats, svcs] = await Promise.all([
+        axios.get(`${BASE_URL}/vendor/categories`, { headers }),
+        axios.get(`${BASE_URL}/vendor/services`, { headers }),
+      ]);
+      setCategories(cats.data);
+      setServices(svcs.data);
     } catch (error: any) {
-      console.error("Error fetching services:", error);
+      console.error("Error fetching catalogue:", error);
     }
   };
 
   useEffect(() => {
-    fetchServices();
+    fetchCatalogue();
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      fetchServices();
+      fetchCatalogue();
     }, [])
   );
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchServices();
+    await fetchCatalogue();
     setRefreshing(false);
   };
 
   return (
     <View style={styles.screen}>
       <ServicesTab
+        categories={categories}
         services={services}
         onRefresh={handleRefresh}
         refreshing={refreshing}

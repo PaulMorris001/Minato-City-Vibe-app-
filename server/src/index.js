@@ -15,6 +15,7 @@ import { startExternalEventsRefresh } from './jobs/externalEventsRefresh.job.js'
 import authRoutes from './routes/auth.route.js'
 import vendorRoutes from "./routes/vendor.route.js";
 import serviceRoutes from "./routes/service.route.js";
+import catalogueCategoryRoutes from "./routes/catalogueCategory.route.js";
 import eventRoutes from "./routes/event.route.js";
 import chatRoutes from "./routes/chat.route.js";
 import guideRoutes from "./routes/guide.route.js";
@@ -97,6 +98,7 @@ app.use("/api/", adminRoutes);
 app.use("/api/", authRoutes);
 app.use("/api/", vendorRoutes);
 app.use("/api/", serviceRoutes);
+app.use("/api/", catalogueCategoryRoutes);
 app.use("/api/", eventRoutes);
 app.use("/api/", chatRoutes);
 app.use("/api/", guideRoutes);
