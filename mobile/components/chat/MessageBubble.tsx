@@ -566,6 +566,11 @@ function MessageBubble({
                 <Text style={styles.orderItemName} numberOfLines={1}>
                   {it.name}
                 </Text>
+                {it.addedByVendor && (
+                  <View style={styles.orderAddedTag}>
+                    <Text style={styles.orderAddedTagText}>added</Text>
+                  </View>
+                )}
                 <Text style={styles.orderItemPrice}>
                   {money((it.priceSnapshot?.amount || 0) * (it.quantity || 1))}
                 </Text>
@@ -1127,6 +1132,8 @@ const createStyles = (c: ThemeColors) =>
   orderItemRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 },
   orderItemQty: { fontFamily: "Outfit_700Bold", fontSize: 13, color: c.textSecondary, minWidth: 24 },
   orderItemName: { flex: 1, fontFamily: "Outfit_500Medium", fontSize: 14, color: c.text },
+  orderAddedTag: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: c.primaryFadedStrong, borderWidth: 1, borderColor: c.primaryBorder },
+  orderAddedTagText: { fontFamily: "Outfit_600SemiBold", fontSize: 10, color: c.primaryLight },
   orderItemPrice: { fontFamily: "Outfit_600SemiBold", fontSize: 13, color: c.text },
   orderDivider: { height: 1, backgroundColor: c.glassStroke, marginVertical: 8 },
   orderTotalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },

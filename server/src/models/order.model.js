@@ -30,6 +30,9 @@ const orderItemSchema = new mongoose.Schema(
     },
     quantity: { type: Number, default: 1, min: 1 },
     note: { type: String, default: "" },
+    // True when the vendor added this line from their catalogue at quote time
+    // (vs. the client's original request), so the client can see what was added.
+    addedByVendor: { type: Boolean, default: false },
   },
   { _id: false }
 );

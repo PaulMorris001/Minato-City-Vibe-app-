@@ -7,12 +7,10 @@ import User from '../models/user.model.js';
 const router = express.Router();
 
 const PLAY_STORE = 'https://play.google.com/store/apps/details?id=com.ourcityvibe.app';
-// Flip to true (and set APP_STORE / APP_STORE_ID) once the new App Store
-// listing is live. Until then we hide the App Store button + smart-app-banner
-// so users don't get sent to a "no longer available" page from the takedown.
-const HAS_APP_STORE_LISTING = false;
-const APP_STORE = '';
-const APP_STORE_ID = '';
+// The App Store listing is live, so the store button + smart-app-banner show.
+const HAS_APP_STORE_LISTING = true;
+const APP_STORE = 'https://apps.apple.com/us/app/ourcityvibe/id6787367889';
+const APP_STORE_ID = '6787367889';
 const SITE_BASE = 'https://api.ourcityvibe.com';
 const BRAND_TAGLINE = 'OurCityvibe — every night out, in one app.';
 

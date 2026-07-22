@@ -25,7 +25,7 @@ import * as Haptics from "expo-haptics";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, router } from "expo-router";
+import { useLocalSearchParams, router, useFocusEffect } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { BASE_URL } from "@/constants/constants";
@@ -45,9 +45,9 @@ import { displayName } from "@/utils/displayName";
 import { uploadImage } from "@/utils/imageUpload";
 import { openUserProfile } from "@/utils/userNavigation";
 import { trackEvent } from "@/utils/analytics";
-import { useStripePayment } from "@/hooks/useStripePayment";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { currencyPrefix } from "@/constants/payments";
+import { Service } from "@/libs/interfaces";
 import { showError, showSuccess } from "@/utils/toast";
 
 import type { ThemeColors } from "@/constants/theme";
@@ -80,8 +80,13 @@ export default function ChatScreen() {
   const [quoteOrder, setQuoteOrder] = useState<any | null>(null);
   const [feeRows, setFeeRows] = useState<{ label: string; amount: string }[]>([]);
   const [quoteSubmitting, setQuoteSubmitting] = useState(false);
-  const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
-  const { payForOrder } = useStripePayment();
+  // Catalogue items the vendor is adding to the invoice before sending it.
+  const [addedItems, setAddedItems] = useState<
+    { serviceId: string; name: string; price: number; quantity: number }[]
+  >([]);
+  const [catalogueItems, setCatalogueItems] = useState<Service[]>([]);
+  const [catalogueLoading, setCatalogueLoading] = useState(false);
+  const [pickerVisible, setPickerVisible] = useState(false);
   const formatPrice = useFormatPrice();
   // Long-press action menu + reactions sheet are single, screen-level instances
   // (not one per bubble) — opened for whichever message the user targeted.
@@ -269,6 +274,14 @@ export default function ChatScreen() {
       clearInterval(interval);
     };
   }, [id, currentUserId, refreshMessages]);
+
+  // Re-pull whenever the screen regains focus — e.g. returning from the order
+  // confirm/pay screen, so a just-paid invoice card flips to "Paid ✓".
+  useFocusEffect(
+    useCallback(() => {
+      if (id && currentUserId) refreshMessages();
+    }, [id, currentUserId, refreshMessages])
+  );
 
   // Leaving a chat should always land on the chats list. When the chat was
   // opened from a push notification (cold start), there's no back stack, so
@@ -1144,35 +1157,72 @@ export default function ChatScreen() {
 
   const pinnedMessageId = (chat?.pinnedMessage as any)?._id;
 
-  // Client pays a quoted order invoice; on success re-pull so the card flips to Paid.
+  // Client taps Pay on a quoted invoice → open the review-and-confirm screen.
+  // Payment itself happens there; on return we refresh so the card flips to Paid
+  // (see the focus refresh below).
   const handleOrderPay = useCallback(
-    async (order: any) => {
-      if (payingOrderId) return;
-      setPayingOrderId(order._id);
-      try {
-        const result = await payForOrder(order._id);
-        if (result.success) {
-          showSuccess("Payment complete", "Paid");
-          refreshMessages();
-        } else if (result.error) {
-          showError(result.error);
-        }
-      } finally {
-        setPayingOrderId(null);
-      }
+    (order: any) => {
+      router.push(`/order-confirm/${order._id}` as any);
     },
-    [payingOrderId, payForOrder, refreshMessages]
+    []
   );
 
+  // Vendor's own catalogue, lazily loaded the first time the invoice sheet
+  // opens, so they can drop extra items into the invoice.
+  const loadCatalogue = useCallback(async () => {
+    setCatalogueLoading(true);
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const res = await fetch(`${BASE_URL}/vendor/services`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data)) {
+        setCatalogueItems(data.filter((s: Service) => s.isActive));
+      }
+    } catch {
+    } finally {
+      setCatalogueLoading(false);
+    }
+  }, []);
+
   // Vendor opens the fee sheet to turn a request into a payable invoice.
-  const handleOrderQuote = useCallback((order: any) => {
-    setFeeRows(
-      (order.additionalFees || []).map((f: any) => ({
-        label: f.label,
-        amount: String(f.amount),
-      }))
+  const handleOrderQuote = useCallback(
+    (order: any) => {
+      setFeeRows(
+        (order.additionalFees || []).map((f: any) => ({
+          label: f.label,
+          amount: String(f.amount),
+        }))
+      );
+      setAddedItems([]);
+      setQuoteOrder(order);
+      if (catalogueItems.length === 0) loadCatalogue();
+    },
+    [catalogueItems.length, loadCatalogue]
+  );
+
+  const addCatalogueItem = useCallback((svc: Service) => {
+    setAddedItems((prev) => {
+      const existing = prev.find((i) => i.serviceId === svc._id);
+      if (existing) {
+        return prev.map((i) =>
+          i.serviceId === svc._id ? { ...i, quantity: i.quantity + 1 } : i
+        );
+      }
+      return [
+        ...prev,
+        { serviceId: svc._id, name: svc.name, price: svc.price, quantity: 1 },
+      ];
+    });
+  }, []);
+
+  const setAddedQuantity = useCallback((serviceId: string, quantity: number) => {
+    setAddedItems((prev) =>
+      quantity <= 0
+        ? prev.filter((i) => i.serviceId !== serviceId)
+        : prev.map((i) => (i.serviceId === serviceId ? { ...i, quantity } : i))
     );
-    setQuoteOrder(order);
   }, []);
 
   const submitQuote = useCallback(async () => {
@@ -1183,18 +1233,23 @@ export default function ChatScreen() {
       const additionalFees = feeRows
         .map((r) => ({ label: r.label.trim(), amount: parseFloat(r.amount) }))
         .filter((r) => r.label && Number.isFinite(r.amount) && r.amount >= 0);
+      const extraItems = addedItems.map((i) => ({
+        serviceId: i.serviceId,
+        quantity: i.quantity,
+      }));
       const res = await fetch(`${BASE_URL}/orders/${quoteOrder._id}/quote`, {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ additionalFees }),
+        body: JSON.stringify({ additionalFees, addedItems: extraItems }),
       });
       const data = await res.json();
       if (res.ok) {
         setQuoteOrder(null);
         setFeeRows([]);
+        setAddedItems([]);
         refreshMessages();
       } else {
         showError(data.message || "Couldn't send the invoice.");
@@ -1204,7 +1259,7 @@ export default function ChatScreen() {
     } finally {
       setQuoteSubmitting(false);
     }
-  }, [quoteOrder, feeRows, refreshMessages]);
+  }, [quoteOrder, feeRows, addedItems, refreshMessages]);
 
   const renderMessage = useCallback(
     ({ item }: { item: MessageSection }) => {
@@ -1598,6 +1653,10 @@ export default function ChatScreen() {
             {(() => {
               const prefix = currencyPrefix(quoteOrder?.currency);
               const subtotal = quoteOrder?.itemsSubtotal || 0;
+              const addedTotal = addedItems.reduce(
+                (s, i) => s + i.price * i.quantity,
+                0
+              );
               const feesTotal = feeRows.reduce(
                 (s, r) => s + (parseFloat(r.amount) || 0),
                 0
@@ -1605,12 +1664,56 @@ export default function ChatScreen() {
               return (
                 <ScrollView keyboardShouldPersistTaps="handled">
                   <View style={styles.quoteRow}>
-                    <Text style={styles.quoteSubLabel}>Items subtotal</Text>
+                    <Text style={styles.quoteSubLabel}>Client's items</Text>
                     <Text style={styles.quoteSubValue}>
                       {prefix}
                       {formatPrice(subtotal)}
                     </Text>
                   </View>
+
+                  {/* Items the vendor is adding from their catalogue */}
+                  <Text style={styles.quoteSectionLabel}>Items you're adding</Text>
+                  {addedItems.map((it) => (
+                    <View key={it.serviceId} style={styles.addedItemRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.addedItemName} numberOfLines={1}>
+                          {it.name}
+                        </Text>
+                        <Text style={styles.addedItemPrice}>
+                          {prefix}
+                          {formatPrice(it.price)} each
+                        </Text>
+                      </View>
+                      <View style={styles.addedQtyRow}>
+                        <TouchableOpacity
+                          onPress={() => setAddedQuantity(it.serviceId, it.quantity - 1)}
+                          hitSlop={8}
+                          style={styles.addedQtyBtn}
+                        >
+                          <Ionicons name="remove" size={16} color={colors.primary} />
+                        </TouchableOpacity>
+                        <Text style={styles.addedQtyText}>{it.quantity}</Text>
+                        <TouchableOpacity
+                          onPress={() => setAddedQuantity(it.serviceId, it.quantity + 1)}
+                          hitSlop={8}
+                          style={styles.addedQtyBtn}
+                        >
+                          <Ionicons name="add" size={16} color={colors.primary} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+
+                  <TouchableOpacity
+                    style={styles.addFeeBtn}
+                    onPress={() => {
+                      if (catalogueItems.length === 0) loadCatalogue();
+                      setPickerVisible(true);
+                    }}
+                  >
+                    <Ionicons name="pricetags-outline" size={18} color={colors.primary} />
+                    <Text style={styles.addFeeText}>Add from catalogue</Text>
+                  </TouchableOpacity>
 
                   <Text style={styles.quoteSectionLabel}>Additional fees</Text>
                   {feeRows.map((row, idx) => (
@@ -1663,7 +1766,7 @@ export default function ChatScreen() {
                     <Text style={styles.quoteTotalLabel}>Total</Text>
                     <Text style={styles.quoteTotalValue}>
                       {prefix}
-                      {formatPrice(subtotal + feesTotal)}
+                      {formatPrice(subtotal + addedTotal + feesTotal)}
                     </Text>
                   </View>
 
@@ -1690,6 +1793,82 @@ export default function ChatScreen() {
               );
             })()}
           </View>
+
+          {/* Catalogue picker — rendered INSIDE the invoice modal. A second RN
+              Modal won't present over an already-open one on iOS, so opening it
+              would silently do nothing; this overlay covers the sheet instead. */}
+          {pickerVisible && (
+            <View style={styles.pickerOverlay}>
+              <Pressable style={{ flex: 1 }} onPress={() => setPickerVisible(false)} />
+          <View style={styles.quoteSheet}>
+            <View style={styles.quoteHeader}>
+              <Text style={styles.quoteTitle}>Add from catalogue</Text>
+              <TouchableOpacity onPress={() => setPickerVisible(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {catalogueLoading ? (
+              <ActivityIndicator color={colors.primary} style={{ marginVertical: 24 }} />
+            ) : catalogueItems.length === 0 ? (
+              <Text style={styles.pickerEmpty}>
+                Your catalogue is empty. Add items to it first.
+              </Text>
+            ) : (
+              <ScrollView style={{ maxHeight: 380 }} keyboardShouldPersistTaps="handled">
+                {catalogueItems.map((svc) => {
+                  const inInvoice = addedItems.find((i) => i.serviceId === svc._id);
+                  return (
+                    <TouchableOpacity
+                      key={svc._id}
+                      style={styles.pickerItem}
+                      activeOpacity={0.7}
+                      onPress={() => addCatalogueItem(svc)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.pickerItemName} numberOfLines={1}>
+                          {svc.name}
+                        </Text>
+                        <Text style={styles.pickerItemMeta} numberOfLines={1}>
+                          {currencyPrefix(svc.currency)}
+                          {formatPrice(svc.price)}
+                          {svc.kind === "product" && svc.unit ? ` · ${svc.unit}` : ""}
+                        </Text>
+                      </View>
+                      {inInvoice ? (
+                        <View style={styles.pickerAddedPill}>
+                          <Text style={styles.pickerAddedPillText}>
+                            {inInvoice.quantity} added
+                          </Text>
+                        </View>
+                      ) : (
+                        <Ionicons name="add-circle" size={26} color={colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => setPickerVisible(false)}
+              style={{ marginTop: 12, marginBottom: 8 }}
+            >
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.quoteSubmit}
+              >
+                <Text style={styles.quoteSubmitText}>
+                  Done{addedItems.length ? ` · ${addedItems.length} item${addedItems.length > 1 ? "s" : ""}` : ""}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </KeyboardAvoidingView>
       </Modal>
 
@@ -2202,6 +2381,8 @@ export default function ChatScreen() {
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
   quoteOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  // Sits on top of the invoice sheet within the same modal (see picker note).
+  pickerOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   quoteSheet: {
     backgroundColor: c.card,
     borderTopLeftRadius: 24,
@@ -2234,6 +2415,20 @@ const createStyles = (c: ThemeColors) =>
   quoteTotalValue: { fontFamily: "Outfit_700Bold", fontSize: 18, color: c.text },
   quoteSubmit: { paddingVertical: 15, borderRadius: 14, alignItems: "center" },
   quoteSubmitText: { fontFamily: "Outfit_700Bold", fontSize: 16, color: c.white },
+  // Vendor-added catalogue items inside the invoice sheet
+  addedItemRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8 },
+  addedItemName: { fontFamily: "Outfit_600SemiBold", fontSize: 14, color: c.text },
+  addedItemPrice: { fontFamily: "Outfit_400Regular", fontSize: 12, color: c.textSecondary, marginTop: 2 },
+  addedQtyRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  addedQtyBtn: { width: 30, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: c.primaryFadedStrong, borderWidth: 1, borderColor: c.primaryBorder },
+  addedQtyText: { fontFamily: "Outfit_600SemiBold", fontSize: 15, color: c.text, minWidth: 18, textAlign: "center" },
+  // Catalogue picker
+  pickerEmpty: { fontFamily: "Outfit_400Regular", fontSize: 14, color: c.textMuted, textAlign: "center", paddingVertical: 32 },
+  pickerItem: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: c.border },
+  pickerItemName: { fontFamily: "Outfit_600SemiBold", fontSize: 15, color: c.text },
+  pickerItemMeta: { fontFamily: "Outfit_400Regular", fontSize: 13, color: c.textSecondary, marginTop: 2 },
+  pickerAddedPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: c.primaryFadedStrong, borderWidth: 1, borderColor: c.primaryBorder },
+  pickerAddedPillText: { fontFamily: "Outfit_600SemiBold", fontSize: 12, color: c.primaryLight },
   container: {
     flex: 1,
     backgroundColor: c.backgroundDeep,

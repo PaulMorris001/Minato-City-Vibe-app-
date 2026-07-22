@@ -515,6 +515,8 @@ async function resolvePurchaseForConfirm(type, id, userId, res, tierId) {
 export const getPaymentsConfig = async (req, res) => {
   res.status(200).json({
     stripePublishableKey: config.stripe.publishableKey || "",
+    // Needed by the web checkout for Paystack Inline (Nigerian sellers).
+    paystackPublicKey: config.paystack.publicKey || "",
   });
 };
 

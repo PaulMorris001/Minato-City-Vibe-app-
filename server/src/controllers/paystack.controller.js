@@ -198,6 +198,11 @@ export async function buildPaystackInit({ type, id, amount, currency, buyer }) {
     provider: "paystack",
     paymentLink: result.data?.authorization_url,
     reference,
+    // Lets a web client resume THIS server-initialized transaction with Paystack
+    // Inline (`popup.resumeTransaction(accessCode)`) instead of following the
+    // hosted redirect — so the amount/reference/callback all stay server-set.
+    // Ignored by the mobile app, which watches the browser redirect instead.
+    accessCode: result.data?.access_code,
     // What the app's browser session watches for. The return page forwards
     // the browser (and Paystack's ?trxref=&reference= params) to this scheme
     // URL — an http(s) redirectUrl would never dismiss the session on iOS
