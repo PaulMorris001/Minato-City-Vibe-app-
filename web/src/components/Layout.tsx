@@ -39,6 +39,9 @@ export default function Layout({
               <Link to="/events">Events</Link>
               {user ? (
                 <>
+                  <Link to="/my-events" className="cv-hide-sm">
+                    My Events
+                  </Link>
                   <Link to="/profile" className="cv-avatar-link" title={user.username}>
                     <span className="cv-avatar cv-avatar-sm">{initials(user.username)}</span>
                     <span className="cv-hide-sm">{user.username}</span>

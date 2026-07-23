@@ -24,16 +24,17 @@ import {
   addCohost,
   removeCohost,
 } from "../controllers/event.controller.js";
-import { authenticate, optionalAuth } from "../middleware/auth.middleware.js";
+import { authenticate, optionalAuth, rejectGuest } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
-// Create a new event
-router.post("/events", authenticate, createEvent);
+// Create a new event. `rejectGuest` keeps short-lived guest-checkout tokens from
+// creating content as their throwaway account.
+router.post("/events", authenticate, rejectGuest, createEvent);
 
 // Create a private, free event from a standalone group chat (admin only) —
 // auto-enrolls every group member and links the event to the group.
-router.post("/events/from-group/:chatId", authenticate, createEventFromGroup);
+router.post("/events/from-group/:chatId", authenticate, rejectGuest, createEventFromGroup);
 
 // Get all events for the authenticated user
 router.get("/events", authenticate, getUserEvents);
@@ -62,7 +63,7 @@ router.get("/events/:eventId", optionalAuth, getEventById);
 router.get("/events/share/:shareToken", getEventByShareToken);
 
 // Update an event
-router.put("/events/:eventId", authenticate, updateEvent);
+router.put("/events/:eventId", authenticate, rejectGuest, updateEvent);
 
 // Delete an event
 router.delete("/events/:eventId", authenticate, deleteEvent);

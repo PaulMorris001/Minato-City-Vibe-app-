@@ -28,6 +28,10 @@ export interface EventTier {
   _id: string;
   name: string;
   price: number;
+  /** Per-tier ticket allocation (organizer-set). Absent = draws from the shared pool. */
+  quantity?: number;
+  /** Tickets still available for this tier — only present when the tier has a quantity. */
+  remaining?: number;
 }
 
 export interface VendorSummary {
@@ -99,6 +103,13 @@ export interface EventItem {
   userRsvp?: boolean;
   userStatus?: "creator" | "accepted" | "pending" | "requested" | "none";
   ticketingReady?: boolean;
+  approvalStatus?: "pending" | "approved" | "rejected";
+  // Creator edits to material fields awaiting admin approval.
+  pendingEdits?: {
+    status: "none" | "pending" | "rejected";
+    submittedAt?: string;
+    rejectReason?: string;
+  };
 }
 
 /** Third-party event ingested from Ticketmaster / Bandsintown. */

@@ -24,6 +24,12 @@ interface ApiOptions {
   body?: unknown;
   /** Attach the stored Bearer token (default: true when a token exists). */
   auth?: boolean;
+  /**
+   * Explicit Bearer token for this call, overriding the stored session token.
+   * Used for guest checkout so the short-lived guest token drives the purchase
+   * without being persisted as the app's login session.
+   */
+  token?: string;
 }
 
 /**
@@ -32,11 +38,11 @@ interface ApiOptions {
  * Throws an ApiError (with status/code) on non-2xx so pages can branch on it.
  */
 export async function api<T = any>(path: string, opts: ApiOptions = {}): Promise<T> {
-  const { method = "GET", body, auth } = opts;
+  const { method = "GET", body, auth, token: tokenOverride } = opts;
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
 
-  const token = getToken();
+  const token = tokenOverride ?? getToken();
   if (auth !== false && token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE}/api${path}`, {

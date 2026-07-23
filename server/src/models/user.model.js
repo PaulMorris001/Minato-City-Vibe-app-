@@ -19,6 +19,11 @@ const userSchema = mongoose.Schema({
   // User is always a client by default, can optionally become a vendor
   isVendor: { type: Boolean, default: false },
 
+  // Passwordless "guest" account, created the first time someone buys a ticket
+  // (for themselves or as a gift recipient) without signing up. Keyed by email,
+  // so it upgrades seamlessly if they later register with the same address.
+  isGuest: { type: Boolean, default: false },
+
   // Profile picture for all users
   profilePicture: { type: String, default: "" },
 

@@ -13,11 +13,23 @@ export function authenticate(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, config.jwt.secret);
-    req.user = { id: decoded.id };
+    // `guest` marks a short-lived guest-checkout token (no real account). It's
+    // accepted here so guests can drive the ticket purchase endpoints, but
+    // `rejectGuest` blocks it from account-scoped routes.
+    req.user = { id: decoded.id, isGuest: !!decoded.guest };
     next();
   } catch (error) {
     return res.status(401).json({ message: "Invalid token" });
   }
+}
+
+// Blocks guest-checkout tokens from account-scoped routes (profile, events,
+// chat, …). Mount after `authenticate` on anything a guest must not reach.
+export function rejectGuest(req, res, next) {
+  if (req.user?.isGuest) {
+    return res.status(403).json({ message: "Sign in to use this feature." });
+  }
+  next();
 }
 
 // Optional authentication - attach user if token exists, but don't require it

@@ -112,6 +112,76 @@ export async function fulfillTicket({
 }
 
 /**
+ * Create ONE ticket for a recipient and issue its per-ticket pass. Used by the
+ * batch (guest / multi / gift) checkout, where the payer differs from the
+ * attendee and several tickets — even to the same email — are allowed. Unlike
+ * `fulfillTicket`, there is no one-per-(event,user) guard; batch idempotency is
+ * handled by the caller (the TicketOrder `status`).
+ *
+ * Does NOT touch the event's attendee lists or notify — the caller batches those
+ * once for the whole order.
+ *
+ * @param {object} args
+ * @param {object} args.event               loaded Event doc
+ * @param {string} args.recipientUserId     the ticket holder (guest or real user)
+ * @param {string} args.buyerUserId         the payer
+ * @param {object|null} args.tier           { tierId, name, price } or null (single-price)
+ * @param {"stripe"|"paystack"} args.provider
+ * @param {"wise"|"paystack"} args.payoutProvider
+ * @param {string} args.paymentRef
+ * @param {string} args.currency
+ * @param {number} args.platformFeeCents
+ * @param {number} args.sellerNetCents
+ * @param {string} args.recipientEmail
+ * @param {string} [args.recipientName]
+ * @returns {Promise<object>} the created ticket
+ */
+export async function issueRecipientTicket({
+  event,
+  recipientUserId,
+  buyerUserId,
+  tier,
+  provider,
+  payoutProvider,
+  paymentRef,
+  currency,
+  platformFeeCents = 0,
+  sellerNetCents = 0,
+  recipientEmail,
+  recipientName,
+}) {
+  const ticketData = {
+    event: event._id,
+    user: recipientUserId,
+    buyer: buyerUserId,
+    recipientEmail,
+    ticketPrice: tier ? tier.price : event.ticketPrice,
+    ...(tier ? { tierId: tier.tierId, tierName: tier.name } : {}),
+    provider,
+    payoutProvider: payoutProvider || (provider === "stripe" ? "wise" : provider),
+    currency: currency || event.currency || "usd",
+    platformFeeCents,
+    sellerNetCents,
+  };
+  if (provider === "paystack") ticketData.paystackReference = paymentRef;
+  else ticketData.stripePaymentIntentId = paymentRef;
+
+  const ticket = await Ticket.create(ticketData);
+
+  // Per-ticket pass, emailed to the recipient (fire-and-forget).
+  issueEventPass({
+    userId: recipientUserId,
+    eventId: event._id,
+    type: "ticket",
+    ticketId: ticket._id,
+    recipientEmail,
+    recipientName,
+  }).catch((e) => console.error("issueEventPass (issueRecipientTicket) failed:", e));
+
+  return ticket;
+}
+
+/**
  * Grant a guide after a verified payment. Idempotent on purchasedBy.
  *
  * @param {object} args
@@ -247,4 +317,4 @@ export async function fulfillOrder({
   return { order, alreadyPaid: false };
 }
 
-export default { fulfillTicket, fulfillGuide, fulfillBooking, fulfillOrder };
+export default { fulfillTicket, issueRecipientTicket, fulfillGuide, fulfillBooking, fulfillOrder };

@@ -9,6 +9,8 @@ import Events from "./pages/Events";
 import EventDetails from "./pages/EventDetails";
 import ExternalEventDetails from "./pages/ExternalEventDetails";
 import Pay from "./pages/Pay";
+import MyEvents from "./pages/MyEvents";
+import EditEvent from "./pages/EditEvent";
 import Profile from "./pages/Profile";
 import UserProfile from "./pages/UserProfile";
 import VendorProfile from "./pages/VendorProfile";
@@ -34,6 +36,10 @@ export default function App() {
           <Route path="/events/:eventId" element={<EventDetails />} />
           <Route path="/events/:eventId/pay" element={<Pay />} />
           <Route path="/external-events/:eventId" element={<ExternalEventDetails />} />
+
+          {/* Creator event management */}
+          <Route path="/my-events" element={<MyEvents />} />
+          <Route path="/my-events/:eventId/edit" element={<EditEvent />} />
 
           {/* Profiles — own, other members (event hosts/guests) and vendors */}
           <Route path="/profile" element={<Profile />} />

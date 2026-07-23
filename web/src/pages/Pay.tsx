@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams, Link } from "react-router-dom";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import {
   Elements,
@@ -7,47 +7,62 @@ import {
   useStripe,
   useElements,
 } from "@stripe/react-stripe-js";
-import { Link } from "react-router-dom";
 import Layout from "../components/Layout";
 import AppPromo from "../components/AppPromo";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { money, formatDateTime } from "../lib/format";
-import type { EventItem } from "../lib/types";
+import type { EventItem, EventTier } from "../lib/types";
 
 interface PaymentsConfig {
   stripePublishableKey: string;
   paystackPublicKey: string;
 }
 
+// One ticket in the buyer's cart. `tierId` is empty for single-price events.
+interface Slot {
+  id: string;
+  tierId: string;
+  tierName: string;
+  price: number;
+  // Where this pass is emailed: the buyer's own inbox or someone else's.
+  mode: "me" | "other";
+  email: string;
+  confirmEmail: string;
+  name: string;
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // Mirrors the mobile provider rule: Nigerian sellers price in NGN and collect
-// via Paystack; everyone else charges USD via Stripe. The event's `currency`
-// tells us which upfront (it's set server-side from the organizer's country),
-// so we can render the right form without a round-trip.
+// via Paystack; everyone else charges USD via Stripe.
 function providerFor(currency?: string): "stripe" | "paystack" {
   return (currency || "USD").toUpperCase() === "NGN" ? "paystack" : "stripe";
 }
 
+let slotSeq = 0;
+const nextSlotId = () => `slot_${slotSeq++}`;
+
 export default function Pay() {
   const { eventId } = useParams();
   const [params] = useSearchParams();
-  const tierId = params.get("tier") || undefined;
+  const preselectTier = params.get("tier") || "";
   const { user } = useAuth();
-  const navigate = useNavigate();
 
   const [ev, setEv] = useState<EventItem | null>(null);
   const [config, setConfig] = useState<PaymentsConfig | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  // Set once the ticket is issued — swaps the form for the success screen
-  // (which is where we push people to the app, since the QR lives there).
-  const [paid, setPaid] = useState(false);
+
+  // Cart + guest identity.
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [guestToken, setGuestToken] = useState<string | null>(null);
+  const [buyerEmail, setBuyerEmail] = useState<string>(user?.email || "");
+
+  // Result after a successful purchase.
+  const [result, setResult] = useState<{ recipients: string[] } | null>(null);
 
   useEffect(() => {
-    if (!user) {
-      navigate("/login", { state: { from: `/events/${eventId}/pay` }, replace: true });
-      return;
-    }
     Promise.all([
       api<{ event: EventItem }>(`/events/${eventId}`),
       api<PaymentsConfig>("/payments/config", { auth: false }),
@@ -55,20 +70,77 @@ export default function Pay() {
       .then(([{ event }, c]) => {
         setEv(event);
         setConfig(c);
-        document.title = `Pay – ${event.title}`;
+        document.title = `Get tickets – ${event.title}`;
       })
       .catch((err) => setError(err.message || "Couldn't load checkout"))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
-  const amount = useMemo(() => {
-    if (!ev) return 0;
-    const tiers = ev.ticketTiers || [];
-    if (tierId) return tiers.find((t) => t._id === tierId)?.price ?? 0;
-    if (tiers.length === 1) return tiers[0].price;
-    return ev.ticketPrice || 0;
-  }, [ev, tierId]);
+  // Keep the buyer email in sync with a logged-in account.
+  useEffect(() => {
+    if (user?.email) setBuyerEmail(user.email);
+  }, [user?.email]);
+
+  // The tiers we sell: real tiers, or a synthetic "General admission" for
+  // single-price events (tierId "" → the server treats it as no tier).
+  const saleTiers = useMemo<EventTier[]>(() => {
+    if (!ev) return [];
+    if (ev.ticketTiers && ev.ticketTiers.length) return ev.ticketTiers;
+    return [
+      {
+        _id: "",
+        name: "General admission",
+        price: ev.ticketPrice ?? 0,
+        remaining: ev.ticketsRemaining,
+      },
+    ];
+  }, [ev]);
+
+  // Seed one ticket for the preselected/only tier the first time the event loads.
+  useEffect(() => {
+    if (!ev || slots.length) return;
+    const seed =
+      saleTiers.find((t) => t._id === preselectTier) ||
+      (saleTiers.length === 1 ? saleTiers[0] : null);
+    if (seed && !(seed.remaining !== undefined && seed.remaining <= 0)) {
+      setSlots([makeSlot(seed)]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ev]);
+
+  function makeSlot(t: EventTier): Slot {
+    return {
+      id: nextSlotId(),
+      tierId: t._id,
+      tierName: t.name,
+      price: t.price,
+      mode: "me",
+      email: "",
+      confirmEmail: "",
+      name: "",
+    };
+  }
+
+  function countFor(tierId: string) {
+    return slots.filter((s) => s.tierId === tierId).length;
+  }
+  function addTicket(t: EventTier) {
+    setSlots((prev) => [...prev, makeSlot(t)]);
+  }
+  function removeTicket(tierId: string) {
+    setSlots((prev) => {
+      const idx = [...prev].reverse().findIndex((s) => s.tierId === tierId);
+      if (idx === -1) return prev;
+      const realIdx = prev.length - 1 - idx;
+      return prev.filter((_, i) => i !== realIdx);
+    });
+  }
+  function updateSlot(id: string, patch: Partial<Slot>) {
+    setSlots((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  }
+
+  const total = useMemo(() => slots.reduce((sum, s) => sum + s.price, 0), [slots]);
 
   if (loading) {
     return (
@@ -85,39 +157,32 @@ export default function Pay() {
     );
   }
 
-  const provider = providerFor(ev.currency);
-  const tierName = (ev.ticketTiers || []).find((t) => t._id === tierId)?.name;
-
-  // ── Paid: confirmation + "get the app" ─────────────────────────────────────
-  if (paid) {
+  // ── Success ────────────────────────────────────────────────────────────────
+  if (result) {
+    const unique = Array.from(new Set(result.recipients));
     return (
       <Layout>
         <div style={{ maxWidth: 640 }}>
           <div className="cv-panel cv-section">
             <div style={{ fontSize: 40, marginBottom: 8 }}>🎟️</div>
-            <h1 className="cv-h1">You're in!</h1>
+            <h1 className="cv-h1">You're all set!</h1>
             <p className="cv-h2" style={{ marginBottom: 20 }}>
-              Your ticket to <strong>{ev.title}</strong> is confirmed. We've emailed your receipt.
+              {result.recipients.length} pass{result.recipients.length === 1 ? "" : "es"} to{" "}
+              <strong>{ev.title}</strong> {result.recipients.length === 1 ? "is" : "are"} on the way.
             </p>
-
-            <div className="cv-row" style={{ marginBottom: 10 }}>
-              <span className="cv-muted">Event</span>
-              <span>{formatDateTime(ev.date)}</span>
-            </div>
-            <div className="cv-row" style={{ marginBottom: 10 }}>
-              <span className="cv-muted">Where</span>
-              <span>{ev.isVirtual ? "Online" : ev.location}</span>
-            </div>
-            {tierName && (
-              <div className="cv-row" style={{ marginBottom: 10 }}>
-                <span className="cv-muted">Ticket</span>
-                <span>{tierName}</span>
-              </div>
-            )}
-            <div className="cv-row">
-              <span className="cv-muted">Paid</span>
-              <strong>{money(amount, ev.currency)}</strong>
-            </div>
+            <p className="cv-muted" style={{ marginBottom: 8 }}>
+              Each pass — with its QR code to scan at the door — has been emailed to:
+            </p>
+            <ul style={{ margin: "0 0 8px 18px", padding: 0 }}>
+              {unique.map((r) => (
+                <li key={r} style={{ marginBottom: 4 }}>
+                  <strong>{r}</strong>
+                </li>
+              ))}
+            </ul>
+            <p className="cv-muted" style={{ fontSize: 13 }}>
+              Don't see it? Check spam, or the promotions tab.
+            </p>
           </div>
 
           <div className="cv-section">
@@ -125,9 +190,6 @@ export default function Pay() {
           </div>
 
           <div className="cv-chips">
-            <Link className="cv-btn cv-btn-ghost cv-btn-inline" to="/profile">
-              View my tickets
-            </Link>
             <Link className="cv-btn cv-btn-ghost cv-btn-inline" to={`/events/${eventId}`}>
               Back to event
             </Link>
@@ -140,37 +202,365 @@ export default function Pay() {
     );
   }
 
+  const provider = providerFor(ev.currency);
+  const buyerReady = !!user || (!!guestToken && EMAIL_RE.test(buyerEmail));
+
+  // Every "someone else" slot needs a valid, matching email; "me" slots need a
+  // confirmed buyer email.
+  const recipientsValid =
+    slots.length > 0 &&
+    slots.every((s) =>
+      s.mode === "me"
+        ? EMAIL_RE.test(buyerEmail)
+        : EMAIL_RE.test(s.email) && s.email.trim().toLowerCase() === s.confirmEmail.trim().toLowerCase()
+    );
+
+  const canPay = buyerReady && recipientsValid && total >= 0 && slots.length > 0;
+
+  function buildItems() {
+    return slots.map((s) => ({
+      tierId: s.tierId || undefined,
+      recipientEmail: (s.mode === "me" ? buyerEmail : s.email).trim().toLowerCase(),
+      recipientName: s.name.trim() || undefined,
+    }));
+  }
+
   return (
     <Layout>
-      <h1 className="cv-h1">Checkout</h1>
+      <Link to={`/events/${eventId}`} className="cv-muted" style={{ display: "inline-block", marginBottom: 12 }}>
+        ← Back to event
+      </Link>
+      <h1 className="cv-h1">Get tickets</h1>
       <p className="cv-h2">{ev.title}</p>
+      <p className="cv-muted" style={{ marginBottom: 20 }}>
+        {formatDateTime(ev.date)} · {ev.isVirtual ? "Online" : ev.location} · Prices in{" "}
+        {ev.currency || "USD"}
+      </p>
 
-      <div className="cv-card" style={{ maxWidth: 480, marginLeft: 0 }}>
-        <div className="cv-row" style={{ marginBottom: 8 }}>
-          <span className="cv-muted">{tierName || "General admission"}</span>
-          <span className="cv-muted">{formatDateTime(ev.date)}</span>
-        </div>
-        <div className="cv-row" style={{ marginBottom: 20 }}>
-          <span className="cv-muted">Total</span>
-          <strong style={{ fontSize: 22 }}>{money(amount, ev.currency)}</strong>
-        </div>
+      <div style={{ maxWidth: 560 }}>
+        {/* 1 — Choose tickets */}
+        <section className="cv-card cv-section" style={{ marginLeft: 0 }}>
+          <h3 className="cv-h3" style={{ marginBottom: 12 }}>
+            1. Choose your tickets
+          </h3>
+          {saleTiers.map((t) => {
+            const soldOut = t.remaining !== undefined && t.remaining <= 0;
+            const count = countFor(t._id);
+            const atCap = t.remaining !== undefined && count >= t.remaining;
+            return (
+              <div
+                key={t._id || "_single"}
+                className="cv-row"
+                style={{ marginBottom: 12, opacity: soldOut ? 0.5 : 1 }}
+              >
+                <span>
+                  <strong>{t.name}</strong>
+                  <span className="cv-muted" style={{ display: "block", fontSize: 13 }}>
+                    {money(t.price, ev.currency)}
+                    {soldOut
+                      ? " · Sold out"
+                      : t.remaining !== undefined
+                      ? ` · ${t.remaining} left`
+                      : ""}
+                  </span>
+                </span>
+                <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <button
+                    type="button"
+                    className="cv-btn cv-btn-ghost cv-btn-inline"
+                    style={{ minWidth: 40 }}
+                    disabled={count === 0}
+                    onClick={() => removeTicket(t._id)}
+                    aria-label={`Remove one ${t.name}`}
+                  >
+                    −
+                  </button>
+                  <span style={{ minWidth: 20, textAlign: "center" }}>{count}</span>
+                  <button
+                    type="button"
+                    className="cv-btn cv-btn-ghost cv-btn-inline"
+                    style={{ minWidth: 40 }}
+                    disabled={soldOut || atCap}
+                    onClick={() => addTicket(t)}
+                    aria-label={`Add one ${t.name}`}
+                  >
+                    +
+                  </button>
+                </span>
+              </div>
+            );
+          })}
+        </section>
 
-        {provider === "stripe" ? (
-          <StripeCheckout
-            eventId={eventId!}
-            tierId={tierId}
-            publishableKey={config.stripePublishableKey}
-            onPaid={() => setPaid(true)}
-          />
-        ) : (
-          <PaystackCheckout eventId={eventId!} tierId={tierId} onPaid={() => setPaid(true)} />
+        {/* 2 — Who each ticket is for */}
+        {slots.length > 0 && (
+          <section className="cv-card cv-section" style={{ marginLeft: 0 }}>
+            <h3 className="cv-h3" style={{ marginBottom: 4 }}>
+              2. Who are they for?
+            </h3>
+            <p className="cv-muted" style={{ marginBottom: 16, fontSize: 13 }}>
+              Send each pass to your own email or straight to the person you're buying for.
+            </p>
+            {slots.map((s, i) => (
+              <div
+                key={s.id}
+                style={{
+                  marginBottom: 16,
+                  paddingBottom: 16,
+                  borderBottom: i < slots.length - 1 ? "1px solid #26262e" : undefined,
+                }}
+              >
+                <div className="cv-row" style={{ marginBottom: 10 }}>
+                  <strong>
+                    Ticket {i + 1}
+                    <span className="cv-muted" style={{ fontWeight: 400 }}>
+                      {" "}
+                      · {s.tierName}
+                    </span>
+                  </strong>
+                  <strong>{money(s.price, ev.currency)}</strong>
+                </div>
+                <div className="cv-chips" style={{ marginBottom: 10 }}>
+                  <button
+                    type="button"
+                    className={`cv-btn cv-btn-inline ${s.mode === "me" ? "" : "cv-btn-ghost"}`}
+                    onClick={() => updateSlot(s.id, { mode: "me" })}
+                  >
+                    Send to me
+                  </button>
+                  <button
+                    type="button"
+                    className={`cv-btn cv-btn-inline ${s.mode === "other" ? "" : "cv-btn-ghost"}`}
+                    onClick={() => updateSlot(s.id, { mode: "other" })}
+                  >
+                    Send to someone else
+                  </button>
+                </div>
+                {s.mode === "other" && (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <input
+                      className="cv-input"
+                      placeholder="Recipient name (optional)"
+                      value={s.name}
+                      onChange={(e) => updateSlot(s.id, { name: e.target.value })}
+                    />
+                    <input
+                      className="cv-input"
+                      type="email"
+                      placeholder="Recipient email"
+                      value={s.email}
+                      onChange={(e) => updateSlot(s.id, { email: e.target.value })}
+                    />
+                    <input
+                      className="cv-input"
+                      type="email"
+                      placeholder="Confirm recipient email"
+                      value={s.confirmEmail}
+                      onChange={(e) => updateSlot(s.id, { confirmEmail: e.target.value })}
+                    />
+                    {s.email &&
+                      s.confirmEmail &&
+                      s.email.trim().toLowerCase() !== s.confirmEmail.trim().toLowerCase() && (
+                        <span className="cv-error" style={{ fontSize: 13 }}>
+                          Emails don't match.
+                        </span>
+                      )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </section>
+        )}
+
+        {/* 3 — Your email (guests confirm with a code) */}
+        {slots.length > 0 && (
+          <section className="cv-card cv-section" style={{ marginLeft: 0 }}>
+            <h3 className="cv-h3" style={{ marginBottom: 12 }}>
+              3. Your email
+            </h3>
+            {user ? (
+              <p className="cv-muted">
+                Passes and your receipt go to <strong>{user.email}</strong>.
+              </p>
+            ) : (
+              <GuestEmailGate
+                email={buyerEmail}
+                setEmail={setBuyerEmail}
+                verified={!!guestToken}
+                onVerified={(token, email) => {
+                  setGuestToken(token);
+                  setBuyerEmail(email);
+                }}
+              />
+            )}
+          </section>
+        )}
+
+        {/* 4 — Pay */}
+        {slots.length > 0 && (
+          <section className="cv-card cv-section" style={{ marginLeft: 0 }}>
+            <div className="cv-row" style={{ marginBottom: 16 }}>
+              <span className="cv-muted">
+                Total · {slots.length} ticket{slots.length === 1 ? "" : "s"}
+              </span>
+              <strong style={{ fontSize: 22 }}>{money(total, ev.currency)}</strong>
+            </div>
+
+            {!buyerReady && (
+              <p className="cv-muted" style={{ marginBottom: 12, fontSize: 13 }}>
+                Confirm your email above to continue.
+              </p>
+            )}
+
+            {provider === "stripe" ? (
+              <StripeCheckout
+                eventId={eventId!}
+                publishableKey={config.stripePublishableKey}
+                token={guestToken || undefined}
+                buildItems={buildItems}
+                disabled={!canPay}
+                onPaid={(r) => setResult(r)}
+              />
+            ) : (
+              <PaystackCheckout
+                eventId={eventId!}
+                token={guestToken || undefined}
+                buildItems={buildItems}
+                disabled={!canPay}
+                onPaid={(r) => setResult(r)}
+              />
+            )}
+          </section>
         )}
       </div>
     </Layout>
   );
 }
 
+// ── Guest email confirmation (OTP) ───────────────────────────────────────────
+
+function GuestEmailGate({
+  email,
+  setEmail,
+  verified,
+  onVerified,
+}: {
+  email: string;
+  setEmail: (v: string) => void;
+  verified: boolean;
+  onVerified: (token: string, email: string) => void;
+}) {
+  const [confirmEmail, setConfirmEmail] = useState("");
+  const [sent, setSent] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const emailsMatch = email.trim().toLowerCase() === confirmEmail.trim().toLowerCase();
+
+  if (verified) {
+    return (
+      <p className="cv-muted">
+        Email confirmed ✓ Passes go to <strong>{email}</strong>.
+      </p>
+    );
+  }
+
+  async function sendCode() {
+    setError("");
+    if (!EMAIL_RE.test(email)) return setError("Enter a valid email address.");
+    if (!emailsMatch) return setError("Emails don't match.");
+    setBusy(true);
+    try {
+      await api("/payments/guest/start-otp", {
+        method: "POST",
+        auth: false,
+        body: { email: email.trim().toLowerCase() },
+      });
+      setSent(true);
+    } catch (err: any) {
+      setError(err.message || "Couldn't send the code. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verify() {
+    setError("");
+    setBusy(true);
+    try {
+      const res = await api<{ token: string; email: string }>("/payments/guest/verify-otp", {
+        method: "POST",
+        auth: false,
+        body: { email: email.trim().toLowerCase(), otp: otp.trim() },
+      });
+      onVerified(res.token, res.email);
+    } catch (err: any) {
+      setError(err.message || "That code didn't work. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <p className="cv-muted" style={{ fontSize: 13 }}>
+        No account needed — we'll email your pass here. Confirm your email with a quick code.
+      </p>
+      {error && <div className="cv-error">{error}</div>}
+      {!sent ? (
+        <>
+          <input
+            className="cv-input"
+            type="email"
+            placeholder="Your email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <input
+            className="cv-input"
+            type="email"
+            placeholder="Confirm your email"
+            value={confirmEmail}
+            onChange={(e) => setConfirmEmail(e.target.value)}
+          />
+          <button className="cv-btn" onClick={sendCode} disabled={busy}>
+            {busy ? "Sending…" : "Send code"}
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="cv-muted" style={{ fontSize: 13 }}>
+            Enter the 6-digit code we sent to <strong>{email}</strong>.
+          </p>
+          <input
+            className="cv-input"
+            inputMode="numeric"
+            placeholder="6-digit code"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value)}
+          />
+          <button className="cv-btn" onClick={verify} disabled={busy || otp.trim().length < 4}>
+            {busy ? "Verifying…" : "Confirm email"}
+          </button>
+          <button
+            className="cv-btn cv-btn-ghost cv-btn-inline"
+            onClick={sendCode}
+            disabled={busy}
+            style={{ justifySelf: "start" }}
+          >
+            Resend code
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Stripe (USD) ─────────────────────────────────────────────────────────────
+
+type PaidResult = { recipients: string[] };
+type ItemsPayload = { tierId?: string; recipientEmail: string; recipientName?: string }[];
 
 const stripeCache: Record<string, Promise<Stripe | null>> = {};
 function stripePromiseFor(key: string) {
@@ -180,33 +570,47 @@ function stripePromiseFor(key: string) {
 
 function StripeCheckout({
   eventId,
-  tierId,
   publishableKey,
+  token,
+  buildItems,
+  disabled,
   onPaid,
 }: {
   eventId: string;
-  tierId?: string;
   publishableKey: string;
-  onPaid: () => void;
+  token?: string;
+  buildItems: () => ItemsPayload;
+  disabled: boolean;
+  onPaid: (r: PaidResult) => void;
 }) {
   if (!publishableKey) {
     return <div className="cv-error">Card payments aren't configured.</div>;
   }
   return (
     <Elements stripe={stripePromiseFor(publishableKey)}>
-      <StripeForm eventId={eventId} tierId={tierId} onPaid={onPaid} />
+      <StripeForm
+        eventId={eventId}
+        token={token}
+        buildItems={buildItems}
+        disabled={disabled}
+        onPaid={onPaid}
+      />
     </Elements>
   );
 }
 
 function StripeForm({
   eventId,
-  tierId,
+  token,
+  buildItems,
+  disabled,
   onPaid,
 }: {
   eventId: string;
-  tierId?: string;
-  onPaid: () => void;
+  token?: string;
+  buildItems: () => ItemsPayload;
+  disabled: boolean;
+  onPaid: (r: PaidResult) => void;
 }) {
   const stripe = useStripe();
   const elements = useElements();
@@ -218,31 +622,27 @@ function StripeForm({
     setError("");
     setBusy(true);
     try {
-      // 1. Server creates the PaymentIntent and returns its client secret.
-      const init = await api<{ provider: string; clientSecret: string }>(
-        `/payments/init/ticket/${eventId}`,
-        { method: "POST", body: tierId ? { tierId } : {} }
+      const items = buildItems();
+      const init = await api<{ clientSecret: string }>(
+        `/payments/init/tickets/${eventId}`,
+        { method: "POST", body: { items }, token }
       );
-
-      // 2. Confirm the card on the client.
       const card = elements.getElement(CardElement);
       if (!card) throw new Error("Card details are missing.");
-      const result = await stripe.confirmCardPayment(init.clientSecret, {
+      const res = await stripe.confirmCardPayment(init.clientSecret, {
         payment_method: { card },
       });
-      if (result.error) {
-        setError(result.error.message || "Your card was declined.");
+      if (res.error) {
+        setError(res.error.message || "Your card was declined.");
         return;
       }
-      const reference = result.paymentIntent?.id;
+      const reference = res.paymentIntent?.id;
       if (!reference) throw new Error("Payment could not be verified.");
-
-      // 3. Server verifies + issues the ticket.
-      await api(`/payments/confirm/ticket/${eventId}`, {
-        method: "POST",
-        body: { provider: "stripe", reference, ...(tierId ? { tierId } : {}) },
-      });
-      onPaid();
+      const done = await api<{ recipients: string[] }>(
+        `/payments/confirm/tickets/${eventId}`,
+        { method: "POST", body: { provider: "stripe", reference }, token }
+      );
+      onPaid({ recipients: done.recipients || [] });
     } catch (err: any) {
       setError(err.message || "Payment failed. Please try again.");
     } finally {
@@ -272,7 +672,7 @@ function StripeForm({
           }}
         />
       </div>
-      <button className="cv-btn" onClick={pay} disabled={busy || !stripe}>
+      <button className="cv-btn" onClick={pay} disabled={busy || disabled || !stripe}>
         {busy ? "Processing…" : "Pay now"}
       </button>
     </>
@@ -283,54 +683,55 @@ function StripeForm({
 
 function PaystackCheckout({
   eventId,
-  tierId,
+  token,
+  buildItems,
+  disabled,
   onPaid,
 }: {
   eventId: string;
-  tierId?: string;
-  onPaid: () => void;
+  token?: string;
+  buildItems: () => ItemsPayload;
+  disabled: boolean;
+  onPaid: (r: PaidResult) => void;
 }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // The server initializes a Paystack transaction and returns its hosted
-  // `paymentLink` (authorization_url). Paystack's callback targets the mobile
-  // app scheme, so on web we open the hosted page in a popup and detect success
-  // by polling our own confirm endpoint (which verifies the charge with
-  // Paystack) rather than relying on the redirect coming back.
   function pollConfirm(reference: string, win: Window | null) {
     let ticks = 0;
     let closedTicks = 0;
+    let inFlight = false; // never run two confirms at once — avoids double-fulfilling
     const timer = setInterval(async () => {
+      if (inFlight) return;
+      inFlight = true;
       ticks++;
       try {
-        await api(`/payments/confirm/ticket/${eventId}`, {
-          method: "POST",
-          body: { provider: "paystack", reference, ...(tierId ? { tierId } : {}) },
-        });
+        const done = await api<{ recipients: string[] }>(
+          `/payments/confirm/tickets/${eventId}`,
+          { method: "POST", body: { provider: "paystack", reference }, token }
+        );
         clearInterval(timer);
         try {
           if (win && !win.closed) win.close();
         } catch {}
-        onPaid();
+        onPaid({ recipients: done.recipients || [] });
       } catch {
-        // Not paid yet — verify returns non-success. Keep waiting.
         if (win && win.closed) {
           closedTicks++;
-          // A couple of grace polls after the user closes the popup, then stop.
           if (closedTicks >= 2) {
             clearInterval(timer);
             setBusy(false);
           }
         }
         if (ticks >= 100) {
-          // ~5 min cap.
           clearInterval(timer);
           setBusy(false);
           setError(
-            "We couldn't confirm your payment. If you were charged, it may still come through — contact support if your ticket doesn't appear."
+            "We couldn't confirm your payment. If you were charged, your passes may still arrive by email — contact support if they don't."
           );
         }
+      } finally {
+        inFlight = false;
       }
     }, 3000);
   }
@@ -338,7 +739,6 @@ function PaystackCheckout({
   async function pay() {
     setError("");
     setBusy(true);
-    // Open the popup synchronously inside the click gesture so it isn't blocked.
     const win = window.open("", "cv_paystack", "width=480,height=760");
     if (!win) {
       setBusy(false);
@@ -347,9 +747,10 @@ function PaystackCheckout({
     }
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Starting secure checkout…</p>");
     try {
+      const items = buildItems();
       const init = await api<{ reference: string; paymentLink?: string }>(
-        `/payments/init/ticket/${eventId}`,
-        { method: "POST", body: tierId ? { tierId } : {} }
+        `/payments/init/tickets/${eventId}`,
+        { method: "POST", body: { items }, token }
       );
       if (!init.paymentLink) throw new Error("Couldn't start Paystack checkout.");
       win.location.href = init.paymentLink;
@@ -366,13 +767,13 @@ function PaystackCheckout({
   return (
     <>
       {error && <div className="cv-error">{error}</div>}
-      <button className="cv-btn" onClick={pay} disabled={busy}>
+      <button className="cv-btn" onClick={pay} disabled={busy || disabled}>
         {busy ? "Waiting for payment…" : "Pay with Paystack"}
       </button>
       {busy && (
         <p className="cv-muted" style={{ marginTop: 12, fontSize: 13 }}>
-          Complete your payment in the Paystack window. This page will update
-          automatically once it goes through.
+          Complete your payment in the Paystack window. This page updates automatically once it goes
+          through.
         </p>
       )}
     </>

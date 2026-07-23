@@ -31,6 +31,9 @@ import {
   getPendingPaidEvents,
   approvePaidEvent,
   rejectPaidEvent,
+  getPendingEventEdits,
+  approveEventEdit,
+  rejectEventEdit,
 } from "../controllers/admin.controller.js";
 import {
   getPayouts,
@@ -92,6 +95,11 @@ router.post("/admin/payouts/:id/reject", authenticateAdmin, rejectPayout);
 router.get("/admin/paid-events", authenticateAdmin, getPendingPaidEvents);
 router.patch("/admin/paid-events/:id/approve", authenticateAdmin, approvePaidEvent);
 router.patch("/admin/paid-events/:id/reject", authenticateAdmin, rejectPaidEvent);
+
+// Creator event-edit approval queue
+router.get("/admin/event-edits", authenticateAdmin, getPendingEventEdits);
+router.patch("/admin/event-edits/:id/approve", authenticateAdmin, approveEventEdit);
+router.patch("/admin/event-edits/:id/reject", authenticateAdmin, rejectEventEdit);
 
 // Reports (Apple Guideline 1.2 moderation queue)
 router.get("/admin/reports", authenticateAdmin, getReports);

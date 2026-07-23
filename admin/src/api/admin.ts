@@ -95,6 +95,17 @@ export const adminApi = {
   rejectPaidEvent: (id: string, reason: string) =>
     client.patch<{ status: string }>(`/admin/paid-events/${id}/reject`, { reason }),
 
+  // Creator Event-Edit Approval Queue — material edits to public events
+  getEventEdits: (params?: { status?: string; page?: number; limit?: number }) =>
+    client.get<{ events: any[]; total: number; page: number; limit: number }>(
+      "/admin/event-edits",
+      { params }
+    ),
+  approveEventEdit: (id: string) =>
+    client.patch<{ status: string }>(`/admin/event-edits/${id}/approve`, {}),
+  rejectEventEdit: (id: string, reason: string) =>
+    client.patch<{ status: string }>(`/admin/event-edits/${id}/reject`, { reason }),
+
   // Payout Approval Queue — release held vendor funds
   getPayouts: (params?: { status?: string; page?: number; limit?: number }) =>
     client.get<{
