@@ -32,7 +32,9 @@ const isValidMeetingLink = (value) => {
 // Create a new event
 export const createEvent = async (req, res) => {
   try {
-    const {
+    // `let` (not `const`): maxGuests is re-derived below from per-tier quantities
+    // when the tiers declare their own allocations.
+    let {
       title,
       date,
       location,
@@ -87,10 +89,18 @@ export const createEvent = async (req, res) => {
         if (ticketTiers.length > 10) {
           return res.status(400).json({ message: "You can create up to 10 ticket tiers." });
         }
-        tiers = ticketTiers.map((t) => ({
-          name: String(t?.name || "").trim(),
-          price: Number(t?.price),
-        }));
+        tiers = ticketTiers.map((t) => {
+          const tier = {
+            name: String(t?.name || "").trim(),
+            price: Number(t?.price),
+          };
+          // Per-tier quantity is optional (back-compat). When any tier supplies
+          // one, it must be a positive integer — it caps that tier's sales.
+          if (t?.quantity !== undefined && t?.quantity !== null && t?.quantity !== "") {
+            tier.quantity = Number(t.quantity);
+          }
+          return tier;
+        });
         if (tiers.some((t) => !t.name)) {
           return res.status(400).json({ message: "Every ticket tier needs a name." });
         }
@@ -104,6 +114,20 @@ export const createEvent = async (req, res) => {
         if (tiers.some((t) => !Number.isFinite(t.price) || t.price <= 0)) {
           return res.status(400).json({ message: "Every ticket tier needs a price greater than 0." });
         }
+        // Quantity is all-or-nothing across tiers: either every tier declares its
+        // own allocation (and maxGuests is derived from their sum), or none do
+        // (and the shared event-level maxGuests governs).
+        const tiersWithQty = tiers.filter((t) => t.quantity !== undefined);
+        if (tiersWithQty.length > 0) {
+          if (tiersWithQty.length !== tiers.length) {
+            return res.status(400).json({
+              message: "Set a quantity for every ticket tier, or leave them all blank.",
+            });
+          }
+          if (tiers.some((t) => !Number.isInteger(t.quantity) || t.quantity <= 0)) {
+            return res.status(400).json({ message: "Every ticket tier needs a whole quantity greater than 0." });
+          }
+        }
         assertClean(tiers.map((t) => ({ field: "Tier name", value: t.name })));
       }
 
@@ -112,7 +136,12 @@ export const createEvent = async (req, res) => {
       if (!tiers.length && (!ticketPrice || ticketPrice <= 0)) {
         return res.status(400).json({ message: "Ticket price must be greater than 0 for paid events" });
       }
-      if (!maxGuests || maxGuests <= 0) {
+      // When tiers declare per-tier quantities, capacity is the sum of them and a
+      // client-sent maxGuests is ignored. Otherwise maxGuests is required.
+      const tiersHaveQuantity = tiers.length > 0 && tiers.every((t) => t.quantity !== undefined);
+      if (tiersHaveQuantity) {
+        maxGuests = tiers.reduce((sum, t) => sum + t.quantity, 0);
+      } else if (!maxGuests || maxGuests <= 0) {
         return res.status(400).json({ message: "Max guests must be specified for paid events" });
       }
       // Virtual events have no venue to prove; they still pass through the
@@ -443,15 +472,21 @@ export const getUserEvents = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
+    // Web "My Events" tab: only events the caller created, optionally just the
+    // public ones. Defaults to the broader created-or-invited feed (mobile).
+    const createdOnly = req.query.createdOnly === "1" || req.query.createdOnly === "true";
+    const publicOnly = req.query.publicOnly === "1" || req.query.publicOnly === "true";
 
-    const query = {
-      $or: [
-        { createdBy: userId },
-        { invitedUsers: userId },
-        { pendingInvites: userId }
-      ],
-      isActive: true
-    };
+    const query = createdOnly
+      ? { createdBy: userId, isActive: true, ...(publicOnly ? { isPublic: true } : {}) }
+      : {
+          $or: [
+            { createdBy: userId },
+            { invitedUsers: userId },
+            { pendingInvites: userId }
+          ],
+          isActive: true
+        };
 
     const [events, total] = await Promise.all([
       Event.find(query)
@@ -469,12 +504,18 @@ export const getUserEvents = async (req, res) => {
     const eventsWithInfo = await Promise.all(
       events.map(async (event) => {
         const eventObj = event.toObject();
+        let paidSold = null;
         if (event.isPublic && event.isPaid && event.maxGuests > 0) {
-          const soldTickets = await Ticket.countDocuments({ event: event._id, isValid: true });
-          eventObj.ticketsSold = soldTickets;
-          eventObj.ticketsRemaining = event.maxGuests - soldTickets;
+          paidSold = await Ticket.countDocuments({ event: event._id, isValid: true });
+          eventObj.ticketsSold = paidSold;
+          eventObj.ticketsRemaining = event.maxGuests - paidSold;
         }
-        eventObj.rsvpCount = event.rsvpUsers ? event.rsvpUsers.length : 0;
+        // Paid events count attendance by TICKETS (not deduped RSVP users) and
+        // don't expose an RSVP list; free events use the RSVP list as before.
+        eventObj.rsvpCount = event.isPaid
+          ? (paidSold ?? 0)
+          : (event.rsvpUsers ? event.rsvpUsers.length : 0);
+        if (event.isPaid) eventObj.rsvpUsers = [];
         eventObj.userRsvp = event.rsvpUsers ? event.rsvpUsers.some(id => id.toString() === userId) : false;
 
         // Determine the current user's relationship to this event
@@ -492,6 +533,9 @@ export const getUserEvents = async (req, res) => {
         if (eventObj.userStatus !== 'creator' && eventObj.userStatus !== 'accepted') {
           delete eventObj.meetingLink;
         }
+
+        // Only the creator may see their unapproved proposed edits.
+        if (eventObj.userStatus !== 'creator') delete eventObj.pendingEdits;
 
         return eventObj;
       })
@@ -610,6 +654,32 @@ export const getEventById = async (req, res) => {
       eventObj.ticketsSold = ticketsSold;
       eventObj.ticketsRemaining = Math.max(event.maxGuests - ticketsSold, 0);
       eventObj.userHasPurchased = hasTicket;
+
+      // Capacity/"going" for a paid event is measured in TICKETS, not RSVP
+      // entries — one buyer can hold several (bought for themselves and/or
+      // gifted). And ticket holders (gift recipients, guest buyers) are not
+      // social RSVPs, so keep them out of the public "who's coming" list.
+      eventObj.rsvpCount = ticketsSold;
+      eventObj.rsvpUsers = [];
+
+      // Per-tier remaining for tiers that declare their own quantity, so the
+      // client can show "X left" and disable a sold-out tier. Tiers without a
+      // quantity draw from the shared pool and report no per-tier remaining.
+      const tiersWithQty = (event.ticketTiers || []).filter(
+        (t) => typeof t.quantity === "number"
+      );
+      if (tiersWithQty.length) {
+        const soldByTier = await Ticket.aggregate([
+          { $match: { event: event._id, isValid: true } },
+          { $group: { _id: "$tierId", count: { $sum: 1 } } },
+        ]);
+        const soldMap = new Map(soldByTier.map((r) => [String(r._id), r.count]));
+        eventObj.ticketTiers = (eventObj.ticketTiers || []).map((t) => {
+          if (typeof t.quantity !== "number") return t;
+          const sold = soldMap.get(String(t._id)) || 0;
+          return { ...t, remaining: Math.max(t.quantity - sold, 0) };
+        });
+      }
     }
 
     // Tell the client what this user's relationship to the event is
@@ -621,7 +691,9 @@ export const getEventById = async (req, res) => {
 
     // Derived: mutuals on the guest list. Powers the "FRIENDS · N going" stat
     // and the "N friends" span on the attendees card. Anon viewers see 0.
-    const rsvpIdStrings = event.rsvpUsers.map(u => u._id.toString());
+    // Paid events don't expose an RSVP list (attendance is ticket-based), so the
+    // mutuals stat is 0 there.
+    const rsvpIdStrings = event.isPaid ? [] : event.rsvpUsers.map(u => u._id.toString());
     if (!userId || rsvpIdStrings.length === 0) {
       eventObj.friendsGoing = 0;
     } else {
@@ -679,6 +751,9 @@ export const getEventById = async (req, res) => {
       delete eventObj.joinRequests;
     }
 
+    // pendingEdits holds unapproved proposed values — only the creator may see it.
+    if (!isCreator) delete eventObj.pendingEdits;
+
     const response = { event: eventObj };
     setCache(cacheKey, response, 180); // 3 min TTL
     res.status(200).json(response);
@@ -721,10 +796,12 @@ export const getEventByShareToken = async (req, res) => {
       return res.status(410).json({ message: "This event is no longer available" });
     }
 
-    // Share links are unauthenticated — never leak the attendee-only meeting link.
+    // Share links are unauthenticated — never leak the attendee-only meeting link
+    // or the creator's unapproved proposed edits.
     const eventObj = event.toObject();
     eventObj.hasMeetingLink = !!event.meetingLink;
     delete eventObj.meetingLink;
+    delete eventObj.pendingEdits;
 
     res.status(200).json({ event: eventObj });
   } catch (error) {
@@ -733,11 +810,50 @@ export const getEventByShareToken = async (req, res) => {
   }
 };
 
+/**
+ * Validate + normalize a ticketTiers payload for an edit (names, prices, optional
+ * per-tier quantities). Mirrors the core create-time checks. Returns
+ * `{ tiers }` or `{ error }`.
+ */
+function validateTierPayload(ticketTiers) {
+  if (!Array.isArray(ticketTiers)) return { error: "Ticket tiers must be a list." };
+  if (ticketTiers.length > 10) return { error: "You can create up to 10 ticket tiers." };
+  const tiers = ticketTiers.map((t) => {
+    const tier = { name: String(t?.name || "").trim(), price: Number(t?.price) };
+    if (t?.quantity !== undefined && t?.quantity !== null && t?.quantity !== "") {
+      tier.quantity = Number(t.quantity);
+    }
+    return tier;
+  });
+  if (tiers.some((t) => !t.name)) return { error: "Every ticket tier needs a name." };
+  if (tiers.some((t) => t.name.length > 40)) return { error: "Tier names must be 40 characters or fewer." };
+  const names = new Set(tiers.map((t) => t.name.toLowerCase()));
+  if (names.size !== tiers.length) return { error: "Tier names must be unique." };
+  if (tiers.some((t) => !Number.isFinite(t.price) || t.price <= 0)) {
+    return { error: "Every ticket tier needs a price greater than 0." };
+  }
+  const withQty = tiers.filter((t) => t.quantity !== undefined);
+  if (withQty.length > 0) {
+    if (withQty.length !== tiers.length) {
+      return { error: "Set a quantity for every ticket tier, or leave them all blank." };
+    }
+    if (tiers.some((t) => !Number.isInteger(t.quantity) || t.quantity <= 0)) {
+      return { error: "Every ticket tier needs a whole quantity greater than 0." };
+    }
+  }
+  return { tiers };
+}
+
 // Update an event
 export const updateEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { title, date, location, address, city, state, country, image, images, description, isPublic, isVirtual, meetingLink } = req.body;
+    const {
+      title, date, location, address, city, state, country, image, images,
+      description, isPublic, isVirtual, meetingLink,
+      // Material (pricing/capacity) fields — held for admin approval on public events.
+      ticketTiers, ticketPrice, maxGuests,
+    } = req.body;
     const userId = req.user.id;
 
     const event = await Event.findById(eventId);
@@ -818,9 +934,8 @@ export const updateEvent = async (req, res) => {
       event.image = gallery[0] || "";
     }
 
-    // Update fields
+    // Update fields. Title is a minor field — applied immediately.
     if (title) event.title = title;
-    if (date) event.date = new Date(date);
 
     // Resolve the target mode first and gate every location-family write on
     // it, so a stale client payload can't resurrect the old address on a
@@ -853,6 +968,75 @@ export const updateEvent = async (req, res) => {
     }
     if (description !== undefined) event.description = description;
 
+    // ── Material changes (date + pricing/capacity) ─────────────────────────────
+    // On a PUBLIC event these are held in `pendingEdits` for an admin to approve
+    // — the live doc keeps serving its current values until then. On a PRIVATE
+    // event they apply immediately (no public audience to protect).
+    //
+    // Only fields that ACTUALLY CHANGED count as material — clients (esp. mobile)
+    // resend the whole form on every edit, so a description-only edit shouldn't
+    // queue an approval just because it echoed the unchanged date/price.
+    const material = {};
+    if (date !== undefined) {
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return res.status(400).json({ message: "Invalid date" });
+      if (!event.date || d.getTime() !== new Date(event.date).getTime()) material.date = d;
+    }
+    // Pricing/capacity edits only apply to paid events.
+    if (event.isPaid && (ticketTiers !== undefined || ticketPrice !== undefined || maxGuests !== undefined)) {
+      if (ticketTiers !== undefined) {
+        const { tiers, error } = validateTierPayload(ticketTiers);
+        if (error) return res.status(400).json({ message: error });
+        // Compare normalized tiers (name/price/quantity) against the live ones.
+        const norm = (arr) =>
+          JSON.stringify(
+            (arr || []).map((t) => ({
+              name: t.name,
+              price: Number(t.price),
+              quantity: t.quantity === undefined ? null : Number(t.quantity),
+            }))
+          );
+        if (norm(tiers) !== norm(event.ticketTiers)) {
+          material.ticketTiers = tiers;
+          if (tiers.length) {
+            material.ticketPrice = Math.min(...tiers.map((t) => t.price));
+            const allQty = tiers.every((t) => t.quantity !== undefined);
+            if (allQty) material.maxGuests = tiers.reduce((s, t) => s + t.quantity, 0);
+            else if (maxGuests !== undefined) material.maxGuests = Number(maxGuests);
+          }
+        }
+      } else {
+        if (ticketPrice !== undefined) {
+          if (!Number.isFinite(Number(ticketPrice)) || Number(ticketPrice) <= 0) {
+            return res.status(400).json({ message: "Ticket price must be greater than 0." });
+          }
+          if (Number(ticketPrice) !== Number(event.ticketPrice)) material.ticketPrice = Number(ticketPrice);
+        }
+        if (maxGuests !== undefined) {
+          if (!Number.isInteger(Number(maxGuests)) || Number(maxGuests) <= 0) {
+            return res.status(400).json({ message: "Max guests must be a whole number greater than 0." });
+          }
+          if (Number(maxGuests) !== Number(event.maxGuests)) material.maxGuests = Number(maxGuests);
+        }
+      }
+    }
+
+    const materialKeys = Object.keys(material);
+    const holdForApproval = event.isPublic && materialKeys.length > 0;
+    if (holdForApproval) {
+      // Merge with any still-pending edits so a follow-up edit doesn't drop them.
+      event.pendingEdits = {
+        fields: { ...(event.pendingEdits?.fields || {}), ...material },
+        status: "pending",
+        submittedAt: new Date(),
+        reviewedAt: undefined,
+        reviewedBy: undefined,
+        rejectReason: undefined,
+      };
+    } else {
+      for (const k of materialKeys) event[k] = material[k];
+    }
+
     await event.save();
 
     // Keep the linked group chat's name in lockstep with the event title so a
@@ -871,7 +1055,10 @@ export const updateEvent = async (req, res) => {
       .populate('invitedUsers', 'username email profilePicture');
 
     res.status(200).json({
-      message: "Event updated successfully",
+      message: holdForApproval
+        ? "Your changes were saved. Pricing, capacity and date changes need admin approval before they go live; other changes are already live."
+        : "Event updated successfully",
+      pendingApproval: holdForApproval,
       event: updatedEvent
     });
   } catch (error) {
@@ -1400,11 +1587,15 @@ export const getPublicEvents = async (req, res) => {
 
         // Check if current user created this event
         eventObj.isCreator = !!userId && event.createdBy._id.toString() === userId;
+        if (!eventObj.isCreator) delete eventObj.pendingEdits;
 
         if (event.isPaid && event.maxGuests > 0) {
           const soldTickets = await Ticket.countDocuments({ event: event._id, isValid: true });
           eventObj.ticketsSold = soldTickets;
           eventObj.ticketsRemaining = event.maxGuests - soldTickets;
+          // Ticket-based attendance; no phantom RSVP entries for paid events.
+          eventObj.rsvpCount = soldTickets;
+          eventObj.rsvpUsers = [];
 
           // Check if current user has already purchased a ticket
           const userTicket = userId
@@ -1586,11 +1777,15 @@ export const getEventHighlights = async (req, res) => {
       // Attendee-only; fetched via the detail endpoint after joining.
       delete obj.meetingLink;
       obj.isCreator = !!userId && event.createdBy._id.toString() === userId;
+      if (!obj.isCreator) delete obj.pendingEdits;
       obj.rsvpCount = event.rsvpUsers?.length || 0;
       if (event.isPaid && event.maxGuests > 0) {
         const sold = await Ticket.countDocuments({ event: event._id, isValid: true });
         obj.ticketsSold = sold;
         obj.ticketsRemaining = event.maxGuests - sold;
+        // Ticket-based attendance; no phantom RSVP entries for paid events.
+        obj.rsvpCount = sold;
+        obj.rsvpUsers = [];
         const userTicket = userId
           ? await Ticket.findOne({ event: event._id, user: userId, isValid: true })
           : null;

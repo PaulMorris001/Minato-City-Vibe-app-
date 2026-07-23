@@ -65,6 +65,12 @@ const eventSchema = mongoose.Schema({
     {
       name: { type: String, trim: true, maxlength: 40 },
       price: { type: Number, min: 0 },
+      // Per-tier ticket allocation. When set (> 0), sold-out is enforced against
+      // this count for the tier (Ticket.countDocuments({ event, tierId })), and
+      // the event's `maxGuests` mirrors the sum of tier quantities. Optional for
+      // back-compat: legacy tiers with no `quantity` fall back to the shared
+      // event-level `maxGuests` pool.
+      quantity: { type: Number, min: 0 },
     },
   ],
   // Currency the organizer prices tickets in (USD for Stripe sellers, e.g. NGN
@@ -132,6 +138,26 @@ const eventSchema = mongoose.Schema({
   approvalReviewedAt: { type: Date },
   approvalReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "user" },
   approvalRejectReason: { type: String },
+
+  // Creator edits to an already-public event that touch "material" fields
+  // (date, pricing, tiers, capacity, currency, paid flag) are held here until an
+  // admin approves them — the live doc keeps serving the old values meanwhile.
+  // Minor fields (title/description/photos/location/meetingLink) are applied to
+  // the live doc immediately and never enter this holder. `reviewedBy` is the
+  // admin username string (the admin JWT carries no user id — mirrors
+  // verification.model.js).
+  pendingEdits: {
+    fields: { type: mongoose.Schema.Types.Mixed, default: null },
+    status: {
+      type: String,
+      enum: ["none", "pending", "rejected"],
+      default: "none",
+    },
+    submittedAt: { type: Date },
+    reviewedAt: { type: Date },
+    reviewedBy: { type: String },
+    rejectReason: { type: String },
+  },
 
   // Paid events must include proof the venue is real — booking confirmation,
   // signed contract, screenshot of reservation, etc. Required for paid events

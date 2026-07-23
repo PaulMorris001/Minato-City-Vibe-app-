@@ -22,65 +22,93 @@ function formatEventDate(date) {
 }
 
 /**
- * Issue (or upgrade) an event pass for a user and email them the QR code.
+ * Issue an event pass and email the QR code.
  *
- * Idempotent: one pass per (event, user). RSVPing twice reuses the existing
- * code and does NOT re-send the email. Buying a ticket after RSVPing upgrades
- * the pass type to "ticket" and re-sends (now as a ticket).
+ * Two modes, by `type`:
+ *   - "ticket" with a `ticketId`: one pass PER TICKET. A buyer can hold several
+ *     tickets for one event, each its own pass. Idempotent on the ticket. The QR
+ *     is emailed to `recipientEmail` (for gifted tickets) or the owner's email.
+ *   - "rsvp" (free events): one pass per (event, user). RSVPing twice reuses the
+ *     existing code and does NOT re-send.
  *
  * Safe to call fire-and-forget — it never throws to the caller; failures are
  * logged so a flaky mailer can't break an RSVP or a ticket purchase.
  *
  * @param {object} args
- * @param {string} args.userId
+ * @param {string} args.userId              pass owner / attendee
  * @param {string} args.eventId
  * @param {"rsvp"|"ticket"} args.type
- * @param {string} [args.ticketId]
+ * @param {string} [args.ticketId]          required for per-ticket passes
+ * @param {string} [args.recipientEmail]    where to send the QR (defaults to owner email)
+ * @param {string} [args.recipientName]     display name for the email greeting
  * @returns {Promise<void>}
  */
-export async function issueEventPass({ userId, eventId, type, ticketId = null }) {
+export async function issueEventPass({
+  userId,
+  eventId,
+  type,
+  ticketId = null,
+  recipientEmail = null,
+  recipientName = null,
+}) {
   try {
-    let pass = await Attendance.findOne({ event: eventId, user: userId });
+    let pass = null;
     let shouldEmail = false;
+    const perTicket = type === "ticket" && ticketId;
 
-    if (!pass) {
-      try {
-        pass = await Attendance.create({
-          event: eventId,
-          user: userId,
-          type,
-          ticket: ticketId || undefined,
-          code: generatePassCode(),
-        });
-        shouldEmail = true;
-      } catch (err) {
-        // Concurrent issue created it first — fetch the winner, no email.
-        if (err?.code === 11000) {
-          pass = await Attendance.findOne({ event: eventId, user: userId });
-        } else {
-          throw err;
+    if (perTicket) {
+      pass = await Attendance.findOne({ ticket: ticketId });
+      if (!pass) {
+        try {
+          pass = await Attendance.create({
+            event: eventId,
+            user: userId,
+            type: "ticket",
+            ticket: ticketId,
+            recipientEmail: recipientEmail || undefined,
+            code: generatePassCode(),
+          });
+          shouldEmail = true;
+        } catch (err) {
+          // Concurrent issue created it first — fetch the winner, no email.
+          if (err?.code === 11000) pass = await Attendance.findOne({ ticket: ticketId });
+          else throw err;
         }
       }
-    } else if (type === "ticket" && pass.type !== "ticket") {
-      // Upgrade an existing RSVP pass to a ticket and re-send as a ticket.
-      pass.type = "ticket";
-      if (ticketId) pass.ticket = ticketId;
-      await pass.save();
-      shouldEmail = true;
+    } else {
+      // RSVP pass — one per (event, user).
+      pass = await Attendance.findOne({ event: eventId, user: userId, type: "rsvp" });
+      if (!pass) {
+        try {
+          pass = await Attendance.create({
+            event: eventId,
+            user: userId,
+            type: "rsvp",
+            code: generatePassCode(),
+          });
+          shouldEmail = true;
+        } catch (err) {
+          if (err?.code === 11000)
+            pass = await Attendance.findOne({ event: eventId, user: userId, type: "rsvp" });
+          else throw err;
+        }
+      }
     }
 
     if (!pass || !shouldEmail) return;
 
-    // Email is best-effort and must not block or fail the caller's flow.
+    // Email is best-effort and must not block or fail the caller's flow. Send to
+    // the ticket recipient when given (gifting), else the pass owner's email.
     const [user, event] = await Promise.all([
       User.findById(userId).select("email username").lean(),
       Event.findById(eventId).select("title date location address").lean(),
     ]);
-    if (!user?.email || !event) return;
+    const toEmail = recipientEmail || pass.recipientEmail || user?.email;
+    if (!toEmail || !event) return;
 
     const qrBuffer = await passQrBuffer(pass.code);
-    await sendEventPassEmail(user.email, {
-      username: user.username,
+    await sendEventPassEmail(toEmail, {
+      username: recipientName || user?.username || "there",
       eventTitle: event.title,
       eventDateText: formatEventDate(event.date),
       eventLocation: event.address || event.location || "",

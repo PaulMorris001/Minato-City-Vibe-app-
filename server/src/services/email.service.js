@@ -342,6 +342,62 @@ export const sendSignupVerificationOTP = async (email, otp, username) => {
 };
 
 /**
+ * Send a one-time code to confirm a guest buyer's email before they pay for a
+ * ticket (no account required). Cloned from the signup OTP with checkout copy.
+ */
+export const sendGuestCheckoutOTP = async (email, otp) => {
+  try {
+    const transporter = createTransporter();
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
+      to: email,
+      subject: "Your ticket checkout code - OurCityvibe",
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, sans-serif; line-height: 1.6; color: #333; background: #f4f4f4; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 20px auto; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: white; padding: 30px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; font-weight: 700; }
+            .content { padding: 40px 30px; }
+            .otp-container { background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%); border-radius: 8px; padding: 25px; text-align: center; margin: 30px 0; }
+            .otp-label { font-size: 14px; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+            .otp-code { font-size: 36px; font-weight: 800; color: #a855f7; letter-spacing: 8px; }
+            .hint { font-size: 13px; color: #6b7280; margin-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header"><h1>🌙 OurCityvibe</h1></div>
+            <div class="content">
+              <p>Hi there,</p>
+              <p>Enter this code to confirm your email and complete your ticket purchase. Your pass will be sent to this address once payment goes through.</p>
+              <div class="otp-container">
+                <div class="otp-label">Your checkout code</div>
+                <div class="otp-code">${otp}</div>
+              </div>
+              <p class="hint">This code expires in 10 minutes. If you didn't try to buy a ticket, you can safely ignore this email.</p>
+              <p>— The OurCityvibe Team</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `Hi there,\n\nYour OurCityvibe checkout code is ${otp}. It expires in 10 minutes. Your ticket pass will be emailed here after payment.\n\n— The OurCityvibe Team`,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("❌ Error sending guest checkout OTP email:", error);
+    throw new Error("Failed to send checkout code email");
+  }
+};
+
+/**
  * Send an event pass with an embedded OurCityvibe-styled QR code. Issued when a
  * user RSVPs to a free event or buys a ticket. The QR is attached inline (cid)
  * so it renders in the email body; the organizer scans it at the door to mark

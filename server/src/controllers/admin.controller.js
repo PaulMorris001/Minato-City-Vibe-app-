@@ -665,6 +665,138 @@ export async function rejectPaidEvent(req, res) {
   }
 }
 
+// ─── Creator event-edit approval queue ────────────────────────────────────────
+// Edits to material fields (date, pricing, tiers, capacity) on an already-public
+// event are held in event.pendingEdits until an admin approves them. Minor edits
+// (title, description, photos, location) go live immediately and never appear here.
+
+export async function getPendingEventEdits(req, res) {
+  try {
+    const { status = "pending", page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+    const query = { "pendingEdits.status": status };
+
+    const [events, total] = await Promise.all([
+      Event.find(query)
+        .sort({ "pendingEdits.submittedAt": -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .populate("createdBy", "username email profilePicture verified"),
+      Event.countDocuments(query),
+    ]);
+
+    // Surface only the fields that matter for review: the current (live) values
+    // and the proposed changes, so the console can render a clean diff.
+    const enriched = events.map((e) => {
+      const obj = e.toObject();
+      const proposed = obj.pendingEdits?.fields || {};
+      const current = {};
+      for (const key of Object.keys(proposed)) current[key] = obj[key];
+      return {
+        _id: obj._id,
+        title: obj.title,
+        date: obj.date,
+        currency: obj.currency,
+        createdBy: obj.createdBy,
+        pendingEdits: obj.pendingEdits,
+        diff: { current, proposed },
+      };
+    });
+
+    res.json({ events: enriched, total, page: Number(page), limit: Number(limit) });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function approveEventEdit(req, res) {
+  try {
+    const { id } = req.params;
+    const event = await Event.findById(id).populate("createdBy", "_id fcmToken username");
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    if (event.pendingEdits?.status !== "pending") {
+      return res.status(400).json({ message: "No pending edits to approve for this event" });
+    }
+
+    // Apply the proposed material fields to the live doc, then clear the holder.
+    const fields = event.pendingEdits.fields || {};
+    for (const [key, value] of Object.entries(fields)) event[key] = value;
+    event.pendingEdits = {
+      fields: null,
+      status: "none",
+      submittedAt: event.pendingEdits.submittedAt,
+      reviewedAt: new Date(),
+      reviewedBy: req.user?.username || "admin",
+      rejectReason: undefined,
+    };
+    await event.save();
+
+    await Notification.create({
+      user: event.createdBy._id,
+      type: "event_edit_approved",
+      title: "Your event changes are live ✓",
+      body: `The updates to "${event.title}" have been approved and are now public.`,
+      data: { eventId: String(event._id) },
+    });
+    if (event.createdBy.fcmToken) {
+      sendPushNotification(
+        event.createdBy.fcmToken,
+        "Your event changes are live ✓",
+        `The updates to "${event.title}" have been approved and are now public.`,
+        { type: "event_edit_approved", eventId: String(event._id) }
+      ).catch(() => {});
+    }
+
+    res.json({ status: "approved" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function rejectEventEdit(req, res) {
+  try {
+    const { id } = req.params;
+    const { reason = "" } = req.body ?? {};
+    const event = await Event.findById(id).populate("createdBy", "_id fcmToken username");
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    if (event.pendingEdits?.status !== "pending") {
+      return res.status(400).json({ message: "No pending edits to reject for this event" });
+    }
+
+    // Discard the proposed changes — the live event keeps its current values.
+    event.pendingEdits = {
+      fields: null,
+      status: "rejected",
+      submittedAt: event.pendingEdits.submittedAt,
+      reviewedAt: new Date(),
+      reviewedBy: req.user?.username || "admin",
+      rejectReason: reason,
+    };
+    await event.save();
+
+    const body = reason
+      ? `Your changes to "${event.title}" weren't approved. Reason: ${reason}`
+      : `Your changes to "${event.title}" weren't approved. The event still shows its previous details.`;
+    await Notification.create({
+      user: event.createdBy._id,
+      type: "event_edit_rejected",
+      title: "Event changes not approved",
+      body,
+      data: { eventId: String(event._id) },
+    });
+    if (event.createdBy.fcmToken) {
+      sendPushNotification(event.createdBy.fcmToken, "Event changes not approved", body, {
+        type: "event_edit_rejected",
+        eventId: String(event._id),
+      }).catch(() => {});
+    }
+
+    res.json({ status: "rejected" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
 export async function getAnalyticsEvents(req, res) {
   try {
     const { event = "", page = 1, limit = 20 } = req.query;
@@ -776,7 +908,7 @@ export async function resolveReport(req, res) {
         {
           status: "resolved",
           action: "banned_user",
-          resolvedBy: req.admin?.username || "admin",
+          resolvedBy: req.user?.username || "admin",
           resolvedAt: new Date(),
         }
       );

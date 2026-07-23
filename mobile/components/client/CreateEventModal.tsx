@@ -68,7 +68,10 @@ export default function CreateEventModal({
   const [venueProofImage, setVenueProofImage] = useState("");
   // Named ticket tiers (optional, max 10). While empty, the single Ticket
   // Price field is used instead. Prices are in the organizer's currency.
-  const [tiers, setTiers] = useState<{ name: string; price: string }[]>([]);
+  // `quantity` is the optional per-tier allocation — set it on every tier to cap
+  // each one separately (capacity then = the sum), or leave blank to share one
+  // overall Max Guests pool.
+  const [tiers, setTiers] = useState<{ name: string; price: string; quantity: string }[]>([]);
   const MAX_TIERS = 10;
 
   useEffect(() => {
@@ -137,11 +140,27 @@ export default function CreateEventModal({
           Alert.alert("Validation Error", "Every ticket tier needs a price greater than 0");
           return;
         }
+        // Per-tier quantity is all-or-nothing: either every tier has one (and
+        // capacity = their sum) or none do (and the shared Max Guests governs).
+        const withQty = tiers.filter((t) => t.quantity.trim() !== "");
+        if (withQty.length > 0) {
+          if (withQty.length !== tiers.length) {
+            Alert.alert("Validation Error", "Set a quantity for every tier, or leave them all blank");
+            return;
+          }
+          if (tiers.some((t) => !/^\d+$/.test(t.quantity.trim()) || parseInt(t.quantity) <= 0)) {
+            Alert.alert("Validation Error", "Every tier quantity must be a whole number greater than 0");
+            return;
+          }
+        }
       } else if (!formData.ticketPrice || parseFloat(formData.ticketPrice) <= 0) {
         Alert.alert("Validation Error", "Please enter a valid ticket price");
         return;
       }
-      if (!formData.maxGuests || parseInt(formData.maxGuests) <= 0) {
+      // Max Guests is required unless per-tier quantities were set (capacity is
+      // then the sum of them, computed server-side).
+      const tiersHaveQty = tiers.length > 0 && tiers.every((t) => t.quantity.trim() !== "");
+      if (!tiersHaveQty && (!formData.maxGuests || parseInt(formData.maxGuests) <= 0)) {
         Alert.alert("Validation Error", "Please enter maximum number of guests");
         return;
       }
@@ -214,12 +233,19 @@ export default function CreateEventModal({
           formData.isPaid && tiers.length === 0 ? parseFloat(formData.ticketPrice) : 0,
         ticketTiers:
           formData.isPaid && tiers.length > 0
-            ? tiers.map((t) => ({ name: t.name.trim(), price: parseFloat(t.price) }))
+            ? tiers.map((t) => ({
+                name: t.name.trim(),
+                price: parseFloat(t.price),
+                // Only send quantity when the organizer set one on every tier.
+                ...(t.quantity.trim() !== "" ? { quantity: parseInt(t.quantity) } : {}),
+              }))
             : undefined,
         // Explicit so the server can reject a stale/mismatched currency
         // instead of silently repricing (it derives the same value itself).
         currency: formData.isPaid ? sellerCurrency : undefined,
-        maxGuests: formData.isPaid ? parseInt(formData.maxGuests) : 0,
+        // When tiers carry quantities the server derives capacity from their sum,
+        // so a blank Max Guests is fine (send 0 and let the server compute).
+        maxGuests: formData.isPaid && formData.maxGuests ? parseInt(formData.maxGuests) : 0,
         venueProofImage: venueProofUrl,
       };
 
@@ -560,43 +586,60 @@ export default function CreateEventModal({
                           </Text>
                           <Text style={styles.tierHint}>
                             Name each tier whatever you like — Basic, Premium, VIP, Table
-                            for 6 — and set its price. Buyers pick a tier at checkout.
+                            for 6 — set its price, and (optionally) how many of that tier
+                            are available. Buyers pick a tier at checkout.
                           </Text>
                           {tiers.map((tier, idx) => (
-                            <View key={idx} style={styles.tierRow}>
-                              <TextInput
-                                style={[styles.input, styles.tierNameInput]}
-                                placeholder={`Tier ${idx + 1} name`}
-                                placeholderTextColor={colors.textGhost}
-                                maxLength={40}
-                                value={tier.name}
-                                onChangeText={(v) =>
-                                  setTiers((prev) =>
-                                    prev.map((t, i) => (i === idx ? { ...t, name: v } : t))
-                                  )
-                                }
-                              />
-                              <TextInput
-                                style={[styles.input, styles.tierPriceInput]}
-                                placeholder={sellerCurrency === "NGN" ? "15000" : "25.00"}
-                                placeholderTextColor={colors.textGhost}
-                                keyboardType="decimal-pad"
-                                value={tier.price}
-                                onChangeText={(v) =>
-                                  setTiers((prev) =>
-                                    prev.map((t, i) => (i === idx ? { ...t, price: v } : t))
-                                  )
-                                }
-                              />
-                              <TouchableOpacity
-                                style={styles.tierRemoveBtn}
-                                onPress={() =>
-                                  setTiers((prev) => prev.filter((_, i) => i !== idx))
-                                }
-                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                              >
-                                <Ionicons name="close-circle" size={22} color={colors.error} />
-                              </TouchableOpacity>
+                            <View key={idx} style={{ marginBottom: 10 }}>
+                              <View style={styles.tierRow}>
+                                <TextInput
+                                  style={[styles.input, styles.tierNameInput]}
+                                  placeholder={`Tier ${idx + 1} name`}
+                                  placeholderTextColor={colors.textGhost}
+                                  maxLength={40}
+                                  value={tier.name}
+                                  onChangeText={(v) =>
+                                    setTiers((prev) =>
+                                      prev.map((t, i) => (i === idx ? { ...t, name: v } : t))
+                                    )
+                                  }
+                                />
+                                <TouchableOpacity
+                                  style={styles.tierRemoveBtn}
+                                  onPress={() =>
+                                    setTiers((prev) => prev.filter((_, i) => i !== idx))
+                                  }
+                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                >
+                                  <Ionicons name="close-circle" size={22} color={colors.error} />
+                                </TouchableOpacity>
+                              </View>
+                              <View style={[styles.tierRow, { marginTop: 6 }]}>
+                                <TextInput
+                                  style={[styles.input, { flex: 1 }]}
+                                  placeholder={sellerCurrency === "NGN" ? "Price 15000" : "Price 25.00"}
+                                  placeholderTextColor={colors.textGhost}
+                                  keyboardType="decimal-pad"
+                                  value={tier.price}
+                                  onChangeText={(v) =>
+                                    setTiers((prev) =>
+                                      prev.map((t, i) => (i === idx ? { ...t, price: v } : t))
+                                    )
+                                  }
+                                />
+                                <TextInput
+                                  style={[styles.input, { flex: 1 }]}
+                                  placeholder="Qty (optional)"
+                                  placeholderTextColor={colors.textGhost}
+                                  keyboardType="number-pad"
+                                  value={tier.quantity}
+                                  onChangeText={(v) =>
+                                    setTiers((prev) =>
+                                      prev.map((t, i) => (i === idx ? { ...t, quantity: v } : t))
+                                    )
+                                  }
+                                />
+                              </View>
                             </View>
                           ))}
                         </>
@@ -613,10 +656,11 @@ export default function CreateEventModal({
                                     {
                                       name: "General",
                                       price: formData.ticketPrice || "",
+                                      quantity: "",
                                     },
-                                    { name: "", price: "" },
+                                    { name: "", price: "", quantity: "" },
                                   ]
-                                : [...prev, { name: "", price: "" }]
+                                : [...prev, { name: "", price: "", quantity: "" }]
                             )
                           }
                           activeOpacity={0.7}
@@ -630,15 +674,27 @@ export default function CreateEventModal({
                         </TouchableOpacity>
                       )}
 
-                      <Text style={styles.label}>Max Guests *</Text>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="e.g., 100"
-                        placeholderTextColor={colors.textGhost}
-                        keyboardType="number-pad"
-                        value={formData.maxGuests}
-                        onChangeText={(value) => handleInputChange("maxGuests", value)}
-                      />
+                      {tiers.length > 0 && tiers.every((t) => t.quantity.trim() !== "") ? (
+                        <>
+                          <Text style={styles.label}>Total Capacity</Text>
+                          <Text style={styles.tierHint}>
+                            {tiers.reduce((sum, t) => sum + (parseInt(t.quantity) || 0), 0)} tickets
+                            {" "}— the sum of your tier quantities.
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Text style={styles.label}>Max Guests *</Text>
+                          <TextInput
+                            style={styles.input}
+                            placeholder="e.g., 100"
+                            placeholderTextColor={colors.textGhost}
+                            keyboardType="number-pad"
+                            value={formData.maxGuests}
+                            onChangeText={(value) => handleInputChange("maxGuests", value)}
+                          />
+                        </>
+                      )}
 
                       {!formData.isVirtual && (
                         <>

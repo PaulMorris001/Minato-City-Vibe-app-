@@ -8,12 +8,24 @@ const ticketSchema = mongoose.Schema({
     required: true
   },
 
-  // User who purchased the ticket
+  // The ticket holder / attendee — whose account the pass belongs to. For a
+  // gifted ticket this is the recipient (a guest user keyed by their email), NOT
+  // the payer.
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "user",
     required: true
   },
+
+  // Who paid for the ticket, when different from `user` (gifts / buying for
+  // others). Defaults to the holder for a normal self-purchase.
+  buyer: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "user"
+  },
+
+  // The email the QR pass was sent to (recipient for gifts, else the buyer's).
+  recipientEmail: { type: String },
 
   // Ticket details
   purchaseDate: { type: Date, default: Date.now },

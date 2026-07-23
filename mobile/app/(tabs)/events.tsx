@@ -60,9 +60,16 @@ interface Event {
   isPublic: boolean;
   isPaid: boolean;
   ticketPrice?: number;
+  ticketTiers?: { _id?: string; name: string; price: number; quantity?: number; remaining?: number }[];
+  currency?: string;
   maxGuests?: number;
   ticketsSold?: number;
   ticketsRemaining?: number;
+  // "Going" count — ticket-based for paid events, RSVP-count for free ones.
+  rsvpCount?: number;
+  // Creator edits to material fields (price/tier/capacity/date) on a PUBLIC event
+  // wait here for admin approval; the live event keeps its current values meanwhile.
+  pendingEdits?: { status: "none" | "pending" | "rejected"; rejectReason?: string };
   userStatus: "creator" | "accepted" | "pending" | "none";
   createdBy: {
     _id: string;
@@ -139,7 +146,14 @@ export default function EventsPage() {
     images: [] as string[],
     description: "",
     isPublic: false,
+    isPaid: false,
+    ticketPrice: "",
+    maxGuests: "",
+    currency: "USD",
   });
+  // Editable ticket tiers for a paid event (mirrors CreateEventModal). Empty when
+  // the event uses a single flat price.
+  const [editTiers, setEditTiers] = useState<{ name: string; price: string; quantity: string }[]>([]);
   const [editLocation, setEditLocation] = useState<LocationSelection | null>(null);
 
   const PAGE_LIMIT = 10;
@@ -432,7 +446,18 @@ export default function EventsPage() {
       images: event.images && event.images.length > 0 ? event.images : event.image ? [event.image] : [],
       description: event.description || "",
       isPublic: event.isPublic,
+      isPaid: !!event.isPaid,
+      ticketPrice: event.ticketPrice ? String(event.ticketPrice) : "",
+      maxGuests: event.maxGuests ? String(event.maxGuests) : "",
+      currency: event.currency || "USD",
     });
+    setEditTiers(
+      (event.ticketTiers || []).map((t) => ({
+        name: t.name,
+        price: String(t.price),
+        quantity: t.quantity !== undefined && t.quantity !== null ? String(t.quantity) : "",
+      }))
+    );
     // Prefill the picker from structured fields when present; legacy events
     // only have the free-text location, so leave the picker empty for those.
     setEditLocation(
@@ -518,6 +543,38 @@ export default function EventsPage() {
       Alert.alert("Error", "Event link must start with http:// or https://");
       return;
     }
+    // Validate ticket pricing for paid events.
+    if (selectedEvent.isPaid) {
+      if (editTiers.length > 0) {
+        if (editTiers.some((t) => !t.name.trim())) {
+          Alert.alert("Error", "Every ticket tier needs a name");
+          return;
+        }
+        const names = new Set(editTiers.map((t) => t.name.trim().toLowerCase()));
+        if (names.size !== editTiers.length) {
+          Alert.alert("Error", "Tier names must be unique");
+          return;
+        }
+        if (editTiers.some((t) => !t.price || parseFloat(t.price) <= 0)) {
+          Alert.alert("Error", "Every ticket tier needs a price greater than 0");
+          return;
+        }
+        const withQty = editTiers.filter((t) => t.quantity.trim() !== "");
+        if (withQty.length > 0) {
+          if (withQty.length !== editTiers.length) {
+            Alert.alert("Error", "Set a quantity for every tier, or leave them all blank");
+            return;
+          }
+          if (editTiers.some((t) => !/^\d+$/.test(t.quantity.trim()) || parseInt(t.quantity) <= 0)) {
+            Alert.alert("Error", "Every tier quantity must be a whole number greater than 0");
+            return;
+          }
+        }
+      } else if (editData.ticketPrice && parseFloat(editData.ticketPrice) <= 0) {
+        Alert.alert("Error", "Ticket price must be greater than 0");
+        return;
+      }
+    }
 
     try {
       const token = await SecureStore.getItemAsync("token");
@@ -531,14 +588,39 @@ export default function EventsPage() {
         return;
       }
 
-      // Visibility is immutable post-creation — don't send it on update so a
-      // stale toggle in local state can't trip the server's guard.
-      const { isPublic: _ignored, images: _imgs, ...rest } = editData;
+      // Visibility is immutable post-creation, and pricing is added separately
+      // below — strip those so a stale value can't be sent by accident.
+      const {
+        isPublic: _ignored, images: _imgs, isPaid: _ip,
+        ticketPrice: _tp, maxGuests: _mg, currency: _cur, ...rest
+      } = editData;
       // Virtual events carry no physical location; physical events carry no
       // meeting link. Blank the other family so nothing stale is sent.
-      const editablePayload = editData.isVirtual
+      const base = editData.isVirtual
         ? { ...rest, images: imageUrls, location: "Online", address: "", city: "", state: "", country: "", meetingLink: editData.meetingLink.trim() }
         : { ...rest, images: imageUrls, meetingLink: "" };
+
+      // Pricing (paid events only). On a PUBLIC event the server holds these
+      // material changes for admin approval; on a private event they apply now.
+      const pricing: Record<string, unknown> = {};
+      if (selectedEvent.isPaid) {
+        if (editTiers.length > 0) {
+          pricing.ticketTiers = editTiers.map((t) => ({
+            name: t.name.trim(),
+            price: parseFloat(t.price),
+            ...(t.quantity.trim() !== "" ? { quantity: parseInt(t.quantity) } : {}),
+          }));
+          // When every tier has a quantity the server derives capacity; otherwise
+          // pass the shared Max Guests through.
+          const allQty = editTiers.every((t) => t.quantity.trim() !== "");
+          if (!allQty && editData.maxGuests) pricing.maxGuests = parseInt(editData.maxGuests);
+        } else {
+          if (editData.ticketPrice) pricing.ticketPrice = parseFloat(editData.ticketPrice);
+          if (editData.maxGuests) pricing.maxGuests = parseInt(editData.maxGuests);
+        }
+      }
+
+      const editablePayload = { ...base, ...pricing };
       const response = await fetch(`${BASE_URL}/events/${selectedEvent._id}`, {
         method: "PUT",
         headers: {
@@ -551,7 +633,9 @@ export default function EventsPage() {
       const data = await response.json();
 
       if (response.ok) {
-        Alert.alert("Success", "Event updated successfully");
+        // The server's message spells out when pricing/date changes are pending
+        // admin approval vs. applied immediately.
+        Alert.alert(data.pendingApproval ? "Changes submitted" : "Success", data.message || "Event updated successfully");
         setIsEditModalVisible(false);
         fetchEvents(1, true);
       } else {
@@ -640,7 +724,12 @@ export default function EventsPage() {
     router.push(`/event/${eventId}`);
   };
 
-  const privateEvents = events.filter(e => !e.isPublic);
+  // "My Events" surfaces everything you can manage: every event you created
+  // (public OR private) plus private events you were invited to. Public events
+  // you merely attend stay out of here (they live in Discover).
+  const myManagedEvents = events.filter(
+    e => !e.isPublic || e.createdBy._id === currentUserId
+  );
 
   const renderEvent = (event: Event) => {
     const eventDate = new Date(event.date);
@@ -667,10 +756,31 @@ export default function EventsPage() {
           <View style={styles.eventTitleRow}>
             <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>
             <View style={styles.privateBadge}>
-              <Ionicons name="lock-closed-outline" size={12} color={colors.primary} />
-              <Text style={styles.privateBadgeText}>PRIVATE</Text>
+              <Ionicons
+                name={event.isPublic ? "globe-outline" : "lock-closed-outline"}
+                size={12}
+                color={colors.primary}
+              />
+              <Text style={styles.privateBadgeText}>{event.isPublic ? "PUBLIC" : "PRIVATE"}</Text>
             </View>
           </View>
+
+          {event.pendingEdits?.status === "pending" && (
+            <View style={styles.eventDetail}>
+              <Ionicons name="time-outline" size={16} color={colors.warning ?? colors.primary} />
+              <Text style={[styles.eventDetailText, { color: colors.warning ?? colors.primary }]}>
+                Edits awaiting admin approval
+              </Text>
+            </View>
+          )}
+          {event.pendingEdits?.status === "rejected" && (
+            <View style={styles.eventDetail}>
+              <Ionicons name="close-circle-outline" size={16} color={colors.error} />
+              <Text style={[styles.eventDetailText, { color: colors.error }]} numberOfLines={2}>
+                Edits not approved{event.pendingEdits.rejectReason ? `: ${event.pendingEdits.rejectReason}` : ""}
+              </Text>
+            </View>
+          )}
 
           <View style={styles.eventDetail}>
             <Ionicons name="calendar" size={16} color={colors.primary} />
@@ -698,10 +808,16 @@ export default function EventsPage() {
           ) : null}
 
           <View style={styles.eventDetail}>
-            <Ionicons name="people" size={16} color={colors.primary} />
+            <Ionicons name={event.isPublic ? "ticket-outline" : "people"} size={16} color={colors.primary} />
             <Text style={styles.eventDetailText}>
-              {event.invitedUsers.length} invited
-              {event.pendingInvites.length > 0 ? ` · ${event.pendingInvites.length} pending` : ""}
+              {event.isPublic
+                ? // Public events aren't invite-based — you share them to sell tickets.
+                  `${event.rsvpCount ?? event.ticketsSold ?? 0} going` +
+                  (event.isPaid && typeof event.ticketsRemaining === "number"
+                    ? ` · ${event.ticketsRemaining} left`
+                    : "")
+                : `${event.invitedUsers.length} invited` +
+                  (event.pendingInvites.length > 0 ? ` · ${event.pendingInvites.length} pending` : "")}
             </Text>
           </View>
 
@@ -774,8 +890,8 @@ export default function EventsPage() {
               onPress={() => setActiveTab("private")}
               activeOpacity={0.8}
             >
-              <Ionicons name="lock-closed-outline" size={14} color={activeTab === "private" ? "#fff" : colors.textMuted} />
-              <Text style={[styles.tabBtnText, activeTab === "private" && styles.tabBtnTextActive]}>Private</Text>
+              <Ionicons name="calendar-outline" size={14} color={activeTab === "private" ? "#fff" : colors.textMuted} />
+              <Text style={[styles.tabBtnText, activeTab === "private" && styles.tabBtnTextActive]}>My Events</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.tabBtn, activeTab === "discover" && styles.tabBtnActive]}
@@ -927,8 +1043,8 @@ export default function EventsPage() {
           ) : loading ? (
             <EventCardSkeleton count={5} />
           ) : (() => {
-            const pending = privateEvents.filter(e => e.userStatus === "pending");
-            const myEvents = privateEvents.filter(e => e.userStatus !== "pending");
+            const pending = myManagedEvents.filter(e => e.userStatus === "pending");
+            const myEvents = myManagedEvents.filter(e => e.userStatus !== "pending");
             return (
               <>
                 {/* ── Pending Invites ── */}
@@ -1022,9 +1138,9 @@ export default function EventsPage() {
                     )}
                   </TouchableOpacity>
                 )}
-                {!hasMore && privateEvents.length > 0 && (
+                {!hasMore && myManagedEvents.length > 0 && (
                   <Text style={styles.allLoadedText}>
-                    {privateEvents.length} private event{privateEvents.length !== 1 ? "s" : ""}
+                    {myManagedEvents.length} event{myManagedEvents.length !== 1 ? "s" : ""}
                   </Text>
                 )}
               </>
@@ -1199,6 +1315,114 @@ export default function EventsPage() {
                   numberOfLines={4}
                 />
               </View>
+
+              {/* Ticket pricing — paid events only. On a PUBLIC event these are
+                  material changes the server holds for admin approval. */}
+              {selectedEvent?.isPaid && (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Tickets ({editData.currency})</Text>
+                  {editData.isPublic && (
+                    <Text style={styles.visibilityLockedHint}>
+                      Price, tier and capacity changes on a public event need admin approval
+                      before they go live. Your other edits publish immediately.
+                    </Text>
+                  )}
+
+                  {editTiers.length === 0 ? (
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Ticket price (e.g. 25)"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="decimal-pad"
+                      value={editData.ticketPrice}
+                      onChangeText={(v) => setEditData({ ...editData, ticketPrice: v })}
+                    />
+                  ) : (
+                    editTiers.map((tier, idx) => (
+                      <View key={idx} style={{ marginBottom: 10 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <TextInput
+                            style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                            placeholder={`Tier ${idx + 1} name`}
+                            placeholderTextColor={colors.textMuted}
+                            maxLength={40}
+                            value={tier.name}
+                            onChangeText={(v) =>
+                              setEditTiers((prev) => prev.map((t, i) => (i === idx ? { ...t, name: v } : t)))
+                            }
+                          />
+                          <TouchableOpacity
+                            onPress={() => setEditTiers((prev) => prev.filter((_, i) => i !== idx))}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Ionicons name="close-circle" size={22} color={colors.error} />
+                          </TouchableOpacity>
+                        </View>
+                        <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+                          <TextInput
+                            style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                            placeholder="Price"
+                            placeholderTextColor={colors.textMuted}
+                            keyboardType="decimal-pad"
+                            value={tier.price}
+                            onChangeText={(v) =>
+                              setEditTiers((prev) => prev.map((t, i) => (i === idx ? { ...t, price: v } : t)))
+                            }
+                          />
+                          <TextInput
+                            style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                            placeholder="Qty (optional)"
+                            placeholderTextColor={colors.textMuted}
+                            keyboardType="number-pad"
+                            value={tier.quantity}
+                            onChangeText={(v) =>
+                              setEditTiers((prev) => prev.map((t, i) => (i === idx ? { ...t, quantity: v } : t)))
+                            }
+                          />
+                        </View>
+                      </View>
+                    ))
+                  )}
+
+                  {editTiers.length < 10 && (
+                    <TouchableOpacity
+                      style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 10 }}
+                      onPress={() =>
+                        setEditTiers((prev) =>
+                          prev.length === 0
+                            ? [
+                                { name: "General", price: editData.ticketPrice || "", quantity: "" },
+                                { name: "", price: "", quantity: "" },
+                              ]
+                            : [...prev, { name: "", price: "", quantity: "" }]
+                        )
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
+                      <Text style={{ color: colors.primary, fontWeight: "600" }}>
+                        {editTiers.length === 0 ? "Switch to ticket tiers" : `Add another tier (${editTiers.length}/10)`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {editTiers.length > 0 && editTiers.every((t) => t.quantity.trim() !== "") ? (
+                    <Text style={styles.visibilityLockedHint}>
+                      Capacity: {editTiers.reduce((s, t) => s + (parseInt(t.quantity) || 0), 0)} tickets
+                      {" "}(sum of tier quantities).
+                    </Text>
+                  ) : (
+                    <TextInput
+                      style={[styles.input, { marginTop: 8 }]}
+                      placeholder="Max guests (e.g. 100)"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="number-pad"
+                      value={editData.maxGuests}
+                      onChangeText={(v) => setEditData({ ...editData, maxGuests: v })}
+                    />
+                  )}
+                </View>
+              )}
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Visibility</Text>

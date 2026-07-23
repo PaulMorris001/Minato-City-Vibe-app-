@@ -45,10 +45,9 @@ export default function EventDetails() {
   }, [eventId]);
 
   function goToPay() {
-    if (!user) {
-      navigate("/login", { state: { from: `/events/${eventId}` } });
-      return;
-    }
+    // No login gate — checkout supports guests (they confirm an email with an OTP
+    // on the Pay page). A pre-selected tier is passed through as the builder's
+    // starting point.
     const tiers = ev?.ticketTiers || [];
     const q = tiers.length > 1 && selectedTier ? `?tier=${selectedTier}` : "";
     navigate(`/events/${eventId}/pay${q}`);
@@ -438,12 +437,25 @@ function TicketBox({
   }
 
   if (ev.userHasPurchased) {
+    // Already have a ticket — you can still buy more (e.g. to bring or gift to
+    // friends); each extra pass is emailed to whoever you choose at checkout.
+    const canBuyMore = !soldOut && ev.ticketingReady !== false;
     return (
       <>
         <h3 className="cv-h3">You're going 🎉</h3>
-        <p className="cv-muted">
+        <p className="cv-muted" style={{ marginBottom: canBuyMore ? 16 : 0 }}>
           Your ticket is on your account — open the app to show the QR code at the door.
         </p>
+        {canBuyMore && (
+          <>
+            <p className="cv-muted" style={{ marginBottom: 12 }}>
+              Bringing friends? Grab more tickets and send each pass straight to their email.
+            </p>
+            <button className="cv-btn" onClick={onPay}>
+              Buy more tickets
+            </button>
+          </>
+        )}
       </>
     );
   }
@@ -476,24 +488,46 @@ function TicketBox({
 
       {multiTier ? (
         <div style={{ marginBottom: 16 }}>
-          {tiers.map((t) => (
-            <label key={t._id} className={`cv-tier${selectedTier === t._id ? " cv-tier-on" : ""}`}>
-              <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <input
-                  type="radio"
-                  name="tier"
-                  checked={selectedTier === t._id}
-                  onChange={() => setSelectedTier(t._id)}
-                />
-                {t.name}
-              </span>
-              <strong>{money(t.price, ev.currency)}</strong>
-            </label>
-          ))}
+          {tiers.map((t) => {
+            const tierSoldOut = t.remaining !== undefined && t.remaining <= 0;
+            return (
+              <label
+                key={t._id}
+                className={`cv-tier${selectedTier === t._id ? " cv-tier-on" : ""}`}
+                style={tierSoldOut ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
+              >
+                <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <input
+                    type="radio"
+                    name="tier"
+                    checked={selectedTier === t._id}
+                    disabled={tierSoldOut}
+                    onChange={() => setSelectedTier(t._id)}
+                  />
+                  <span>
+                    {t.name}
+                    {tierSoldOut ? (
+                      <span className="cv-muted" style={{ display: "block", fontSize: 12 }}>
+                        Sold out
+                      </span>
+                    ) : t.remaining !== undefined ? (
+                      <span className="cv-muted" style={{ display: "block", fontSize: 12 }}>
+                        {t.remaining} left
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
+                <strong>{money(t.price, ev.currency)}</strong>
+              </label>
+            );
+          })}
         </div>
       ) : (
         <div className="cv-row" style={{ marginBottom: 16 }}>
-          <span className="cv-muted">{tiers[0]?.name || "General admission"}</span>
+          <span className="cv-muted">
+            {tiers[0]?.name || "General admission"}
+            {tiers[0]?.remaining !== undefined ? ` · ${tiers[0].remaining} left` : ""}
+          </span>
           <strong style={{ fontSize: 20 }}>
             {money(tiers[0]?.price ?? ev.ticketPrice ?? 0, ev.currency)}
           </strong>
@@ -501,7 +535,7 @@ function TicketBox({
       )}
 
       <button className="cv-btn" onClick={onPay} disabled={multiTier && !selectedTier}>
-        {user ? "Continue to payment" : "Log in to buy"}
+        Continue to payment
       </button>
     </>
   );

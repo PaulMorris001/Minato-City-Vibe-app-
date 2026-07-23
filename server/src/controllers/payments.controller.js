@@ -23,10 +23,16 @@ import {
   getPayoutProvider,
   hasPayoutOnboarding,
 } from "../services/payments/resolveProvider.js";
-import { fulfillTicket, fulfillGuide, fulfillBooking, fulfillOrder } from "../services/payments/fulfillment.js";
+import { fulfillTicket, issueRecipientTicket, fulfillGuide, fulfillBooking, fulfillOrder } from "../services/payments/fulfillment.js";
 import { computeSplit } from "../services/payments/split.js";
 import { buildPaystackInit, verifyPaystackCharge } from "./paystack.controller.js";
 import { createPayout } from "../services/payments/payout.service.js";
+import TicketOrder from "../models/ticketOrder.model.js";
+import { findOrCreateGuestUser } from "./guestCheckout.controller.js";
+import { sendPushNotification } from "../services/notification.service.js";
+import { invalidateCachePattern } from "../utils/cache.js";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const PLATFORM_FEE_PERCENT = config.stripe.platformFeePercent;
 const TYPES = new Set(["ticket", "guide", "booking", "order"]);
@@ -42,14 +48,35 @@ function resolveTicketTier(event, tierId) {
   // A lone tier needs no explicit choice — older call sites don't send one.
   if (!tierId && tiers.length === 1) {
     const only = tiers[0];
-    return { tier: { tierId: only._id, name: only.name, price: only.price } };
+    return { tier: { tierId: only._id, name: only.name, price: only.price, quantity: only.quantity } };
   }
   const tier = tierId ? tiers.id(tierId) : null;
   if (!tier) {
     // `tier_required` tells the client to open the tier picker (event detail).
     return { error: "Pick a ticket tier for this event.", code: "tier_required" };
   }
-  return { tier: { tierId: tier._id, name: tier.name, price: tier.price } };
+  return { tier: { tierId: tier._id, name: tier.name, price: tier.price, quantity: tier.quantity } };
+}
+
+/**
+ * How many more tickets can still sell for a given tier (or the whole event when
+ * the tier carries no per-tier quantity). Tiered events with a per-tier
+ * `quantity` are counted against that tier's own sold count; otherwise the shared
+ * event-level `maxGuests` pool governs (back-compat with legacy events).
+ *
+ * @returns {Promise<number>} remaining tickets (>= 0)
+ */
+export async function ticketsRemaining(event, tier) {
+  if (tier && tier.tierId && typeof tier.quantity === "number") {
+    const soldForTier = await Ticket.countDocuments({
+      event: event._id,
+      tierId: tier.tierId,
+      isValid: true,
+    });
+    return Math.max(0, tier.quantity - soldForTier);
+  }
+  const sold = await Ticket.countDocuments({ event: event._id, isValid: true });
+  return Math.max(0, (event.maxGuests || 0) - sold);
 }
 
 /**
@@ -69,11 +96,15 @@ async function resolvePurchase(type, id, userId, res, tierId) {
     }
     const existing = await Ticket.findOne({ event: id, user: userId, isValid: true });
     if (existing) return res.status(400).json({ message: "You already have a ticket for this event" }) && null;
-    const sold = await Ticket.countDocuments({ event: id, isValid: true });
-    if (sold >= event.maxGuests) return res.status(400).json({ message: "No tickets available" }) && null;
 
     const { tier, error, code } = resolveTicketTier(event, tierId);
     if (error) return res.status(400).json({ message: error, code }) && null;
+
+    // Per-tier capacity when the tier declares its own quantity, else the shared
+    // event pool.
+    if ((await ticketsRemaining(event, tier)) <= 0) {
+      return res.status(400).json({ message: "No tickets available" }) && null;
+    }
 
     return {
       seller: event.createdBy,
@@ -507,6 +538,254 @@ async function resolvePurchaseForConfirm(type, id, userId, res, tierId) {
   return res.status(400).json({ message: "Unknown purchase type" }) && null;
 }
 
+// ─── Batch ticket purchase (web guest / multi / gift checkout) ────────────────
+
+/**
+ * POST /payments/init/tickets/:eventId
+ * body: { items: [{ tierId?, recipientEmail, recipientName? }] }
+ *
+ * One charge for N tickets, each destined for a recipient email (the buyer's own
+ * or someone else's — multiple to the same email is allowed). Works for a guest
+ * token or a real account. Stashes the line items in a TicketOrder that `confirm`
+ * fans out into per-ticket passes.
+ */
+export const initTicketBatch = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const buyerId = req.user.id;
+    const items = Array.isArray(req.body?.items) ? req.body.items : null;
+    if (!items || items.length === 0) {
+      return res.status(400).json({ message: "Add at least one ticket." });
+    }
+    if (items.length > 20) {
+      return res.status(400).json({ message: "You can buy up to 20 tickets at once." });
+    }
+
+    const event = await Event.findById(eventId).populate("createdBy");
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    if (!event.isPublic || !event.isPaid) {
+      return res.status(400).json({ message: "This event does not require payment" });
+    }
+    if (event.approvalStatus !== "approved") {
+      return res.status(403).json({ message: "Ticket sales are not available for this event." });
+    }
+    const seller = event.createdBy;
+    if (!seller) return res.status(400).json({ message: "Seller not found" });
+    if (!hasPayoutOnboarding(seller)) {
+      return res.status(409).json({ message: "Tickets aren't on sale yet — check back soon." });
+    }
+
+    // Resolve each line item's tier + price and validate its recipient email.
+    const lineItems = [];
+    const perTierRequested = new Map(); // tierKey -> requested count
+    for (const raw of items) {
+      const email = String(raw?.recipientEmail || "").trim().toLowerCase();
+      if (!EMAIL_RE.test(email)) {
+        return res.status(400).json({ message: "Every ticket needs a valid recipient email." });
+      }
+      const { tier, error, code } = resolveTicketTier(event, raw?.tierId);
+      if (error) return res.status(400).json({ message: error, code });
+      const key = tier?.tierId ? tier.tierId.toString() : "_single";
+      perTierRequested.set(key, (perTierRequested.get(key) || 0) + 1);
+      lineItems.push({
+        tierId: tier?.tierId,
+        tierName: tier?.name,
+        price: tier ? tier.price : event.ticketPrice,
+        recipientEmail: email,
+        recipientName: String(raw?.recipientName || "").trim() || undefined,
+      });
+    }
+
+    // Per-tier availability for the whole batch (not just one ticket).
+    for (const [key, requested] of perTierRequested) {
+      const tier = key === "_single" ? null : resolveTicketTier(event, key).tier;
+      const remaining = await ticketsRemaining(event, tier);
+      if (requested > remaining) {
+        return res.status(400).json({
+          message:
+            remaining <= 0
+              ? "Those tickets just sold out."
+              : `Only ${remaining} ${tier?.name || "ticket"}${remaining === 1 ? "" : "s"} left.`,
+        });
+      }
+    }
+
+    const total = lineItems.reduce((sum, li) => sum + li.price, 0);
+    const currency = event.currency || "USD";
+    const provider = getPayoutProvider(seller);
+
+    const order = await TicketOrder.create({
+      event: event._id,
+      buyer: buyerId,
+      seller: seller._id,
+      currency,
+      total,
+      provider,
+      items: lineItems,
+      status: "pending",
+    });
+
+    if (provider === "paystack") {
+      const buyer = await User.findById(buyerId).select("email username");
+      const init = await buildPaystackInit({ type: "ticket", id: eventId, amount: total, currency, buyer });
+      order.reference = init.reference;
+      await order.save();
+      return res.status(200).json({ ...init, orderId: order._id });
+    }
+
+    // Stripe — charge the total into the platform balance (settled via Wise).
+    const amountCents = Math.round(total * 100);
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amountCents,
+      currency: "usd",
+      metadata: {
+        type: "ticket_batch",
+        buyerId: buyerId.toString(),
+        sellerId: seller._id.toString(),
+        eventId: eventId.toString(),
+        ticketOrderId: order._id.toString(),
+        payoutProvider: "wise",
+      },
+      transfer_group: `event_${eventId}`,
+    });
+    order.reference = paymentIntent.id;
+    await order.save();
+    return res.status(200).json({
+      provider: "stripe",
+      clientSecret: paymentIntent.client_secret,
+      orderId: order._id,
+    });
+  } catch (error) {
+    console.error("initTicketBatch error:", error);
+    res.status(500).json({ message: "Failed to start payment" });
+  }
+};
+
+/**
+ * POST /payments/confirm/tickets/:eventId   body: { provider, reference }
+ * Verifies the charge, then issues one ticket + pass per line item to its
+ * recipient email. Idempotent via the TicketOrder status.
+ */
+export const confirmTicketBatch = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const buyerId = req.user.id;
+    const { provider, reference } = req.body || {};
+    if (!reference) return res.status(400).json({ message: "reference is required" });
+
+    const order = await TicketOrder.findOne({ reference, event: eventId });
+    if (!order) return res.status(404).json({ message: "Order not found" });
+    if (order.buyer.toString() !== buyerId) {
+      return res.status(403).json({ message: "This purchase isn't yours" });
+    }
+    if (order.status === "paid") {
+      return res.status(200).json({
+        message: "Tickets already confirmed",
+        ticketsIssued: order.ticketIds.length,
+        recipients: order.items.map((i) => i.recipientEmail),
+      });
+    }
+
+    // Verify the charge matches the order total.
+    const isPaystack = provider === "paystack";
+    if (isPaystack) {
+      await verifyPaystackCharge({
+        reference,
+        expectedAmount: order.total,
+        expectedCurrency: order.currency,
+        expectedBuyerId: buyerId,
+      });
+    } else {
+      const pi = await stripe.paymentIntents.retrieve(reference);
+      if (pi.status !== "succeeded") {
+        return res.status(400).json({ message: "Payment has not been completed" });
+      }
+      if (pi.metadata?.buyerId !== buyerId) {
+        return res.status(403).json({ message: "Payment does not match this purchase" });
+      }
+      if (Number(pi.amount) < Math.round(order.total * 100)) {
+        return res.status(400).json({ message: "Payment amount mismatch" });
+      }
+    }
+
+    const event = await Event.findById(eventId);
+    if (!event) return res.status(404).json({ message: "Event not found" });
+
+    const payoutProvider = isPaystack ? "paystack" : "wise";
+    const ticketIds = [];
+    for (const item of order.items) {
+      const recipient = await findOrCreateGuestUser(item.recipientEmail, item.recipientName);
+      // Fee accounting mirrors the single-ticket flow: Stripe stores cents,
+      // Paystack stores major units (the field name says "Cents"; currency
+      // disambiguates — see ticket.model.js).
+      let platformFeeCents, sellerNetCents;
+      if (isPaystack) {
+        const split = computeSplit(item.price);
+        platformFeeCents = split.platformFee;
+        sellerNetCents = split.sellerNet;
+      } else {
+        const cents = Math.round(item.price * 100);
+        platformFeeCents = Math.round(cents * (PLATFORM_FEE_PERCENT / 100));
+        sellerNetCents = cents - platformFeeCents;
+      }
+      const tier = item.tierId
+        ? { tierId: item.tierId, name: item.tierName, price: item.price }
+        : null;
+      const ticket = await issueRecipientTicket({
+        event,
+        recipientUserId: recipient._id,
+        buyerUserId: buyerId,
+        tier,
+        provider: isPaystack ? "paystack" : "stripe",
+        payoutProvider,
+        paymentRef: reference,
+        currency: isPaystack ? order.currency : "usd",
+        platformFeeCents,
+        sellerNetCents,
+        recipientEmail: item.recipientEmail,
+        recipientName: item.recipientName,
+      });
+      ticketIds.push(ticket._id);
+    }
+
+    // Ticket holders (buyers, gift recipients, guests) are intentionally NOT
+    // added to rsvpUsers/invitedUsers: attendance for a paid event is tracked by
+    // Ticket records (so capacity counts every ticket, and one buyer holding
+    // several is counted correctly), and dropping them keeps auto-created guest /
+    // gift-recipient accounts out of the public "who's coming" list.
+
+    invalidateCachePattern(`event_detail_${eventId}_`);
+    invalidateCachePattern("public_events_");
+    invalidateCachePattern("event_highlights_");
+
+    const creator = await User.findById(event.createdBy).select("fcmToken");
+    await sendPushNotification(
+      creator?.fcmToken,
+      "🎟️ Tickets sold!",
+      `${order.items.length} ticket${order.items.length === 1 ? "" : "s"} just sold for "${event.title}"`,
+      { type: "ticket_sold", eventId: eventId.toString() }
+    );
+
+    order.status = "paid";
+    order.ticketIds = ticketIds;
+    order.paidAt = new Date();
+    await order.save();
+
+    return res.status(201).json({
+      message: "Tickets confirmed",
+      ticketsIssued: ticketIds.length,
+      recipients: order.items.map((i) => i.recipientEmail),
+    });
+  } catch (error) {
+    // verifyPaystackCharge throws with a statusCode on a bad/unverified charge.
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error("confirmTicketBatch error:", error);
+    res.status(500).json({ message: "Failed to confirm payment" });
+  }
+};
+
 /**
  * GET /payments/config — the Stripe publishable key, fetched at runtime so it
  * never drifts from the server's secret key. Paystack's hosted checkout needs
@@ -520,4 +799,4 @@ export const getPaymentsConfig = async (req, res) => {
   });
 };
 
-export default { initPayment, confirmPayment, getPaymentsConfig };
+export default { initPayment, confirmPayment, initTicketBatch, confirmTicketBatch, getPaymentsConfig };
