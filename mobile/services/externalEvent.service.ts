@@ -62,9 +62,12 @@ async function authHeader(): Promise<Record<string, string>> {
   };
 }
 
-function buildQuery(params: Record<string, string | number | undefined>) {
+// Accepts any plain params object (named interfaces like ExploreParams
+// included — they don't have an index signature, so a `Record<string, ...>`
+// parameter type would reject them even though they're structurally fine).
+function buildQuery(params: object) {
   const q = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
+  for (const [k, v] of Object.entries(params) as [string, string | number | undefined][]) {
     if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
   }
   const s = q.toString();
