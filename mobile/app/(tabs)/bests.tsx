@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,12 +8,12 @@ import {
   ScrollView,
   Animated,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
-import { Guide, GUIDE_TOPICS, LocationSelection } from "@/libs/interfaces";
+import { Guide, GUIDE_TOPICS } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
-import { LocationFilterBar } from "@/components/shared";
+import { ActiveLocationChip } from "@/components/shared";
 import UserListItemSkeleton from "@/components/skeletons/UserListItemSkeleton";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchGuidesAll } from "@/libs/api";
@@ -31,17 +31,14 @@ export default function BestsPage() {
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [guides, setGuides] = useState<Guide[]>([]);
-  const [locFilter, setLocFilter] = useState<LocationSelection | null>(null);
+  // The one shared active browsing location — see ActiveLocationChip.
+  const [activeCity, setActiveCity] = useState<string | null>(null);
   const headerAnim = useRef(new Animated.Value(0)).current;
 
-  const loadGuides = async (loc: LocationSelection | null) => {
+  const loadGuides = async (city: string | null) => {
     setLoading(true);
     try {
-      const data = await fetchGuidesAll({
-        country: loc?.country || undefined,
-        state: loc?.state || undefined,
-        city: loc?.city || undefined,
-      });
+      const data = await fetchGuidesAll({ city: city || undefined });
       setGuides(Array.isArray(data) ? data : []);
     } catch {
       setGuides([]);
@@ -59,9 +56,15 @@ export default function BestsPage() {
     }).start();
   }, [headerAnim]);
 
+  useFocusEffect(
+    useCallback(() => {
+      SecureStore.getItemAsync("selectedCity").then((city) => setActiveCity(city || null));
+    }, [])
+  );
+
   useEffect(() => {
-    loadGuides(locFilter);
-  }, [locFilter]);
+    loadGuides(activeCity);
+  }, [activeCity]);
 
   const checkAuthStatus = async () => {
     const token = await SecureStore.getItemAsync("token");
@@ -161,17 +164,13 @@ export default function BestsPage() {
           <Text style={styles.sectionHeading}>Browse Guides</Text>
         </View>
 
-        <LocationFilterBar
-          value={locFilter}
-          onChange={setLocFilter}
-          onClear={() => setLocFilter(null)}
-        />
+        <ActiveLocationChip city={activeCity} />
 
         {loading ? (
           <UserListItemSkeleton count={6} showButton={false} />
         ) : groups.length === 0 ? (
           <Text style={styles.emptyText}>
-            {locFilter
+            {activeCity
               ? "No guides in this location yet — try another, or create the first one!"
               : "No guides yet. Be the first to create one for your city!"}
           </Text>

@@ -11,6 +11,7 @@ import {
   FlatList,
   Animated,
   Platform,
+  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,6 +19,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
 import { useRouter, useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
+import * as Location from "expo-location";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { currencyPrefix } from "@/constants/payments";
@@ -26,6 +28,7 @@ import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCar
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { useStripePayment } from "@/hooks/useStripePayment";
+import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useLocation";
 import { trackEvent } from "@/utils/analytics";
 import { ensureAuth } from "@/utils/requireAuth";
 
@@ -375,7 +378,12 @@ export default function Home() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [username, setUsername] = useState("");
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
+  // Set when the home feed is showing an IP-approximated location rather than
+  // a precise device one — surfaces a nudge to grant location permission.
+  const [locationBanner, setLocationBanner] = useState<"approximate" | null>(null);
+  const [requestingLocation, setRequestingLocation] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const locationInitRef = useRef(false);
 
   const getGreeting = () => {
     const h = new Date().getHours();
@@ -401,6 +409,132 @@ export default function Home() {
       }
     } catch {}
   }, []);
+
+  // Persists a detected/selected city as the home feed's default. `source`
+  // records whether this came from auto-detection (GPS/IP) or the user
+  // explicitly picking a city in Select Location — see resolveHomeLocation,
+  // which uses it to avoid clobbering an explicit pick with auto-detection
+  // on a later cold start.
+  const applyCity = useCallback(async (city: string, source: "auto" | "manual" = "auto") => {
+    setSelectedCity(city);
+    try {
+      await SecureStore.setItemAsync("selectedCity", city);
+      await SecureStore.setItemAsync("citySource", source);
+    } catch {}
+  }, []);
+
+  const detectCityFromGPS = getCityFromCurrentPosition;
+
+  // Resolves the home feed's default location on cold start: precise GPS
+  // when permission is already granted (or the user accepts our rationale
+  // prompt) always wins since it's the most accurate signal available.
+  // Otherwise, an IP-based approximation (snapped to the nearest city
+  // CityVibe has content for) is used ONLY on a user's first-ever visit —
+  // once they've explicitly picked a city via Select Location, that manual
+  // pick is treated as their standing default and is never silently
+  // overwritten by a fresh IP guess on a later cold start.
+  const resolveHomeLocation = useCallback(async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+
+      if (status === Location.PermissionStatus.GRANTED) {
+        const city = await detectCityFromGPS();
+        if (city) {
+          setLocationBanner(null);
+          await applyCity(city, "auto");
+          return;
+        }
+      } else if (status === Location.PermissionStatus.UNDETERMINED) {
+        const alreadyPrompted = await SecureStore.getItemAsync("locationPromptSeen");
+        if (!alreadyPrompted) {
+          await SecureStore.setItemAsync("locationPromptSeen", "true");
+          const wantsToEnable = await new Promise<boolean>((resolve) => {
+            Alert.alert(
+              "Enable Location",
+              "Turn on location so CityVibe can show you the events happening around you.",
+              [
+                { text: "Not Now", style: "cancel", onPress: () => resolve(false) },
+                { text: "Enable", onPress: () => resolve(true) },
+              ]
+            );
+          });
+          if (wantsToEnable) {
+            const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+            if (newStatus === "granted") {
+              const city = await detectCityFromGPS();
+              if (city) {
+                setLocationBanner(null);
+                await applyCity(city, "auto");
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      // Permission not granted and GPS didn't resolve. A manual pick (even
+      // "Anywhere", which clears the city) is the user's explicit choice and
+      // is never overwritten. A prior auto/IP result is also left as-is
+      // rather than re-hitting the IP lookup on every cold start.
+      const citySource = await SecureStore.getItemAsync("citySource");
+      if (citySource === "manual") {
+        return;
+      }
+      if (citySource === "auto") {
+        setLocationBanner("approximate");
+        return;
+      }
+
+      // No location on record yet — true first visit. Approximate from IP
+      // so there's still a sensible default instead of "All".
+      const approx = await getApproximateLocation();
+      if (approx?.city) {
+        setLocationBanner("approximate");
+        await applyCity(approx.city, "auto");
+      }
+    } catch {}
+  }, [applyCity]);
+
+  const enableLocation = async () => {
+    if (requestingLocation) return;
+    setRequestingLocation(true);
+    try {
+      const { status, canAskAgain } = await Location.getForegroundPermissionsAsync();
+      if (status === "granted") {
+        const city = await detectCityFromGPS();
+        if (city) {
+          setLocationBanner(null);
+          await applyCity(city, "auto");
+        }
+        return;
+      }
+      if (!canAskAgain) {
+        Alert.alert(
+          "Location Permission Required",
+          "CityVibe needs location access to show events near you. Please enable it in your device settings.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Open Settings",
+              onPress: () =>
+                Platform.OS === "ios" ? Linking.openURL("app-settings:") : Linking.openSettings(),
+            },
+          ]
+        );
+        return;
+      }
+      const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+      if (newStatus === "granted") {
+        const city = await detectCityFromGPS();
+        if (city) {
+          setLocationBanner(null);
+          await applyCity(city, "auto");
+        }
+      }
+    } finally {
+      setRequestingLocation(false);
+    }
+  };
 
   const fetchPublicEvents = async (city?: string | null, silent = false) => {
     try {
@@ -436,12 +570,13 @@ export default function Home() {
     }
   };
 
-  const fetchHighlights = async () => {
+  const fetchHighlights = async (city?: string | null) => {
     try {
       const token = await SecureStore.getItemAsync("token");
       const headers: Record<string, string> = {};
       if (token) headers.Authorization = `Bearer ${token}`;
-      const response = await fetch(`${BASE_URL}/events/highlights`, {
+      const cityParam = city ? `?city=${encodeURIComponent(city)}` : "";
+      const response = await fetch(`${BASE_URL}/events/highlights${cityParam}`, {
         headers,
       });
       const data = await response.json();
@@ -470,12 +605,13 @@ export default function Home() {
     } catch {}
   };
 
-  const fetchTopGuides = async () => {
+  const fetchTopGuides = async (city?: string | null) => {
     try {
       const token = await SecureStore.getItemAsync("token");
       const headers: Record<string, string> = {};
       if (token) headers.Authorization = `Bearer ${token}`;
-      const response = await fetch(`${BASE_URL}/guides/top?limit=10`, { headers });
+      const cityParam = city ? `&city=${encodeURIComponent(city)}` : "";
+      const response = await fetch(`${BASE_URL}/guides/top?limit=10${cityParam}`, { headers });
       const data = await response.json();
       if (response.ok) setTopGuides(data.guides || []);
     } catch {}
@@ -497,14 +633,19 @@ export default function Home() {
     } catch {}
   };
 
+  const openCreateEvent = async () => {
+    if (!(await ensureAuth("create an event"))) return;
+    setIsModalVisible(true);
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([
       fetchPublicEvents(selectedCity, true),
       fetchExternalEvents(selectedCity),
-      fetchHighlights(),
+      fetchHighlights(selectedCity),
       fetchVendors(),
-      fetchTopGuides(),
+      fetchTopGuides(selectedCity),
     ]);
     setRefreshing(false);
   };
@@ -519,12 +660,19 @@ export default function Home() {
   useEffect(() => {
     loadSelectedCity();
     fetchUsername();
+    // Only resolve device/IP location once per app session — after that,
+    // focus-driven loadSelectedCity() calls respect whatever the user picks
+    // manually via the Select Location screen.
+    if (!locationInitRef.current) {
+      locationInitRef.current = true;
+      resolveHomeLocation();
+    }
     Promise.all([
       fetchPublicEvents(selectedCity),
       fetchExternalEvents(selectedCity),
-      fetchHighlights(),
+      fetchHighlights(selectedCity),
       fetchVendors(),
-      fetchTopGuides(),
+      fetchTopGuides(selectedCity),
     ]).finally(() => setInitialLoading(false));
 
     intervalRef.current = setInterval(() => {
@@ -534,7 +682,7 @@ export default function Home() {
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
         fetchPublicEvents(selectedCity, true);
-        fetchHighlights();
+        fetchHighlights(selectedCity);
       }
     });
 
@@ -542,7 +690,7 @@ export default function Home() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       subscription.remove();
     };
-  }, [loadSelectedCity, selectedCity]);
+  }, [loadSelectedCity, selectedCity, resolveHomeLocation]);
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
     if (!(await ensureAuth("buy a ticket"))) return;
@@ -585,7 +733,7 @@ export default function Home() {
         } else {
           Alert.alert("RSVP declined.");
         }
-        fetchHighlights();
+        fetchHighlights(selectedCity);
       } else {
         const d = await response.json();
         Alert.alert("Error", d.message || "Failed to RSVP");
@@ -722,6 +870,28 @@ export default function Home() {
             <Text style={styles.searchPlaceholder}>Search events & guides</Text>
           </TouchableOpacity>
         </View>
+
+        {locationBanner === "approximate" && (
+          <View style={styles.locationBanner}>
+            <Ionicons name="navigate-outline" size={16} color={colors.primary} />
+            <Text style={styles.locationBannerText}>
+              Showing events near your approximate location. Enable precise location for a better experience.
+            </Text>
+            <TouchableOpacity
+              onPress={enableLocation}
+              disabled={requestingLocation}
+              activeOpacity={0.7}
+              style={styles.locationBannerAction}
+            >
+              <Text style={styles.locationBannerActionText}>
+                {requestingLocation ? "…" : "Enable"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setLocationBanner(null)} activeOpacity={0.7}>
+              <Ionicons name="close" size={16} color={colors.textDim} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         <>
             {/* Hero Card */}
@@ -887,6 +1057,22 @@ export default function Home() {
               </View>
             </LinearGradient>
           </TouchableOpacity>
+        ) : !initialLoading && mixedFeed.length === 0 && trendingFeed.length === 0 ? (
+          <View style={styles.emptyState}>
+            <View style={styles.emptyStateIconWrap}>
+              <Ionicons name="calendar-outline" size={32} color={colors.primary} />
+            </View>
+            <Text style={styles.emptyStateTitle}>
+              No events {selectedCity ? `in ${selectedCity}` : "near you"} yet
+            </Text>
+            <Text style={styles.emptyStateSubtitle}>
+              Be the first to bring something to the calendar.
+            </Text>
+            <TouchableOpacity style={styles.emptyStateButton} activeOpacity={0.85} onPress={openCreateEvent}>
+              <Ionicons name="add" size={16} color={colors.white} />
+              <Text style={styles.emptyStateButtonText}>Create Event</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
 
             {/* After That */}
@@ -1065,10 +1251,7 @@ export default function Home() {
           styles.fab,
           Platform.OS === "ios" && { bottom: insets.bottom + 60 },
         ]}
-        onPress={async () => {
-          if (!(await ensureAuth("create an event"))) return;
-          setIsModalVisible(true);
-        }}
+        onPress={openCreateEvent}
         activeOpacity={0.85}
       >
         <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.fabGradient}>
@@ -1153,6 +1336,82 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.regular,
     fontSize: 15,
     color: c.textDim,
+  },
+  locationBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: c.primaryFaded,
+    borderWidth: 1,
+    borderColor: c.primaryBorder,
+  },
+  locationBannerText: {
+    flex: 1,
+    fontFamily: Fonts.regular,
+    fontSize: 12,
+    color: c.textDim,
+    lineHeight: 16,
+  },
+  locationBannerAction: {
+    paddingHorizontal: 4,
+  },
+  locationBannerActionText: {
+    fontFamily: Fonts.bold,
+    fontSize: 12,
+    color: c.primary,
+  },
+  emptyState: {
+    marginHorizontal: 20,
+    marginBottom: 28,
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+    borderRadius: 20,
+    backgroundColor: c.card,
+    borderWidth: 1,
+    borderColor: c.border,
+    alignItems: "center",
+  },
+  emptyStateIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: c.primaryFaded,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  emptyStateTitle: {
+    fontFamily: Fonts.bold,
+    fontSize: 16,
+    color: c.textBright,
+    textAlign: "center",
+  },
+  emptyStateSubtitle: {
+    fontFamily: Fonts.regular,
+    fontSize: 13,
+    color: c.textDim,
+    textAlign: "center",
+    marginTop: 6,
+    marginBottom: 20,
+  },
+  emptyStateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: c.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  emptyStateButtonText: {
+    fontFamily: Fonts.bold,
+    fontSize: 14,
+    color: c.white,
   },
   greetingText: {
     fontFamily: "BricolageGrotesque_800ExtraBold",

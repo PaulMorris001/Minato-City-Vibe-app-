@@ -8,6 +8,8 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Linking,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect, useNavigation } from "expo-router";
@@ -15,12 +17,14 @@ import { CommonActions } from "@react-navigation/native";
 import { goBack, resetToAccountRoot } from "@/utils/navigation";
 import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
+import * as Location from "expo-location";
 import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
 import { payoutOnboardingRoute } from "@/constants/payments";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
-import { ImagePickerButton, LocationPicker } from "@/components/shared";
+import { ImagePickerButton } from "@/components/shared";
+import { getAddressFromCurrentPosition } from "@/hooks/useLocation";
 import type { LocationSelection } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { useAccount } from "@/contexts/AccountContext";
@@ -51,7 +55,16 @@ export default function SettingsScreen() {
   const [saving, setSaving] = useState(false);
   const [profilePicture, setProfilePicture] = useState("");
   const [bio, setBio] = useState("");
+  // The single location the user's account is set to — used both as the
+  // home feed's default filter city and to derive selling currency/payout.
+  // Only ever set via device GPS (or an IP-based guess on first visit,
+  // handled by the home feed) — never typed in manually. `location` is the
+  // persisted profile value (country/state/city); `homeCity` mirrors the
+  // SecureStore `selectedCity` the home feed reads, so a first-run IP guess
+  // still shows here even before the user has ever tapped the button below.
   const [location, setLocation] = useState<Partial<LocationSelection> | null>(null);
+  const [homeCity, setHomeCity] = useState<string | null>(null);
+  const [detectingLocation, setDetectingLocation] = useState(false);
   const [user, setUser] = useState({
     username: "",
     email: "",
@@ -151,15 +164,97 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     fetchProfile();
+    loadHomeLocation();
   }, []);
 
   // Re-fetch when the screen regains focus so returning from /verify-email
-  // (or any other settings sub-flow) reflects the new state immediately.
+  // reflects the new state immediately.
   useFocusEffect(
     useCallback(() => {
       fetchProfile();
+      loadHomeLocation();
     }, [])
   );
+
+  // Fallback display only — reflects whatever the home feed is currently
+  // using (its own GPS/IP resolution), so this screen shows something
+  // sensible even before the user has ever tapped the button below.
+  const loadHomeLocation = async () => {
+    try {
+      const city = await SecureStore.getItemAsync("selectedCity");
+      setHomeCity(city || null);
+    } catch {}
+  };
+
+  // The only way to set location anywhere in the app now — no typing. Grabs
+  // device GPS (prompting for permission if needed), reverse-geocodes it,
+  // and persists the result both to the profile (currency/payout) and to
+  // the home feed's SecureStore keys (so it becomes the default filter
+  // city too). If permission is off but a location was set before, this
+  // button is simply how the user re-syncs it — nothing here ever clears a
+  // previously-resolved location.
+  const handleUseCurrentLocation = async () => {
+    if (detectingLocation) return;
+    setDetectingLocation(true);
+    try {
+      const { status, canAskAgain } = await Location.getForegroundPermissionsAsync();
+      let granted = status === "granted";
+
+      if (!granted) {
+        if (!canAskAgain) {
+          Alert.alert(
+            "Location Permission Required",
+            "CityVibe needs location access to set your location. Please enable it in your device settings.",
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Open Settings",
+                onPress: () =>
+                  Platform.OS === "ios" ? Linking.openURL("app-settings:") : Linking.openSettings(),
+              },
+            ]
+          );
+          return;
+        }
+        const requested = await Location.requestForegroundPermissionsAsync();
+        granted = requested.status === "granted";
+      }
+
+      if (!granted) return;
+
+      const address = await getAddressFromCurrentPosition();
+      if (!address?.city && !address?.country) {
+        showError("Couldn't determine your location. Try again in a moment.");
+        return;
+      }
+
+      const resolved = {
+        country: address.country || "",
+        state: address.state || "",
+        city: address.city || "",
+      };
+
+      const token = await SecureStore.getItemAsync("token");
+      await axios.put(
+        `${BASE_URL}/profile/picture`,
+        { bio, location: resolved },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setLocation(resolved);
+      setUser((prev) => ({ ...prev, country: resolved.country }));
+      if (resolved.city) {
+        await SecureStore.setItemAsync("selectedCity", resolved.city);
+        await SecureStore.setItemAsync("citySource", "auto");
+        setHomeCity(resolved.city);
+      }
+      showSuccess(`Location set to ${resolved.city || resolved.country}`);
+    } catch {
+      showError("Failed to update your location. Please try again.");
+    } finally {
+      setDetectingLocation(false);
+    }
+  };
 
   const fetchProfile = async () => {
     setLoading(true);
@@ -389,18 +484,6 @@ export default function SettingsScreen() {
         />
         <Text style={styles.bioCount}>{bio.length}/500</Text>
 
-        {/* Account location — drives which events are surfaced and, for
-            sellers, the selling currency and payout provider. */}
-        <LocationPicker
-          value={location ?? undefined}
-          onChange={setLocation}
-          label="Location"
-        />
-        <Text style={styles.locationHint}>
-          Used to show what's happening near you. If you sell tickets or
-          services, it also sets your selling currency and payout method.
-        </Text>
-
         <TouchableOpacity
           style={[styles.saveButton, saving && styles.saveButtonDisabled]}
           onPress={handleSaveProfile}
@@ -415,6 +498,37 @@ export default function SettingsScreen() {
             </>
           )}
         </TouchableOpacity>
+      </View>
+
+      {/* Location — one single value used both as the home feed's default
+          filter city and to derive selling currency/payout. Only ever set
+          via device GPS (or, before the user has ever tapped this, an
+          IP-based first-run guess made by the home feed) — never typed in.
+          Tapping the button re-syncs from GPS; if permission is off, the
+          last-resolved location just stays as-is. */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Location</Text>
+        <Text style={styles.sectionDescription}>
+          Sets which city's events and guides show on your home feed, and
+          (for sellers) your selling currency and payout method.
+        </Text>
+
+        <TouchableOpacity
+          style={[styles.saveButton, detectingLocation && styles.saveButtonDisabled]}
+          onPress={handleUseCurrentLocation}
+          disabled={detectingLocation}
+        >
+          {detectingLocation ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <>
+              <Ionicons name="navigate" size={18} color="#fff" />
+              <Text style={styles.saveButtonText}>Use my current location</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <Text style={styles.homeLocationCity}>{location?.city || homeCity || "Not set"}</Text>
       </View>
 
       {/* Account Information */}
@@ -855,12 +969,12 @@ const createStyles = (c: ThemeColors) =>
     alignSelf: "flex-end",
     marginTop: 4,
   },
-  locationHint: {
-    fontSize: 12,
-    fontFamily: Fonts.regular,
-    color: c.textMuted,
-    lineHeight: 17,
-    marginTop: 4,
+  homeLocationCity: {
+    fontSize: 15,
+    fontFamily: Fonts.medium,
+    color: c.textSecondary,
+    textAlign: "center",
+    marginTop: 10,
   },
   saveButton: {
     backgroundColor: Colors.primary,

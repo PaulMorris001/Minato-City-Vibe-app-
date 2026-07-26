@@ -36,7 +36,7 @@ import { Avatar } from "@/components/shared/Avatar";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { trackEvent as trackAnalyticsEvent } from "@/utils/analytics";
 import { LocationSelection } from "@/libs/interfaces";
-import { LocationPicker, MultiImagePicker } from "@/components/shared";
+import { LocationPicker, MultiImagePicker, ActiveLocationChip } from "@/components/shared";
 import { formatLocation } from "@/utils/location";
 import { resolveImageUrls } from "@/utils/imageUpload";
 
@@ -124,9 +124,9 @@ export default function EventsPage() {
   // External events (Ticketmaster etc) — fetched in parallel with native discover
   // events and merged into a single date-sorted feed below.
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
-  const [discoverLoc, setDiscoverLoc] = useState<Partial<LocationSelection> | null>(null);
+  // The one shared active browsing location — see ActiveLocationChip.
+  const [discoverCity, setDiscoverCity] = useState<string | null>(null);
   const [discoverOnline, setDiscoverOnline] = useState(false);
-  const [discoverPickerKey, setDiscoverPickerKey] = useState(0);
   const [inviteTab, setInviteTab] = useState<"people" | "vendors">("people");
   const [respondingInvite, setRespondingInvite] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -210,7 +210,7 @@ export default function EventsPage() {
 
   const fetchDiscoverEvents = async (
     pageNum = 1,
-    loc: Partial<LocationSelection> | null = discoverLoc,
+    city: string | null = discoverCity,
     isRefresh = false,
     online = discoverOnline
   ) => {
@@ -228,10 +228,8 @@ export default function EventsPage() {
       });
       if (online) {
         params.append("online", "true");
-      } else {
-        if (loc?.city) params.append("city", loc.city);
-        if (loc?.state) params.append("state", loc.state);
-        if (loc?.country) params.append("country", loc.country);
+      } else if (city) {
+        params.append("city", city);
       }
 
       // Fire both feeds in parallel. External events are only fetched on the
@@ -244,15 +242,7 @@ export default function EventsPage() {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         }),
         pageNum === 1 && !online
-          ? externalEventService.explore({
-              city: loc?.city,
-              // Send the ISO code (e.g. "NG"), NOT the display name
-              // ("Nigeria"). Ticketmaster stores country as ISO code so name
-              // would never match. Fall back to the name if the picker
-              // didn't provide an iso (older state).
-              country: loc?.countryIso || loc?.country,
-              limit: 20,
-            })
+          ? externalEventService.explore({ city: city || undefined, limit: 20 })
           : Promise.resolve({ events: [], nextCursor: null }),
       ]);
 
@@ -310,7 +300,7 @@ export default function EventsPage() {
     }
     trackAnalyticsEvent("ticket_purchased", { eventId, eventTitle });
     Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
-    fetchDiscoverEvents(1, discoverLoc, true);
+    fetchDiscoverEvents(1, discoverCity, true);
   };
 
   const handleJoinFreeEvent = async (eventId: string, eventTitle: string) => {
@@ -327,7 +317,7 @@ export default function EventsPage() {
       const data = await res.json();
       if (res.ok) {
         Alert.alert("Success!", `You've joined "${eventTitle}"`);
-        fetchDiscoverEvents(1, discoverLoc, true);
+        fetchDiscoverEvents(1, discoverCity, true);
       } else {
         Alert.alert("Error", data.message || "Failed to join event");
       }
@@ -339,11 +329,15 @@ export default function EventsPage() {
   useFocusEffect(
     useCallback(() => {
       fetchEvents(1, true);
-      // Each visit starts fresh — reset the location filter and the picker.
-      setDiscoverLoc(null);
+      // Online is an ephemeral view toggle, reset each visit. Location isn't
+      // reset — it's read fresh from the shared active-location key so a
+      // change made on the home feed (or any other screen) shows up here too.
       setDiscoverOnline(false);
-      setDiscoverPickerKey((k) => k + 1);
-      fetchDiscoverEvents(1, null, true, false);
+      SecureStore.getItemAsync("selectedCity").then((city) => {
+        const resolved = city || null;
+        setDiscoverCity(resolved);
+        fetchDiscoverEvents(1, resolved, true, false);
+      });
     }, [])
   );
 
@@ -383,7 +377,7 @@ export default function EventsPage() {
     if (activeTab === "private") {
       fetchEvents(1, true);
     } else {
-      fetchDiscoverEvents(1, discoverLoc, true);
+      fetchDiscoverEvents(1, discoverCity, true);
       setRefreshing(false);
     }
   };
@@ -918,29 +912,16 @@ export default function EventsPage() {
           {/* ──── DISCOVER TAB ──── */}
           {activeTab === "discover" ? (
             <>
-              {/* Location filter */}
+              {/* Location filter — the one shared active browsing location;
+                  tap the chip to change it via Select Location. */}
               <View style={styles.discoverFilterWrap}>
-                <LocationPicker
-                  key={discoverPickerKey}
-                  label="Filter by location"
-                  value={discoverLoc ?? undefined}
-                  onChange={(sel) => {
-                    const next = { country: sel.country, state: sel.state, city: sel.city };
-                    setDiscoverLoc(next);
-                    setDiscoverOnline(false);
-                    fetchDiscoverEvents(1, next, true, false);
-                  }}
-                />
+                <ActiveLocationChip city={discoverCity} />
                 <TouchableOpacity
                   style={[styles.onlineFilterBtn, discoverOnline && styles.onlineFilterBtnActive]}
                   onPress={() => {
                     const next = !discoverOnline;
                     setDiscoverOnline(next);
-                    if (next) {
-                      setDiscoverLoc(null);
-                      setDiscoverPickerKey((k) => k + 1);
-                    }
-                    fetchDiscoverEvents(1, next ? null : discoverLoc, true, next);
+                    fetchDiscoverEvents(1, discoverCity, true, next);
                   }}
                   activeOpacity={0.7}
                 >
@@ -950,21 +931,6 @@ export default function EventsPage() {
                   </Text>
                   {discoverOnline && <Ionicons name="checkmark" size={15} color="#fff" />}
                 </TouchableOpacity>
-                {discoverLoc?.city || discoverLoc?.state || discoverLoc?.country || discoverOnline ? (
-                  <TouchableOpacity
-                    style={styles.clearLocationBtn}
-                    onPress={() => {
-                      setDiscoverLoc(null);
-                      setDiscoverOnline(false);
-                      setDiscoverPickerKey((k) => k + 1);
-                      fetchDiscoverEvents(1, null, true, false);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
-                    <Text style={styles.clearLocationText}>Show all events</Text>
-                  </TouchableOpacity>
-                ) : null}
               </View>
 
               {discoverLoading ? (
@@ -1916,21 +1882,6 @@ const createStyles = (c: ThemeColors) =>
   },
   onlineFilterTextActive: {
     color: c.text,
-  },
-  clearLocationBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    marginTop: -4,
-    marginBottom: 8,
-  },
-  clearLocationText: {
-    fontSize: 13,
-    fontFamily: Fonts.medium,
-    color: c.textSecondary,
   },
   eventDetail: {
     flexDirection: "row",

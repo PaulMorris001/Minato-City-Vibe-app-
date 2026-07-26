@@ -21,7 +21,12 @@ import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
-import { DateTimeDropdown, ImagePickerButton, LocationPicker, MultiImagePicker } from "@/components/shared";
+import {
+  DateTimeDropdown,
+  ImagePickerButton,
+  LocationPicker,
+  MultiImagePicker,
+} from "@/components/shared";
 import { uploadImage, resolveImageUrls } from "@/utils/imageUpload";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import { LocationSelection } from "@/libs/interfaces";

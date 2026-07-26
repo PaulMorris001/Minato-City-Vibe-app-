@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -15,15 +15,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
 import { fetchVendorsBrowse } from "@/libs/api";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { ensureAuth } from "@/utils/requireAuth";
-import { LocationSelection } from "@/libs/interfaces";
 import { formatLocation } from "@/utils/location";
 import { Fonts } from "@/constants/fonts";
 import BecomeVendorModal from "@/components/client/BecomeVendorModal";
-import { LocationFilterBar } from "@/components/shared";
+import { ActiveLocationChip } from "@/components/shared";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 import { scaleFontSize } from "@/utils/responsive";
 
@@ -45,7 +44,10 @@ export default function VendorsPage() {
   const router = useRouter();
   const [vendors, setVendors] = useState<BrowseVendor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [locFilter, setLocFilter] = useState<LocationSelection | null>(null);
+  // The one shared active browsing location (set via Settings' device
+  // location, the home feed, or Select Location from any of these screens) —
+  // read fresh on every focus so a change made elsewhere shows up here too.
+  const [activeCity, setActiveCity] = useState<string | null>(null);
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const headerAnim = useRef(new Animated.Value(0)).current;
@@ -68,14 +70,10 @@ export default function VendorsPage() {
     }
   };
 
-  const loadVendors = async (loc: LocationSelection | null) => {
+  const loadVendors = async (city: string | null) => {
     setLoading(true);
     try {
-      const data = await fetchVendorsBrowse({
-        country: loc?.country || undefined,
-        state: loc?.state || undefined,
-        city: loc?.city || undefined,
-      });
+      const data = await fetchVendorsBrowse({ city: city || undefined });
       setVendors(Array.isArray(data) ? data : []);
     } catch {
       setVendors([]);
@@ -94,9 +92,15 @@ export default function VendorsPage() {
     }).start();
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      SecureStore.getItemAsync("selectedCity").then((city) => setActiveCity(city || null));
+    }, [])
+  );
+
   useEffect(() => {
-    loadVendors(locFilter);
-  }, [locFilter]);
+    loadVendors(activeCity);
+  }, [activeCity]);
 
   const checkAuthStatus = async () => {
     const token = await SecureStore.getItemAsync("token");
@@ -276,11 +280,7 @@ export default function VendorsPage() {
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
         >
-          <LocationFilterBar
-            value={locFilter}
-            onChange={setLocFilter}
-            onClear={() => setLocFilter(null)}
-          />
+          <ActiveLocationChip city={activeCity} />
 
           {loading ? (
             <VendorCardSkeleton count={5} />
@@ -289,7 +289,7 @@ export default function VendorsPage() {
               <Ionicons name="business-outline" size={48} color={colors.borderMuted} />
               <Text style={styles.emptyTitle}>No vendors yet</Text>
               <Text style={styles.emptySubtext}>
-                {locFilter ? "No vendors in this location — try a different one." : "Check back soon."}
+                {activeCity ? "No vendors in this location — try a different one." : "Check back soon."}
               </Text>
             </View>
           ) : (

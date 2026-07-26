@@ -5,6 +5,7 @@ export { default as BottomSheetModal } from "./BottomSheetModal";
 export { default as PickerModal, PickerItemText } from "./PickerModal";
 export { default as LocationPicker } from "./LocationPicker";
 export { default as LocationFilterBar } from "./LocationFilterBar";
+export { default as ActiveLocationChip } from "./ActiveLocationChip";
 export { default as MultiImagePicker } from "./MultiImagePicker";
 export { default as ImageViewerModal } from "./ImageViewerModal";
 export { default as DateTimeDropdown } from "./DateTimeDropdown";

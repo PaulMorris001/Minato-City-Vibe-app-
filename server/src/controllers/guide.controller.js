@@ -181,6 +181,7 @@ export const getGuides = async (req, res) => {
 export const getTopGuides = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 10, 50);
+    const { city } = req.query;
     const blockedIds = req.user?.id ? await getBlockedIds(req.user.id) : [];
 
     const match = { isDraft: false, isActive: true };
@@ -188,6 +189,10 @@ export const getTopGuides = async (req, res) => {
       match.author = {
         $nin: blockedIds.map((id) => new mongoose.Types.ObjectId(id)),
       };
+    }
+    if (city) {
+      const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      match.city = { $regex: new RegExp(`^${esc(city)}$`, "i") };
     }
 
     const guides = await Guide.aggregate([

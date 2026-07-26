@@ -1741,12 +1741,15 @@ export const getEventHighlights = async (req, res) => {
   try {
     // optionalAuth — userId is null for logged-out (guest) browsers.
     const userId = req.user?.id || null;
+    const { city } = req.query;
 
-    const cacheKey = `event_highlights_${userId || 'guest'}`;
+    const cacheKey = `event_highlights_${userId || 'guest'}_${city || ''}`;
     const cached = getCache(cacheKey);
     if (cached) return res.status(200).json(cached);
     const now = new Date();
     const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
     const publicFilter = {
       isPublic: true,
@@ -1756,6 +1759,22 @@ export const getEventHighlights = async (req, res) => {
         { isPaid: true, approvalStatus: "approved" },
       ],
     };
+
+    // Trending/upcoming should reflect the home feed's currently selected
+    // city, same matching rule as getPublicEvents: structured city field or
+    // free-text location fallback, and virtual events excluded since they
+    // don't belong to any one place.
+    if (city) {
+      publicFilter.$and = [
+        {
+          $or: [
+            { city: { $regex: new RegExp(`^${esc(city)}$`, "i") } },
+            { location: { $regex: esc(city), $options: "i" } },
+          ],
+        },
+        { isVirtual: { $ne: true } },
+      ];
+    }
 
     const [trendingRaw, upcoming] = await Promise.all([
       Event.find({ ...publicFilter, date: { $gte: now } })
