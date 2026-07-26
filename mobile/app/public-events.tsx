@@ -33,7 +33,7 @@ import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 const SCARCITY_WARN = "#FBA74A";
-const EVENTS_PER_PAGE = 10;
+const EVENTS_PER_PAGE = 20;
 
 // Date-derived categories (the only ones backable by current event data — see
 // note in the README; genre tags need a `category` field on events).
@@ -76,6 +76,7 @@ export default function PublicEventsPage() {
   // External provider events (Ticketmaster, etc) shown alongside native ones.
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -99,6 +100,7 @@ export default function PublicEventsPage() {
   ) => {
     try {
       if (pageNum === 1) setLoading(true);
+      else setLoadingMore(true);
 
       // Guest-accessible — the explore routes use optionalAuth on the server,
       // so only attach the token when one exists.
@@ -127,7 +129,10 @@ export default function PublicEventsPage() {
               // wouldn't match anything ("Nigeria" vs "NG"). See externalEvent
               // controller for the loose matching logic.
               country: loc?.countryIso || loc?.country || undefined,
-              limit: 30,
+              // Server clamps to 100 max (see getExternalEventsExplore) — external
+              // events aren't paginated here (fixed batch on page 1), so this is
+              // the full ceiling of how many can ever show in one session.
+              limit: 100,
             })
           : Promise.resolve({ events: [], nextCursor: null }),
       ]);
@@ -160,6 +165,7 @@ export default function PublicEventsPage() {
       Alert.alert("Error", "Failed to load events. Please try again.");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
       setRefreshing(false);
     }
   };
@@ -209,13 +215,13 @@ export default function PublicEventsPage() {
   }, [discoverLoc, onlineOnly]);
 
   const handleLoadMore = useCallback(() => {
-    if (!loading && hasMore) {
+    if (!loading && !loadingMore && hasMore) {
       const nextPage = page + 1;
       setPage(nextPage);
       fetchPublicEvents(nextPage, false, discoverLoc, onlineOnly);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, hasMore, page, discoverLoc, onlineOnly]);
+  }, [loading, loadingMore, hasMore, page, discoverLoc, onlineOnly]);
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
     if (!(await SecureStore.getItemAsync("token"))) {
@@ -656,11 +662,19 @@ export default function PublicEventsPage() {
   };
 
   const renderFooter = () => {
-    if (!loading || page === 1) return null;
+    if (loading || visibleEvents.length === 0) return null;
+    if (loadingMore) {
+      return (
+        <View style={styles.footerLoader}>
+          <Text style={styles.footerText}>Loading more…</Text>
+        </View>
+      );
+    }
+    if (!hasMore) return null;
     return (
-      <View style={styles.footerLoader}>
-        <Text style={styles.footerText}>Loading more…</Text>
-      </View>
+      <TouchableOpacity style={styles.seeMoreBtn} onPress={handleLoadMore} activeOpacity={0.85}>
+        <Text style={styles.seeMoreBtnText}>See more events</Text>
+      </TouchableOpacity>
     );
   };
 
@@ -725,8 +739,6 @@ export default function PublicEventsPage() {
             ListFooterComponent={renderFooter}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
-            onEndReached={handleLoadMore}
-            onEndReachedThreshold={0.5}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -1026,6 +1038,18 @@ const createStyles = (c: ThemeColors) =>
 
   footerLoader: { paddingVertical: 20, alignItems: "center" },
   footerText: { fontFamily: AU_FONT.body, fontSize: 13, color: c.textDim },
+  seeMoreBtn: {
+    marginHorizontal: 20,
+    marginTop: 6,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: c.primaryFaded,
+    borderWidth: 1,
+    borderColor: "rgba(168,85,247,0.25)",
+  },
+  seeMoreBtnText: { fontFamily: AU_FONT.bodyBold, fontSize: 14, color: c.primaryLight },
 
   // Sheets
   sheetOverlay: { flex: 1, backgroundColor: c.modalOverlay },

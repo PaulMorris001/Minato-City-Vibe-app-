@@ -220,15 +220,17 @@ class ChatService {
 
     await chat.save();
 
-    // Populate message data
-    await message.populate('sender', 'username email profilePicture');
-    await message.populate({
-      path: 'replyTo',
-      populate: { path: 'sender', select: 'username profilePicture' }
-    });
-    await message.populate('event');
-    await message.populate('guide', 'title authorName city cityState topic price');
-    await message.populate('order');
+    // Populate message data — one batched call instead of 5 sequential
+    // awaits, each of which was a separate DB round trip standing between
+    // message.save() and the socket emit below, adding latency to every
+    // single message before the recipient ever saw it.
+    await message.populate([
+      { path: 'sender', select: 'username email profilePicture' },
+      { path: 'replyTo', populate: { path: 'sender', select: 'username profilePicture' } },
+      { path: 'event' },
+      { path: 'guide', select: 'title authorName city cityState topic price' },
+      { path: 'order' },
+    ]);
 
     // Emit message via Socket.IO to the active chat room
     emitNewMessage(chatId.toString(), message);
