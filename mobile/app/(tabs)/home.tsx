@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import * as Location from "expo-location";
 import { BASE_URL } from "@/constants/constants";
@@ -29,6 +29,7 @@ import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useLocation";
+import { useActiveCity, setActiveCity as setSharedActiveCity } from "@/hooks/useActiveCity";
 import { trackEvent } from "@/utils/analytics";
 import { ensureAuth } from "@/utils/requireAuth";
 
@@ -377,7 +378,7 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [username, setUsername] = useState("");
-  const [selectedCity, setSelectedCity] = useState<string | null>(null);
+  const selectedCity = useActiveCity();
   // Set when the home feed is showing an IP-approximated location rather than
   // a precise device one — surfaces a nudge to grant location permission.
   const [locationBanner, setLocationBanner] = useState<"approximate" | null>(null);
@@ -399,26 +400,14 @@ export default function Home() {
     return "🌙";
   };
 
-  const loadSelectedCity = useCallback(async () => {
-    try {
-      const savedCity = await SecureStore.getItemAsync("selectedCity");
-      if (savedCity) {
-        setSelectedCity(savedCity);
-      } else {
-        setSelectedCity(null);
-      }
-    } catch {}
-  }, []);
-
   // Persists a detected/selected city as the home feed's default. `source`
   // records whether this came from auto-detection (GPS/IP) or the user
   // explicitly picking a city in Select Location — see resolveHomeLocation,
   // which uses it to avoid clobbering an explicit pick with auto-detection
   // on a later cold start.
   const applyCity = useCallback(async (city: string, source: "auto" | "manual" = "auto") => {
-    setSelectedCity(city);
+    await setSharedActiveCity(city);
     try {
-      await SecureStore.setItemAsync("selectedCity", city);
       await SecureStore.setItemAsync("citySource", source);
     } catch {}
   }, []);
@@ -650,19 +639,11 @@ export default function Home() {
     setRefreshing(false);
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      loadSelectedCity();
-      return () => {};
-    }, [loadSelectedCity])
-  );
-
   useEffect(() => {
-    loadSelectedCity();
     fetchUsername();
     // Only resolve device/IP location once per app session — after that,
-    // focus-driven loadSelectedCity() calls respect whatever the user picks
-    // manually via the Select Location screen.
+    // the shared active-city store (see useActiveCity) reflects whatever the
+    // user picks manually via the Select Location screen.
     if (!locationInitRef.current) {
       locationInitRef.current = true;
       resolveHomeLocation();
@@ -690,7 +671,7 @@ export default function Home() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       subscription.remove();
     };
-  }, [loadSelectedCity, selectedCity, resolveHomeLocation]);
+  }, [selectedCity, resolveHomeLocation]);
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
     if (!(await ensureAuth("buy a ticket"))) return;

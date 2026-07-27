@@ -670,7 +670,15 @@ export default function PublicEventsPage() {
         </View>
       );
     }
-    if (!hasMore) return null;
+    if (!hasMore) {
+      // Confirms pagination actually finished rather than silently stopping —
+      // otherwise the list just ends with no feedback, which reads as broken.
+      return (
+        <View style={styles.footerLoader}>
+          <Text style={styles.footerText}>You've reached the end</Text>
+        </View>
+      );
+    }
     return (
       <TouchableOpacity style={styles.seeMoreBtn} onPress={handleLoadMore} activeOpacity={0.85}>
         <Text style={styles.seeMoreBtnText}>See more events</Text>
