@@ -29,6 +29,10 @@ export function priceLabel(ev: FeedEvent): string {
   if (ev.kind === "external") {
     const { priceMin, priceMax, currency } = ev;
     if (priceMin == null && priceMax == null) return "Tickets";
+    // Genuinely free — the common case for Eventbrite, where most listings are
+    // free registration. Without this they'd read "From ₦0", which looks like
+    // missing data rather than the actual price.
+    if (!priceMin && !priceMax) return "Free";
     if (priceMin != null && priceMax != null && priceMax > priceMin) {
       return `${money(priceMin, currency)} – ${money(priceMax, currency)}`;
     }
@@ -99,6 +103,7 @@ export function relativeDay(iso?: string): string {
 const SOURCE_LABEL: Record<string, string> = {
   ticketmaster: "Ticketmaster",
   bandsintown: "Bandsintown",
+  eventbrite: "Eventbrite",
 };
 
 export function sourceLabel(ev: ExternalEventItem) {

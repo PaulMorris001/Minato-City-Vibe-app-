@@ -10,7 +10,7 @@ import { BASE_URL } from "@/constants/constants";
  */
 export interface ExternalEvent {
   _id: string;
-  source: "ticketmaster" | "bandsintown";
+  source: "ticketmaster" | "bandsintown" | "eventbrite";
   sourceId: string;
   title: string;
   description: string;
@@ -48,7 +48,7 @@ export interface ExploreResponse {
 export interface ExploreParams {
   city?: string;
   country?: string;
-  source?: "ticketmaster" | "bandsintown";
+  source?: "ticketmaster" | "bandsintown" | "eventbrite";
   category?: string;
   limit?: number;
   cursor?: string; // ISO date — paginate by passing the prior nextCursor back
