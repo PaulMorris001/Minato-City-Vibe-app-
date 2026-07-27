@@ -125,6 +125,14 @@ export default function EventsPage() {
   // External events (Ticketmaster etc) — fetched in parallel with native discover
   // events and merged into a single date-sorted feed below.
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
+  // Set when the searched city's own results are thin — the server's proxy
+  // for "nearby" (events carry no coordinates), see findNearbyCityEvents.
+  const [nearbyDiscover, setNearbyDiscover] = useState<{
+    city: string;
+    state: string | null;
+    country: string | null;
+    events: PublicEvent[];
+  } | null>(null);
   // The one shared active browsing location — see ActiveLocationChip.
   const discoverCity = useActiveCity();
   const [discoverOnline, setDiscoverOnline] = useState(false);
@@ -258,6 +266,7 @@ export default function EventsPage() {
         }
         setDiscoverPage(pageNum);
         setDiscoverHasMore(incoming.length === DISCOVER_LIMIT);
+        if (pageNum === 1) setNearbyDiscover(data.nearby || null);
       }
 
       // External events: only refresh on page 1 / refresh; keep cached
@@ -717,6 +726,23 @@ export default function EventsPage() {
     router.push(`/event/${eventId}`);
   };
 
+  // Rendered under the Discover list — either after a thin result set or
+  // after the "no public events" empty state.
+  const renderNearbyDiscover = () => {
+    if (!nearbyDiscover || nearbyDiscover.events.length === 0) return null;
+    const label = nearbyDiscover.state ? `${nearbyDiscover.city}, ${nearbyDiscover.state}` : nearbyDiscover.city;
+    return (
+      <View style={{ marginTop: 20 }}>
+        <Text style={styles.discoverNearbyTitle}>Not much happening here — check out {label}</Text>
+        {nearbyDiscover.events.map((ev) => (
+          <View key={`nearby-${ev._id}`} style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+            <PublicEventCard event={ev} onPurchaseTicket={handlePurchaseTicket} onJoinFreeEvent={handleJoinFreeEvent} />
+          </View>
+        ))}
+      </View>
+    );
+  };
+
   // "My Events" surfaces everything you can manage: every event you created
   // (public OR private) plus private events you were invited to. Public events
   // you merely attend stay out of here (they live in Discover).
@@ -939,6 +965,7 @@ export default function EventsPage() {
                   <Ionicons name="globe-outline" size={64} color={colors.textMuted} />
                   <Text style={styles.emptyStateTitle}>No public events yet</Text>
                   <Text style={styles.emptyStateText}>Check back soon or try a different city</Text>
+                  {renderNearbyDiscover()}
                 </View>
               ) : (
                 <>
@@ -983,6 +1010,7 @@ export default function EventsPage() {
                       {discoverLoadingMore ? <ActivityIndicator size="small" color={colors.primary} /> : <Text style={styles.loadMoreText}>Load More</Text>}
                     </TouchableOpacity>
                   )}
+                  {!discoverHasMore && renderNearbyDiscover()}
                 </>
               )}
             </>
@@ -1675,6 +1703,13 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.regular,
     color: c.textSecondary,
     textAlign: "center",
+  },
+  discoverNearbyTitle: {
+    fontSize: scaleFontSize(13),
+    fontFamily: Fonts.semiBold,
+    color: c.textSecondary,
+    marginHorizontal: 16,
+    marginBottom: 12,
   },
   guestLoginBtn: {
     flexDirection: "row",
