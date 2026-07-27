@@ -124,8 +124,15 @@ export default function SelectLocation() {
       setError(null);
 
       try {
+        // featureType=settlement restricts Nominatim's own ranking to
+        // populated places (city/town/village/hamlet/...) instead of mixing
+        // in states, countries and POIs — so real but smaller cities aren't
+        // pushed out of the top results by unrelated matches. limit is raised
+        // from 5 to 12 for the same reason: the addresstype filter below
+        // still discards some entries, and a bigger raw pool means fewer
+        // genuine cities get cut before that filter even runs.
         const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&addressdetails=1&accept-language=en&q=${encodeURIComponent(trimmed)}`,
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=12&addressdetails=1&accept-language=en&featureType=settlement&q=${encodeURIComponent(trimmed)}`,
           {
             headers: { "Accept-Language": "en", "User-Agent": "CityVibe-App/1.0" },
             signal: controller.signal,
@@ -143,8 +150,20 @@ export default function SelectLocation() {
         // query like "Lagos" also surfaces "Lagos State" (the admin region,
         // not the city) and other non-city matches, which look like extra
         // confusing near-duplicate "Lagos" entries — none of them a real
-        // city a user meant to pick. Restrict to actual populated places.
-        const CITY_LIKE_TYPES = new Set(["city", "town", "village", "municipality"]);
+        // city a user meant to pick. Restrict to actual populated places —
+        // this list is intentionally broader than just "city" so smaller
+        // towns aren't silently dropped from search results.
+        const CITY_LIKE_TYPES = new Set([
+          "city",
+          "town",
+          "village",
+          "municipality",
+          "hamlet",
+          "suburb",
+          "borough",
+          "township",
+          "city_district",
+        ]);
         const nextSuggestions = rawResults
           .filter((item: any) => CITY_LIKE_TYPES.has(item?.addresstype))
           .map((item: any) => {

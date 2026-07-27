@@ -1504,6 +1504,105 @@ export const joinFreePublicEvent = async (req, res) => {
   }
 };
 
+// Shared by getPublicEvents for both the primary result page and the
+// neighbouring-city fallback below — same ticket/RSVP shape either way so
+// the client can render both sets of cards identically.
+async function attachTicketInfo(events, userId) {
+  return Promise.all(
+    events.map(async (event) => {
+      const eventObj = event.toObject();
+      // Attendee-only; fetched via the detail endpoint after joining.
+      delete eventObj.meetingLink;
+
+      // Check if current user created this event
+      eventObj.isCreator = !!userId && event.createdBy._id.toString() === userId;
+      if (!eventObj.isCreator) delete eventObj.pendingEdits;
+
+      if (event.isPaid && event.maxGuests > 0) {
+        const soldTickets = await Ticket.countDocuments({ event: event._id, isValid: true });
+        eventObj.ticketsSold = soldTickets;
+        eventObj.ticketsRemaining = event.maxGuests - soldTickets;
+        // Ticket-based attendance; no phantom RSVP entries for paid events.
+        eventObj.rsvpCount = soldTickets;
+        eventObj.rsvpUsers = [];
+
+        // Check if current user has already purchased a ticket
+        const userTicket = userId
+          ? await Ticket.findOne({ event: event._id, user: userId, isValid: true })
+          : null;
+        eventObj.userHasPurchased = !!userTicket;
+      } else {
+        // Free event - check if user has already joined (is in invitedUsers)
+        const hasJoined = !!userId && event.invitedUsers.some(id => id.toString() === userId);
+        eventObj.userHasPurchased = hasJoined;
+      }
+
+      return eventObj;
+    })
+  );
+}
+
+// Below this many results for a specific city, the filter is thin enough
+// that surfacing what's happening in the next-most-active nearby city is
+// more useful than an empty-feeling page. Events carry no coordinates, so
+// "nearby" here means the most active OTHER city in the same state/country
+// (or anywhere, if the search wasn't scoped that tightly) — a proxy for
+// geographic proximity, not a distance calculation.
+const NEARBY_MIN_RESULTS = 5;
+const NEARBY_CITY_LIMIT = 3;
+const NEARBY_EVENTS_PER_CITY = 6;
+
+async function findNearbyCityEvents({ city, state, country, blockedIds, userId }) {
+  const scopeMatch = {
+    isPublic: true,
+    isActive: true,
+    isVirtual: { $ne: true },
+    date: { $gte: new Date() },
+    city: { $exists: true, $nin: [null, ""] },
+    $and: [
+      { $or: [{ isPaid: { $ne: true } }, { isPaid: true, approvalStatus: "approved" }] },
+    ],
+    ...(blockedIds.length > 0 ? { createdBy: { $nin: blockedIds } } : {}),
+  };
+  // Same state first (closest proxy for "nearby"); fall back to same
+  // country if no state was given; otherwise leave it unscoped rather than
+  // guessing across the whole world.
+  if (state) scopeMatch.state = exactCaseInsensitive(state);
+  else if (country) scopeMatch.country = exactCaseInsensitive(country);
+
+  const cityGroups = await Event.aggregate([
+    { $match: scopeMatch },
+    {
+      $group: {
+        _id: { $toLower: "$city" },
+        city: { $first: "$city" },
+        state: { $first: "$state" },
+        country: { $first: "$country" },
+        count: { $sum: 1 },
+      },
+    },
+    { $sort: { count: -1 } },
+    { $limit: NEARBY_CITY_LIMIT + 1 }, // +1 in case the searched city itself tops the list
+  ]);
+
+  const target = city.trim().toLowerCase();
+  const top = cityGroups.find((g) => g._id !== target);
+  if (!top) return null;
+
+  const nearbyEvents = await Event.find({ ...scopeMatch, city: exactCaseInsensitive(top.city) })
+    .populate('createdBy', 'username email profilePicture')
+    .sort({ date: 1 })
+    .limit(NEARBY_EVENTS_PER_CITY);
+
+  return {
+    city: top.city,
+    state: top.state || null,
+    country: top.country || null,
+    totalThere: top.count,
+    events: await attachTicketInfo(nearbyEvents, userId),
+  };
+}
+
 // Get public events for exploration
 export const getPublicEvents = async (req, res) => {
   try {
@@ -1578,41 +1677,17 @@ export const getPublicEvents = async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
-    // Get ticket counts and check if user has purchased
-    const eventsWithTicketInfo = await Promise.all(
-      events.map(async (event) => {
-        const eventObj = event.toObject();
-        // Attendee-only; fetched via the detail endpoint after joining.
-        delete eventObj.meetingLink;
+    const eventsWithTicketInfo = await attachTicketInfo(events, userId);
 
-        // Check if current user created this event
-        eventObj.isCreator = !!userId && event.createdBy._id.toString() === userId;
-        if (!eventObj.isCreator) delete eventObj.pendingEdits;
+    // Thin results for a specific city? Surface the next-most-active nearby
+    // city instead of leaving the page feeling empty. Only worth the extra
+    // queries on page 1 — a "load more" call already knows the feed is real.
+    let nearby = null;
+    if (city && !onlineOnly && parseInt(page) === 1 && total < NEARBY_MIN_RESULTS) {
+      nearby = await findNearbyCityEvents({ city, state, country, blockedIds, userId });
+    }
 
-        if (event.isPaid && event.maxGuests > 0) {
-          const soldTickets = await Ticket.countDocuments({ event: event._id, isValid: true });
-          eventObj.ticketsSold = soldTickets;
-          eventObj.ticketsRemaining = event.maxGuests - soldTickets;
-          // Ticket-based attendance; no phantom RSVP entries for paid events.
-          eventObj.rsvpCount = soldTickets;
-          eventObj.rsvpUsers = [];
-
-          // Check if current user has already purchased a ticket
-          const userTicket = userId
-            ? await Ticket.findOne({ event: event._id, user: userId, isValid: true })
-            : null;
-          eventObj.userHasPurchased = !!userTicket;
-        } else {
-          // Free event - check if user has already joined (is in invitedUsers)
-          const hasJoined = !!userId && event.invitedUsers.some(id => id.toString() === userId);
-          eventObj.userHasPurchased = hasJoined;
-        }
-
-        return eventObj;
-      })
-    );
-
-    const result = { events: eventsWithTicketInfo, total, page: parseInt(page) };
+    const result = { events: eventsWithTicketInfo, total, page: parseInt(page), nearby };
     setCache(cacheKey, result, 120); // 2 min TTL
     res.status(200).json(result);
   } catch (error) {
