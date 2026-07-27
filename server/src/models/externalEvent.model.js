@@ -21,7 +21,7 @@ const externalEventSchema = new mongoose.Schema(
     // Provider identification ── (source, sourceId) is the natural unique key
     source: {
       type: String,
-      enum: ["ticketmaster", "bandsintown"],
+      enum: ["ticketmaster", "bandsintown", "eventbrite"],
       required: true,
       index: true,
     },

@@ -64,6 +64,8 @@ export default function ExternalEventDetails() {
   const priceText =
     ev.priceMin == null && ev.priceMax == null
       ? "See provider for pricing"
+      : !ev.priceMin && !ev.priceMax
+      ? "Free"
       : ev.priceMin != null && ev.priceMax != null && ev.priceMax > ev.priceMin
       ? `${money(ev.priceMin, ev.currency)} – ${money(ev.priceMax, ev.currency)}`
       : `From ${money((ev.priceMin ?? ev.priceMax) as number, ev.currency)}`;

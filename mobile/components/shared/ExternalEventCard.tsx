@@ -30,6 +30,9 @@ interface ExternalEventCardProps {
 
 function formatPriceLine(event: ExternalEvent): string | null {
   if (event.priceMin == null && event.priceMax == null) return null;
+  // Most Eventbrite listings are free registration; without this they'd read
+  // "From ₦0", which looks like missing data rather than the actual price.
+  if (!event.priceMin && !event.priceMax) return "Free";
   const sym = currencyPrefix(event.currency);
   if (event.priceMin != null && event.priceMax != null && event.priceMin !== event.priceMax) {
     return `${sym}${Math.round(event.priceMin)} – ${sym}${Math.round(event.priceMax)}`;

@@ -115,7 +115,7 @@ export interface EventItem {
 /** Third-party event ingested from Ticketmaster / Bandsintown. */
 export interface ExternalEventItem {
   _id: string;
-  source: "ticketmaster" | "bandsintown";
+  source: "ticketmaster" | "bandsintown" | "eventbrite";
   title: string;
   description?: string;
   image?: string;

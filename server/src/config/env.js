@@ -120,6 +120,20 @@ export const config = {
     ),
   },
 
+  // External event ingestion providers
+  externalEvents: {
+    ticketmasterApiKey: process.env.TICKETMASTER_API_KEY || "",
+
+    // Eventbrite has no public search API (retired Feb 2020); this reads their
+    // undocumented internal endpoint, so it ships default-OFF and can be
+    // killed via env alone if it starts failing or blocking. See
+    // services/eventbrite.service.js for the full caveat.
+    eventbrite: {
+      enabled: process.env.EVENTBRITE_ENABLED === "true",
+      maxPagesPerCity: parseInt(process.env.EVENTBRITE_MAX_PAGES || "10", 10),
+    },
+  },
+
   // Country-State-City API (location data source for pickers)
   csc: {
     apiKey: process.env.CSC_API_KEY || "",
