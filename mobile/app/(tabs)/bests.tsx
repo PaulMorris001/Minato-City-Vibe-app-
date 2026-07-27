@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   ScrollView,
   Animated,
 } from "react-native";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { Guide, GUIDE_TOPICS } from "@/libs/interfaces";
@@ -20,6 +20,7 @@ import { fetchGuidesAll } from "@/libs/api";
 import { formatLocation } from "@/utils/location";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
+import { useActiveCity } from "@/hooks/useActiveCity";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -32,7 +33,7 @@ export default function BestsPage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [guides, setGuides] = useState<Guide[]>([]);
   // The one shared active browsing location — see ActiveLocationChip.
-  const [activeCity, setActiveCity] = useState<string | null>(null);
+  const activeCity = useActiveCity();
   const headerAnim = useRef(new Animated.Value(0)).current;
 
   const loadGuides = async (city: string | null) => {
@@ -55,12 +56,6 @@ export default function BestsPage() {
       useNativeDriver: true,
     }).start();
   }, [headerAnim]);
-
-  useFocusEffect(
-    useCallback(() => {
-      SecureStore.getItemAsync("selectedCity").then((city) => setActiveCity(city || null));
-    }, [])
-  );
 
   useEffect(() => {
     loadGuides(activeCity);

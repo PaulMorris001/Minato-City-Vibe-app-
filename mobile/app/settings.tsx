@@ -25,6 +25,7 @@ import { payoutOnboardingRoute } from "@/constants/payments";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { ImagePickerButton } from "@/components/shared";
 import { getAddressFromCurrentPosition } from "@/hooks/useLocation";
+import { useActiveCity, setActiveCity } from "@/hooks/useActiveCity";
 import type { LocationSelection } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { useAccount } from "@/contexts/AccountContext";
@@ -63,7 +64,7 @@ export default function SettingsScreen() {
   // SecureStore `selectedCity` the home feed reads, so a first-run IP guess
   // still shows here even before the user has ever tapped the button below.
   const [location, setLocation] = useState<Partial<LocationSelection> | null>(null);
-  const [homeCity, setHomeCity] = useState<string | null>(null);
+  const homeCity = useActiveCity();
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [user, setUser] = useState({
     username: "",
@@ -164,7 +165,6 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     fetchProfile();
-    loadHomeLocation();
   }, []);
 
   // Re-fetch when the screen regains focus so returning from /verify-email
@@ -172,19 +172,8 @@ export default function SettingsScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchProfile();
-      loadHomeLocation();
     }, [])
   );
-
-  // Fallback display only — reflects whatever the home feed is currently
-  // using (its own GPS/IP resolution), so this screen shows something
-  // sensible even before the user has ever tapped the button below.
-  const loadHomeLocation = async () => {
-    try {
-      const city = await SecureStore.getItemAsync("selectedCity");
-      setHomeCity(city || null);
-    } catch {}
-  };
 
   // The only way to set location anywhere in the app now — no typing. Grabs
   // device GPS (prompting for permission if needed), reverse-geocodes it,
@@ -244,9 +233,8 @@ export default function SettingsScreen() {
       setLocation(resolved);
       setUser((prev) => ({ ...prev, country: resolved.country }));
       if (resolved.city) {
-        await SecureStore.setItemAsync("selectedCity", resolved.city);
+        await setActiveCity(resolved.city);
         await SecureStore.setItemAsync("citySource", "auto");
-        setHomeCity(resolved.city);
       }
       showSuccess(`Location set to ${resolved.city || resolved.country}`);
     } catch {

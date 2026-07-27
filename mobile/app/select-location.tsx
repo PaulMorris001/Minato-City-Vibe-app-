@@ -8,6 +8,7 @@ import { Fonts } from "@/constants/fonts";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import { POPULAR_CITIES } from "@/hooks/useLocation";
+import { useActiveCity, setActiveCity } from "@/hooks/useActiveCity";
 
 interface LocationSuggestion {
   label: string;
@@ -47,7 +48,7 @@ export default function SelectLocation() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const [selectedCity, setSelectedCity] = useState<string | null>(null);
+  const selectedCity = useActiveCity();
   const [recent, setRecent] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
@@ -59,8 +60,6 @@ export default function SelectLocation() {
   useEffect(() => {
     const load = async () => {
       try {
-        const saved = await SecureStore.getItemAsync("selectedCity");
-        setSelectedCity(saved || null);
         const savedRecent = await SecureStore.getItemAsync(RECENT_KEY);
         if (savedRecent) setRecent(JSON.parse(savedRecent));
       } catch {}
@@ -70,6 +69,14 @@ export default function SelectLocation() {
 
   const addToRecent = async (city: string) => {
     const next = [city, ...recent.filter((c) => c.toLowerCase() !== city.toLowerCase())].slice(0, MAX_RECENT);
+    setRecent(next);
+    try {
+      await SecureStore.setItemAsync(RECENT_KEY, JSON.stringify(next));
+    } catch {}
+  };
+
+  const removeFromRecent = async (city: string) => {
+    const next = recent.filter((c) => c.toLowerCase() !== city.toLowerCase());
     setRecent(next);
     try {
       await SecureStore.setItemAsync(RECENT_KEY, JSON.stringify(next));
@@ -206,13 +213,10 @@ export default function SelectLocation() {
 
   const saveAndClose = async (suggestion: LocationSuggestion) => {
     const value = suggestion.value || null;
-    setSelectedCity(value);
+    await setActiveCity(value);
     try {
       if (value) {
-        await SecureStore.setItemAsync("selectedCity", value);
         await addToRecent(value);
-      } else {
-        await SecureStore.deleteItemAsync("selectedCity");
       }
       // Marks this as an explicit user choice — see resolveHomeLocation in
       // home.tsx, which won't silently overwrite a manual pick with a fresh
@@ -293,7 +297,18 @@ export default function SelectLocation() {
                     <Ionicons name="time-outline" size={16} color={colors.textDim} />
                     <Text style={[styles.optionText, active && styles.optionTextActive]}>{city}</Text>
                   </View>
-                  {active ? <Ionicons name="checkmark" size={18} color={colors.primary} /> : null}
+                  <View style={styles.recentActions}>
+                    {active ? <Ionicons name="checkmark" size={18} color={colors.primary} /> : null}
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        removeFromRecent(city);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="close" size={18} color={colors.textDim} />
+                    </TouchableOpacity>
+                  </View>
                 </TouchableOpacity>
               );
             })}
@@ -415,5 +430,10 @@ const createStyles = (c: ThemeColors) =>
       alignItems: "center",
       gap: 8,
       flex: 1,
+    },
+    recentActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
     },
   });

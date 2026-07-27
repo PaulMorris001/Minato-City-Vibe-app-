@@ -36,6 +36,7 @@ import { Avatar } from "@/components/shared/Avatar";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { trackEvent as trackAnalyticsEvent } from "@/utils/analytics";
 import { LocationSelection } from "@/libs/interfaces";
+import { useActiveCity } from "@/hooks/useActiveCity";
 import { LocationPicker, MultiImagePicker, ActiveLocationChip } from "@/components/shared";
 import { formatLocation } from "@/utils/location";
 import { resolveImageUrls } from "@/utils/imageUpload";
@@ -125,7 +126,7 @@ export default function EventsPage() {
   // events and merged into a single date-sorted feed below.
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
   // The one shared active browsing location — see ActiveLocationChip.
-  const [discoverCity, setDiscoverCity] = useState<string | null>(null);
+  const discoverCity = useActiveCity();
   const [discoverOnline, setDiscoverOnline] = useState(false);
   const [inviteTab, setInviteTab] = useState<"people" | "vendors">("people");
   const [respondingInvite, setRespondingInvite] = useState<string | null>(null);
@@ -329,16 +330,14 @@ export default function EventsPage() {
   useFocusEffect(
     useCallback(() => {
       fetchEvents(1, true);
-      // Online is an ephemeral view toggle, reset each visit. Location isn't
-      // reset — it's read fresh from the shared active-location key so a
-      // change made on the home feed (or any other screen) shows up here too.
+      // Online is an ephemeral view toggle, reset each visit. Location comes
+      // from the shared active-city store (see useActiveCity), which updates
+      // instantly wherever it's read — including here — the moment it
+      // changes anywhere else (home feed GPS resolution, Select Location),
+      // even if this screen never lost focus in between.
       setDiscoverOnline(false);
-      SecureStore.getItemAsync("selectedCity").then((city) => {
-        const resolved = city || null;
-        setDiscoverCity(resolved);
-        fetchDiscoverEvents(1, resolved, true, false);
-      });
-    }, [])
+      fetchDiscoverEvents(1, discoverCity, true, false);
+    }, [discoverCity])
   );
 
   // Guests can browse Discover but "Private" needs an account — land them on

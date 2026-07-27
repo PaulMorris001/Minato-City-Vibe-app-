@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
 import { fetchVendorsBrowse } from "@/libs/api";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { ensureAuth } from "@/utils/requireAuth";
@@ -25,6 +25,7 @@ import BecomeVendorModal from "@/components/client/BecomeVendorModal";
 import { ActiveLocationChip } from "@/components/shared";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 import { scaleFontSize } from "@/utils/responsive";
+import { useActiveCity } from "@/hooks/useActiveCity";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -46,8 +47,9 @@ export default function VendorsPage() {
   const [loading, setLoading] = useState(true);
   // The one shared active browsing location (set via Settings' device
   // location, the home feed, or Select Location from any of these screens) —
-  // read fresh on every focus so a change made elsewhere shows up here too.
-  const [activeCity, setActiveCity] = useState<string | null>(null);
+  // updates instantly wherever it's read, so a change made elsewhere shows up
+  // here too even if this screen never lost focus in between.
+  const activeCity = useActiveCity();
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const headerAnim = useRef(new Animated.Value(0)).current;
@@ -91,12 +93,6 @@ export default function VendorsPage() {
       useNativeDriver: true,
     }).start();
   }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      SecureStore.getItemAsync("selectedCity").then((city) => setActiveCity(city || null));
-    }, [])
-  );
 
   useEffect(() => {
     loadVendors(activeCity);
