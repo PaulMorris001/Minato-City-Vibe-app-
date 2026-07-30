@@ -567,11 +567,14 @@ export default function PublicEventsPage() {
               <Text style={styles.priceText}>
                 {isFree ? "Free" : `${currencyPrefix(item.currency)}${priceOf(item)}`}
               </Text>
-              {typeof left === "number" && (
+              {/* Spot counts are organizer-only; guests just get "Sold out". */}
+              {typeof left === "number" ? (
                 <Text style={[styles.scarcityText, scarce && { color: SCARCITY_WARN }]}>
                   {scarce ? `Only ${left} left` : `${left} spots`}
                 </Text>
-              )}
+              ) : item.soldOut ? (
+                <Text style={[styles.scarcityText, { color: SCARCITY_WARN }]}>Sold out</Text>
+              ) : null}
             </View>
             <TouchableOpacity
               style={styles.ctaBtn}

@@ -39,9 +39,16 @@ export default function VendorLayout() {
   const isGlassAvailable = Platform.OS === "ios" && isLiquidGlassAvailable();
   const isIpad = Platform.OS === "ios" && Platform.isPad;
   // The profile modal sits on a translucent surface on any iOS (real glass on
-  // 26+, blur below), so the brighter chrome applies to both. Android keeps
-  // the solid card.
+  // 26+, blur below). Android keeps the solid card.
   const isTranslucentModal = Platform.OS === "ios";
+  // Icon tones for that modal. These used to be pinned to "#fff" on any iOS,
+  // which only ever read against a dark card. Both surfaces now carry a themed
+  // background (see glassModalContent), so the palette's own tokens are correct
+  // on each — colors.text is already white in dark mode and near-black in light.
+  const modalCloseColor = colors.text;
+  const modalChevronColor = isTranslucentModal
+    ? colors.textSecondary
+    : colors.borderMuted;
   const insets = useSafeAreaInsets();
   const [user, setUser] = useState<{
     id: string;
@@ -157,7 +164,7 @@ export default function VendorLayout() {
         <Ionicons
           name="close"
           size={24}
-          color={isTranslucentModal ? "#fff" : colors.textSecondary}
+          color={modalCloseColor}
         />
       </TouchableOpacity>
 
@@ -206,7 +213,7 @@ export default function VendorLayout() {
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isTranslucentModal ? "#fff" : colors.borderMuted}
+          color={modalChevronColor}
         />
       </TouchableOpacity>
 
@@ -224,7 +231,7 @@ export default function VendorLayout() {
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isTranslucentModal ? "#fff" : colors.borderMuted}
+          color={modalChevronColor}
         />
       </TouchableOpacity>
 
@@ -245,7 +252,7 @@ export default function VendorLayout() {
         <Ionicons
           name="chevron-forward"
           size={20}
-          color={isTranslucentModal ? "#fff" : colors.borderMuted}
+          color={modalChevronColor}
         />
       </TouchableOpacity>
 
@@ -561,8 +568,22 @@ const createStyles = (c: ThemeColors) =>
     borderColor: c.border,
   },
   glassModalContent: {
-    backgroundColor: "transparent",
-    borderWidth: 0,
+    // NOT transparent. The card is stacked on modalOverlay — a black scrim in
+    // BOTH themes — so a purely translucent material samples that scrim and
+    // renders a DARK card even in light mode, while the text inside follows the
+    // theme and goes near-black. That mismatch is what made the modal unreadable
+    // in light mode; forcing the icons lighter or darker can't fix it, because
+    // the surface itself was the wrong tone.
+    //
+    // cardGlass is the palette's glass-surface token and the same one
+    // components/event-details/GlassCard.tsx settled on: a deep purple wash at
+    // 0.75 on dark, so the material still reads through, and solid #ffffff on
+    // light. Opaque in light mode is the deliberate trade — cardGlassSoft's
+    // veil let enough of the scrim through to look washed out, and there is no
+    // amount of translucency over a black scrim that yields a clean light card.
+    backgroundColor: c.cardGlass,
+    // A hairline edge to keep the card's shape crisp against the scrim.
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: c.glassStroke,
     overflow: "hidden",
   },
@@ -612,9 +633,11 @@ const createStyles = (c: ThemeColors) =>
     borderRadius: 20,
   },
   accountTypeText: {
+    // Sits on a fixed green gradient in both themes, so this stays white
+    // rather than following c.text (which is near-black in light mode).
     fontSize: 13,
     fontFamily: Fonts.semiBold,
-    color: c.text,
+    color: "#fff",
   },
   divider: {
     height: 1,

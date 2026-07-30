@@ -69,7 +69,7 @@ async function generateUniqueUsername(seed) {
 }
 
 export async function register(req, res) {
-  const { username, email, password, termsAccepted } = req.body;
+  const { username, email, password, termsAccepted, accountType } = req.body;
 
   try {
     if (!termsAccepted) {
@@ -134,11 +134,19 @@ export async function register(req, res) {
     const otp = generateOTP();
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
+    // Signing up as a business doesn't create a vendor account here — the
+    // Vendor doc needs a business name, type and city, which are collected
+    // after email verification. We only record the intent so the client can
+    // route straight into that form (and resume it on the next login if the
+    // user drops out mid-way). becomeVendor flips isVendor and clears this.
+    const wantsVendor = accountType === "vendor";
+
     const user = new User({
       username: normalizedUsername,
       email: normalizedEmail,
       password: hashed,
-      isVendor: false, // All users start as clients
+      isVendor: false, // vendor status is earned by completing the business form
+      vendorSignupPending: wantsVendor,
       termsAcceptedAt: new Date(),
       signupOTP: otp,
       signupOTPExpires: otpExpires,
@@ -166,6 +174,7 @@ export async function register(req, res) {
         username: user.username,
         email: user.email,
         isVendor: user.isVendor,
+        vendorSignupPending: user.vendorSignupPending,
         emailVerifiedAt: null,
       },
     });
@@ -284,12 +293,46 @@ export async function login(req, res) {
         id: user._id,
         username: user.username,
         email: user.email,
-        isVendor: user.isVendor
+        isVendor: user.isVendor,
+        // Signed up as a business but never finished the details form — the
+        // client resumes vendor setup instead of opening the client app.
+        vendorSignupPending: user.vendorSignupPending
       }
     });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ message: "Something went wrong. Please try again." });
+  }
+}
+
+/**
+ * Flag the caller as mid-vendor-signup.
+ *
+ * `/register` takes accountType directly, but the OAuth paths can't: Apple and
+ * Google both return through fixed callbacks (the Google one via a server-held
+ * `state`), so there's nowhere to carry "they picked business on the signup
+ * screen" without threading it through the whole redirect chain. The app calls
+ * this straight after a social signup instead — one round trip, and the flag
+ * behaves identically from then on.
+ *
+ * Idempotent, and a no-op for accounts that are already vendors.
+ */
+export async function markVendorSignupIntent(req, res) {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (user.isVendor) {
+      return res.json({ vendorSignupPending: false, isVendor: true });
+    }
+
+    user.vendorSignupPending = true;
+    await user.save();
+    res.json({ vendorSignupPending: true, isVendor: false });
+  } catch (error) {
+    res
+      .status(400)
+      .json({ message: "Error saving vendor signup intent", details: error.message });
   }
 }
 
@@ -326,6 +369,8 @@ export async function becomeVendor(req, res) {
 
     // Upgrade user to vendor (store string fields for vendor dashboard)
     user.isVendor = true;
+    // Onboarding is finished — stop routing this user back into the setup form.
+    user.vendorSignupPending = false;
     user.businessName = businessName;
     user.businessDescription = businessDescription;
     user.businessPicture = businessPictureUrl;

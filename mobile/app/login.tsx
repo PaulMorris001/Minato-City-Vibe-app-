@@ -72,6 +72,10 @@ export default function Login() {
         setUserData(user);
         setShowRolePicker(true);
         setLoading(false);
+      } else if (user.vendorSignupPending) {
+        // Signed up as a business but never finished the details form — pick up
+        // where they left off rather than dropping them in the client app.
+        router.replace("/vendor-setup" as any);
       } else {
         await setActiveAccount("client");
         router.replace("/(tabs)/home");

@@ -33,9 +33,16 @@ export interface PublicEvent {
   currency?: string;
   /** Named price tiers; when >1 the card shows "From <cheapest>" and buying routes to the detail screen's tier picker. */
   ticketTiers?: { _id: string; name: string; price: number }[];
+  /**
+   * Capacity + headcount are organizer-only — the API strips maxGuests,
+   * ticketsSold, ticketsRemaining and rsvpCount for anyone who isn't the
+   * creator or a co-host, so every card that renders them must tolerate their
+   * absence. `soldOut` is sent to everyone as the count-free replacement.
+   */
   maxGuests?: number;
   ticketsSold?: number;
   ticketsRemaining?: number;
+  soldOut?: boolean;
   userHasPurchased?: boolean;
   isCreator?: boolean;
   isFavorited?: boolean;
@@ -162,11 +169,15 @@ export default function PublicEventCard({
                     </Text>
                   </LinearGradient>
 
-                  {event.ticketsRemaining !== undefined && (
+                  {/* Guests get the sold-out state without the headcount
+                      behind it; organizers keep the exact remaining count. */}
+                  {event.ticketsRemaining !== undefined ? (
                     <Text style={styles.eventCardTicketsText}>
                       {event.ticketsRemaining} left
                     </Text>
-                  )}
+                  ) : event.soldOut ? (
+                    <Text style={styles.eventCardTicketsText}>Sold out</Text>
+                  ) : null}
                 </View>
 
                 {/* Show Buy Ticket button only if user hasn't purchased and isn't the creator */}

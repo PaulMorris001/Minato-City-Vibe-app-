@@ -16,7 +16,79 @@ import { assertClean, assertMeaningful } from "../utils/contentFilter.js";
 import { hasPayoutOnboarding, currencyForUser } from "../services/payments/resolveProvider.js";
 import { exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { issueEventPass } from "../services/pass.service.js";
+import { linkQrDataUrl } from "../utils/qrcode.js";
 import config from "../config/env.js";
+
+/**
+ * True when `userId` is in a list of user refs. Tolerates both raw ObjectIds
+ * and populated documents, because whether a query populates `cohosts` varies
+ * across the feed/list/detail endpoints — and a document's `toString()` is its
+ * inspect output, not its id, so comparing it directly would silently never
+ * match.
+ */
+function listHasUser(list, userId) {
+  if (!userId) return false;
+  return (list || []).some((x) => String(x?._id ?? x) === String(userId));
+}
+
+/**
+ * Attendance data is organizer-only.
+ *
+ * Headcount, capacity and the guest list are the host's numbers: a half-empty
+ * room is not something an organizer wants broadcast to people deciding whether
+ * to come, and the guest list is other attendees' data. So everything that
+ * answers "how many are coming / who is coming / how full is it" is stripped
+ * for anyone who isn't running the event — creator and co-hosts see it all.
+ *
+ * What deliberately survives, because checkout depends on it and none of it
+ * reveals a count:
+ *   - `soldOut` on the event, and `soldOut` on each tier (replacing the
+ *     numeric `remaining`), so the client can still disable a sold-out CTA.
+ *   - `userRsvp` / `userHasPurchased` — the viewer's own relationship.
+ *
+ * Mutates and returns `eventObj`. Call it last, once every derived field it
+ * needs to redact has been computed.
+ */
+function applyAttendanceVisibility(eventObj, { isOrganizer }) {
+  const maxGuests = eventObj.maxGuests;
+  // Free events measure fullness in RSVPs, paid ones in tickets. Only events
+  // that declared a cap can sell out at all.
+  const remaining =
+    typeof eventObj.ticketsRemaining === "number"
+      ? eventObj.ticketsRemaining
+      : maxGuests
+        ? Math.max(maxGuests - (eventObj.rsvpCount ?? 0), 0)
+        : null;
+  eventObj.soldOut = !!maxGuests && remaining !== null && remaining <= 0;
+
+  // Per-tier availability collapses to a boolean for everyone but the host.
+  // Only rewrite when tiers actually exist — free events have none, and
+  // materialising an empty array on every payload is a needless shape change.
+  if (Array.isArray(eventObj.ticketTiers) && eventObj.ticketTiers.length > 0) {
+    eventObj.ticketTiers = eventObj.ticketTiers.map((t) => {
+      const tier = { ...t };
+      if (typeof t.remaining === "number") tier.soldOut = t.remaining <= 0;
+      if (!isOrganizer) {
+        delete tier.remaining;
+        // `quantity` is this tier's capacity — same class of number as
+        // maxGuests, so it goes with it.
+        delete tier.quantity;
+      }
+      return tier;
+    });
+  }
+
+  if (isOrganizer) return eventObj;
+
+  delete eventObj.rsvpUsers;
+  delete eventObj.rsvpCount;
+  delete eventObj.maxGuests;
+  delete eventObj.ticketsSold;
+  delete eventObj.ticketsRemaining;
+  delete eventObj.friendsGoing;
+
+  return eventObj;
+}
 
 // Meeting links are validated as URLs, not run through the profanity filter
 // (URLs aren't prose).
@@ -537,6 +609,14 @@ export const getUserEvents = async (req, res) => {
         // Only the creator may see their unapproved proposed edits.
         if (eventObj.userStatus !== 'creator') delete eventObj.pendingEdits;
 
+        // Attendance numbers are organizer-only here too, otherwise the list
+        // card leaks the headcount the detail screen now withholds. cohosts
+        // isn't populated on this query, so compare raw ObjectIds.
+        applyAttendanceVisibility(eventObj, {
+          isOrganizer:
+            eventObj.userStatus === 'creator' || listHasUser(event.cohosts, userId),
+        });
+
         return eventObj;
       })
     );
@@ -754,6 +834,12 @@ export const getEventById = async (req, res) => {
     // pendingEdits holds unapproved proposed values — only the creator may see it.
     if (!isCreator) delete eventObj.pendingEdits;
 
+    // Last, so it sees every derived count above (rsvpCount, friendsGoing,
+    // ticketsSold/Remaining and the per-tier remaining).
+    applyAttendanceVisibility(eventObj, {
+      isOrganizer: isCreator || isCohostViewer,
+    });
+
     const response = { event: eventObj };
     setCache(cacheKey, response, 180); // 3 min TTL
     res.status(200).json(response);
@@ -807,6 +893,89 @@ export const getEventByShareToken = async (req, res) => {
   } catch (error) {
     console.error("Get event by token error:", error);
     res.status(500).json({ message: "Error fetching event", error: error.message });
+  }
+};
+
+/**
+ * QR code for an event's share link.
+ *
+ * The QR encodes the exact same universal link the Share sheet copies —
+ * `<serverUrl>/event/<shareToken>` — so scanning it behaves identically to
+ * tapping the link: iOS/Android hand it to the app when installed, and fall
+ * back to the deep-link landing page in the browser when it isn't. See
+ * linkQrDataUrl for why it isn't a `mobile://` scheme.
+ *
+ * Access mirrors getEventById rather than the unauthenticated share-token
+ * endpoint. The QR *contains* the shareToken, and for a private event that
+ * token IS the access grant — minting one for any caller who guessed an _id
+ * would quietly make private events public.
+ */
+export const getEventQr = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user?.id ?? null;
+
+    const FIELDS =
+      "title shareToken isPublic isActive isPaid approvalStatus createdBy cohosts invitedUsers pendingInvites rsvpUsers";
+
+    let event = mongoose.isValidObjectId(eventId)
+      ? await Event.findById(eventId).select(FIELDS)
+      : null;
+    if (!event) event = await Event.findOne({ shareToken: eventId }).select(FIELDS);
+
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    if (event.isActive === false) {
+      return res.status(410).json({ message: "This event is no longer available" });
+    }
+
+    const idIn = (list) =>
+      !!userId && (list || []).some((x) => x.toString() === userId);
+
+    const isBrowsablePublic =
+      event.isPublic && (!event.isPaid || event.approvalStatus === "approved");
+    const isCreator = !!userId && event.createdBy.toString() === userId;
+    const hasTicket = userId
+      ? !!(await Ticket.findOne({ event: event._id, user: userId, isValid: true }).select("_id").lean())
+      : false;
+
+    const hasAccess =
+      isBrowsablePublic ||
+      isCreator ||
+      idIn(event.cohosts) ||
+      idIn(event.invitedUsers) ||
+      idIn(event.pendingInvites) ||
+      idIn(event.rsvpUsers) ||
+      hasTicket;
+
+    if (!hasAccess) {
+      return res
+        .status(userId ? 403 : 401)
+        .json({ message: "You don't have access to this event" });
+    }
+
+    // Auto-heal older events created before shareToken existed, so the QR is
+    // always token-based (same behaviour as getEventByShareToken).
+    if (!event.shareToken) {
+      event.shareToken = new mongoose.Types.ObjectId().toString();
+      await event.save();
+    }
+
+    const url = `${config.stripe.serverUrl}/event/${event.shareToken}`;
+
+    // The PNG is a pure function of the URL, so it's worth caching — but keyed
+    // on the token, not the requested id, so the `_id` and `shareToken` forms
+    // of the same event share one entry.
+    const cacheKey = `event_qr_${event.shareToken}`;
+    let qr = getCache(cacheKey);
+    if (!qr) {
+      qr = await linkQrDataUrl(url);
+      setCache(cacheKey, qr, 60 * 60 * 24);
+    }
+
+    res.status(200).json({ url, qr, title: event.title });
+  } catch (error) {
+    console.error("Get event QR error:", error);
+    res.status(500).json({ message: "Error generating QR code", error: error.message });
   }
 };
 
@@ -1537,6 +1706,13 @@ async function attachTicketInfo(events, userId) {
         eventObj.userHasPurchased = hasJoined;
       }
 
+      // Browse cards show "N going" / "N left" — same organizer-only numbers
+      // the detail screen withholds, so redact them here too. cohosts isn't
+      // populated on the feed query, so compare raw ObjectIds.
+      applyAttendanceVisibility(eventObj, {
+        isOrganizer: eventObj.isCreator || listHasUser(event.cohosts, userId),
+      });
+
       return eventObj;
     })
   );
@@ -1763,7 +1939,15 @@ export const rsvpEvent = async (req, res) => {
     invalidateCachePattern('public_events_');
     invalidateCachePattern('event_highlights_');
     invalidateCachePattern(`event_detail_${eventId}_`);
-    res.json({ message: status === "going" ? "You're marked as going!" : "RSVP removed", rsvpCount: event.rsvpUsers.length });
+    // rsvpCount is echoed back so the organizer's view updates without a
+    // refetch — but it's the same headcount applyAttendanceVisibility hides, so
+    // plain guests only learn that their own RSVP landed.
+    const isOrganizer = isCreator || listHasUser(event.cohosts, userId);
+    res.json({
+      message: status === "going" ? "You're marked as going!" : "RSVP removed",
+      userRsvp: status === "going",
+      ...(isOrganizer ? { rsvpCount: event.rsvpUsers.length } : {}),
+    });
   } catch (error) {
     console.error("RSVP error:", error);
     res.status(500).json({ message: "Error updating RSVP", error: error.message });
@@ -1887,6 +2071,13 @@ export const getEventHighlights = async (req, res) => {
       } else {
         obj.userHasPurchased = !!userId && event.invitedUsers.some(id => id.toString() === userId);
       }
+
+      // Same organizer-only rule as the browse feed — highlight cards render
+      // the identical "N going" badge.
+      applyAttendanceVisibility(obj, {
+        isOrganizer: obj.isCreator || listHasUser(event.cohosts, userId),
+      });
+
       return obj;
     };
 
