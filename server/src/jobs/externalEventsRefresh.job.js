@@ -47,16 +47,18 @@ const INGEST_CITIES = [
 /**
  * Countries Eventbrite is allowed to ingest for.
  *
- * Eventbrite exists in this stack to fill the Nigeria gap Ticketmaster can't
- * cover. Ticketmaster already supplies tens of thousands of US events, so
- * running Eventbrite over the US too just adds a slower, unofficial second
- * source for a market that's already saturated — and buries the Nigerian
- * results we actually added it for.
+ * Eventbrite was added to fill the Nigeria gap Ticketmaster can't cover, but it
+ * also carries the whole class of US events Ticketmaster never lists —
+ * community meetups, workshops, pop-ups, small-venue nights — so it runs over
+ * the US markets too. The two sources overlap on big-ticket US shows; dedup is
+ * by (source, sourceId), so an event listed on both providers appears once per
+ * provider. That's accepted: they carry different ticket URLs and prices, and
+ * collapsing them would mean guessing which listing is canonical.
  *
- * Add an ISO-3166 alpha-2 code here to widen it (Ticketmaster is unaffected;
- * it still runs the full INGEST_CITIES list).
+ * Add an ISO-3166 alpha-2 code here to widen it further (Ticketmaster is
+ * unaffected; it still runs the full INGEST_CITIES list).
  */
-const EVENTBRITE_COUNTRIES = ["NG"];
+const EVENTBRITE_COUNTRIES = ["NG", "US"];
 
 const EVENTBRITE_CITIES = INGEST_CITIES.filter((c) =>
   EVENTBRITE_COUNTRIES.includes(c.countryCode)

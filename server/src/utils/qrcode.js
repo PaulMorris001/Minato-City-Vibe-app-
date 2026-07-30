@@ -39,3 +39,22 @@ export function passQrBuffer(code) {
 export function passQrDataUrl(code) {
   return QRCode.toDataURL(passQrPayload(code), QR_OPTIONS);
 }
+
+/**
+ * Data-URL (base64 PNG) of a QR encoding a plain https link.
+ *
+ * Used for shareable event codes. The payload is deliberately the *same*
+ * universal link we hand out as text (https://api.ourcityvibe.com/event/<token>)
+ * rather than a `mobile://` scheme or a bespoke prefix, because that one string
+ * satisfies every scanner:
+ *   - iOS/Android camera → Universal Link / App Link opens the app if installed
+ *   - no app installed    → the deep-link landing page in the browser
+ *   - our in-app scanner  → app/scan.tsx already matches /event/<id> links
+ * A custom scheme would only work from inside our own scanner.
+ *
+ * Rendered a touch larger than the pass QR: event codes get printed on flyers
+ * and screenshotted, so they're scanned from further away.
+ */
+export function linkQrDataUrl(url) {
+  return QRCode.toDataURL(String(url), { ...QR_OPTIONS, width: 512 });
+}

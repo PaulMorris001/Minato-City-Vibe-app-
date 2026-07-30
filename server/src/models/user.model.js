@@ -19,6 +19,14 @@ const userSchema = mongoose.Schema({
   // User is always a client by default, can optionally become a vendor
   isVendor: { type: Boolean, default: false },
 
+  // Set when someone signs up *as a business* rather than upgrading later.
+  // A vendor account can't exist until the business details are filled in
+  // (becomeVendor needs a name, type and city), and that form comes after email
+  // verification — so this records the intent in between. Every entry point
+  // that routes a user after auth reads it to resume onboarding instead of
+  // dropping them into the client app, and becomeVendor clears it.
+  vendorSignupPending: { type: Boolean, default: false },
+
   // Passwordless "guest" account, created the first time someone buys a ticket
   // (for themselves or as a gift recipient) without signing up. Keyed by email,
   // so it upgrades seamlessly if they later register with the same address.

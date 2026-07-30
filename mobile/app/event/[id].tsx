@@ -35,6 +35,7 @@ import { currencyPrefix } from "@/constants/payments";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
+import EventQRModal from "@/components/shared/EventQRModal";
 import { ImageViewerModal } from "@/components/shared";
 import { GlassCard } from "@/components/event-details/GlassCard";
 import { AU } from "@/components/auth/tokens";
@@ -99,9 +100,13 @@ interface Event {
   ticketPrice?: number;
   ticketTiers?: { _id: string; name: string; price: number }[];
   currency?: string;
+  // Capacity + headcount are organizer-only: the API strips them for anyone
+  // who isn't the creator or a co-host, so treat them as absent by default.
   maxGuests?: number;
   ticketsSold?: number;
   ticketsRemaining?: number;
+  /** Server-computed, sent to everyone — the CTA needs it without the numbers. */
+  soldOut?: boolean;
   ticketingReady?: boolean;
   userHasPurchased?: boolean;
   approvalStatus?: "pending" | "approved" | "rejected";
@@ -119,8 +124,8 @@ interface Event {
     vendor: EventVendor;
     status: "pending" | "accepted" | "declined";
   }[];
-  rsvpCount: number;
-  rsvpUsers: RsvpUser[];
+  rsvpCount?: number;
+  rsvpUsers?: RsvpUser[];
   userRsvp: boolean;
   friendsGoing?: number;
   groupChatUnread?: number;
@@ -243,6 +248,7 @@ export default function EventDetailsPage() {
   const [refunding, setRefunding] = useState(false);
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
   const [shareSheetVisible, setShareSheetVisible] = useState(false);
+  const [qrVisible, setQrVisible] = useState(false);
   const [isFollowingHost, setIsFollowingHost] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [requestingJoin, setRequestingJoin] = useState(false);
@@ -472,8 +478,17 @@ export default function EventDetailsPage() {
       });
       const data = await res.json();
       if (res.ok) {
+        // rsvpCount only comes back for organizers now — keep the previous
+        // value rather than blanking the stat for a host who just RSVP'd.
         setEvent((prev) =>
-          prev ? { ...prev, userRsvp: status === "going", rsvpCount: data.rsvpCount } : prev
+          prev
+            ? {
+                ...prev,
+                userRsvp: status === "going",
+                rsvpCount:
+                  typeof data.rsvpCount === "number" ? data.rsvpCount : prev.rsvpCount,
+              }
+            : prev
         );
         trackEvent("event_rsvp", { eventId: event._id, status });
       } else {
@@ -865,6 +880,8 @@ export default function EventDetailsPage() {
   const isCancelled = !!event.cancelledAt;
   const isPending = event.approvalStatus === "pending";
   const isRejected = event.approvalStatus === "rejected";
+  // The server computes soldOut for everyone; the numbers behind it only reach
+  // organizers now, so the local fallback is just for older API responses.
   const ticketsRemaining =
     typeof event.ticketsRemaining === "number"
       ? event.ticketsRemaining
@@ -872,12 +889,20 @@ export default function EventDetailsPage() {
         ? Math.max(event.maxGuests - (event.rsvpCount ?? 0), 0)
         : undefined;
   const soldOut =
-    !!event.maxGuests && ticketsRemaining !== undefined && ticketsRemaining <= 0;
+    typeof event.soldOut === "boolean"
+      ? event.soldOut
+      : !!event.maxGuests && ticketsRemaining !== undefined && ticketsRemaining <= 0;
   const userHasTicket = !!event.userHasPurchased;
   const userIsGoing = !!event.userRsvp;
   const userIsInvited = event.userStatus === "accepted" || isCreator;
   const userIsPendingInvite = event.userStatus === "pending";
   const userHasRequested = event.userStatus === "requested";
+
+  // Headcount, capacity and the guest list are for the people running the
+  // event. The API already withholds the numbers from everyone else (see
+  // applyAttendanceVisibility on the server); this gates the UI that renders
+  // them so a guest gets a clean layout instead of zeroes and empty bars.
+  const canSeeAttendance = isCreatorOrCohost;
 
   // Capacity numbers shared by the bar + the GOING / CAPACITY stat cards
   const goingCount = event.rsvpCount ?? event.rsvpUsers?.length ?? 0;
@@ -1164,8 +1189,8 @@ export default function EventDetailsPage() {
             </GlassCard>
           )}
 
-          {/* Stats grid */}
-          {!isCancelled && (
+          {/* Stats grid — organizer-only (headcount + capacity) */}
+          {!isCancelled && canSeeAttendance && (
             <View style={styles.statsRow}>
               <GlassCard style={styles.statCard}>
                 <Text style={styles.microLabel}>GOING</Text>
@@ -1197,8 +1222,8 @@ export default function EventDetailsPage() {
             </View>
           )}
 
-          {/* Capacity bar */}
-          {!isCancelled && !!event.maxGuests && (
+          {/* Capacity bar — organizer-only */}
+          {!isCancelled && canSeeAttendance && !!event.maxGuests && (
             <GlassCard>
               <View style={styles.rowBetween}>
                 <Text style={styles.microLabel}>FILLING UP</Text>
@@ -1414,8 +1439,8 @@ export default function EventDetailsPage() {
             </TouchableOpacity>
           )}
 
-          {/* Attendees */}
-          {!isCancelled && event.rsvpUsers && event.rsvpUsers.length > 0 && (
+          {/* Attendees — organizer-only; the guest list is other people's data */}
+          {!isCancelled && canSeeAttendance && !!event.rsvpUsers?.length && (
             <GlassCard style={styles.attendeesCard}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.microLabel}>WHO'S COMING</Text>
@@ -1686,13 +1711,10 @@ export default function EventDetailsPage() {
             />
             <SheetAction
               icon="qr-code-outline"
-              label="Scan a OurCityvibe code"
+              label="Event QR code"
               onPress={() => {
                 setActionSheetVisible(false);
-                // The scanner reads OurCityvibe event/guide QR codes and opens
-                // them in the app. Lives here (in the event action sheet) so its
-                // purpose is clear, rather than as a stray button on Home.
-                setTimeout(() => router.push("/scan" as any), 320);
+                setTimeout(() => setQrVisible(true), 320);
               }}
             />
             <SheetAction
@@ -1723,7 +1745,7 @@ export default function EventDetailsPage() {
                 invited co-hosts. Plain attendees never see this. */}
             {isCreatorOrCohost && (
               <SheetAction
-                icon="qr-code-outline"
+                icon="scan-outline"
                 label="Check in guests"
                 onPress={() => {
                   setActionSheetVisible(false);
@@ -1797,12 +1819,23 @@ export default function EventDetailsPage() {
         />
       ) : null}
 
-      {/* Share sheet — internal (chat) + external (OS share) */}
+      {/* Share sheet — internal (chat) + external (OS share) + QR */}
       <ShareSheet
         visible={shareSheetVisible}
         onClose={() => setShareSheetVisible(false)}
         target={shareTarget}
+        onShowQR={() => setTimeout(() => setQrVisible(true), 320)}
       />
+
+      {shareTarget && (
+        <EventQRModal
+          visible={qrVisible}
+          onClose={() => setQrVisible(false)}
+          eventId={event._id}
+          title={event.title}
+          fallbackUrl={shareTarget.externalUrl}
+        />
+      )}
 
       <ImageViewerModal
         visible={viewerVisible}

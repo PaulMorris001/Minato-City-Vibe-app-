@@ -28,8 +28,11 @@ export default function EventCard({ ev }: { ev: FeedEvent }) {
   const href = ev.kind === "native" ? `/events/${ev._id}` : `/external-events/${ev._id}`;
   const host = ev.kind === "native" ? ev.createdBy : undefined;
   const free = ev.kind === "native" && !ev.isPaid;
+  // ticketsRemaining is organizer-only now, so lead with the server's
+  // count-free soldOut flag and keep the old derivation as a fallback.
   const soldOut =
-    ev.kind === "native" && ev.ticketsRemaining !== undefined && ev.ticketsRemaining <= 0;
+    ev.kind === "native" &&
+    (ev.soldOut ?? (ev.ticketsRemaining !== undefined && ev.ticketsRemaining <= 0));
 
   return (
     <a

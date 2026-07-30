@@ -30,8 +30,13 @@ export interface EventTier {
   price: number;
   /** Per-tier ticket allocation (organizer-set). Absent = draws from the shared pool. */
   quantity?: number;
-  /** Tickets still available for this tier — only present when the tier has a quantity. */
+  /**
+   * Tickets still available for this tier — only present when the tier has a
+   * quantity AND the viewer is running the event (creator or co-host).
+   */
   remaining?: number;
+  /** Count-free availability, sent to every viewer. */
+  soldOut?: boolean;
 }
 
 export interface VendorSummary {
@@ -84,9 +89,16 @@ export interface EventItem {
   ticketTiers?: EventTier[];
   currency?: string;
   isVirtual?: boolean;
+  /**
+   * Capacity + headcount are organizer-only: the API strips maxGuests,
+   * ticketsSold, ticketsRemaining, rsvpCount, rsvpUsers and friendsGoing for
+   * anyone who isn't the event's creator or a co-host. `soldOut` is the
+   * count-free replacement every viewer gets.
+   */
   maxGuests?: number;
   ticketsSold?: number;
   ticketsRemaining?: number;
+  soldOut?: boolean;
   userHasPurchased?: boolean;
   createdBy?: PublicUser;
   cohosts?: PublicUser[];

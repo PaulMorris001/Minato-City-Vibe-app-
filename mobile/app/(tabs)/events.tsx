@@ -826,19 +826,30 @@ export default function EventsPage() {
             </View>
           ) : null}
 
-          <View style={styles.eventDetail}>
-            <Ionicons name={event.isPublic ? "ticket-outline" : "people"} size={16} color={colors.primary} />
-            <Text style={styles.eventDetailText}>
-              {event.isPublic
-                ? // Public events aren't invite-based — you share them to sell tickets.
-                  `${event.rsvpCount ?? event.ticketsSold ?? 0} going` +
-                  (event.isPaid && typeof event.ticketsRemaining === "number"
-                    ? ` · ${event.ticketsRemaining} left`
-                    : "")
-                : `${event.invitedUsers.length} invited` +
-                  (event.pendingInvites.length > 0 ? ` · ${event.pendingInvites.length} pending` : "")}
-            </Text>
-          </View>
+          {/* Headcount + capacity are organizer-only. The API withholds
+              rsvpCount/ticketsSold/ticketsRemaining from guests, so this whole
+              row only has something to say when you're running the event. */}
+          {(event.isPublic
+            ? // Public: the counts themselves are the signal — present only for
+              //   organizers. (Data-driven, so co-hosts keep them too.)
+              typeof event.rsvpCount === "number" || typeof event.ticketsSold === "number"
+            : // Private: the guest list is populated client-side from the
+              //   event doc, so gate it explicitly.
+              isCreator) ? (
+            <View style={styles.eventDetail}>
+              <Ionicons name={event.isPublic ? "ticket-outline" : "people"} size={16} color={colors.primary} />
+              <Text style={styles.eventDetailText}>
+                {event.isPublic
+                  ? // Public events aren't invite-based — you share them to sell tickets.
+                    `${event.rsvpCount ?? event.ticketsSold ?? 0} going` +
+                    (event.isPaid && typeof event.ticketsRemaining === "number"
+                      ? ` · ${event.ticketsRemaining} left`
+                      : "")
+                  : `${event.invitedUsers.length} invited` +
+                    (event.pendingInvites.length > 0 ? ` · ${event.pendingInvites.length} pending` : "")}
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.eventActions}>
             <TouchableOpacity
