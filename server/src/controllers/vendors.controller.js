@@ -93,7 +93,9 @@ export async function getVendorById(req, res) {
   try {
     const vendor = await Vendor.findById(req.params.vendorId)
       .populate("city", "name state country")
-      .populate("vendorType", "name icon");
+      .populate("vendorType", "name icon")
+      // Owner account, so the details screen can link through to their profile
+      .populate("user", "username profilePicture businessName");
     if (!vendor) return res.status(404).json({ message: "Vendor not found" });
     res.json(vendor);
   } catch (error) {
