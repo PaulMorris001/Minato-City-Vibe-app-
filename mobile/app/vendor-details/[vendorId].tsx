@@ -1,40 +1,48 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { goBack } from "@/utils/navigation";
-import { fetchVendorServices, fetchVendorCategories } from "@/libs/api";
 import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Image,
-  ScrollView,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
+  Animated,
+  Easing,
+  KeyboardAvoidingView,
   Linking,
+  Modal,
+  Platform,
+  SectionList,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  Alert,
 } from "react-native";
+import { Image } from "expo-image";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
+import * as SecureStore from "expo-secure-store";
+
+import { fetchVendorServices, fetchVendorCategories } from "@/libs/api";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { Service, CatalogueCategory } from "@/libs/interfaces";
-import { Ionicons } from "@expo/vector-icons";
-import { Colors } from "@/constants/colors";
-import { LinearGradient } from "expo-linear-gradient";
 import { Fonts } from "@/constants/fonts";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
-import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import { useCart } from "@/contexts/CartContext";
 import { currencyPrefix } from "@/constants/payments";
-import { Alert } from "react-native";
 import { openUserProfile } from "@/utils/userNavigation";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
-
-import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
-import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
+import PressScale from "@/components/shared/PressScale";
+import ServiceRow from "@/components/vendor-details/ServiceRow";
+import ServiceDetailSheet from "@/components/vendor-details/ServiceDetailSheet";
+import {
+  Brand,
+  Radii,
+  ServicesTokens,
+  useServicesTokens,
+} from "@/constants/vendorServicesTheme";
+
 interface Review {
   _id: string;
   // Null when the reviewer's account has been deleted.
@@ -43,6 +51,16 @@ interface Review {
   review: string;
   createdAt: string;
 }
+
+interface VendorOwner {
+  _id: string;
+  username?: string;
+  profilePicture?: string;
+  businessName?: string;
+}
+
+/** Services beyond this many collapse behind the category's "See all". */
+const COLLAPSED_COUNT = 4;
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -54,16 +72,34 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function StarRow({ rating, size = 16, onPress }: { rating: number; size?: number; onPress?: (r: number) => void }) {
-  const { colors } = useTheme();
+/**
+ * Rating stars. Filled gold up to `rating`; the remainder is a filled faint
+ * star when read-only and an outline when the row is a picker.
+ */
+function StarRow({
+  rating,
+  size = 14,
+  faint,
+  onPress,
+}: {
+  rating: number;
+  size?: number;
+  faint: string;
+  onPress?: (r: number) => void;
+}) {
   return (
-    <View style={{ flexDirection: "row", gap: 4 }}>
+    <View style={{ flexDirection: "row", gap: 2 }}>
       {[1, 2, 3, 4, 5].map((star) => (
-        <TouchableOpacity key={star} onPress={() => onPress?.(star)} disabled={!onPress} activeOpacity={0.7}>
+        <TouchableOpacity
+          key={star}
+          onPress={() => onPress?.(star)}
+          disabled={!onPress}
+          activeOpacity={0.7}
+        >
           <Ionicons
-            name={star <= rating ? "star" : "star-outline"}
+            name={star <= rating ? "star" : onPress ? "star-outline" : "star"}
             size={size}
-            color={star <= rating ? colors.warning : colors.borderMuted}
+            color={star <= rating ? Brand.gold : faint}
           />
         </TouchableOpacity>
       ))}
@@ -71,9 +107,20 @@ function StarRow({ rating, size = 16, onPress }: { rating: number; size?: number
   );
 }
 
+interface ServiceSection {
+  key: string;
+  title: string;
+  count: number;
+  /** True when the group is longer than COLLAPSED_COUNT. */
+  expandable: boolean;
+  expanded: boolean;
+  data: Service[];
+}
+
 export default function VendorDetails() {
-  const { colors } = useTheme();
-  const styles = useThemedStyles(createStyles);
+  const t = useServicesTokens();
+  const styles = useMemo(() => createStyles(t), [t]);
+  const insets = useSafeAreaInsets();
   const { vendorId, vendorName } = useLocalSearchParams();
   const router = useRouter();
   const formatPrice = useFormatPrice();
@@ -87,6 +134,12 @@ export default function VendorDetails() {
   const [categories, setCategories] = useState<CatalogueCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [servicesLoadError, setServicesLoadError] = useState(false);
+
+  // Category groups the user has expanded past COLLAPSED_COUNT
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  // Service detail sheet
+  const [sheetService, setSheetService] = useState<Service | null>(null);
 
   // Cart (single-vendor)
   const cart = useCart();
@@ -103,92 +156,34 @@ export default function VendorDetails() {
   const [reviewText, setReviewText] = useState("");
   const [submittingRating, setSubmittingRating] = useState(false);
 
-  const avgRating = reviews.length > 0
-    ? Math.round((reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length) * 10) / 10
-    : 0;
+  const vId = vendorId as string;
+  const vName = (vendorName as string) || vendor?.name || "Vendor";
 
-  const socialUrl = (key: string, val: string): string | null => {
-    if (!val) return null;
-    const v = val.trim();
-    if (v.startsWith("http")) return v;
-    const handle = v.replace(/^@/, "");
-    switch (key) {
-      case "instagram": return `https://instagram.com/${handle}`;
-      case "tiktok": return `https://tiktok.com/@${handle}`;
-      case "twitter": return `https://x.com/${handle}`;
-      case "facebook": return `https://facebook.com/${handle}`;
-      case "website": return `https://${v}`;
-      case "phone": return `tel:${v}`;
-      default: return v;
-    }
-  };
+  const avgRating =
+    reviews.length > 0
+      ? Math.round((reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length) * 10) / 10
+      : 0;
 
-  const SOCIALS: { key: string; icon: any; color: string }[] = [
-    { key: "instagram", icon: "logo-instagram", color: "#E1306C" },
-    { key: "tiktok", icon: "logo-tiktok", color: colors.text },
-    { key: "twitter", icon: "logo-twitter", color: "#1DA1F2" },
-    { key: "facebook", icon: "logo-facebook", color: "#1877F2" },
-    { key: "website", icon: "globe-outline", color: colors.primary },
-    { key: "phone", icon: "call-outline", color: colors.success },
-  ];
-
-  const renderVendorHeader = () => {
-    const contact = vendor?.contact || {};
-    const links = SOCIALS.map((s) => ({ ...s, url: socialUrl(s.key, contact[s.key]) })).filter((s) => s.url);
-    const hasContent = !!vendor?.description || links.length > 0;
-    return (
-      <View>
-        {vendor && !vendor.verified && (
-          <View style={styles.unverifiedBanner}>
-            <Ionicons name="warning-outline" size={16} color={colors.warning} />
-            <Text style={styles.unverifiedText}>
-              This vendor is not yet verified by OurCityvibe. Proceed with caution.
-            </Text>
-          </View>
-        )}
-        {vendorLoadError && (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorBannerText}>Couldn't load vendor info.</Text>
-            <TouchableOpacity onPress={reloadVendorAndServices} style={styles.retryBtn}>
-              <Text style={styles.retryBtnText}>Retry</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        {hasContent && (
-          <View style={styles.vendorHeaderCard}>
-            {!!vendor?.description && <Text style={styles.vendorDescription}>{vendor.description}</Text>}
-            {links.length > 0 && (
-              <View style={styles.socialRow}>
-                {links.map((s) => (
-                  <TouchableOpacity
-                    key={s.key}
-                    style={styles.socialButton}
-                    onPress={() => Linking.openURL(s.url as string).catch(() => {})}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name={s.icon} size={20} color={s.color} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-      </View>
-    );
-  };
+  // Owner account behind this vendor. The API populates it, but older payloads
+  // (and cached responses) may still hand back a bare id.
+  const owner = useMemo<VendorOwner | null>(() => {
+    const u = vendor?.user;
+    if (!u) return null;
+    return typeof u === "string" ? { _id: u } : (u as VendorOwner);
+  }, [vendor]);
 
   const reloadVendorAndServices = () => {
     setVendorLoadError(false);
     setServicesLoadError(false);
     setLoading(true);
-    fetchVendorServices(vendorId as string)
+    fetchVendorServices(vId)
       .then((data) => setServices(data))
       .catch(() => setServicesLoadError(true))
       .finally(() => setLoading(false));
-    fetchVendorCategories(vendorId as string)
+    fetchVendorCategories(vId)
       .then((data) => setCategories(Array.isArray(data) ? data : []))
       .catch(() => {});
-    fetch(`${BASE_URL}/vendors/${vendorId}`)
+    fetch(`${BASE_URL}/vendors/${vId}`)
       .then((r) => r.json())
       .then((data) => {
         if (data && data._id) setVendor(data);
@@ -214,7 +209,10 @@ export default function VendorDetails() {
       .catch(() => {});
     fetch(`${BASE_URL}/vendors/${vendorId}`)
       .then((r) => r.json())
-      .then((data) => { if (data && data._id) setVendor(data); else setVendorLoadError(true); })
+      .then((data) => {
+        if (data && data._id) setVendor(data);
+        else setVendorLoadError(true);
+      })
       .catch(() => setVendorLoadError(true));
     fetchReviews();
   }, [vendorId]);
@@ -274,12 +272,9 @@ export default function VendorDetails() {
     }
   };
 
-  const vId = vendorId as string;
-  const vName = (vendorName as string) || vendor?.name || "Vendor";
-
   // Quantity of each service currently in the cart (only when this cart is for
-  // this vendor), for the storefront steppers.
-  const cartQtyByService = React.useMemo(() => {
+  // this vendor), so rows know whether to show + or ✓.
+  const cartQtyByService = useMemo(() => {
     const map: Record<string, number> = {};
     if (cart.vendorId === vId) {
       for (const it of cart.items) map[it.serviceId] = it.quantity;
@@ -313,15 +308,16 @@ export default function VendorDetails() {
     doAdd();
   };
 
-  // Interleave category headers with item cards. Items are grouped under their
-  // parent catalogue category (in the vendor's category order); anything not yet
-  // linked to a category falls back to its legacy `section`, then to "Other".
-  const listData = React.useMemo(() => {
-    type Row =
-      | { kind: "header"; section: string }
-      | { kind: "card"; service: Service };
+  /** + adds one, ✓ takes the whole line back out. */
+  const toggleCart = (item: Service) => {
+    if (cartQtyByService[item._id]) cart.removeItem(item._id);
+    else addToCart(item);
+  };
 
-    // Category id → items.
+  // Services grouped under their parent catalogue category (in the vendor's
+  // category order); anything not yet linked to a category falls back to its
+  // legacy `section`, then to a single "Services" group.
+  const sections = useMemo<ServiceSection[]>(() => {
     const byCatId: Record<string, Service[]> = {};
     const legacy: Service[] = [];
     for (const s of services) {
@@ -329,210 +325,259 @@ export default function VendorDetails() {
       else legacy.push(s);
     }
 
-    const rows: Row[] = [];
-    // Real categories first, in the vendor's defined order.
+    const groups: { key: string; title: string; items: Service[] }[] = [];
     for (const cat of categories) {
       const items = byCatId[cat._id];
-      if (!items || items.length === 0) continue;
-      rows.push({ kind: "header", section: cat.name });
-      for (const s of items) rows.push({ kind: "card", service: s });
+      if (!items?.length) continue;
+      groups.push({ key: cat._id, title: cat.name, items });
     }
 
-    // Legacy / unlinked items grouped by their old section string.
     if (legacy.length) {
       const order: string[] = [];
-      const groups: Record<string, Service[]> = {};
+      const buckets: Record<string, Service[]> = {};
       for (const s of legacy) {
         const key = (s.section || "").trim() || "Other";
-        if (!groups[key]) {
-          groups[key] = [];
+        if (!buckets[key]) {
+          buckets[key] = [];
           order.push(key);
         }
-        groups[key].push(s);
+        buckets[key].push(s);
       }
       order.sort((a, b) => (a === "Other" ? 1 : b === "Other" ? -1 : 0));
-      // If everything is a single "Other" bucket and there are no real
-      // categories, render a flat list (no lone header).
-      const flat = rows.length === 0 && order.length === 1 && order[0] === "Other";
+      // Everything in one unnamed bucket reads better as a plain "Services".
+      const lone = groups.length === 0 && order.length === 1 && order[0] === "Other";
       for (const key of order) {
-        if (!flat) rows.push({ kind: "header", section: key });
-        for (const s of groups[key]) rows.push({ kind: "card", service: s });
+        groups.push({
+          key: `legacy:${key}`,
+          title: lone ? "Services" : key,
+          items: buckets[key],
+        });
       }
     }
 
-    return rows;
-  }, [services, categories]);
+    return groups.map((g) => {
+      const isExpanded = !!expanded[g.key];
+      return {
+        key: g.key,
+        title: g.title,
+        count: g.items.length,
+        expandable: g.items.length > COLLAPSED_COUNT,
+        expanded: isExpanded,
+        data: isExpanded ? g.items : g.items.slice(0, COLLAPSED_COUNT),
+      };
+    });
+  }, [services, categories, expanded]);
 
-  const getAvailabilityColor = (availability: string) => {
-    switch (availability) {
-      case "available": return colors.success;
-      case "unavailable": return colors.error;
-      case "coming_soon": return colors.warning;
-      default: return colors.textSecondary;
+  const categoryNameFor = (service: Service | null) => {
+    if (!service) return undefined;
+    if (service.catalogueCategory) {
+      const cat = categories.find((c) => c._id === service.catalogueCategory);
+      if (cat) return cat.name;
     }
+    return service.section || service.category || undefined;
   };
 
-  const getAvailabilityText = (availability: string) => {
-    switch (availability) {
-      case "available": return "Available";
-      case "unavailable": return "Unavailable";
-      case "coming_soon": return "Coming Soon";
-      default: return "Unknown";
-    }
-  };
+  const openProfile = () => owner?._id && openUserProfile(owner._id);
 
-  const renderServiceCard = ({ item }: { item: Service }) => (
-    <View style={styles.serviceCard}>
-      {item.images && item.images.length > 0 && (
-        <Image source={{ uri: item.images[0] }} style={styles.serviceImage} />
-      )}
-      <View style={styles.serviceContent}>
-        <View style={styles.serviceHeader}>
-          <Text style={styles.serviceName}>{item.name}</Text>
-          <View
-            style={[
-              styles.availabilityBadge,
-              { backgroundColor: `${getAvailabilityColor(item.availability)}20` },
-            ]}
+  // ── Header (fixed, above the scroll area) ────────────────────────────────
+
+  const avatarUri = vendor?.images?.[0] || owner?.profilePicture;
+  const initial = (owner?.businessName || vName || "?").trim()[0]?.toUpperCase() || "?";
+
+  const renderNavHeader = () => (
+    <View style={[styles.navHeader, { paddingTop: insets.top + 6 }]}>
+      <GlassBackButton size={40} />
+      <PressScale
+        style={styles.avatarWrap}
+        onPress={openProfile}
+        disabled={!owner?._id}
+        accessibilityRole="button"
+        accessibilityLabel={`${vName} profile`}
+      >
+        {avatarUri ? (
+          <Image source={{ uri: avatarUri }} style={styles.avatar} contentFit="cover" />
+        ) : (
+          <LinearGradient
+            colors={[...Brand.avatarGradient]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.avatar}
           >
-            <View
-              style={[
-                styles.availabilityDot,
-                { backgroundColor: getAvailabilityColor(item.availability) },
-              ]}
-            />
-            <Text
-              style={[
-                styles.availabilityText,
-                { color: getAvailabilityColor(item.availability) },
-              ]}
-            >
-              {getAvailabilityText(item.availability)}
-            </Text>
-          </View>
+            <Text style={styles.avatarInitial}>{initial}</Text>
+          </LinearGradient>
+        )}
+      </PressScale>
+
+      <PressScale
+        style={styles.vendorBlock}
+        onPress={openProfile}
+        disabled={!owner?._id}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${vName}'s profile`}
+      >
+        <View style={styles.vendorNameRow}>
+          <Text style={styles.vendorName} numberOfLines={1}>
+            {vName}
+          </Text>
+          {vendor?.verified && (
+            <Ionicons name="checkmark-circle" size={15} color={Brand.teal} />
+          )}
+          {!!owner?._id && <Ionicons name="chevron-forward" size={15} color={t.t3} />}
         </View>
+        <View style={styles.vendorMetaRow}>
+          {totalReviews > 0 && (
+            <>
+              <View style={styles.ratingChip}>
+                <Ionicons name="star" size={12} color={Brand.gold} />
+                <Text style={styles.ratingText}>{avgRating}</Text>
+              </View>
+              <Text style={styles.metaSeparator}>·</Text>
+            </>
+          )}
+          <Text style={styles.vendorMeta} numberOfLines={1}>
+            {services.length > 0
+              ? `${services.length} ${services.length === 1 ? "service" : "services"}`
+              : owner?.username
+                ? `@${owner.username} · no services yet`
+                : "No services yet"}
+          </Text>
+        </View>
+      </PressScale>
+    </View>
+  );
 
-        <Text style={styles.serviceDescription} numberOfLines={2}>
-          {item.description}
-        </Text>
+  // ── Scroll content ───────────────────────────────────────────────────────
 
-        {item.category && (
-          <View style={styles.categoryContainer}>
-            <Ionicons name="pricetag-outline" size={14} color={colors.textSecondary} />
-            <Text style={styles.categoryText}>{item.category}</Text>
+  const contact = vendor?.contact || {};
+  const socialUrl = (key: string, val: string): string | null => {
+    if (!val) return null;
+    const v = val.trim();
+    if (v.startsWith("http")) return v;
+    const handle = v.replace(/^@/, "");
+    switch (key) {
+      case "instagram":
+        return `https://instagram.com/${handle}`;
+      case "tiktok":
+        return `https://tiktok.com/@${handle}`;
+      case "twitter":
+        return `https://x.com/${handle}`;
+      case "facebook":
+        return `https://facebook.com/${handle}`;
+      case "website":
+        return `https://${v}`;
+      case "phone":
+        return `tel:${v}`;
+      default:
+        return v;
+    }
+  };
+
+  const SOCIALS: { key: string; icon: any; color: string }[] = [
+    { key: "instagram", icon: "logo-instagram", color: "#E1306C" },
+    { key: "tiktok", icon: "logo-tiktok", color: t.t1 },
+    { key: "twitter", icon: "logo-twitter", color: "#1DA1F2" },
+    { key: "facebook", icon: "logo-facebook", color: "#1877F2" },
+    { key: "website", icon: "globe-outline", color: Brand.violet },
+    { key: "phone", icon: "call-outline", color: Brand.teal },
+  ];
+
+  const renderListHeader = () => {
+    const links = SOCIALS.map((s) => ({ ...s, url: socialUrl(s.key, contact[s.key]) })).filter(
+      (s) => s.url
+    );
+    const hasAbout = !!vendor?.description || links.length > 0;
+    return (
+      <View>
+        {(vendorLoadError || servicesLoadError) && (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorBannerText}>
+              {vendorLoadError ? "Couldn't load vendor info." : "Couldn't load services."}
+            </Text>
+            <TouchableOpacity onPress={reloadVendorAndServices} style={styles.retryBtn}>
+              <Text style={styles.retryBtnText}>Retry</Text>
+            </TouchableOpacity>
           </View>
         )}
 
-        <View style={styles.serviceFooter}>
-          <View style={styles.priceContainer}>
-            <Text style={styles.priceLabel}>Price:</Text>
-            <LinearGradient
-              colors={[colors.primary, colors.primaryDark]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.priceGradient}
-            >
-              <Text style={styles.price}>
-                {item.currency} {formatPrice(item.price)}
-                {item.kind === "product" && item.unit ? ` ${item.unit}` : ""}
-              </Text>
-            </LinearGradient>
+        {vendor && !vendor.verified && (
+          <View style={styles.trustStrip}>
+            <Ionicons name="eye-outline" size={16} color={t.warnInk} />
+            <Text style={styles.trustStripText}>
+              Not yet verified by OurCityvibe — book with care.
+            </Text>
           </View>
+        )}
 
-          {item.duration && (
-            <View style={styles.durationContainer}>
-              <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
-              <Text style={styles.durationText}>
-                {item.duration.value} {item.duration.unit}
-              </Text>
-            </View>
-          )}
-          {item.kind === "service" && item.leadTime && (
-            <View style={styles.durationContainer}>
-              <Ionicons name="hourglass-outline" size={16} color={colors.textSecondary} />
-              <Text style={styles.durationText}>
-                {item.leadTime.value} {item.leadTime.unit} lead
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {item.features && item.features.length > 0 && (
-          <View style={styles.featuresContainer}>
-            <Text style={styles.featuresTitle}>Features:</Text>
-            {item.features.slice(0, 3).map((feature, index) => (
-              <View key={index} style={styles.featureRow}>
-                <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
-                <Text style={styles.featureText}>{feature}</Text>
+        {hasAbout && (
+          <View style={styles.aboutCard}>
+            {!!vendor?.description && (
+              <Text style={styles.aboutText}>{vendor.description}</Text>
+            )}
+            {links.length > 0 && (
+              <View style={styles.socialRow}>
+                {links.map((s) => (
+                  <TouchableOpacity
+                    key={s.key}
+                    style={styles.socialButton}
+                    onPress={() => Linking.openURL(s.url as string).catch(() => {})}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name={s.icon} size={18} color={s.color} />
+                  </TouchableOpacity>
+                ))}
               </View>
-            ))}
-            {item.features.length > 3 && (
-              <Text style={styles.moreFeatures}>
-                +{item.features.length - 3} more features
-              </Text>
             )}
           </View>
         )}
 
-        {item.availability === "available" && (
-          cartQtyByService[item._id] ? (
-            <View style={styles.stepperRow}>
-              <TouchableOpacity
-                style={styles.stepperBtn}
-                onPress={() => cart.setQuantity(item._id, cartQtyByService[item._id] - 1)}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="remove" size={20} color={colors.primary} />
-              </TouchableOpacity>
-              <Text style={styles.stepperQty}>{cartQtyByService[item._id]} in cart</Text>
-              <TouchableOpacity
-                style={styles.stepperBtn}
-                onPress={() => cart.setQuantity(item._id, cartQtyByService[item._id] + 1)}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="add" size={20} color={colors.primary} />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.bookButton}
-              onPress={() => addToCart(item)}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={[colors.primary, colors.primaryDark]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.bookGradient}
-              >
-                <Ionicons name="cart-outline" size={18} color={colors.white} />
-                <Text style={styles.bookButtonText}>Add to cart</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          )
-        )}
+        <View style={{ height: 20 }} />
       </View>
+    );
+  };
+
+  const renderSectionHeader = ({ section }: { section: ServiceSection }) => (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionTitleRow}>
+        <Text style={styles.sectionTitle}>{section.title}</Text>
+        <View style={styles.countPill}>
+          <Text style={styles.countPillText}>{section.count}</Text>
+        </View>
+      </View>
+      {section.expandable && (
+        <TouchableOpacity
+          onPress={() => setExpanded((prev) => ({ ...prev, [section.key]: !prev[section.key] }))}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.seeAll}>{section.expanded ? "Show less" : "See all"}</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
-  const ReviewsSection = () => (
+  const renderReviews = () => (
     <View style={styles.reviewsSection}>
       <View style={styles.reviewsHeader}>
-        <Text style={styles.reviewsTitle}>Reviews ({totalReviews})</Text>
-        <TouchableOpacity
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.reviewsTitle}>Reviews</Text>
+          <View style={styles.countPill}>
+            <Text style={styles.countPillText}>{totalReviews}</Text>
+          </View>
+        </View>
+        <PressScale
           style={styles.rateButton}
           onPress={() => setRatingModalVisible(true)}
-          activeOpacity={0.8}
+          accessibilityRole="button"
         >
-          <Ionicons name="star-outline" size={16} color={colors.warning} />
+          <Ionicons name="star-outline" size={15} color={t.violetInk} />
           <Text style={styles.rateButtonText}>
-            {userReview ? "Edit Rating" : "Rate Vendor"}
+            {userReview ? "Edit rating" : "Rate vendor"}
           </Text>
-        </TouchableOpacity>
+        </PressScale>
       </View>
 
       {reviewsLoading ? (
-        <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
+        <ActivityIndicator color={Brand.violet} style={{ marginVertical: 16 }} />
       ) : reviews.length === 0 ? (
         <Text style={styles.noReviewsText}>No reviews yet. Be the first!</Text>
       ) : (
@@ -546,126 +591,118 @@ export default function VendorDetails() {
                 onPress={() => review.user?._id && openUserProfile(review.user._id)}
               >
                 {review.user?.profilePicture ? (
-                  <Image source={{ uri: review.user.profilePicture }} style={styles.reviewAvatar} />
-                ) : (
-                  <View style={styles.reviewAvatarPlaceholder}>
+                  <Image
+                    source={{ uri: review.user.profilePicture }}
+                    style={styles.reviewAvatar}
+                    contentFit="cover"
+                  />
+                ) : review.user ? (
+                  <LinearGradient
+                    colors={[...Brand.avatarGradient]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.reviewAvatar}
+                  >
                     <Text style={styles.reviewAvatarLetter}>
-                      {review.user?.username?.[0]?.toUpperCase() || "?"}
+                      {review.user.username?.[0]?.toUpperCase() || "?"}
                     </Text>
+                  </LinearGradient>
+                ) : (
+                  <View style={[styles.reviewAvatar, styles.reviewAvatarDeleted]}>
+                    <Text style={[styles.reviewAvatarLetter, { color: t.t2 }]}>?</Text>
                   </View>
                 )}
-                <View>
-                  <Text style={styles.reviewUsername}>{review.user?.username || "Deleted user"}</Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.reviewUsername} numberOfLines={1}>
+                    {review.user?.username || "Deleted user"}
+                  </Text>
                   <Text style={styles.reviewTime}>{timeAgo(review.createdAt)}</Text>
                 </View>
               </TouchableOpacity>
-              <StarRow rating={review.rating} size={14} />
+              <StarRow rating={review.rating} size={14} faint={t.t3} />
             </View>
-            {!!review.review && (
-              <Text style={styles.reviewText}>{review.review}</Text>
-            )}
+            {!!review.review && <Text style={styles.reviewText}>{review.review}</Text>}
           </View>
         ))
       )}
     </View>
   );
 
+  const renderEmpty = () => (
+    <View style={styles.emptyContainer}>
+      <View style={styles.emptyIcon}>
+        <Ionicons name="briefcase-outline" size={36} color={t.violetInk} />
+      </View>
+      <Text style={styles.emptyTitle}>No services yet</Text>
+      <Text style={styles.emptyText}>
+        {"This vendor hasn't listed anything for booking. Check back soon."}
+      </Text>
+    </View>
+  );
+
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <VendorCardSkeleton count={3} />
+      <View style={styles.screen}>
+        {renderNavHeader()}
+        <View style={styles.loadingContainer}>
+          <VendorCardSkeleton count={3} />
+        </View>
       </View>
     );
   }
 
-  return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={[colors.backgroundSecondary, colors.backgroundTertiary]}
-        style={styles.header}
-      >
-        <View style={styles.headerContent}>
-          <GlassBackButton style={styles.backButton} />
-          <View style={styles.titleContainer}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={styles.title}>{vendorName || "Vendor Services"}</Text>
-              {vendor?.verified && (
-                <Ionicons name="checkmark-circle" size={18} color="#22c55e" />
-              )}
-            </View>
-            <Text style={styles.subtitle}>
-              {services.length} {services.length === 1 ? "Service" : "Services"} Available
-            </Text>
-            {totalReviews > 0 && (
-              <View style={styles.ratingRow}>
-                <Ionicons name="star" size={14} color={colors.warning} />
-                <Text style={styles.ratingText}>{avgRating} ({totalReviews} review{totalReviews !== 1 ? "s" : ""})</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </LinearGradient>
+  const cartActive = cart.vendorId === vId && cart.count > 0;
 
-      <FlatList
-        data={listData}
-        keyExtractor={(row: any) =>
-          row.kind === "header" ? `h:${row.section}` : row.service._id
-        }
-        renderItem={({ item: row }: { item: any }) =>
-          row.kind === "header" ? (
-            <View style={styles.storeSectionHeader}>
-              <Text style={styles.storeSectionText}>{row.section}</Text>
-            </View>
-          ) : (
-            renderServiceCard({ item: row.service })
-          )
-        }
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        ListHeaderComponent={renderVendorHeader()}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <LinearGradient
-              colors={[colors.primary, colors.primaryDark]}
-              style={styles.emptyIconContainer}
-            >
-              <Ionicons name="briefcase-outline" size={48} color="white" />
-            </LinearGradient>
-            <Text style={styles.emptyTitle}>No Services Yet</Text>
-            <Text style={styles.emptyText}>
-              This vendor hasn't posted any services yet. Check back later!
-            </Text>
+  return (
+    <View style={styles.screen}>
+      {renderNavHeader()}
+
+      <SectionList
+        sections={sections}
+        keyExtractor={(item) => item._id}
+        stickySectionHeadersEnabled
+        renderSectionHeader={renderSectionHeader}
+        renderItem={({ item }) => (
+          <View style={styles.rowWrap}>
+            <ServiceRow
+              item={item}
+              inCart={!!cartQtyByService[item._id]}
+              onPress={() => setSheetService(item)}
+              onToggleCart={() => toggleCart(item)}
+            />
           </View>
+        )}
+        renderSectionFooter={() => <View style={{ height: 6 }} />}
+        ListHeaderComponent={renderListHeader()}
+        ListEmptyComponent={renderEmpty()}
+        ListFooterComponent={
+          <>
+            {renderReviews()}
+            <View style={{ height: 120 }} />
+          </>
         }
-        ListFooterComponent={<ReviewsSection />}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={sections.length === 0 ? styles.emptyListContent : undefined}
       />
 
       {/* Floating cart bar — appears when this vendor's cart has items */}
-      {cart.vendorId === vId && cart.count > 0 && (
-        <TouchableOpacity
-          style={styles.cartBar}
-          activeOpacity={0.9}
+      {cartActive && (
+        <CartBar
+          bottom={Math.max(insets.bottom, 22)}
+          count={cart.count}
+          total={`${currencyPrefix(cart.items[0]?.currency)}${formatPrice(cart.subtotal)}`}
           onPress={() => router.push("/cart" as any)}
-        >
-          <LinearGradient
-            colors={[colors.primary, colors.primaryDark]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.cartBarInner}
-          >
-            <View style={styles.cartBarBadge}>
-              <Text style={styles.cartBarBadgeText}>{cart.count}</Text>
-            </View>
-            <Text style={styles.cartBarText}>View cart</Text>
-            <Text style={styles.cartBarTotal}>
-              {currencyPrefix(cart.items[0]?.currency)}
-              {formatPrice(cart.subtotal)}
-            </Text>
-            <Ionicons name="arrow-forward" size={18} color={colors.white} />
-          </LinearGradient>
-        </TouchableOpacity>
+          styles={styles}
+        />
       )}
+
+      <ServiceDetailSheet
+        service={sheetService}
+        categoryName={categoryNameFor(sheetService)}
+        inCart={!!(sheetService && cartQtyByService[sheetService._id])}
+        onClose={() => setSheetService(null)}
+        onToggleCart={() => sheetService && toggleCart(sheetService)}
+      />
 
       {/* Rating Modal */}
       <Modal
@@ -686,25 +723,30 @@ export default function VendorDetails() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {userReview ? "Edit Rating" : "Rate Vendor"}
+                {userReview ? "Edit rating" : "Rate vendor"}
               </Text>
               <TouchableOpacity onPress={() => setRatingModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#fff" />
+                <Ionicons name="close" size={24} color={t.t1} />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalServiceName}>{vendorName}</Text>
+            <Text style={styles.modalServiceName}>{vName}</Text>
 
-            <Text style={styles.inputLabel}>Your Rating</Text>
+            <Text style={styles.inputLabel}>Your rating</Text>
             <View style={styles.starSelector}>
-              <StarRow rating={selectedRating} size={36} onPress={setSelectedRating} />
+              <StarRow
+                rating={selectedRating}
+                size={36}
+                faint={t.t3}
+                onPress={setSelectedRating}
+              />
             </View>
 
             <Text style={styles.inputLabel}>Review (optional)</Text>
             <TextInput
               style={[styles.modalInput, styles.modalTextArea]}
               placeholder="Share your experience..."
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={t.t3}
               value={reviewText}
               onChangeText={setReviewText}
               multiline
@@ -712,25 +754,24 @@ export default function VendorDetails() {
               maxLength={500}
             />
 
-            <TouchableOpacity
+            <PressScale
               style={[styles.submitButton, selectedRating === 0 && styles.submitButtonDisabled]}
               onPress={handleSubmitRating}
               disabled={submittingRating || selectedRating === 0}
-              activeOpacity={0.8}
             >
               <LinearGradient
-                colors={[colors.warning, "#d97706"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
+                colors={[...Brand.gradient]}
+                start={Brand.gradientStart}
+                end={Brand.gradientEnd}
                 style={styles.submitGradient}
               >
                 {submittingRating ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.submitText}>Submit Rating</Text>
+                  <Text style={styles.submitText}>Submit rating</Text>
                 )}
               </LinearGradient>
-            </TouchableOpacity>
+            </PressScale>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -738,584 +779,518 @@ export default function VendorDetails() {
   );
 }
 
-const createStyles = (c: ThemeColors) =>
+/** Cart bar, faded in over 200ms whenever the cart stops being empty. */
+function CartBar({
+  bottom,
+  count,
+  total,
+  onPress,
+  styles,
+}: {
+  bottom: number;
+  count: number;
+  total: string;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const opacity = React.useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(opacity, {
+      toValue: 1,
+      duration: 200,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [opacity]);
+
+  return (
+    <Animated.View style={[styles.cartBar, { bottom, opacity }]}>
+      <PressScale onPress={onPress} accessibilityRole="button" style={styles.cartBarPress}>
+        <LinearGradient
+          colors={[...Brand.gradient]}
+          start={Brand.gradientStart}
+          end={Brand.gradientEnd}
+          style={styles.cartBarInner}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cartBarText}>
+              {count} {count === 1 ? "service" : "services"} in cart
+            </Text>
+            <Text style={styles.cartBarTotal}>{total}</Text>
+          </View>
+          <View style={styles.cartBarPill}>
+            <Text style={styles.cartBarPillText}>View cart</Text>
+            <Ionicons name="chevron-forward" size={16} color="#ffffff" />
+          </View>
+        </LinearGradient>
+      </PressScale>
+    </Animated.View>
+  );
+}
+
+const createStyles = (t: ServicesTokens) =>
   StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: c.background,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: c.background,
-  },
-  header: {
-    paddingTop: 60,
-    paddingBottom: 20,
-    paddingHorizontal: 16,
-  },
-  headerContent: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  backButton: {
-    padding: 8,
-    marginRight: 12,
-  },
-  titleContainer: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 24,
-    fontFamily: Fonts.bold,
-    color: c.text,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    fontFamily: Fonts.regular,
-    color: c.textSecondary,
-  },
-  ratingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 4,
-  },
-  ratingText: {
-    fontSize: 13,
-    fontFamily: Fonts.medium,
-    color: c.warning,
-  },
-  listContent: {
-    padding: 16,
-    // iOS gets its bottom clearance from the automatic content inset; Android
-    // keeps the old fixed padding for the system nav area.
-    paddingBottom: Platform.OS === "ios" ? 24 : 100,
-  },
-  serviceCard: {
-    backgroundColor: c.card,
-    borderRadius: 16,
-    marginBottom: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: c.border,
-  },
-  serviceImage: {
-    width: "100%",
-    height: 200,
-    backgroundColor: c.border,
-  },
-  serviceContent: {
-    padding: 16,
-  },
-  serviceHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 8,
-  },
-  serviceName: {
-    fontSize: 20,
-    fontFamily: Fonts.bold,
-    color: c.text,
-    flex: 1,
-    marginRight: 12,
-  },
-  availabilityBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  availabilityDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
-  },
-  availabilityText: {
-    fontSize: 12,
-    fontFamily: Fonts.semiBold,
-  },
-  serviceDescription: {
-    fontSize: 14,
-    fontFamily: Fonts.regular,
-    color: c.textSecondary,
-    marginBottom: 12,
-    lineHeight: 20,
-  },
-  categoryContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  categoryText: {
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: c.textSecondary,
-    marginLeft: 6,
-  },
-  serviceFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  priceContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  priceLabel: {
-    fontSize: 14,
-    fontFamily: Fonts.regular,
-    color: c.textSecondary,
-    marginRight: 8,
-  },
-  priceGradient: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  price: {
-    fontSize: 18,
-    fontFamily: Fonts.bold,
-    color: c.text,
-  },
-  durationContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: c.border,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  durationText: {
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: c.textSecondary,
-    marginLeft: 6,
-  },
-  featuresContainer: {
-    backgroundColor: c.background,
-    padding: 12,
-    borderRadius: 12,
-    marginTop: 4,
-  },
-  featuresTitle: {
-    fontSize: 14,
-    fontFamily: Fonts.semiBold,
-    color: c.text,
-    marginBottom: 8,
-  },
-  featureRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  featureText: {
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: c.textBody,
-    marginLeft: 8,
-    flex: 1,
-  },
-  moreFeatures: {
-    fontSize: 12,
-    fontFamily: Fonts.regular,
-    color: c.primary,
-    marginTop: 4,
-    marginLeft: 22,
-  },
-  emptyContainer: {
-    alignItems: "center",
-    paddingVertical: 60,
-    paddingHorizontal: 32,
-  },
-  emptyIconContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 24,
-  },
-  emptyTitle: {
-    fontSize: 22,
-    fontFamily: Fonts.bold,
-    color: c.text,
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 15,
-    fontFamily: Fonts.regular,
-    color: c.textSecondary,
-    textAlign: "center",
-    lineHeight: 22,
-  },
-  storeSectionHeader: {
-    marginTop: 4,
-    marginBottom: 10,
-  },
-  storeSectionText: {
-    fontSize: 17,
-    fontFamily: Fonts.bold,
-    color: c.text,
-    letterSpacing: -0.2,
-  },
-  stepperRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 12,
-    backgroundColor: c.background,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: c.primary,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  stepperBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: `${Colors.primary}18`,
-  },
-  stepperQty: {
-    fontSize: 15,
-    fontFamily: Fonts.semiBold,
-    color: c.text,
-  },
-  cartBar: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: Platform.OS === "ios" ? 32 : 24,
-    borderRadius: 16,
-    overflow: "hidden",
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  cartBarInner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-  },
-  cartBarBadge: {
-    minWidth: 26,
-    height: 26,
-    borderRadius: 13,
-    paddingHorizontal: 7,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cartBarBadgeText: {
-    fontSize: 13,
-    fontFamily: Fonts.bold,
-    color: c.white,
-  },
-  cartBarText: {
-    flex: 1,
-    fontSize: 16,
-    fontFamily: Fonts.bold,
-    color: c.white,
-  },
-  cartBarTotal: {
-    fontSize: 16,
-    fontFamily: Fonts.bold,
-    color: c.white,
-  },
-  bookButton: {
-    borderRadius: 12,
-    overflow: "hidden",
-    marginTop: 12,
-  },
-  bookGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    gap: 8,
-  },
-  bookButtonText: {
-    fontSize: 15,
-    fontFamily: Fonts.semiBold,
-    color: c.white,
-  },
-  unverifiedBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(245,158,11,0.12)",
-    borderWidth: 1,
-    borderColor: "rgba(245,158,11,0.3)",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-  },
-  unverifiedText: {
-    flex: 1,
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: c.warning,
-    lineHeight: 18,
-  },
-  errorBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "rgba(239,68,68,0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(239,68,68,0.3)",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-  },
-  errorBannerText: {
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: c.error,
-  },
-  retryBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: "rgba(239,68,68,0.2)",
-    borderRadius: 8,
-  },
-  retryBtnText: {
-    fontSize: 13,
-    fontFamily: Fonts.semiBold,
-    color: c.error,
-  },
-  vendorHeaderCard: {
-    backgroundColor: c.backgroundSecondary,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: c.glassStroke,
-  },
-  vendorDescription: {
-    fontSize: 14,
-    fontFamily: Fonts.regular,
-    color: c.textTertiary,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  socialRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  socialButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: c.background,
-    borderWidth: 1,
-    borderColor: c.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  // Reviews section
-  reviewsSection: {
-    marginTop: 8,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: c.border,
-  },
-  reviewsHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  reviewsTitle: {
-    fontSize: 18,
-    fontFamily: Fonts.bold,
-    color: c.text,
-  },
-  rateButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(245,158,11,0.12)",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "rgba(245,158,11,0.3)",
-  },
-  rateButtonText: {
-    fontSize: 13,
-    fontFamily: Fonts.semiBold,
-    color: c.warning,
-  },
-  noReviewsText: {
-    fontSize: 14,
-    fontFamily: Fonts.regular,
-    color: c.textMuted,
-    textAlign: "center",
-    paddingVertical: 24,
-  },
-  reviewCard: {
-    backgroundColor: c.card,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: c.border,
-  },
-  reviewTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 8,
-  },
-  reviewUser: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  reviewAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: c.border,
-  },
-  reviewAvatarPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: c.border,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  reviewAvatarLetter: {
-    fontSize: 14,
-    fontFamily: Fonts.bold,
-    color: c.text,
-  },
-  reviewUsername: {
-    fontSize: 14,
-    fontFamily: Fonts.semiBold,
-    color: c.text,
-  },
-  reviewTime: {
-    fontSize: 11,
-    fontFamily: Fonts.regular,
-    color: c.textMuted,
-    marginTop: 1,
-  },
-  reviewText: {
-    fontSize: 14,
-    fontFamily: Fonts.regular,
-    color: c.textSecondary,
-    lineHeight: 20,
-  },
-  // Rating modal specifics
-  starSelector: {
-    alignItems: "center",
-    paddingVertical: 16,
-  },
-  // Modals
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: c.modalOverlay,
-    justifyContent: "flex-end",
-  },
-  modalBackdrop: {
-    flex: 1,
-  },
-  modalContent: {
-    backgroundColor: c.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontFamily: Fonts.bold,
-    color: c.text,
-  },
-  modalServiceName: {
-    fontSize: 15,
-    fontFamily: Fonts.medium,
-    color: c.primary,
-    marginBottom: 20,
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontFamily: Fonts.semiBold,
-    color: c.textSecondary,
-    marginBottom: 6,
-  },
-  modalInput: {
-    backgroundColor: c.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    fontFamily: Fonts.regular,
-    color: c.text,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: c.borderMuted,
-  },
-  modalTextArea: {
-    height: 100,
-    textAlignVertical: "top",
-  },
-  datePickerButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: c.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: c.borderMuted,
-  },
-  datePickerText: {
-    flex: 1,
-    fontSize: 15,
-    fontFamily: Fonts.regular,
-    color: c.text,
-  },
-  submitButton: {
-    borderRadius: 12,
-    overflow: "hidden",
-    marginTop: 4,
-  },
-  submitButtonDisabled: {
-    opacity: 0.5,
-  },
-  submitGradient: {
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  submitText: {
-    fontSize: 16,
-    fontFamily: Fonts.bold,
-    color: c.text,
-  },
-});
+    screen: {
+      flex: 1,
+      backgroundColor: t.app,
+    },
+    loadingContainer: {
+      flex: 1,
+      paddingHorizontal: 16,
+    },
+
+    // ── Nav header ──
+    navHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      paddingHorizontal: 16,
+      paddingBottom: 14,
+      backgroundColor: t.app,
+    },
+    avatarWrap: {
+      width: 40,
+      height: 40,
+      borderRadius: Radii.pill,
+      overflow: "hidden",
+    },
+    avatar: {
+      width: 40,
+      height: 40,
+      borderRadius: Radii.pill,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    avatarInitial: {
+      fontSize: 16,
+      fontFamily: Fonts.bold,
+      color: "#ffffff",
+    },
+    vendorBlock: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+      paddingVertical: 2,
+    },
+    vendorNameRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+    },
+    vendorName: {
+      flexShrink: 1,
+      fontSize: 18,
+      fontFamily: Fonts.bold,
+      color: t.t1,
+    },
+    vendorMetaRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 7,
+    },
+    ratingChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 3,
+    },
+    ratingText: {
+      fontSize: 12.5,
+      fontFamily: Fonts.semiBold,
+      color: Brand.gold,
+    },
+    metaSeparator: {
+      fontSize: 12.5,
+      color: t.t3,
+    },
+    vendorMeta: {
+      flexShrink: 1,
+      fontSize: 12.5,
+      fontFamily: Fonts.regular,
+      color: t.t2,
+    },
+
+    // ── List header ──
+    trustStrip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginHorizontal: 16,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: Radii.thumb,
+      backgroundColor: t.warnBg,
+    },
+    trustStripText: {
+      flex: 1,
+      fontSize: 12.5,
+      lineHeight: 18,
+      fontFamily: Fonts.regular,
+      color: t.warnInk,
+    },
+    errorBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+      marginHorizontal: 16,
+      marginBottom: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: Radii.thumb,
+      backgroundColor: "rgba(239,83,80,0.12)",
+    },
+    errorBannerText: {
+      fontSize: 12.5,
+      fontFamily: Fonts.regular,
+      color: Brand.red,
+    },
+    retryBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: Radii.smallButton,
+      backgroundColor: "rgba(239,83,80,0.18)",
+    },
+    retryBtnText: {
+      fontSize: 12.5,
+      fontFamily: Fonts.semiBold,
+      color: Brand.red,
+    },
+    aboutCard: {
+      marginHorizontal: 16,
+      marginTop: 10,
+      padding: 14,
+      borderRadius: Radii.row,
+      backgroundColor: t.card,
+      borderWidth: 1,
+      borderColor: t.line,
+      gap: 12,
+    },
+    aboutText: {
+      fontSize: 13.5,
+      lineHeight: 20,
+      fontFamily: Fonts.regular,
+      color: t.t2,
+    },
+    socialRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 10,
+    },
+    socialButton: {
+      width: 40,
+      height: 40,
+      borderRadius: Radii.smallButton,
+      backgroundColor: t.card2,
+      borderWidth: 1,
+      borderColor: t.line,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    // ── Sections ──
+    sectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      backgroundColor: t.app,
+    },
+    sectionTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    sectionTitle: {
+      fontSize: 15,
+      fontFamily: Fonts.bold,
+      color: t.t1,
+    },
+    countPill: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: Radii.pill,
+      backgroundColor: t.card2,
+    },
+    countPillText: {
+      fontSize: 12,
+      fontFamily: Fonts.semiBold,
+      color: t.t3,
+    },
+    seeAll: {
+      fontSize: 12.5,
+      fontFamily: Fonts.semiBold,
+      color: t.violetInk,
+    },
+    rowWrap: {
+      paddingHorizontal: 16,
+      paddingBottom: 10,
+    },
+
+    // ── Empty state ──
+    emptyListContent: {
+      flexGrow: 1,
+    },
+    emptyContainer: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 16,
+      paddingHorizontal: 40,
+      paddingVertical: 48,
+    },
+    emptyIcon: {
+      width: 88,
+      height: 88,
+      borderRadius: Radii.emptyIcon,
+      backgroundColor: t.card2,
+      borderWidth: 1,
+      borderColor: t.line,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    emptyTitle: {
+      fontSize: 21,
+      fontFamily: Fonts.bold,
+      color: t.t1,
+    },
+    emptyText: {
+      fontSize: 14,
+      lineHeight: 22,
+      fontFamily: Fonts.regular,
+      color: t.t2,
+      textAlign: "center",
+    },
+
+    // ── Reviews ──
+    reviewsSection: {
+      marginHorizontal: 16,
+      marginTop: 4,
+      paddingTop: 18,
+      borderTopWidth: 1,
+      borderTopColor: t.line,
+      gap: 12,
+    },
+    reviewsHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+    },
+    reviewsTitle: {
+      fontSize: 16,
+      fontFamily: Fonts.bold,
+      color: t.t1,
+    },
+    rateButton: {
+      height: 36,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 7,
+      paddingHorizontal: 14,
+      borderRadius: Radii.smallButton,
+      borderWidth: 1,
+      borderColor: Brand.violetOutline,
+    },
+    rateButtonText: {
+      fontSize: 13,
+      fontFamily: Fonts.semiBold,
+      color: t.violetInk,
+    },
+    noReviewsText: {
+      fontSize: 13.5,
+      fontFamily: Fonts.regular,
+      color: t.t3,
+      textAlign: "center",
+      paddingVertical: 20,
+    },
+    reviewCard: {
+      padding: 14,
+      borderRadius: Radii.row,
+      backgroundColor: t.card,
+      borderWidth: 1,
+      borderColor: t.line,
+      gap: 10,
+    },
+    reviewTop: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    reviewUser: {
+      flex: 1,
+      minWidth: 0,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    reviewAvatar: {
+      width: 34,
+      height: 34,
+      borderRadius: Radii.pill,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    reviewAvatarDeleted: {
+      backgroundColor: "rgba(167,159,184,0.22)",
+    },
+    reviewAvatarLetter: {
+      fontSize: 14,
+      fontFamily: Fonts.bold,
+      color: "#ffffff",
+    },
+    reviewUsername: {
+      fontSize: 14,
+      fontFamily: Fonts.semiBold,
+      color: t.t1,
+    },
+    reviewTime: {
+      fontSize: 11.5,
+      fontFamily: Fonts.regular,
+      color: t.t3,
+      marginTop: 1,
+    },
+    reviewText: {
+      fontSize: 13.5,
+      lineHeight: 20,
+      fontFamily: Fonts.regular,
+      color: t.t2,
+    },
+
+    // ── Cart bar ──
+    cartBar: {
+      position: "absolute",
+      left: 16,
+      right: 16,
+      borderRadius: Radii.bar,
+      backgroundColor: Brand.violet,
+      shadowColor: Brand.violet,
+      shadowOffset: { width: 0, height: 14 },
+      shadowOpacity: 0.45,
+      shadowRadius: 34,
+      elevation: 10,
+    },
+    cartBarPress: {
+      borderRadius: Radii.bar,
+      overflow: "hidden",
+    },
+    cartBarInner: {
+      height: 60,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      paddingLeft: 20,
+      paddingRight: 8,
+    },
+    cartBarText: {
+      fontSize: 15,
+      fontFamily: Fonts.bold,
+      color: "#ffffff",
+    },
+    cartBarTotal: {
+      fontSize: 12,
+      fontFamily: Fonts.regular,
+      color: "rgba(255,255,255,0.8)",
+    },
+    cartBarPill: {
+      height: 44,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: 18,
+      borderRadius: Radii.thumb,
+      backgroundColor: "rgba(11,8,19,0.28)",
+    },
+    cartBarPillText: {
+      fontSize: 14,
+      fontFamily: Fonts.semiBold,
+      color: "#ffffff",
+    },
+
+    // ── Rating modal ──
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(4,2,8,0.55)",
+      justifyContent: "flex-end",
+    },
+    modalBackdrop: {
+      flex: 1,
+    },
+    modalContent: {
+      backgroundColor: t.card,
+      borderTopLeftRadius: Radii.sheet,
+      borderTopRightRadius: Radii.sheet,
+      padding: 24,
+      paddingBottom: 40,
+    },
+    modalHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 8,
+    },
+    modalTitle: {
+      fontSize: 22,
+      fontFamily: Fonts.bold,
+      color: t.t1,
+    },
+    modalServiceName: {
+      fontSize: 14,
+      fontFamily: Fonts.medium,
+      color: t.violetInk,
+      marginBottom: 20,
+    },
+    inputLabel: {
+      fontSize: 10.5,
+      letterSpacing: 1.5,
+      textTransform: "uppercase",
+      fontFamily: Fonts.semiBold,
+      color: t.t3,
+      marginBottom: 6,
+    },
+    starSelector: {
+      alignItems: "center",
+      paddingVertical: 16,
+    },
+    modalInput: {
+      backgroundColor: t.card2,
+      borderRadius: Radii.thumb,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 15,
+      fontFamily: Fonts.regular,
+      color: t.t1,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: t.line,
+    },
+    modalTextArea: {
+      height: 100,
+      textAlignVertical: "top",
+    },
+    submitButton: {
+      height: 54,
+      borderRadius: 16,
+      overflow: "hidden",
+      backgroundColor: Brand.violet,
+      shadowColor: Brand.violet,
+      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: 0.4,
+      shadowRadius: 28,
+      elevation: 8,
+    },
+    submitButtonDisabled: {
+      opacity: 0.5,
+    },
+    submitGradient: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    submitText: {
+      fontSize: 16,
+      fontFamily: Fonts.semiBold,
+      color: "#ffffff",
+    },
+  });
