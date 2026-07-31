@@ -1,5 +1,7 @@
 import Attendance from "../models/attendance.model.js";
 import Event from "../models/event.model.js";
+import Ticket from "../models/ticket.model.js";
+import User from "../models/user.model.js";
 import {
   issueEventPass,
   computeAttendanceStatus,
@@ -123,6 +125,138 @@ export const getEventAttendance = async (req, res) => {
   } catch (error) {
     console.error("getEventAttendance error:", error);
     res.status(500).json({ message: "Failed to load attendance", details: error.message });
+  }
+};
+
+/**
+ * GET /api/events/:eventId/signups
+ *
+ * The organizer's guest list: one row per person who signed up, whether they
+ * RSVP'd to a free event or paid for a ticket. Unlike /attendance (which lists
+ * passes, so a buyer of three tickets appears three times) this is
+ * people-shaped — it's what the "Who's coming" screen renders.
+ *
+ * Open to the creator and co-hosts, matching the gate the event screen already
+ * uses to show attendance at all.
+ */
+export const getEventSignups = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user.id;
+
+    const event = await Event.findById(eventId).select(
+      "createdBy cohosts rsvpUsers invitedUsers date title"
+    );
+    if (!event) return res.status(404).json({ message: "Event not found" });
+
+    const isCreator = event.createdBy.toString() === userId;
+    const isCohost = (event.cohosts || []).some((c) => c.toString() === userId);
+    if (!isCreator && !isCohost) {
+      return res
+        .status(403)
+        .json({ message: "Only the organizer can view who signed up." });
+    }
+
+    // RSVP side: people who confirmed, plus anyone already counted as attending
+    // (joined via link or accepted an invite).
+    const rsvpIds = [
+      ...new Set(
+        [...(event.rsvpUsers || []), ...(event.invitedUsers || [])].map(String)
+      ),
+    ];
+
+    const [tickets, passes] = await Promise.all([
+      Ticket.find({ event: eventId, isValid: true })
+        .select("user tierName purchaseDate")
+        .lean(),
+      Attendance.find({ event: eventId })
+        .select("user status attendedAt createdAt")
+        .lean(),
+    ]);
+
+    // Ticket rows collapse to one entry per holder.
+    const ticketsByUser = new Map();
+    for (const t of tickets) {
+      if (!t.user) continue;
+      const key = String(t.user);
+      const row = ticketsByUser.get(key) || { count: 0, tiers: [], firstAt: null };
+      row.count += 1;
+      if (t.tierName && !row.tiers.includes(t.tierName)) row.tiers.push(t.tierName);
+      if (t.purchaseDate && (!row.firstAt || t.purchaseDate < row.firstAt)) {
+        row.firstAt = t.purchaseDate;
+      }
+      ticketsByUser.set(key, row);
+    }
+
+    // Pass state gives us check-in status and, for RSVPs, a "signed up" time.
+    const passByUser = new Map();
+    for (const p of passes) {
+      if (!p.user) continue;
+      const key = String(p.user);
+      const existing = passByUser.get(key);
+      const attended = p.status === "attended";
+      if (!existing) {
+        passByUser.set(key, {
+          checkedIn: attended,
+          attendedAt: p.attendedAt || null,
+          createdAt: p.createdAt || null,
+        });
+      } else {
+        if (attended && !existing.checkedIn) {
+          existing.checkedIn = true;
+          existing.attendedAt = p.attendedAt || existing.attendedAt;
+        }
+        if (p.createdAt && (!existing.createdAt || p.createdAt < existing.createdAt)) {
+          existing.createdAt = p.createdAt;
+        }
+      }
+    }
+
+    const allIds = [...new Set([...rsvpIds, ...ticketsByUser.keys()])];
+    const users = await User.find({ _id: { $in: allIds } })
+      .select("username profilePicture isGuest")
+      .lean();
+
+    const attendees = users.map((u) => {
+      const key = String(u._id);
+      const ticket = ticketsByUser.get(key);
+      const pass = passByUser.get(key);
+      return {
+        userId: key,
+        username: u.username,
+        profilePicture: u.profilePicture || "",
+        // Guest accounts are created for ticket recipients who never installed
+        // the app — the client shouldn't link to an empty profile.
+        isGuest: !!u.isGuest,
+        type: ticket ? "ticket" : "rsvp",
+        ticketCount: ticket?.count || 0,
+        tiers: ticket?.tiers || [],
+        checkedIn: !!pass?.checkedIn,
+        attendedAt: pass?.attendedAt || null,
+        joinedAt: ticket?.firstAt || pass?.createdAt || null,
+      };
+    });
+
+    // Most recent signups first; anyone without a timestamp (legacy RSVPs with
+    // no pass) sorts to the end alphabetically.
+    attendees.sort((a, b) => {
+      if (a.joinedAt && b.joinedAt) return new Date(b.joinedAt) - new Date(a.joinedAt);
+      if (a.joinedAt) return -1;
+      if (b.joinedAt) return 1;
+      return (a.username || "").localeCompare(b.username || "");
+    });
+
+    res.json({
+      total: attendees.length,
+      rsvpCount: attendees.filter((a) => a.type === "rsvp").length,
+      ticketCount: attendees.filter((a) => a.type === "ticket").length,
+      ticketsIssued: tickets.length,
+      attendedCount: attendees.filter((a) => a.checkedIn).length,
+      attendees,
+    });
+  } catch (error) {
+    console.error("getEventSignups error:", error);
+    res.status(500).json({ message: "Failed to load signups", details: error.message });
   }
 };
 

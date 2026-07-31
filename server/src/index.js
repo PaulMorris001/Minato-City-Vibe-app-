@@ -36,6 +36,7 @@ import deleteAccountRoutes from "./routes/deleteAccount.route.js";
 import deepLinksRoutes from "./routes/deepLinks.route.js";
 import privacyRoutes from "./routes/privacy.route.js";
 import csaeRoutes from "./routes/csae.route.js";
+import unsubscribeRoutes from "./routes/unsubscribe.route.js";
 import reportRoutes from "./routes/report.route.js";
 import blockRoutes from "./routes/block.route.js";
 import locationRoutes from "./routes/location.route.js";
@@ -123,6 +124,7 @@ app.use("/", deleteAccountRoutes);
 app.use("/", deepLinksRoutes);
 app.use("/", privacyRoutes);
 app.use("/", csaeRoutes);
+app.use("/", unsubscribeRoutes);
 
 
 // Initialize Socket.IO 

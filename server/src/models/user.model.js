@@ -102,6 +102,15 @@ const userSchema = mongoose.Schema({
   // FCM push notification token (updated on each app launch)
   fcmToken: { type: String, default: null },
 
+  // Email/push channel preferences. Push follows the OS permission; these
+  // cover the channels we control. Default on — users opt out, not in.
+  notificationPrefs: {
+    eventReminderEmails: { type: Boolean, default: true },
+  },
+  // Minted the first time we email this user, so the reminder footer can carry
+  // a one-click unsubscribe that needs no login.
+  unsubscribeToken: { type: String, index: true, sparse: true },
+
   // Password reset fields
   resetPasswordOTP: { type: String },
   resetPasswordOTPExpires: { type: Date },
