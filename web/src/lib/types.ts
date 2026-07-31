@@ -60,7 +60,7 @@ export interface Vendor extends VendorSummary {
     tiktok?: string;
     facebook?: string;
   };
-  user?: string;
+  user?: string | { _id: string; username?: string; profilePicture?: string; businessName?: string };
 }
 
 export interface Review {
