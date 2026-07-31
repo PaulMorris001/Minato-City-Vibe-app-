@@ -1003,6 +1003,14 @@ export async function googleAuth(req, res) {
         await user.save();
         console.log(`[google-auth ${reqId}] linked Google to existing account id=${user._id}`);
       }
+      // Signing in through Google proves control of the address, so the account
+      // is email-verified — no OTP round trip needed.
+      if (!user.emailVerifiedAt) {
+        user.emailVerifiedAt = new Date();
+        user.signupOTP = undefined;
+        user.signupOTPExpires = undefined;
+        await user.save();
+      }
     } else {
       console.log(`[google-auth ${reqId}] no existing user — creating new account email=${normalizedEmail}`);
       // Create new user — Google sign-in implies acceptance of Terms via the in-app prompt
@@ -1014,6 +1022,7 @@ export async function googleAuth(req, res) {
         profilePicture: picture || "",
         isVendor: false,
         termsAcceptedAt: new Date(),
+        emailVerifiedAt: new Date(),
       });
       await user.save();
       console.log(`[google-auth ${reqId}] ✓ new user created id=${user._id}`);
@@ -1037,7 +1046,8 @@ export async function googleAuth(req, res) {
         email: user.email,
         profilePicture: user.profilePicture,
         isVendor: user.isVendor,
-        authProvider: user.authProvider
+        authProvider: user.authProvider,
+        emailVerifiedAt: user.emailVerifiedAt || null
       }
     });
   } catch (error) {
@@ -1309,6 +1319,13 @@ export async function googleWebCallback(req, res) {
         await user.save();
         console.log(`[google-web-callback ${reqId}] linked Google to existing user id=${user._id}`);
       }
+      // Google-verified address — no OTP needed (see /google-auth).
+      if (!user.emailVerifiedAt) {
+        user.emailVerifiedAt = new Date();
+        user.signupOTP = undefined;
+        user.signupOTPExpires = undefined;
+        await user.save();
+      }
     } else {
       user = new User({
         username: await generateUniqueUsername(name || normalizedEmail.split("@")[0]),
@@ -1318,6 +1335,7 @@ export async function googleWebCallback(req, res) {
         profilePicture: picture || "",
         isVendor: false,
         termsAcceptedAt: new Date(),
+        emailVerifiedAt: new Date(),
       });
       await user.save();
       console.log(`[google-web-callback ${reqId}] ✓ created new user id=${user._id}`);
@@ -1336,6 +1354,7 @@ export async function googleWebCallback(req, res) {
       profilePicture: user.profilePicture || "",
       isVendor: !!user.isVendor,
       authProvider: user.authProvider,
+      emailVerifiedAt: user.emailVerifiedAt || null,
     };
 
     console.log(
@@ -1424,6 +1443,15 @@ export async function appleAuth(req, res) {
         if (user.authProvider === "local") user.authProvider = "apple";
         await user.save();
       }
+      // Apple vouches for the address (including a private-relay one), so the
+      // account is email-verified. Without this an @privaterelay.appleid.com
+      // signup is stuck: it can never complete the OTP flow.
+      if (!user.emailVerifiedAt) {
+        user.emailVerifiedAt = new Date();
+        user.signupOTP = undefined;
+        user.signupOTPExpires = undefined;
+        await user.save();
+      }
     } else {
       if (!normalizedEmail) {
         return res.status(400).json({
@@ -1445,6 +1473,7 @@ export async function appleAuth(req, res) {
         appleId,
         isVendor: false,
         termsAcceptedAt: new Date(),
+        emailVerifiedAt: new Date(),
       });
       await user.save();
     }
@@ -1463,6 +1492,7 @@ export async function appleAuth(req, res) {
         profilePicture: user.profilePicture,
         isVendor: user.isVendor,
         authProvider: user.authProvider,
+        emailVerifiedAt: user.emailVerifiedAt || null,
       },
     });
   } catch (error) {

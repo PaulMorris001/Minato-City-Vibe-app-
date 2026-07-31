@@ -494,6 +494,107 @@ export const sendEventPassEmail = async (
 };
 
 /**
+ * Remind an attendee that an event they're signed up for is ~24 hours away.
+ * Sent alongside the push reminder by jobs/eventReminder.job.js — email is the
+ * only channel that reaches people with no push token and guests who were
+ * gifted a pass but never installed the app.
+ *
+ * Never throws: the reminder batch must survive one bad address.
+ *
+ * @param {string} email
+ * @param {object} opts
+ * @param {string} opts.username        greeting name ("there" when unknown)
+ * @param {string} opts.eventTitle
+ * @param {string} opts.eventDateText   human-readable date/time
+ * @param {string} opts.eventLocation
+ * @param {string} opts.eventUrl        deep link to the event
+ * @param {string} [opts.unsubscribeUrl] one-click opt-out (omitted for guests)
+ */
+export const sendEventReminderEmail = async (
+  email,
+  { username, eventTitle, eventDateText, eventLocation, eventUrl, unsubscribeUrl }
+) => {
+  try {
+    const transporter = createTransporter();
+
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
+      to: email,
+      subject: `Tomorrow: ${eventTitle}`,
+      ...(unsubscribeUrl
+        ? {
+            // RFC 8058 — lets Gmail/Apple Mail show a native unsubscribe control.
+            headers: {
+              "List-Unsubscribe": `<${unsubscribeUrl}>`,
+              "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            },
+          }
+        : {}),
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, sans-serif; line-height: 1.6; color: #333; background: #f4f4f4; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 20px auto; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: white; padding: 30px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; font-weight: 800; }
+            .content { padding: 36px 30px; text-align: center; }
+            .badge { display: inline-block; background: #7c3aed; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 6px 14px; border-radius: 999px; margin-bottom: 18px; }
+            .event-title { font-size: 22px; font-weight: 700; color: #1f2937; margin: 0 0 10px; }
+            .event-meta { font-size: 14px; color: #6b7280; margin: 2px 0; }
+            .cta { display: inline-block; margin: 26px 0 6px; background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: #fff !important; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 28px; border-radius: 12px; }
+            .hint { font-size: 13px; color: #6b7280; margin-top: 18px; }
+            .footer { background: #f9fafb; padding: 20px 30px; text-align: center; font-size: 13px; color: #6b7280; border-top: 1px solid #e5e7eb; }
+            .footer a { color: #a855f7; text-decoration: none; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header"><h1>🌙 OurCityvibe</h1></div>
+            <div class="content">
+              <div class="badge">Happening tomorrow</div>
+              <p class="event-title">${eventTitle}</p>
+              ${eventDateText ? `<p class="event-meta">📅 ${eventDateText}</p>` : ""}
+              ${eventLocation ? `<p class="event-meta">📍 ${eventLocation}</p>` : ""}
+              ${eventUrl ? `<a class="cta" href="${eventUrl}">View event details</a>` : ""}
+              <p class="hint">
+                Bring your pass — the QR code we emailed you when you signed up
+                is what gets scanned at the door.
+              </p>
+            </div>
+            <div class="footer">
+              <p>See you there, ${username || "friend"}! 🎉</p>
+              <p>Need help? <a href="mailto:Support@nvibez.com">Support@nvibez.com</a></p>
+              ${
+                unsubscribeUrl
+                  ? `<p style="margin-top: 8px;"><a href="${unsubscribeUrl}">Unsubscribe from event reminders</a></p>`
+                  : ""
+              }
+              <p style="margin-top: 8px;">© ${new Date().getFullYear()} OurCityvibe. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `${eventTitle} is happening tomorrow.\n${eventDateText || ""}${
+        eventLocation ? `\n${eventLocation}` : ""
+      }${eventUrl ? `\n\n${eventUrl}` : ""}\n\nBring the pass QR code we emailed you when you signed up.\n\n— The OurCityvibe Team${
+        unsubscribeUrl ? `\n\nUnsubscribe from event reminders: ${unsubscribeUrl}` : ""
+      }`,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error(`❌ Error sending event reminder email to ${email}:`, error?.message ?? error);
+    return { success: false };
+  }
+};
+
+/**
  * Send password reset success notification
  */
 export const sendPasswordResetSuccessEmail = async (email, username) => {
