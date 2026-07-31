@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Linking,
   Platform,
+  Switch,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect, useNavigation } from "expo-router";
@@ -73,6 +74,10 @@ export default function SettingsScreen() {
     emailVerifiedAt: null as string | null,
     country: "",
   });
+  // Reminder emails are opt-out, so the switch starts on until the profile says
+  // otherwise. `savingReminders` blocks a double-tap while the PUT is in flight.
+  const [eventReminderEmails, setEventReminderEmails] = useState(true);
+  const [savingReminders, setSavingReminders] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<"none" | "pending" | "approved" | "rejected">("none");
   const [verificationNotes, setVerificationNotes] = useState("");
   const [licenseImage, setLicenseImage] = useState("");
@@ -267,6 +272,9 @@ export default function SettingsScreen() {
       });
       setProfilePicture(userData.profilePicture || "");
       setBio(userData.bio || "");
+      setEventReminderEmails(
+        userData.notificationPrefs?.eventReminderEmails !== false
+      );
       if (userData.location?.country) {
         setLocation({
           country: userData.location.country,
@@ -283,6 +291,25 @@ export default function SettingsScreen() {
       showError("Failed to load profile");
     } finally {
       setLoading(false);
+    }
+  };
+
+  /** Optimistic toggle — reverts if the server rejects the change. */
+  const handleToggleReminderEmails = async (value: boolean) => {
+    setEventReminderEmails(value);
+    setSavingReminders(true);
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      await axios.put(
+        `${BASE_URL}/notifications/preferences`,
+        { eventReminderEmails: value },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+    } catch {
+      setEventReminderEmails(!value);
+      showError("Couldn't update your email preference. Please try again.");
+    } finally {
+      setSavingReminders(false);
     }
   };
 
@@ -690,6 +717,33 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Notification channels */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Notifications</Text>
+        <Text style={styles.sectionDescription}>
+          Push notifications follow your device settings. These control what we
+          send to your inbox.
+        </Text>
+        <View style={[styles.preferenceItem, { borderBottomWidth: 0 }]}>
+          <View style={[styles.preferenceLeft, { flex: 1, paddingRight: 12 }]}>
+            <Ionicons name="mail-outline" size={22} color={Colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.preferenceText}>Event reminder emails</Text>
+              <Text style={styles.reminderHint}>
+                {"A reminder the day before an event you're going to."}
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={eventReminderEmails}
+            onValueChange={handleToggleReminderEmails}
+            disabled={savingReminders}
+            trackColor={{ false: colors.borderMuted, true: Colors.primary }}
+            thumbColor="#fff"
+          />
+        </View>
+      </View>
+
       {/* Email Verification status */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Email Verification</Text>
@@ -1093,6 +1147,12 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 16,
     fontFamily: Fonts.medium,
     color: c.textBody,
+  },
+  reminderHint: {
+    fontSize: 13,
+    fontFamily: Fonts.regular,
+    color: c.textSecondary,
+    marginTop: 2,
   },
   themeToggle: {
     flexDirection: "row",

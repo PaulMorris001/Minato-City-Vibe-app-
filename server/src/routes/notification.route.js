@@ -3,6 +3,8 @@ import {
   savePushToken,
   deletePushToken,
   getNotifications,
+  getNotificationPreferences,
+  updateNotificationPreferences,
   markRead,
   markAllRead,
   notifySold,
@@ -13,6 +15,11 @@ const router = express.Router();
 
 router.put("/notifications/token", authenticate, savePushToken);
 router.delete("/notifications/token", authenticate, deletePushToken);
+
+// Channel preferences (email reminders). Must be declared before the
+// "/notifications/:id/read" style routes are matched for other verbs.
+router.get("/notifications/preferences", authenticate, getNotificationPreferences);
+router.put("/notifications/preferences", authenticate, updateNotificationPreferences);
 
 router.get("/notifications", authenticate, getNotifications);
 router.put("/notifications/read-all", authenticate, markAllRead);

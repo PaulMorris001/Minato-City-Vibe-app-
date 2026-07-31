@@ -1439,64 +1439,78 @@ export default function EventDetailsPage() {
             </TouchableOpacity>
           )}
 
-          {/* Attendees — organizer-only; the guest list is other people's data */}
-          {!isCancelled && canSeeAttendance && !!event.rsvpUsers?.length && (
-            <GlassCard style={styles.attendeesCard}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.microLabel}>WHO'S COMING</Text>
-                <Text style={styles.attendeesHeadline}>
-                  {goingCount} going
-                  {(event.friendsGoing ?? 0) > 0 ? (
-                    <>
-                      <Text style={styles.attendeesSep}> · </Text>
-                      <Text style={styles.attendeesFriends}>
-                        {event.friendsGoing} friend{event.friendsGoing === 1 ? "" : "s"}
-                      </Text>
-                    </>
-                  ) : null}
-                </Text>
-              </View>
-              <View style={styles.avatarStack}>
-                {event.rsvpUsers.slice(0, 4).map((u, i) => (
-                  <TouchableOpacity
-                    key={u._id}
-                    activeOpacity={0.7}
-                    onPress={() => openUserProfile(u._id)}
-                    style={[
-                      styles.attendeeAvatarWrap,
-                      i > 0 && { marginLeft: -9 },
-                      { zIndex: 10 - i },
-                    ]}
-                  >
-                    {u.profilePicture ? (
-                      <Image
-                        source={{ uri: u.profilePicture }}
-                        style={styles.attendeeAvatar}
-                      />
-                    ) : (
-                      <View style={styles.attendeeAvatarFallback}>
-                        <Text style={styles.attendeeInitials}>
-                          {initialsOf(u.username)}
+          {/* Attendees — organizer-only; the guest list is other people's data.
+              Paid events come back with an empty rsvpUsers array (the server
+              swaps the RSVP list for a ticket count), so the card keys off the
+              headcount and opens the full roster instead. */}
+          {!isCancelled && canSeeAttendance && (goingCount > 0 || (event.ticketsSold ?? 0) > 0) && (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => router.push(`/event-attendees/${event._id}` as any)}
+            >
+              <GlassCard style={styles.attendeesCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.microLabel}>WHO'S COMING</Text>
+                  <Text style={styles.attendeesHeadline}>
+                    {goingCount} going
+                    {(event.friendsGoing ?? 0) > 0 ? (
+                      <>
+                        <Text style={styles.attendeesSep}> · </Text>
+                        <Text style={styles.attendeesFriends}>
+                          {event.friendsGoing} friend{event.friendsGoing === 1 ? "" : "s"}
                         </Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                ))}
-                {event.rsvpUsers.length > 4 && (
-                  <View
-                    style={[
-                      styles.attendeeAvatarWrap,
-                      styles.attendeePlus,
-                      { marginLeft: -9 },
-                    ]}
-                  >
-                    <Text style={styles.attendeePlusText}>
-                      +{event.rsvpUsers.length - 4}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </GlassCard>
+                      </>
+                    ) : null}
+                  </Text>
+                </View>
+                <View style={styles.avatarStack}>
+                  {(event.rsvpUsers ?? []).slice(0, 4).map((u, i) => (
+                    <TouchableOpacity
+                      key={u._id}
+                      activeOpacity={0.7}
+                      onPress={() => openUserProfile(u._id)}
+                      style={[
+                        styles.attendeeAvatarWrap,
+                        i > 0 && { marginLeft: -9 },
+                        { zIndex: 10 - i },
+                      ]}
+                    >
+                      {u.profilePicture ? (
+                        <Image
+                          source={{ uri: u.profilePicture }}
+                          style={styles.attendeeAvatar}
+                        />
+                      ) : (
+                        <View style={styles.attendeeAvatarFallback}>
+                          <Text style={styles.attendeeInitials}>
+                            {initialsOf(u.username)}
+                          </Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                  {(event.rsvpUsers?.length ?? 0) > 4 && (
+                    <View
+                      style={[
+                        styles.attendeeAvatarWrap,
+                        styles.attendeePlus,
+                        { marginLeft: -9 },
+                      ]}
+                    >
+                      <Text style={styles.attendeePlusText}>
+                        +{(event.rsvpUsers?.length ?? 0) - 4}
+                      </Text>
+                    </View>
+                  )}
+                  <Ionicons
+                    name="chevron-forward"
+                    size={18}
+                    color={colors.textMuted}
+                    style={{ marginLeft: 8 }}
+                  />
+                </View>
+              </GlassCard>
+            </TouchableOpacity>
           )}
 
           {/* Co-hosts — creator can view, add, and remove */}

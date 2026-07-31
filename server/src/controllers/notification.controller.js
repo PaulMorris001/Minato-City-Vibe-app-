@@ -41,6 +41,59 @@ export const deletePushToken = async (req, res) => {
 };
 
 /**
+ * Read the email/push channel preferences for the authenticated user.
+ * Absent sub-fields fall back to the schema defaults (opt-out model).
+ */
+export const getNotificationPreferences = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("notificationPrefs").lean();
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({
+      preferences: {
+        eventReminderEmails: user.notificationPrefs?.eventReminderEmails !== false,
+      },
+    });
+  } catch (error) {
+    console.error("Get notification preferences error:", error);
+    res.status(500).json({ message: "Failed to load notification preferences" });
+  }
+};
+
+/**
+ * Update the channel preferences. Only the keys present in the body change, so
+ * the client can toggle one switch without echoing the whole object back.
+ */
+export const updateNotificationPreferences = async (req, res) => {
+  try {
+    const { eventReminderEmails } = req.body;
+    const update = {};
+    if (typeof eventReminderEmails === "boolean") {
+      update["notificationPrefs.eventReminderEmails"] = eventReminderEmails;
+    }
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ message: "No supported preference supplied" });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: update },
+      { new: true }
+    ).select("notificationPrefs");
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.json({
+      message: "Preferences updated",
+      preferences: {
+        eventReminderEmails: user.notificationPrefs?.eventReminderEmails !== false,
+      },
+    });
+  } catch (error) {
+    console.error("Update notification preferences error:", error);
+    res.status(500).json({ message: "Failed to update notification preferences" });
+  }
+};
+
+/**
  * Get all notifications for the authenticated user (newest first).
  */
 export const getNotifications = async (req, res) => {
