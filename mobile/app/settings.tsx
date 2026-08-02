@@ -35,6 +35,8 @@ import { uploadImage } from "@/utils/imageUpload";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
+import { isSupportUser } from "@/constants/support";
+import { openSupportChat } from "@/utils/userNavigation";
 const THEME_OPTIONS = [
   { value: "system", label: "System", icon: "phone-portrait-outline" },
   { value: "light", label: "Light", icon: "sunny-outline" },
@@ -68,6 +70,7 @@ export default function SettingsScreen() {
   const homeCity = useActiveCity();
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [user, setUser] = useState({
+    _id: "",
     username: "",
     email: "",
     isVendor: false,
@@ -264,6 +267,7 @@ export default function SettingsScreen() {
 
       const userData = profileRes.data.user;
       setUser({
+        _id: userData._id || userData.id || "",
         username: userData.username || "",
         email: userData.email || "",
         isVendor: userData.isVendor || false,
@@ -837,6 +841,28 @@ export default function SettingsScreen() {
             </>
           )}
         </View>
+
+      {/* Support — hidden when you are the support account */}
+      {!isSupportUser(user._id) && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Support</Text>
+          <Text style={styles.sectionDescription}>
+            Having trouble with an event, payment or your account? Message our
+            team and we'll get back to you here.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.preferenceItem, { borderBottomWidth: 0 }]}
+            onPress={() => openSupportChat()}
+          >
+            <View style={styles.preferenceLeft}>
+              <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.textBody} />
+              <Text style={styles.preferenceText}>Contact Support</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Additional Settings */}
       <View style={styles.section}>

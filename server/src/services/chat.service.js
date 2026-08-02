@@ -7,6 +7,7 @@ import { emitNewMessage, getSocketInstance } from "./socket.service.js";
 import { uploadBase64Image, deleteImage } from "./image.service.js";
 import { sendPushNotification } from "./notification.service.js";
 import { areMutualFollows } from "../utils/followCheck.js";
+import { involvesSupport } from "../utils/supportAccount.js";
 
 /**
  * Chat Service - Business logic layer for chat operations
@@ -32,8 +33,12 @@ class ChatService {
 
     if (!chat) {
       // Only mutual follows can start new direct chats — unless this is a
-      // trusted commerce-initiated chat (see getOrCreateDirectChatForOrder).
-      if (!skipMutualCheck) {
+      // trusted commerce-initiated chat (see getOrCreateDirectChatForOrder),
+      // or the official support account is one of the two. Support is a help
+      // desk: anyone must be able to open a ticket without following anyone,
+      // and support must be able to reach back out. The check is symmetric,
+      // so both directions are covered here.
+      if (!skipMutualCheck && !involvesSupport(userId1, userId2)) {
         const isMutual = await areMutualFollows(userId1, userId2);
         if (!isMutual) {
           const error = new Error("You can only chat with mutual follows. Both users must follow each other.");

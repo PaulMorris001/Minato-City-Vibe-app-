@@ -4,6 +4,7 @@ import User from "../models/user.model.js";
 import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean } from "../utils/contentFilter.js";
 import { currencyForUser } from "../services/payments/resolveProvider.js";
+import { isSupportUser } from "../utils/supportAccount.js";
 
 // Get all topics
 export const getTopics = async (req, res) => {
@@ -256,6 +257,11 @@ export const getUserGuides = async (req, res) => {
 export const getUserPublicGuides = async (req, res) => {
   try {
     const { userId } = req.params;
+
+    // The support account has no public profile to hang guides off.
+    if (isSupportUser(userId)) {
+      return res.status(200).json({ guides: [] });
+    }
 
     // Respect blocks in either direction — hide guides from blocked users
     if (req.user?.id) {
