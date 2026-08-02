@@ -22,6 +22,8 @@ export interface PublicUser {
   /** Set by /users/:id when the user has a published vendor listing. */
   vendorId?: string;
   vendorName?: string;
+  /** Set by /users/:id for the official support account, which has no profile. */
+  isSupport?: boolean;
 }
 
 export interface EventTier {

@@ -3,6 +3,60 @@ import User from "../models/user.model.js";
 import Notification from "../models/notification.model.js";
 import { emitFollowEvent } from "../services/socket.service.js";
 import { sendPushNotification } from "../services/notification.service.js";
+import { isSupportUser } from "../utils/supportAccount.js";
+import { countFollows, supportAudienceFilter } from "../utils/followCounts.js";
+
+/**
+ * Followers/following list for the support account.
+ *
+ * Its audience is virtual (no Follow rows — see utils/followCounts.js), so the
+ * list pages over the User collection instead. The response shape is identical
+ * to the real thing so followers.tsx / following.tsx need no special casing.
+ */
+const listSupportAudience = async (req, res, supportId, { asFollowing }) => {
+  const currentUserId = req.user.id;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 20;
+  const skip = (page - 1) * limit;
+
+  const filter = supportAudienceFilter(supportId);
+
+  const [audience, total] = await Promise.all([
+    User.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select("username email profilePicture isVendor businessName")
+      .lean(),
+    User.countDocuments(filter),
+  ]);
+
+  // Whether the viewer follows each of these people is a real relationship,
+  // so it still comes from the Follow collection.
+  const ids = audience.map((u) => u._id);
+  const viewerFollows = await Follow.find({
+    follower: currentUserId,
+    following: { $in: ids },
+  }).lean();
+  const viewerFollowsSet = new Set(viewerFollows.map((f) => f.following.toString()));
+
+  const viewerIsSupport = isSupportUser(currentUserId);
+
+  const users = audience.map((u) => ({
+    _id: u._id,
+    username: u.username,
+    email: u.email,
+    profilePicture: u.profilePicture,
+    isVendor: u.isVendor,
+    businessName: u.businessName,
+    // Support virtually follows everyone, so from its own perspective every
+    // row is already followed — and mutual, since they follow it back.
+    isFollowing: viewerIsSupport ? true : viewerFollowsSet.has(u._id.toString()),
+    ...(asFollowing ? { isMutual: viewerIsSupport } : {}),
+  }));
+
+  return res.status(200).json({ users, total, page, pages: Math.ceil(total / limit) });
+};
 
 // Follow a user
 export const followUser = async (req, res) => {
@@ -12,6 +66,14 @@ export const followUser = async (req, res) => {
 
     if (currentUserId === targetUserId) {
       return res.status(400).json({ message: "You cannot follow yourself" });
+    }
+
+    // Support already counts every user as a follower — following it is a
+    // no-op that would only skew the virtual count's premise.
+    if (isSupportUser(targetUserId)) {
+      return res
+        .status(400)
+        .json({ message: "This is the official support account and can't be followed." });
     }
 
     const targetUser = await User.findById(targetUserId).select("username profilePicture fcmToken");
@@ -108,6 +170,10 @@ export const getFollowers = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
+    if (isSupportUser(userId)) {
+      return listSupportAudience(req, res, userId, { asFollowing: false });
+    }
+
     const [followers, total] = await Promise.all([
       Follow.find({ following: userId })
         .sort({ createdAt: -1 })
@@ -151,6 +217,10 @@ export const getFollowing = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
+
+    if (isSupportUser(userId)) {
+      return listSupportAudience(req, res, userId, { asFollowing: true });
+    }
 
     const [followings, total] = await Promise.all([
       Follow.find({ follower: userId })
@@ -203,10 +273,7 @@ export const getFollowCounts = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    const [followersCount, followingCount] = await Promise.all([
-      Follow.countDocuments({ following: userId }),
-      Follow.countDocuments({ follower: userId }),
-    ]);
+    const { followersCount, followingCount } = await countFollows(userId);
 
     res.status(200).json({ followersCount, followingCount });
   } catch (error) {
@@ -220,6 +287,13 @@ export const getFollowStatus = async (req, res) => {
   try {
     const currentUserId = req.user.id;
     const targetUserId = req.params.userId;
+
+    // Support counts everyone as a follower and follows everyone back.
+    if (isSupportUser(targetUserId)) {
+      return res
+        .status(200)
+        .json({ isFollowing: true, isFollowedBy: true, isMutual: true });
+    }
 
     const [isFollowing, isFollowedBy] = await Promise.all([
       Follow.findOne({ follower: currentUserId, following: targetUserId }).lean(),

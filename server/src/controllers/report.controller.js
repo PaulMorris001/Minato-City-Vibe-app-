@@ -4,6 +4,7 @@ import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
 import User from "../models/user.model.js";
 import Message from "../models/message.model.js";
+import { isSupportUser } from "../utils/supportAccount.js";
 
 const VALID_TYPES = ["user", "event", "guide", "message"];
 const VALID_REASONS = [
@@ -33,6 +34,13 @@ export const createReport = async (req, res) => {
     // Resolve the owner of the reported content
     let targetUser;
     if (targetType === "user") {
+      // Reports on the official support account would land in our own queue.
+      if (isSupportUser(targetId)) {
+        return res.status(400).json({
+          message:
+            "This is the official support account — message it directly with your issue.",
+        });
+      }
       const u = await User.findById(targetId).select("_id");
       if (!u) return res.status(404).json({ message: "User not found" });
       targetUser = u._id;

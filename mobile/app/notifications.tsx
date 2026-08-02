@@ -12,6 +12,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
 import { goBack } from "@/utils/navigation";
+import { openUserProfile } from "@/utils/userNavigation";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
@@ -125,7 +126,7 @@ export default function NotificationsScreen() {
     switch (item.type) {
       case "new_follower":
         if (item.data?.followerId) {
-          router.push({ pathname: "/user-profile", params: { userId: item.data.followerId } } as any);
+          openUserProfile(item.data.followerId);
         }
         break;
       case "event_invite":

@@ -20,6 +20,8 @@ import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean } from "../utils/contentFilter.js";
 import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { validatePassword } from "../utils/passwordPolicy.js";
+import { SUPPORT_USER_ID, isSupportUser } from "../utils/supportAccount.js";
+import { countFollows } from "../utils/followCounts.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -611,10 +613,7 @@ export async function getProfile(req, res) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const [followersCount, followingCount] = await Promise.all([
-      Follow.countDocuments({ following: req.user.id }),
-      Follow.countDocuments({ follower: req.user.id }),
-    ]);
+    const { followersCount, followingCount } = await countFollows(req.user.id);
 
     res.json({
       user: {
@@ -746,8 +745,12 @@ export async function searchUsers(req, res) {
     // vector (e.g. ".*" would match everyone).
     const safeQuery = escapeRegex(query.trim());
 
+    // Exclude the support account too — it's reached via the Contact Support
+    // entry points, not by stumbling across it like a normal user.
+    const excludedIds = SUPPORT_USER_ID ? [...blockedIds, SUPPORT_USER_ID] : blockedIds;
+
     const users = await User.find({
-      _id: { $ne: req.user.id, $nin: blockedIds }, // Exclude current user + blocked
+      _id: { $ne: req.user.id, $nin: excludedIds }, // Exclude current user + blocked + support
       isBanned: { $ne: true },
       $or: [
         { username: { $regex: safeQuery, $options: "i" } },
@@ -792,6 +795,23 @@ export async function searchUsers(req, res) {
 // Get user by ID (public profile)
 export async function getUserById(req, res) {
   try {
+    // The support account has no public profile — it's a help desk, not a
+    // person. Return a marker instead of a 404 so clients can route the
+    // viewer into the support conversation rather than dead-ending; that
+    // also keeps older builds (which only know the ID from a baked-in
+    // constant) working if the configured ID ever changes.
+    if (isSupportUser(req.params.userId)) {
+      const support = await User.findById(req.params.userId)
+        .select("_id username profilePicture")
+        .lean();
+      if (!support) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      return res.json({
+        user: { ...support, id: support._id, isSupport: true, verified: true },
+      });
+    }
+
     const user = await User.findById(req.params.userId)
       .select("_id username email profilePicture bio isVendor businessName verified isBanned blockedUsers")
       .lean();
@@ -847,6 +867,10 @@ export async function getUserById(req, res) {
 // Get public events created by a user
 export async function getUserEvents(req, res) {
   try {
+    // The support account has no public profile to hang events off.
+    if (isSupportUser(req.params.userId)) {
+      return res.json({ events: [] });
+    }
     // If the requesting user has blocked (or is blocked by) this user, return empty
     if (req.user?.id) {
       const blockedIds = await getBlockedIds(req.user.id);

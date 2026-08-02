@@ -15,6 +15,7 @@ import { formatLocation } from "@/utils/location";
 import { toggleGuideSave } from "@/libs/api";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { goBack } from "@/utils/navigation";
+import { openUserProfile } from "@/utils/userNavigation";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { Guide } from "@/libs/interfaces";
@@ -266,12 +267,7 @@ export default function GuideDetailPage() {
             activeOpacity={0.7}
             disabled={!guide.author?._id}
             onPress={() => {
-              if (guide.author?._id) {
-                router.push({
-                  pathname: "/user-profile",
-                  params: { userId: guide.author._id },
-                } as any);
-              }
+              openUserProfile(guide.author?._id);
             }}
             accessibilityLabel={`View ${guide.authorName}'s profile`}
           >

@@ -30,6 +30,7 @@ import ChatListItemSkeleton from "@/components/skeletons/ChatListItemSkeleton";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
+import { openSupportChat } from "@/utils/userNavigation";
 
 function sortChats(chats: Chat[], currentUserId: string): Chat[] {
   const pinned: Chat[] = [];
@@ -421,6 +422,14 @@ export default function MessagesScreen() {
       <Text style={styles.emptyEmoji}>💬</Text>
       <Text style={styles.emptyTitle}>No conversations yet</Text>
       <Text style={styles.emptySubtitle}>Tap ✎ to start one.</Text>
+      <TouchableOpacity
+        style={styles.emptySupportBtn}
+        activeOpacity={0.85}
+        onPress={() => openSupportChat()}
+      >
+        <Ionicons name="help-buoy-outline" size={16} color={colors.primaryLight} />
+        <Text style={styles.emptySupportText}>Contact Support</Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -443,6 +452,16 @@ export default function MessagesScreen() {
           </View>
 
           <View style={styles.headerActions}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => openSupportChat()}
+              accessibilityLabel="Contact support"
+            >
+              <View style={styles.groupBtn}>
+                <Ionicons name="help-buoy-outline" size={18} color={colors.primaryLight} />
+              </View>
+            </TouchableOpacity>
+
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={openGroupModal}
@@ -1030,6 +1049,23 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 13,
     color: c.textDim,
     marginTop: 6,
+  },
+  emptySupportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: c.primaryFaded,
+    borderWidth: 1,
+    borderColor: c.primaryBorder,
+  },
+  emptySupportText: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 13,
+    color: c.primaryLight,
   },
 
   // New chat modal

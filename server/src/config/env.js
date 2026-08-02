@@ -120,6 +120,15 @@ export const config = {
     ),
   },
 
+  // Official support account — the company-owned user that customers message
+  // for help. It's a normal user document; these behaviours are layered on by
+  // ID (see utils/supportAccount.js). When unset (dev/staging) every support
+  // behaviour is inert and the account acts like any other user.
+  support: {
+    userId: process.env.SUPPORT_USER_ID || "",
+    enabled: !!process.env.SUPPORT_USER_ID,
+  },
+
   // External event ingestion providers
   externalEvents: {
     ticketmasterApiKey: process.env.TICKETMASTER_API_KEY || "",
