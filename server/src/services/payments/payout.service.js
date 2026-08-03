@@ -4,11 +4,13 @@
  * Every paid sale collects into the platform balance and creates a Payout
  * record (status "awaiting_approval") instead of transferring money. An admin
  * approves, and only then does `executePayout` run the real provider transfer:
- * Wise for Stripe-collected (USD) sellers, Paystack for Nigerian sellers.
- * No vendor money leaves the platform without an explicit approval.
+ * Wise or Stripe Connect for Stripe-collected (USD) sellers depending on their
+ * country, Paystack for Nigerian sellers. No vendor money leaves the platform
+ * without an explicit approval.
  */
 
 import config from "../../config/env.js";
+import stripe from "../../config/stripe.js";
 import Payout from "../../models/payout.model.js";
 import User from "../../models/user.model.js";
 import Event from "../../models/event.model.js";
@@ -21,6 +23,15 @@ import {
   getPaystackBalance,
 } from "../../controllers/paystack.controller.js";
 import { createWiseTransfer, getWiseBalance } from "./wise.js";
+import { PAYOUT_ROUTING_FIELDS } from "./resolveProvider.js";
+
+/**
+ * Stripe Connect was reinstated as a settlement rail on this date. Payout docs
+ * with provider "stripe" created BEFORE it are from the pre-2026 era, when the
+ * rail stored CENTS in `amount` — executing one would transfer 100× the
+ * intended sum. Delete this guard once those docs are gone.
+ */
+const CONNECT_REINSTATED_AT = new Date("2026-08-01T00:00:00Z");
 
 /**
  * Create (or return the existing) pending payout for a sale. Idempotent on
@@ -30,9 +41,9 @@ import { createWiseTransfer, getWiseBalance } from "./wise.js";
  * @param {string} args.vendor        seller user id
  * @param {"ticket"|"guide"|"booking"} args.relatedType
  * @param {string} args.relatedId     event (for tickets) / guide / booking id
- * @param {"wise"|"paystack"} args.provider  settlement rail
- * @param {number} args.amount        seller net in MAJOR units (USD for wise,
- *                                    local currency for paystack)
+ * @param {"wise"|"paystack"|"stripe"} args.provider  settlement rail
+ * @param {number} args.amount        seller net in MAJOR units (USD for wise and
+ *                                    stripe, local currency for paystack)
  * @param {string} args.currency      settlement currency
  * @param {string} args.reference     idempotency key + provider transfer ref
  * @param {string} [args.buyer]
@@ -101,7 +112,7 @@ export async function executePayout(payoutId, { approvedBy } = {}) {
 
   try {
     const vendor = await User.findById(payout.vendor).select(
-      "paystackRecipientCode paystackBank wiseRecipientId wiseRecipientCurrency fcmToken username"
+      `${PAYOUT_ROUTING_FIELDS} paystackBank fcmToken username`
     );
     const transferId = await runTransfer(payout, vendor);
 
@@ -158,8 +169,73 @@ async function runTransfer(payout, vendor) {
     return t.id;
   }
 
-  // "stripe" / "flutterwave" docs predate the Wise+Paystack remap and their
-  // rails no longer exist here.
+  if (payout.provider === "stripe") {
+    // Pre-2026 "stripe" docs stored CENTS in `amount` — running one through the
+    // conversion below would transfer 100× the intended sum. Reject rather than
+    // guess; an admin can reject the doc by hand.
+    if (payout.createdAt && payout.createdAt < CONNECT_REINSTATED_AT) {
+      throw new Error(
+        `Payout ${payout._id} predates the Stripe Connect rail and may be denominated ` +
+          `in cents — reject it rather than executing`
+      );
+    }
+    if (!vendor?.stripeAccountId) throw new Error("Vendor has no Stripe Connect account");
+    if (!vendor?.stripeOnboardingComplete) {
+      throw new Error("Vendor's Stripe Connect onboarding is not complete");
+    }
+
+    // payout.amount is major USD (see payout.model.js); the Transfers API takes
+    // cents. Round at the boundary — the cents→major→cents round trip through
+    // ticketPayoutAmount is float-lossy.
+    const amountCents = Math.round(payout.amount * 100);
+
+    // Preflight the platform balance BEFORE calling Stripe, so an underfunded
+    // payout never burns the idempotency key below (Stripe caches errors under a
+    // key for 24h, which would make the admin's later retry replay the failure).
+    const balance = await stripe.balance.retrieve();
+    const availableCents = balance.available.find((b) => b.currency === "usd")?.amount ?? 0;
+    if (availableCents < amountCents) {
+      const pendingCents = balance.pending.find((b) => b.currency === "usd")?.amount ?? 0;
+      throw new Error(
+        `Stripe available USD balance ${(availableCents / 100).toFixed(2)} < payout ` +
+          `${payout.amount} (${(pendingCents / 100).toFixed(2)} still pending) — ` +
+          `wait for the charges to clear, then re-approve`
+      );
+    }
+
+    // Separate charges and transfers: draw from the platform's available USD
+    // balance rather than source_transaction, which takes a single charge id and
+    // so can't express a ticket payout (the release job batches many charges
+    // into one Payout). Always transfer USD — the currency the charge landed in.
+    // Naming the vendor's local currency would fail with balance_insufficient;
+    // Stripe converts at payout time and takes the 0.25% cross-border fee.
+    const t = await stripe.transfers.create(
+      {
+        amount: amountCents,
+        currency: "usd",
+        destination: vendor.stripeAccountId,
+        // Ticket collection PIs already carry transfer_group `event_<id>`, so
+        // tagging the transfer the same way makes the charges and the payout
+        // reconcilable in the Stripe dashboard.
+        ...(payout.relatedType === "ticket"
+          ? { transfer_group: `event_${payout.relatedId}` }
+          : {}),
+        metadata: {
+          payoutId: String(payout._id),
+          vendorId: String(payout.vendor),
+          relatedType: payout.relatedType,
+          relatedId: String(payout.relatedId),
+          reference: payout.reference,
+        },
+      },
+      // Guards against a double-approve paying twice.
+      { idempotencyKey: `payout_${payout._id}` }
+    );
+    return t.id;
+  }
+
+  // "flutterwave" docs predate the Wise+Paystack remap and that rail no longer
+  // exists here.
   throw new Error(`Payout provider "${payout.provider}" is a legacy rail and can't be executed`);
 }
 

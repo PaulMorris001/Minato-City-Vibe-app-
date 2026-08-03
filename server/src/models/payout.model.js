@@ -8,11 +8,14 @@ import mongoose from "mongoose";
  * and approves — only then does the actual provider transfer run. This is the
  * single gate the "admins approve payouts" flow hinges on.
  *
- * `amount` is stored in MAJOR units of `currency` for both live rails:
+ * `amount` is stored in MAJOR units of `currency` for every live rail:
  *   - wise     → major USD (source amount; Wise converts on the quote)
+ *   - stripe   → major USD (converted to cents at the Transfers API boundary)
  *   - paystack → major NGN (converted to kobo at the API boundary)
- * (Legacy docs may carry provider "stripe" — cents — or "flutterwave" — major;
- * neither can be executed anymore.)
+ * CAUTION: "stripe" docs created BEFORE the Connect rail was reinstated store
+ * CENTS, from the era when Stripe Connect used per-charge destination transfers.
+ * executePayout refuses to run any "stripe" payout predating that cutover — see
+ * the date guard in payout.service.js. "flutterwave" is dead and unexecutable.
  * `displayAmount`/`displayCurrency` are the human-readable major-unit values for
  * the admin dashboard.
  */
@@ -24,9 +27,10 @@ const payoutSchema = new mongoose.Schema(
     relatedType: { type: String, enum: ["ticket", "guide", "booking", "order"], required: true },
     relatedId: { type: mongoose.Schema.Types.ObjectId, required: true },
 
-    // Settlement rail used to pay the vendor out. "stripe" and "flutterwave"
-    // are legacy-read-only values (old docs must still save, e.g. on rejection);
-    // executePayout refuses to run them.
+    // Settlement rail used to pay the vendor out. "stripe" (Connect) is live
+    // again for sellers in the cross-border-payouts footprint. "flutterwave" is
+    // legacy-read-only — old docs must still save, e.g. on rejection — and
+    // executePayout refuses to run it.
     provider: {
       type: String,
       enum: ["wise", "paystack", "stripe", "flutterwave"],

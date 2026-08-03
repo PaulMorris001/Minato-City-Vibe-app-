@@ -37,7 +37,12 @@ import { useStripePayment } from "@/hooks/useStripePayment";
 import { trackEvent as trackAnalyticsEvent } from "@/utils/analytics";
 import { LocationSelection } from "@/libs/interfaces";
 import { useActiveCity } from "@/hooks/useActiveCity";
-import { LocationPicker, MultiImagePicker, ActiveLocationChip } from "@/components/shared";
+import {
+  LocationPicker,
+  MultiImagePicker,
+  ActiveLocationChip,
+  GlassBackButton,
+} from "@/components/shared";
 import { formatLocation } from "@/utils/location";
 import { resolveImageUrls } from "@/utils/imageUpload";
 
@@ -60,6 +65,8 @@ interface Event {
   shareToken: string;
   isPublic: boolean;
   isPaid: boolean;
+  /** Organizer opt-in: publishes the headcount/capacity numbers to all viewers. */
+  showAttendance?: boolean;
   ticketPrice?: number;
   ticketTiers?: { _id?: string; name: string; price: number; quantity?: number; remaining?: number }[];
   currency?: string;
@@ -101,7 +108,11 @@ export default function EventsPage() {
   const { payForTicket } = useStripePayment();
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"private" | "discover">("private");
+  // Pinned to "private": the Discover half moved to the unified search page.
+  // Kept as state rather than inlined so the large render block below (and its
+  // `activeTab === "discover"` branches) still compiles untouched — that branch
+  // is now dead and can be deleted when the Edit/Invite modals are extracted.
+  const [activeTab] = useState<"private" | "discover">("private");
 
   // Private events state
   const [events, setEvents] = useState<Event[]>([]);
@@ -156,6 +167,7 @@ export default function EventsPage() {
     description: "",
     isPublic: false,
     isPaid: false,
+    showAttendance: false,
     ticketPrice: "",
     maxGuests: "",
     currency: "USD",
@@ -349,10 +361,10 @@ export default function EventsPage() {
     }, [discoverCity])
   );
 
-  // Guests can browse Discover but "Private" needs an account — land them on
-  // the tab that actually works for them.
+  // This screen is account-only now that Discover moved to search — a guest has
+  // no events to manage, so send them to log in.
   useEffect(() => {
-    if (isGuest) setActiveTab("discover");
+    if (isGuest) router.replace("/login");
   }, [isGuest]);
 
   // Who's viewing — needed to show management actions only on own events.
@@ -449,6 +461,7 @@ export default function EventsPage() {
       description: event.description || "",
       isPublic: event.isPublic,
       isPaid: !!event.isPaid,
+      showAttendance: !!event.showAttendance,
       ticketPrice: event.ticketPrice ? String(event.ticketPrice) : "",
       maxGuests: event.maxGuests ? String(event.maxGuests) : "",
       currency: event.currency || "USD",
@@ -909,29 +922,18 @@ export default function EventsPage() {
       <LinearGradient colors={[colors.background, colors.backgroundSecondary]} style={styles.container}>
         {/* Top edge only — content should run under the floating tab bar on iOS. */}
         <SafeAreaView style={styles.safeArea} edges={["top"]}>
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>Events</Text>
+          {/* A stack route now, not a tab — it needs a way back. */}
+          <View style={[styles.header, { flexDirection: "row", alignItems: "center", gap: 12 }]}>
+            <GlassBackButton />
+            <Text style={styles.headerTitle}>Manage Events</Text>
           </View>
 
-          {/* Tab switcher */}
-          <View style={styles.tabRow}>
-            <TouchableOpacity
-              style={[styles.tabBtn, activeTab === "private" && styles.tabBtnActive]}
-              onPress={() => setActiveTab("private")}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="calendar-outline" size={14} color={activeTab === "private" ? "#fff" : colors.textMuted} />
-              <Text style={[styles.tabBtnText, activeTab === "private" && styles.tabBtnTextActive]}>My Events</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tabBtn, activeTab === "discover" && styles.tabBtnActive]}
-              onPress={() => setActiveTab("discover")}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="globe-outline" size={14} color={activeTab === "discover" ? "#fff" : colors.textMuted} />
-              <Text style={[styles.tabBtnText, activeTab === "discover" && styles.tabBtnTextActive]}>Discover</Text>
-            </TouchableOpacity>
-          </View>
+          {/*
+            The Discover switcher that used to sit here is gone — browsing
+            public events now lives on the unified search page. This screen is
+            purely event management: your own events, invites, edit and invite
+            flows. `activeTab` is pinned to "private" below.
+          */}
 
         <ScrollView
           style={styles.scrollView}
@@ -1300,10 +1302,37 @@ export default function EventsPage() {
                 <MultiImagePicker
                   value={editData.images}
                   onChange={(imgs) => setEditData({ ...editData, images: imgs })}
-                  label="Event photos"
-                  max={6}
+                  label="Event photos & videos"
+                  max={10}
                 />
               </View>
+
+              {/* Headcount is private by default; this publishes it as social
+                  proof. Only a public event has an audience to show it to. */}
+              {editData.isPublic && (
+                <View style={styles.inputGroup}>
+                  <TouchableOpacity
+                    style={styles.attendanceToggle}
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      setEditData({ ...editData, showAttendance: !editData.showAttendance })
+                    }
+                  >
+                    <Ionicons
+                      name={editData.showAttendance ? "checkbox" : "square-outline"}
+                      size={22}
+                      color={editData.showAttendance ? colors.primary : colors.textMuted}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>Show how many are going</Text>
+                      <Text style={styles.attendanceToggleHint}>
+                        Guests see the headcount, capacity and spots left. Your guest
+                        list stays private either way.
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Description</Text>
@@ -2001,6 +2030,18 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.semiBold,
     color: c.textBody,
     marginBottom: 8,
+  },
+  attendanceToggle: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  attendanceToggleHint: {
+    fontSize: scaleFontSize(12),
+    fontFamily: Fonts.regular,
+    color: c.textMuted,
+    lineHeight: 17,
+    marginTop: -4,
   },
   input: {
     backgroundColor: c.border,

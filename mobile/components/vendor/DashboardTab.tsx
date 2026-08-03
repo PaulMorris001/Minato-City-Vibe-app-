@@ -7,7 +7,6 @@ import {
   ScrollView,
   TouchableOpacity,
 } from "react-native";
-import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as SecureStore from "expo-secure-store";
@@ -25,6 +24,7 @@ import {
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
+import MediaTile from "@/components/shared/MediaTile";
 interface DashboardTabProps {
   stats: VendorStats | null;
   onRefresh: () => void;
@@ -297,7 +297,7 @@ export default function DashboardTab({
               return (
                 <TouchableOpacity key={s._id} style={styles.recentRow} activeOpacity={0.85} onPress={onGoToServices}>
                   {s.images && s.images.length > 0 ? (
-                    <Image source={{ uri: s.images[0] }} style={styles.recentThumb} contentFit="cover" />
+                    <MediaTile uri={s.images[0]} style={styles.recentThumb} posterOnly />
                   ) : (
                     <LinearGradient colors={[c1, c2]} style={styles.recentThumb}>
                       <Text style={styles.recentThumbEmoji}>{categoryEmoji(s.category)}</Text>

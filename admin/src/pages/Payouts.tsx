@@ -108,7 +108,7 @@ export default function Payouts() {
           <p style={styles.subtitle}>
             Vendor earnings are held in the platform balance until you approve them.
             Approving runs the actual transfer{" "}
-            <strong style={{ color: colors.text }}>(Paystack / Wise)</strong>.
+            <strong style={{ color: colors.text }}>(Paystack / Stripe / Wise)</strong>.
             Nothing leaves the platform without approval.
           </p>
         </div>

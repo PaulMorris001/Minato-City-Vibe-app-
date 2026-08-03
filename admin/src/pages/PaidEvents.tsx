@@ -116,7 +116,7 @@ export default function PaidEvents() {
             <strong style={{ color: colors.text }}>
               48h after event end
             </strong>{" "}
-            and then released to the organizer's Stripe Connect account.
+            and then queued for your approval before it's sent to the organizer.
           </p>
         </div>
         <div style={styles.badge}>{total} total</div>

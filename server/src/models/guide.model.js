@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { mediaArrayLimit } from "../utils/mediaLimit.js";
 
 const guideTopics = [
   "Chefs",
@@ -27,7 +28,21 @@ const guideSectionSchema = mongoose.Schema({
   title: { type: String, required: true },
   rank: { type: Number, required: true },
   description: { type: String, required: true, maxlength: 3000 },
-  image: { type: String, default: "" } // optional photo for this section
+  /**
+   * @deprecated Superseded by `media`. Sections held exactly one photo before
+   * galleries and video shipped. Kept so guides written under the old shape
+   * keep rendering — the controller reads `media` and falls back to `[image]`,
+   * and writes both (media plus its first entry mirrored here) so any client
+   * still reading `image` sees the cover.
+   */
+  image: { type: String, default: "" },
+  // Photos and videos for this section, max MAX_MEDIA_ITEMS. Each entry is a
+  // Cloudinary URL whose delivery path identifies the kind.
+  media: {
+    type: [String],
+    default: [],
+    validate: mediaArrayLimit("Section media"),
+  },
 });
 
 const guideSchema = mongoose.Schema({

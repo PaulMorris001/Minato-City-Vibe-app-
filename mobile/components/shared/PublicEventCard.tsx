@@ -34,10 +34,11 @@ export interface PublicEvent {
   /** Named price tiers; when >1 the card shows "From <cheapest>" and buying routes to the detail screen's tier picker. */
   ticketTiers?: { _id: string; name: string; price: number }[];
   /**
-   * Capacity + headcount are organizer-only — the API strips maxGuests,
-   * ticketsSold, ticketsRemaining and rsvpCount for anyone who isn't the
-   * creator or a co-host, so every card that renders them must tolerate their
-   * absence. `soldOut` is sent to everyone as the count-free replacement.
+   * Capacity + headcount reach the creator and co-hosts always, and other
+   * viewers only when the organizer turned on `showAttendance`. The API strips
+   * maxGuests, ticketsSold, ticketsRemaining and rsvpCount otherwise, so every
+   * card that renders them must tolerate their absence. `soldOut` is sent to
+   * everyone as the count-free replacement.
    */
   maxGuests?: number;
   ticketsSold?: number;

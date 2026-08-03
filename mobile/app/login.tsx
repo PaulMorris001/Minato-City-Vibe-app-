@@ -154,14 +154,22 @@ export default function Login() {
           <ScrollView
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
+            // Shown on purpose: on short screens this content overflows, and
+            // without the indicator there's no cue that "Create an account"
+            // is below the fold.
+            showsVerticalScrollIndicator
           >
             <View style={styles.topBar}>
               <Wordmark />
               <GlassRoundButton icon="close" onPress={handleClose} size={48} iconRatio={0.58} />
             </View>
 
-            <View style={{ flex: 1 }} />
+            {/* The gap between the top bar and the form is produced by
+                `justifyContent: "space-between"` on scrollContent, NOT by a
+                flex spacer. A `flex: 1` child here pins the content container
+                to exactly the viewport height, so on short screens the view
+                silently stops scrolling and everything below the fold —
+                including "Create an account" — becomes unreachable. */}
 
             <View style={styles.bottomBlock}>
               {/* Live stat pill */}
@@ -339,7 +347,9 @@ export default function Login() {
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
   container: { flex: 1, backgroundColor: AU.bg },
-  scrollContent: { flexGrow: 1 },
+  // flexGrow keeps the layout bottom-anchored on tall screens; space-between
+  // does the spacing a flex child can't safely do inside a ScrollView.
+  scrollContent: { flexGrow: 1, justifyContent: "space-between" },
   topBar: {
     paddingHorizontal: 22,
     paddingTop: 8,

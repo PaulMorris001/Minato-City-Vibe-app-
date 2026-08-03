@@ -11,17 +11,17 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
-import * as ImagePicker from "expo-image-picker";
 import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { CatalogueCategory, CatalogueKind, Service } from "@/libs/interfaces";
 import { BASE_URL } from "@/constants/constants";
 import { sellingCurrencyForCountry } from "@/constants/payments";
-import { uploadMultipleImages } from "@/utils/imageUpload";
+import { uploadMultipleImages, pickMultipleImages } from "@/utils/imageUpload";
+import { MAX_MEDIA_ITEMS } from "@/utils/media";
+import MediaTile from "@/components/shared/MediaTile";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -120,16 +120,11 @@ export default function ServiceModal({
   };
 
   const pickImage = async () => {
-    // PHPickerViewController (iOS 14+) handles permissions itself — no pre-request needed.
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsMultipleSelection: true,
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets) {
-      const newUris = result.assets.map((asset) => asset.uri);
-      setImages((prev) => [...prev, ...newUris].slice(0, 5)); // Max 5 images
+    const remaining = MAX_MEDIA_ITEMS - images.length;
+    if (remaining <= 0) return;
+    const picked = await pickMultipleImages({ allowVideos: true, limit: remaining });
+    if (picked.length > 0) {
+      setImages((prev) => [...prev, ...picked].slice(0, MAX_MEDIA_ITEMS));
     }
   };
 
@@ -327,12 +322,12 @@ export default function ServiceModal({
 
             {/* Images */}
             <View style={styles.field}>
-              <Text style={styles.label}>Images (Optional)</Text>
-              <Text style={styles.hint}>Add up to 5 images</Text>
+              <Text style={styles.label}>Photos & videos (Optional)</Text>
+              <Text style={styles.hint}>Add up to {MAX_MEDIA_ITEMS} items</Text>
               <View style={styles.imagesContainer}>
                 {images.map((image, index) => (
                   <View key={index} style={styles.imageWrapper}>
-                    <Image source={{ uri: image }} style={styles.imagePreview} />
+                    <MediaTile uri={image} style={styles.imagePreview} posterOnly />
                     <TouchableOpacity
                       style={styles.removeImageButton}
                       onPress={() => removeImage(index)}
@@ -341,10 +336,10 @@ export default function ServiceModal({
                     </TouchableOpacity>
                   </View>
                 ))}
-                {images.length < 5 && (
+                {images.length < MAX_MEDIA_ITEMS && (
                   <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
                     <Ionicons name="camera-outline" size={32} color={Colors.primary} />
-                    <Text style={styles.addImageText}>Add Photo</Text>
+                    <Text style={styles.addImageText}>Add</Text>
                   </TouchableOpacity>
                 )}
               </View>

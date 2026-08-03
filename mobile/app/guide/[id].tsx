@@ -32,6 +32,35 @@ import { Avatar } from "@/components/shared/Avatar";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
+import MediaTile from "@/components/shared/MediaTile";
+import { sectionMedia } from "@/utils/media";
+
+/**
+ * A section's photos and videos. One item fills the width the way the old
+ * single-photo layout did; several scroll horizontally so a long gallery
+ * doesn't push the section's text off the screen.
+ */
+function SectionMedia({ media }: { media: string[] }) {
+  const styles = useThemedStyles(createStyles);
+  if (media.length === 0) return null;
+
+  if (media.length === 1) {
+    return <MediaTile uri={media[0]} style={styles.sectionImage} />;
+  }
+
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.sectionMediaStrip}
+    >
+      {media.map((uri) => (
+        <MediaTile key={uri} uri={uri} style={styles.sectionMediaTile} />
+      ))}
+    </ScrollView>
+  );
+}
+
 export default function GuideDetailPage() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -373,9 +402,7 @@ export default function GuideDetailPage() {
                       {section.title}
                     </Text>
                   </View>
-                  {!!section.image && (
-                    <Image source={{ uri: section.image }} style={styles.sectionImage} contentFit="cover" />
-                  )}
+                  <SectionMedia media={sectionMedia(section)} />
                   <Text style={styles.sectionDescription}>
                     {section.description}
                   </Text>
@@ -486,6 +513,16 @@ const createStyles = (c: ThemeColors) =>
     height: 160,
     borderRadius: 12,
     marginBottom: 12,
+  },
+  sectionMediaStrip: {
+    gap: 8,
+    paddingRight: 8,
+    marginBottom: 12,
+  },
+  sectionMediaTile: {
+    width: 220,
+    height: 160,
+    borderRadius: 12,
   },
   titleSection: {
     marginBottom: 20,

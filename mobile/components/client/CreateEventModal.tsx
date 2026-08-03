@@ -66,6 +66,7 @@ export default function CreateEventModal({
     meetingLink: "",
     isPublic: false,
     isPaid: false,
+    showAttendance: false,
     ticketPrice: "",
     maxGuests: "",
   });
@@ -233,6 +234,7 @@ export default function CreateEventModal({
         images: eventImageUrls,
         isPublic: formData.isPublic,
         isPaid: formData.isPaid,
+        showAttendance: formData.isPublic && formData.showAttendance,
         // With tiers, the server derives the headline price (cheapest tier).
         ticketPrice:
           formData.isPaid && tiers.length === 0 ? parseFloat(formData.ticketPrice) : 0,
@@ -271,6 +273,7 @@ export default function CreateEventModal({
         meetingLink: "",
         isPublic: false,
         isPaid: false,
+        showAttendance: false,
         ticketPrice: "",
         maxGuests: "",
       });
@@ -360,8 +363,8 @@ export default function CreateEventModal({
                 <MultiImagePicker
                   value={eventImages}
                   onChange={setEventImages}
-                  label="Event photos"
-                  max={6}
+                  label="Event photos & videos"
+                  max={10}
                 />
               </View>
 
@@ -558,6 +561,25 @@ export default function CreateEventModal({
               {/* Sell tickets (only if public) */}
               {formData.isPublic && (
                 <>
+                  {/* Headcount is private by default — this publishes it as
+                      social proof. Public events only: a private event has no
+                      audience to show it to. */}
+                  <TouchableOpacity
+                    style={styles.checkboxContainer}
+                    onPress={() => handleInputChange("showAttendance", !formData.showAttendance)}
+                  >
+                    <View
+                      style={[styles.checkbox, formData.showAttendance && styles.checkboxChecked]}
+                    >
+                      {formData.showAttendance && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.checkboxLabel}>Show how many are going 👥</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.tierHint}>
+                    Guests will see the headcount, capacity and spots left. Your guest
+                    list stays private either way.
+                  </Text>
+
                   <TouchableOpacity
                     style={styles.checkboxContainer}
                     onPress={() => handleInputChange("isPaid", !formData.isPaid)}

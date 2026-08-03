@@ -11,16 +11,16 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
-import * as ImagePicker from "expo-image-picker";
 import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { CatalogueCategory, CatalogueKind } from "@/libs/interfaces";
 import { BASE_URL } from "@/constants/constants";
-import { uploadMultipleImages } from "@/utils/imageUpload";
+import { uploadMultipleImages, pickMultipleImages } from "@/utils/imageUpload";
+import { MAX_MEDIA_ITEMS } from "@/utils/media";
+import MediaTile from "@/components/shared/MediaTile";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -78,15 +78,16 @@ export default function CategoryModal({
   }, [category, visible]);
 
   const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsMultipleSelection: false,
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets) {
-      setImages([result.assets[0].uri]);
+    const remaining = MAX_MEDIA_ITEMS - images.length;
+    if (remaining <= 0) return;
+    const picked = await pickMultipleImages({ allowVideos: true, limit: remaining });
+    if (picked.length > 0) {
+      setImages((prev) => [...prev, ...picked].slice(0, MAX_MEDIA_ITEMS));
     }
   };
+
+  const removeImage = (index: number) =>
+    setImages((prev) => prev.filter((_, i) => i !== index));
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -247,25 +248,28 @@ export default function CategoryModal({
               />
             </View>
 
-            {/* Cover image */}
+            {/* Cover media — first item is what the category card shows. */}
             <View style={styles.field}>
-              <Text style={styles.label}>Cover image (Optional)</Text>
+              <Text style={styles.label}>Photos & videos (Optional)</Text>
+              <Text style={styles.hint}>
+                Add up to {MAX_MEDIA_ITEMS} items. The first is the cover.
+              </Text>
               <View style={styles.imagesContainer}>
                 {images.map((image, index) => (
                   <View key={index} style={styles.imageWrapper}>
-                    <Image source={{ uri: image }} style={styles.imagePreview} />
+                    <MediaTile uri={image} style={styles.imagePreview} posterOnly />
                     <TouchableOpacity
                       style={styles.removeImageButton}
-                      onPress={() => setImages([])}
+                      onPress={() => removeImage(index)}
                     >
                       <Ionicons name="close-circle" size={24} color={colors.error} />
                     </TouchableOpacity>
                   </View>
                 ))}
-                {images.length === 0 && (
+                {images.length < MAX_MEDIA_ITEMS && (
                   <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
                     <Ionicons name="camera-outline" size={32} color={Colors.primary} />
-                    <Text style={styles.addImageText}>Add Photo</Text>
+                    <Text style={styles.addImageText}>Add</Text>
                   </TouchableOpacity>
                 )}
               </View>

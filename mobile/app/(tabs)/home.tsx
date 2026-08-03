@@ -26,6 +26,7 @@ import { currencyPrefix } from "@/constants/payments";
 import CreateEventModal from "@/components/client/CreateEventModal";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
+import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useLocation";
@@ -92,13 +93,23 @@ function VendorCardSkeleton() {
   );
 }
 
+/**
+ * The populated vendor shape from /vendors and /vendors/search. The legacy
+ * fields below (vendorName/businessName/username/profilePicture/image, and
+ * vendorType as a bare string) are kept optional because older payloads used
+ * them — VendorCard falls back through both.
+ */
 interface Vendor {
   _id: string;
+  name?: string;
+  images?: string[];
+  city?: { name?: string; state?: string; country?: string };
+  vendorType?: { _id?: string; name?: string; icon?: string } | string;
+  // Legacy / alternate field names.
   vendorName?: string;
   businessName?: string;
   username?: string;
   category?: string;
-  vendorType?: string;
   profilePicture?: string;
   image?: string;
 }
@@ -282,14 +293,20 @@ function SmallExternalEventCard({
 function VendorCard({ vendor, onPress }: { vendor: Vendor; onPress: () => void }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const name = vendor.vendorName || vendor.businessName || vendor.username || "Vendor";
-  const type = vendor.category || vendor.vendorType || "";
+  const name =
+    vendor.name || vendor.vendorName || vendor.businessName || vendor.username || "Vendor";
+  // vendorType is populated to an object; older payloads sent a bare string.
+  const type =
+    vendor.category ||
+    (typeof vendor.vendorType === "string" ? vendor.vendorType : vendor.vendorType?.name) ||
+    "";
+  const image = vendor.images?.[0] || vendor.profilePicture || vendor.image;
   return (
     <TouchableOpacity style={styles.vendorCard} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.vendorCardImage}>
-        {vendor.profilePicture || vendor.image ? (
+        {image ? (
           <Image
-            source={{ uri: vendor.profilePicture || vendor.image }}
+            source={{ uri: image }}
             style={{ width: "100%", height: "100%" }}
             contentFit="cover"
           />
@@ -818,39 +835,21 @@ export default function Home() {
       >
         {/* Greeting */}
         <View style={styles.greetingSection}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.greetingText}>
-              {getGreeting()}{username ? `, ${username}` : ""} {getGreetingEmoji()}
-            </Text>
+          <Text style={styles.greetingText}>
+            {getGreeting()}{username ? `, ${username}` : ""} {getGreetingEmoji()}
+          </Text>
+          {/* Date and city read as one line — "here's when and where you're
+              browsing". The chip was in the navbar; it belongs with the date. */}
+          <View style={styles.greetingDateRow}>
             <Text style={styles.greetingDate}>
               {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
             </Text>
+            <ActiveLocationChip city={selectedCity} compact />
           </View>
         </View>
 
-        <View style={styles.searchSection}>
-          <TouchableOpacity
-            style={styles.locationPill}
-            activeOpacity={0.85}
-            onPress={() => router.push("/select-location" as any)}
-          >
-            <Ionicons name="location-outline" size={18} color={colors.primary} />
-            <View style={styles.locationTextWrap}>
-              <Text style={styles.locationLabel}>Location</Text>
-              <Text style={styles.locationValue}>{selectedCity || "All"}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.textDim} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.searchBar}
-            activeOpacity={0.85}
-            onPress={() => router.push("/search" as any)}
-          >
-            <Ionicons name="search-outline" size={18} color={colors.textDim} />
-            <Text style={styles.searchPlaceholder}>Search events & guides</Text>
-          </TouchableOpacity>
-        </View>
+        {/* The search bar that used to sit here moved into the unified search
+            page. */}
 
         {locationBanner === "approximate" && (
           <View style={styles.locationBanner}>
@@ -1262,61 +1261,15 @@ const createStyles = (c: ThemeColors) =>
     paddingBottom: 96,
   },
   greetingSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 12,
   },
-  searchSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    gap: 10,
-  },
-  locationPill: {
+  greetingDateRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 16,
-    backgroundColor: c.card,
-    borderWidth: 1,
-    borderColor: c.border,
-  },
-  locationTextWrap: {
-    flex: 1,
-  },
-  locationLabel: {
-    fontFamily: Fonts.regular,
-    fontSize: 11,
-    color: c.textDim,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-  locationValue: {
-    fontFamily: Fonts.semiBold,
-    fontSize: 14,
-    color: c.textBright,
-    marginTop: 2,
-  },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 16,
-    backgroundColor: c.card,
-    borderWidth: 1,
-    borderColor: c.border,
-  },
-  searchPlaceholder: {
-    flex: 1,
-    fontFamily: Fonts.regular,
-    fontSize: 15,
-    color: c.textDim,
+    justifyContent: "space-between",
+    gap: 12,
   },
   locationBanner: {
     flexDirection: "row",
@@ -1406,6 +1359,8 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 13,
     color: c.textDim,
     marginTop: 4,
+    // Yields to the chip when a long city name needs the room.
+    flexShrink: 1,
   },
   heroCard: {
     marginHorizontal: 14,

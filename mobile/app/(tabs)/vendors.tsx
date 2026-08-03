@@ -22,13 +22,14 @@ import { ensureAuth } from "@/utils/requireAuth";
 import { formatLocation } from "@/utils/location";
 import { Fonts } from "@/constants/fonts";
 import BecomeVendorModal from "@/components/client/BecomeVendorModal";
-import { ActiveLocationChip } from "@/components/shared";
+import { ActiveLocationChip, VendorRow } from "@/components/shared";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 import { scaleFontSize } from "@/utils/responsive";
 import { useActiveCity } from "@/hooks/useActiveCity";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
+import MediaTile from "@/components/shared/MediaTile";
 interface BrowseVendor {
   _id: string;
   name: string;
@@ -159,7 +160,7 @@ export default function VendorsPage() {
   const renderVendorCard = (item: BrowseVendor) => (
     <TouchableOpacity style={styles.card} activeOpacity={0.85} onPress={() => openVendor(item)}>
       {item.images && item.images.length > 0 ? (
-        <Image source={{ uri: item.images[0] }} style={styles.cardImage} />
+        <MediaTile uri={item.images[0]} style={styles.cardImage} posterOnly />
       ) : (
         <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
           <Ionicons name="business" size={26} color={colors.textMuted} />
@@ -238,23 +239,7 @@ export default function VendorsPage() {
               data={searchResults}
               keyExtractor={(item) => item._id}
               keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => (
-                <TouchableOpacity style={styles.searchRow} onPress={() => openVendor(item)}>
-                  {item.images && item.images.length > 0 ? (
-                    <Image source={{ uri: item.images[0] }} style={styles.searchRowImage} />
-                  ) : (
-                    <View style={[styles.searchRowImage, styles.cardImagePlaceholder]}>
-                      <Ionicons name="business" size={24} color={colors.textMuted} />
-                    </View>
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cardName}>{item.name}</Text>
-                    <Text style={styles.cardType}>{item.vendorType || "Vendor"}</Text>
-                    {item.location?.city && <Text style={styles.cardLocation}>{item.location.city}</Text>}
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-                </TouchableOpacity>
-              )}
+              renderItem={({ item }) => <VendorRow vendor={item} onPress={openVendor} />}
               showsVerticalScrollIndicator={false}
               contentInsetAdjustmentBehavior="automatic"
               contentContainerStyle={styles.listContent}

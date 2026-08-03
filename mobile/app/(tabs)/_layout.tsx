@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { Tabs, useRouter, useSegments } from "expo-router";
-import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
+import { NativeTabs, Icon, Label, Badge } from "expo-router/unstable-native-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -65,6 +65,8 @@ export default function TabsLayout() {
   const { colors, isDark } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { activeAccount } = useAccount();
+  // totalUnread still needed — the badge moved from the header button to the
+  // Chats tab, it didn't go away.
   const { totalUnread, notifUnread } = useUnread();
   const isGlassAvailable = Platform.OS === "ios" && isLiquidGlassAvailable();
   const isIpad = Platform.OS === "ios" && Platform.isPad;
@@ -398,8 +400,29 @@ export default function TabsLayout() {
             isIpad && [styles.navbarIpad, { paddingTop: insets.top + 10 }],
           ]}
         >
-          <Text style={styles.logoText}>OurCityvibe</Text>
+          <View style={styles.navbarBrand}>
+            <Text style={styles.logoText}>OurCityvibe</Text>
+            {/* The city chip lives beside the greeting date in home.tsx now —
+                it reads as a property of "what you're looking at today" rather
+                than as brand chrome. */}
+          </View>
           <View style={styles.navbarActions}>
+            {/* Search sits OUTSIDE the guest branch on purpose: events, guides
+                and vendors are all guest-searchable, and this is now the only
+                search entry point on home. */}
+            <TouchableOpacity
+              onPress={() => router.push("/search?focus=1" as any)}
+              style={styles.chatButton}
+              activeOpacity={0.7}
+            >
+              <PillSurface
+                glass={isGlassAvailable}
+                tintColor={colors.primary}
+                gradientColors={[colors.primary, colors.primaryDark]}
+              >
+                <Ionicons name="search" size={20} color="#fff" />
+              </PillSurface>
+            </TouchableOpacity>
             {isGuest ? (
               <TouchableOpacity
                 onPress={() => router.push("/login")}
@@ -410,42 +433,20 @@ export default function TabsLayout() {
                 <Text style={styles.loginPillText}>Log in</Text>
               </TouchableOpacity>
             ) : (
-              <>
-            <TouchableOpacity
-              onPress={() => router.push("/messages" as any)}
-              style={styles.chatButton}
-              activeOpacity={0.7}
-            >
-              <PillSurface
-                glass={isGlassAvailable}
-                tintColor={colors.primary}
-                gradientColors={[colors.primary, colors.primaryDark]}
+              <TouchableOpacity
+                onPress={handleProfilePress}
+                style={styles.profileButton}
+                activeOpacity={0.7}
               >
-                <Ionicons name="chatbubbles" size={20} color="#fff" />
-              </PillSurface>
-              {totalUnread > 0 && (
-                <View style={styles.unreadBadge}>
-                  <Text style={styles.unreadBadgeText}>
-                    {totalUnread > 99 ? "99+" : totalUnread}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleProfilePress}
-              style={styles.profileButton}
-              activeOpacity={0.7}
-            >
-              <Avatar uri={user.profilePicture} name={user.username} size={36} />
-              {notifUnread > 0 && (
-                <View style={styles.unreadBadge}>
-                  <Text style={styles.unreadBadgeText}>
-                    {notifUnread > 99 ? "99+" : notifUnread}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-              </>
+                <Avatar uri={user.profilePicture} name={user.username} size={36} />
+                {notifUnread > 0 && (
+                  <View style={styles.unreadBadge}>
+                    <Text style={styles.unreadBadgeText}>
+                      {notifUnread > 99 ? "99+" : notifUnread}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
             )}
           </View>
         </View>
@@ -489,7 +490,11 @@ export default function TabsLayout() {
         // unstyled — no background, height or border — so iOS 26 renders the
         // floating Liquid Glass capsule (older iOS gets the standard system
         // bar). Route names match the old <Tabs.Screen> entries exactly.
-        <NativeTabs tintColor={colors.primary} minimizeBehavior="onScrollDown">
+        <NativeTabs
+          tintColor={colors.primary}
+          minimizeBehavior="onScrollDown"
+          badgeBackgroundColor={colors.accentPink}
+        >
           <NativeTabs.Trigger name="home">
             <Label>Home</Label>
             <Icon sf={{ default: "house", selected: "house.fill" }} />
@@ -502,9 +507,19 @@ export default function TabsLayout() {
             <Label>Best Of Lists</Label>
             <Icon sf={{ default: "trophy", selected: "trophy.fill" }} />
           </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="events">
-            <Label>Events</Label>
-            <Icon sf="calendar" />
+          {/* Same SF symbol as the vendor tab set's Chats tab, so the two
+              account modes look consistent. */}
+          <NativeTabs.Trigger name="chats">
+            <Label>Chats</Label>
+            <Icon
+              sf={{
+                default: "bubble.left.and.bubble.right",
+                selected: "bubble.left.and.bubble.right.fill",
+              }}
+            />
+            {totalUnread > 0 && (
+              <Badge>{totalUnread > 99 ? "99+" : String(totalUnread)}</Badge>
+            )}
           </NativeTabs.Trigger>
           <NativeTabs.Trigger
             name="profile"
@@ -594,16 +609,18 @@ export default function TabsLayout() {
             }}
           />
           <Tabs.Screen
-            name="events"
+            name="chats"
             options={{
-              title: "Events",
+              title: "Chats",
               tabBarIcon: ({ focused, color }) => (
                 <Ionicons
-                  name={focused ? "calendar" : "calendar-outline"}
+                  name={focused ? "chatbubbles" : "chatbubbles-outline"}
                   size={20}
                   color={color}
                 />
               ),
+              tabBarBadge:
+                totalUnread > 0 ? (totalUnread > 99 ? "99+" : totalUnread) : undefined,
             }}
           />
           <Tabs.Screen
@@ -655,6 +672,7 @@ const createStyles = (c: ThemeColors) =>
     borderBottomWidth: 1,
     borderBottomColor: c.card,
   },
+  navbarBrand: { flexDirection: "row", alignItems: "center", gap: 10, flexShrink: 1 },
   // Matches the vendor navbar logo (app/(vendor)/_layout.tsx) — no glow.
   logoText: {
     fontFamily: "BricolageGrotesque_800ExtraBold",

@@ -2,7 +2,6 @@ import React from "react";
 import {
   View,
   Text,
-  Image,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
@@ -11,6 +10,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { pickMultipleImages } from "@/utils/imageUpload";
+import { MAX_MEDIA_ITEMS } from "@/utils/media";
+import MediaTile from "./MediaTile";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -21,18 +22,24 @@ interface MultiImagePickerProps {
   max?: number;
   /** Thumbnail edge length */
   size?: number;
+  /** Offer videos alongside photos. On by default for galleries. */
+  allowVideos?: boolean;
 }
 
 /**
- * Add/remove multiple images. Holds a list of URIs (local file:// or remote
- * https); the parent uploads the local ones at submit via resolveImageUrls.
+ * Add/remove multiple media items — photos and videos. Holds a list of URIs
+ * (local file:// or remote https); the parent uploads the local ones at submit
+ * via resolveImageUrls. Videos show as a still frame with a play badge; a
+ * freshly-picked one has no poster yet, so it renders as a dark tile until it's
+ * uploaded (see MediaTile).
  */
 export default function MultiImagePicker({
   value,
   onChange,
-  label = "Photos",
-  max = 6,
+  label = "Photos & videos",
+  max = MAX_MEDIA_ITEMS,
   size = 96,
+  allowVideos = true,
 }: MultiImagePickerProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -40,10 +47,12 @@ export default function MultiImagePicker({
 
   const add = async () => {
     if (remaining <= 0) {
-      Alert.alert("Limit reached", `You can add up to ${max} photos.`);
+      Alert.alert("Limit reached", `You can add up to ${max} items.`);
       return;
     }
-    const picked = await pickMultipleImages();
+    // The OS picker stops the user at `remaining`; the slice is the backstop
+    // for Android, where selectionLimit isn't always honoured.
+    const picked = await pickMultipleImages({ allowVideos, limit: remaining });
     if (picked.length > 0) {
       onChange([...value, ...picked].slice(0, max));
     }
@@ -63,7 +72,7 @@ export default function MultiImagePicker({
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
         {value.map((uri) => (
           <View key={uri} style={[styles.thumbWrap, { width: size, height: size }]}>
-            <Image source={{ uri }} style={styles.thumb} />
+            <MediaTile uri={uri} style={styles.thumb} posterOnly />
             <TouchableOpacity style={styles.removeBtn} onPress={() => remove(uri)} hitSlop={8}>
               <Ionicons name="close" size={14} color="#fff" />
             </TouchableOpacity>

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { mediaArrayLimit } from "../utils/mediaLimit.js";
 
 const citySchema = mongoose.Schema({
     name: { type: String, required: true },
@@ -19,7 +20,12 @@ const vendorSchema = mongoose.Schema({
     vendorType: { type: mongoose.Schema.Types.ObjectId, ref: "vendorType", required: true },
     city: { type: mongoose.Schema.Types.ObjectId, ref: "city", required: true },
     description: { type: String },
-    images: [{ type: String }],
+    // Gallery — photos or videos, max MAX_MEDIA_ITEMS.
+    images: {
+        type: [String],
+        default: [],
+        validate: mediaArrayLimit("Vendor media"),
+    },
     priceRange: { type: Number, required: true },
     rating: { type: Number, default: 0 },
     contact: {
@@ -36,6 +42,10 @@ const vendorSchema = mongoose.Schema({
 }, {
     timestamps: true
 });
+
+// Vendor browse and search both sort by (verified, rating) and narrow by city.
+vendorSchema.index({ city: 1, verified: -1, rating: -1 });
+vendorSchema.index({ name: 1 });
 
 export const City = mongoose.model("city", citySchema);
 export const VendorType = mongoose.model("vendorType", vendorTypeSchema);

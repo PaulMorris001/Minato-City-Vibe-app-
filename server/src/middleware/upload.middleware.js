@@ -8,11 +8,12 @@ import multer from "multer";
 // Configure multer to store files in memory
 const storage = multer.memoryStorage();
 
-// File filter to only accept images. iOS phones default to HEIC/HEIF, so we
-// accept those alongside the web-standard formats; Cloudinary handles the
-// conversion on the way in. We also normalize mimetype case + the bogus
-// `image/jpg` variant some clients send.
-const ALLOWED_MIME_TYPES = new Set([
+// File filter to accept images and short videos. iOS phones default to
+// HEIC/HEIF for photos and QuickTime (.mov) for video, so we accept those
+// alongside the web-standard formats; Cloudinary handles the conversion on the
+// way in. We also normalize mimetype case + the bogus `image/jpg` variant some
+// clients send.
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
   "image/jpg",
   "image/png",
@@ -24,13 +25,50 @@ const ALLOWED_MIME_TYPES = new Set([
   "image/heif-sequence",
 ]);
 
+const ALLOWED_VIDEO_MIME_TYPES = new Set([
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-m4v",
+  "video/x-matroska",
+]);
+
+// Photos stay on the old 10 MB budget; video needs room for a minute of phone
+// footage. multer can only enforce ONE byte ceiling, so it gets the larger of
+// the two and the image-specific limit is applied after the fact — `fileFilter`
+// runs before any bytes are read, so it can't know the size yet.
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+export const MAX_VIDEO_BYTES = 64 * 1024 * 1024;
+
+// Every media collection in the app (event galleries, guide sections, vendor
+// products, catalogue categories) caps at 10 items, so one request never needs
+// to carry more than that.
+export const MAX_MEDIA_PER_REQUEST = 10;
+
+export const isVideoMimeType = (mimetype) =>
+  ALLOWED_VIDEO_MIME_TYPES.has((mimetype || "").toLowerCase());
+
+/**
+ * Reject any file that's within multer's shared ceiling but over the limit for
+ * its own kind. Returns an error message, or null when the file is fine.
+ */
+export function mediaSizeError(file) {
+  if (!file) return null;
+  const isVideo = isVideoMimeType(file.mimetype);
+  const limit = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+  if (file.size <= limit) return null;
+  return isVideo
+    ? `That video is too large. Pick something under ${Math.round(MAX_VIDEO_BYTES / 1024 / 1024)} MB.`
+    : `That image is too large. Pick something under ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)} MB.`;
+}
+
 const fileFilter = (req, file, cb) => {
   const normalized = (file.mimetype || "").toLowerCase();
-  if (ALLOWED_MIME_TYPES.has(normalized)) {
+  if (ALLOWED_IMAGE_MIME_TYPES.has(normalized) || ALLOWED_VIDEO_MIME_TYPES.has(normalized)) {
     cb(null, true);
   } else {
     const err = new Error(
-      `Unsupported image format (${file.mimetype || "unknown"}). JPEG, PNG, GIF, WebP, and HEIC are supported.`
+      `Unsupported file format (${file.mimetype || "unknown"}). JPEG, PNG, GIF, WebP and HEIC images, and MP4, MOV and WebM video are supported.`
     );
     err.code = "UNSUPPORTED_FILE_TYPE";
     cb(err, false);
@@ -41,7 +79,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: MAX_VIDEO_BYTES,
   },
   fileFilter: fileFilter,
 });
@@ -66,7 +104,12 @@ function jsonifyUploadErrors(mw) {
             : 400;
       let message = err.message || "Upload failed";
       if (isMulter && err.code === "LIMIT_FILE_SIZE") {
-        message = "That image is too large. Pick something under 10 MB.";
+        message = `That file is too large. Images must be under ${Math.round(
+          MAX_IMAGE_BYTES / 1024 / 1024
+        )} MB and videos under ${Math.round(MAX_VIDEO_BYTES / 1024 / 1024)} MB.`;
+      }
+      if (isMulter && err.code === "LIMIT_FILE_COUNT") {
+        message = `You can upload up to ${MAX_MEDIA_PER_REQUEST} files at a time.`;
       }
       return res.status(status).json({ message, code: err.code });
     });
@@ -75,7 +118,9 @@ function jsonifyUploadErrors(mw) {
 
 // Export different upload configurations
 export const uploadSingle = jsonifyUploadErrors(upload.single("image"));
-export const uploadMultiple = jsonifyUploadErrors(upload.array("images", 10));
+export const uploadMultiple = jsonifyUploadErrors(
+  upload.array("images", MAX_MEDIA_PER_REQUEST)
+);
 export const uploadFields = jsonifyUploadErrors(
   upload.fields([
     { name: "profilePicture", maxCount: 1 },

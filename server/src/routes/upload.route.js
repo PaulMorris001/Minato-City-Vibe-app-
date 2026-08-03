@@ -4,7 +4,11 @@
  */
 
 import express from "express";
-import { uploadSingle, uploadMultiple } from "../middleware/upload.middleware.js";
+import {
+  uploadSingle,
+  uploadMultiple,
+  mediaSizeError,
+} from "../middleware/upload.middleware.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { uploadImage, uploadMultipleImages, uploadBase64Image } from "../services/image.service.js";
 
@@ -19,6 +23,13 @@ router.post("/image", authenticate, uploadSingle, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    // multer enforces one shared byte ceiling (the video one); images get their
+    // tighter limit here, where the size is finally known.
+    const sizeError = mediaSizeError(req.file);
+    if (sizeError) {
+      return res.status(413).json({ message: sizeError, code: "LIMIT_FILE_SIZE" });
     }
 
     const { folder = "nightvibe" } = req.body;
@@ -44,6 +55,16 @@ router.post("/images", authenticate, uploadMultiple, async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ message: "No files uploaded" });
+    }
+
+    // Reject the whole batch if any one file is over its per-kind limit, rather
+    // than uploading some and failing the rest — a partial gallery is worse
+    // than a clear error.
+    for (const file of req.files) {
+      const sizeError = mediaSizeError(file);
+      if (sizeError) {
+        return res.status(413).json({ message: sizeError, code: "LIMIT_FILE_SIZE" });
+      }
     }
 
     const { folder = "nightvibe" } = req.body;

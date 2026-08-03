@@ -21,6 +21,7 @@ import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
+import MediaTile from "@/components/shared/MediaTile";
 export default function VendorsList() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -116,7 +117,7 @@ export default function VendorsList() {
       }
     >
       {item.images && item.images.length > 0 && (
-        <Image source={{ uri: item.images[0] }} style={styles.cardImage} />
+        <MediaTile uri={item.images[0]} style={styles.cardImage} posterOnly />
       )}
       <View style={styles.cardContent}>
         <View style={styles.cardHeader}>
