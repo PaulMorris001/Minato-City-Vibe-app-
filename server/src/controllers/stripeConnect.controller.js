@@ -71,9 +71,10 @@ function isStaleAccountError(err) {
  *  · `transfers` is the ONLY requested capability. The connected account never
  *    takes charges in this funds flow, and requesting card_payments would demand
  *    extra KYC it can't satisfy on a cross-border account.
- *  · `tos_acceptance.service_agreement` is deliberately NOT set. Omitting it
- *    yields the full service agreement, which cross-border payouts requires;
- *    setting it to "recipient" disqualifies the account from this rail entirely.
+ *  · Non-US accounts MUST be on the `recipient` service agreement: Stripe
+ *    rejects a transfers-only account outside the platform's country unless
+ *    it's `recipient` (or also requests card_payments). US accounts stay on
+ *    the full agreement — `recipient` doesn't apply same-country.
  */
 function expressAccountParams({ country, email }) {
   return {
@@ -81,6 +82,9 @@ function expressAccountParams({ country, email }) {
     country,
     email,
     capabilities: { transfers: { requested: true } },
+    ...(country !== "US" && {
+      tos_acceptance: { service_agreement: "recipient" },
+    }),
   };
 }
 
