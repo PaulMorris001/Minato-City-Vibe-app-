@@ -8,12 +8,16 @@ import {
   uploadBase64ToCloudinary,
   deleteFromCloudinary,
   extractPublicId,
+  isVideoUrl,
 } from "../config/cloudinary.js";
 
 /**
- * Upload an image file to Cloudinary
+ * Upload an image or video file to Cloudinary. Resource type is left to
+ * Cloudinary ("auto") so a single endpoint handles mixed media — the returned
+ * URL carries the kind (`/video/upload/` vs `/image/upload/`), which is how
+ * every client tells them apart.
  * @param {Object} file - Multer file object
- * @param {string} folder - Folder to store the image in
+ * @param {string} folder - Folder to store the media in
  * @returns {Promise<Object>} - Upload result with URL and public_id
  */
 export async function uploadImage(file, folder = "nightvibe") {
@@ -29,13 +33,16 @@ export async function uploadImage(file, folder = "nightvibe") {
     width: result.width,
     height: result.height,
     format: result.format,
+    resourceType: result.resource_type,
+    // Videos only: seconds, so callers can enforce a duration cap.
+    duration: result.duration,
   };
 }
 
 /**
- * Upload multiple images to Cloudinary
+ * Upload multiple media files (images and/or videos) to Cloudinary
  * @param {Array} files - Array of multer file objects
- * @param {string} folder - Folder to store the images in
+ * @param {string} folder - Folder to store the media in
  * @returns {Promise<Array>} - Array of upload results
  */
 export async function uploadMultipleImages(files, folder = "nightvibe") {
@@ -66,11 +73,13 @@ export async function uploadBase64Image(base64String, folder = "nightvibe") {
     width: result.width,
     height: result.height,
     format: result.format,
+    resourceType: result.resource_type,
+    duration: result.duration,
   };
 }
 
 /**
- * Delete an image from Cloudinary
+ * Delete a media asset from Cloudinary
  * @param {string} urlOrPublicId - Cloudinary URL or public ID
  * @returns {Promise<void>}
  */
@@ -78,6 +87,11 @@ export async function deleteImage(urlOrPublicId) {
   if (!urlOrPublicId) {
     return;
   }
+
+  // Videos live in a separate Cloudinary namespace, so the destroy call has to
+  // name the right resource type or it silently no-ops. Read it off the URL
+  // before extracting the id (which strips the delivery path).
+  const resourceType = isVideoUrl(urlOrPublicId) ? "video" : "image";
 
   // Try to extract public ID if a URL was provided
   let publicId = urlOrPublicId;
@@ -91,7 +105,7 @@ export async function deleteImage(urlOrPublicId) {
   }
 
   try {
-    await deleteFromCloudinary(publicId);
+    await deleteFromCloudinary(publicId, resourceType);
   } catch (error) {
     console.error("Error deleting image:", error);
     // Don't throw error, just log it

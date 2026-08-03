@@ -22,6 +22,7 @@ import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { validatePassword } from "../utils/passwordPolicy.js";
 import { SUPPORT_USER_ID, isSupportUser } from "../utils/supportAccount.js";
 import { countFollows } from "../utils/followCounts.js";
+import { searchUsersQuery } from "../services/userSearch.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -730,7 +731,9 @@ export async function updateProfilePicture(req, res) {
   }
 }
 
-// Search users by username or email
+// Search users by username, business name, or exact email.
+// Thin wrapper over services/userSearch.js — the unified /search endpoint calls
+// the same helper, so exclusion rules stay identical across both.
 export async function searchUsers(req, res) {
   const { query } = req.query;
 
@@ -739,54 +742,13 @@ export async function searchUsers(req, res) {
       return res.status(400).json({ message: "Search query must be at least 2 characters" });
     }
 
-    const blockedIds = await getBlockedIds(req.user.id);
-
-    // Escape the query — raw user input in $regex is a ReDoS / regex-injection
-    // vector (e.g. ".*" would match everyone).
-    const safeQuery = escapeRegex(query.trim());
-
-    // Exclude the support account too — it's reached via the Contact Support
-    // entry points, not by stumbling across it like a normal user.
-    const excludedIds = SUPPORT_USER_ID ? [...blockedIds, SUPPORT_USER_ID] : blockedIds;
-
-    const users = await User.find({
-      _id: { $ne: req.user.id, $nin: excludedIds }, // Exclude current user + blocked + support
-      isBanned: { $ne: true },
-      $or: [
-        { username: { $regex: safeQuery, $options: "i" } },
-        { email: { $regex: safeQuery, $options: "i" } }
-      ]
-    })
-      .select("_id username email profilePicture isVendor businessName")
-      .limit(20)
-      .lean();
-
-    // Batch follow status lookup
-    const userIds = users.map((u) => u._id);
-    const [outgoing, incoming] = await Promise.all([
-      Follow.find({ follower: req.user.id, following: { $in: userIds } }).lean(),
-      Follow.find({ follower: { $in: userIds }, following: req.user.id }).lean(),
-    ]);
-    const followingSet = new Set(outgoing.map((f) => f.following.toString()));
-    const followedBySet = new Set(incoming.map((f) => f.follower.toString()));
-
-    res.json({
-      users: users.map(user => {
-        const isFollowing = followingSet.has(user._id.toString());
-        const isFollowedBy = followedBySet.has(user._id.toString());
-        return {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-          profilePicture: user.profilePicture,
-          isVendor: user.isVendor,
-          businessName: user.businessName,
-          isFollowing,
-          isFollowedBy,
-          isMutual: isFollowing && isFollowedBy,
-        };
-      })
+    const { users } = await searchUsersQuery({
+      viewerId: req.user.id,
+      q: query,
+      limit: 20,
     });
+
+    res.json({ users });
   } catch (error) {
     res.status(400).json({ message: "Error searching users", details: error.message });
   }

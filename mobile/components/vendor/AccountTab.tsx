@@ -20,7 +20,7 @@ import axios from "axios";
 import { useRouter } from "expo-router";
 import socketService from "@/services/socket.service";
 import { BASE_URL } from "@/constants/constants";
-import { payoutProviderForCountry } from "@/constants/payments";
+import { payoutProviderForCountry, PAYOUT_STATUS_ENDPOINTS } from "@/constants/payments";
 import { fetchVendorTypes } from "@/libs/api";
 import { VendorType, LocationSelection } from "@/libs/interfaces";
 import { LocationPicker, ImagePickerButton } from "@/components/shared";
@@ -82,14 +82,12 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
   }, []);
 
   // Check the right provider's payout status for this vendor's country
-  // (Paystack for Nigerian vendors, Wise for everyone else). Called once the
-  // country is known.
+  // (Paystack for Nigerian vendors, Stripe Connect inside the cross-border
+  // footprint, Wise for everyone else). Called once the country is known.
   const fetchPayoutStatus = async (country: string) => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      const provider = payoutProviderForCountry(country);
-      const path =
-        provider === "paystack" ? "/paystack/connect/status" : "/wise/connect/status";
+      const path = PAYOUT_STATUS_ENDPOINTS[payoutProviderForCountry(country)];
       const res = await axios.get(`${BASE_URL}${path}`, {
         headers: { Authorization: `Bearer ${token}` },
       });

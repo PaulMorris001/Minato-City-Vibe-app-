@@ -310,6 +310,8 @@ const css = `
   .cv-sticky { position: sticky; top: 90px; }
   .cv-gallery { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
   .cv-gallery img { width: 150px; height: 100px; object-fit: cover; border-radius: 12px; flex: none; border: 1px solid var(--stroke); }
+  /* Video tiles run wider than photos so the native controls aren't cramped. */
+  .cv-gallery video { width: 220px; height: 130px; object-fit: cover; border-radius: 12px; flex: none; border: 1px solid var(--stroke); background: #000; }
   .cv-facts { display: grid; gap: 14px; }
   .cv-fact { display: flex; gap: 12px; align-items: flex-start; }
   .cv-fact-icon {

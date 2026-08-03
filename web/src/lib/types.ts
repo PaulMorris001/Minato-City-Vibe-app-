@@ -86,21 +86,26 @@ export interface EventItem {
   country?: string;
   image?: string;
   images?: string[];
+  isPublic?: boolean;
   isPaid?: boolean;
   ticketPrice?: number;
   ticketTiers?: EventTier[];
   currency?: string;
   isVirtual?: boolean;
   /**
-   * Capacity + headcount are organizer-only: the API strips maxGuests,
-   * ticketsSold, ticketsRemaining, rsvpCount, rsvpUsers and friendsGoing for
-   * anyone who isn't the event's creator or a co-host. `soldOut` is the
-   * count-free replacement every viewer gets.
+   * Capacity + headcount reach the event's creator and co-hosts always, and
+   * every other viewer only when the organizer turned on `showAttendance`.
+   * Otherwise the API strips maxGuests, ticketsSold, ticketsRemaining,
+   * rsvpCount and friendsGoing, and `soldOut` is the count-free replacement
+   * every viewer gets. `rsvpUsers` — the guest list — is never part of the
+   * opt-in and stays organizer-only.
    */
   maxGuests?: number;
   ticketsSold?: number;
   ticketsRemaining?: number;
   soldOut?: boolean;
+  /** Organizer opt-in: publishes the headcount/capacity numbers to all viewers. */
+  showAttendance?: boolean;
   userHasPurchased?: boolean;
   createdBy?: PublicUser;
   cohosts?: PublicUser[];

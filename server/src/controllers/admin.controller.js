@@ -12,7 +12,10 @@ import Report from "../models/report.model.js";
 import Message from "../models/message.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
 import { getSocketInstance } from "../services/socket.service.js";
-import { hasPayoutOnboarding } from "../services/payments/resolveProvider.js";
+import {
+  hasPayoutOnboarding,
+  PAYOUT_ROUTING_FIELDS,
+} from "../services/payments/resolveProvider.js";
 
 export async function adminLogin(req, res) {
   const { username, password } = req.body;
@@ -533,7 +536,7 @@ export async function getPendingPaidEvents(req, res) {
         .limit(Number(limit))
         .populate(
           "createdBy",
-          "username email profilePicture verified paidEventsApproved paidEventsCount location paystackRecipientCode paystackOnboardingComplete wiseRecipientId wiseOnboardingComplete contactInfo emailVerifiedAt"
+          `username email profilePicture verified paidEventsApproved paidEventsCount contactInfo emailVerifiedAt ${PAYOUT_ROUTING_FIELDS}`
         ),
       Event.countDocuments(query),
     ]);
@@ -566,7 +569,13 @@ export async function getPendingPaidEvents(req, res) {
         delete obj.createdBy.paystackRecipientCode;
         delete obj.createdBy.paystackOnboardingComplete;
         delete obj.createdBy.wiseRecipientId;
+        delete obj.createdBy.wiseRecipientCurrency;
         delete obj.createdBy.wiseOnboardingComplete;
+        delete obj.createdBy.stripeAccountId;
+        delete obj.createdBy.stripeAccountCountry;
+        delete obj.createdBy.stripeAccountCurrency;
+        delete obj.createdBy.stripeOnboardingComplete;
+        delete obj.createdBy.stripePayoutsEnabled;
       }
       return obj;
     });

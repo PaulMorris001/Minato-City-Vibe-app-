@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   FlatList,
@@ -20,6 +22,7 @@ import axios from "axios";
 
 import { Avatar } from "@/components/shared/Avatar";
 import GuestGate from "@/components/shared/GuestGate";
+import CreateEventModal from "@/components/client/CreateEventModal";
 import ImageViewerModal from "@/components/shared/ImageViewerModal";
 import { displayName } from "@/utils/displayName";
 import { AU } from "@/components/auth/tokens";
@@ -67,6 +70,10 @@ export default function ProfileScreen() {
   const [tab, setTab] = useState<TabKey>("hosted");
   const [isGuest, setIsGuest] = useState(false);
   const [avatarViewerVisible, setAvatarViewerVisible] = useState(false);
+  const [respondingInvite, setRespondingInvite] = useState<string | null>(null);
+  // Mounted here rather than navigating: CreateEventModal is a self-contained
+  // component, and the events tab it used to live behind is gone.
+  const [createEventVisible, setCreateEventVisible] = useState(false);
 
   const fetchProfile = async () => {
     try {
@@ -99,9 +106,17 @@ export default function ProfileScreen() {
       const res = await axios.get(`${BASE_URL}/events`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      // Pending invites are kept (they used to be filtered out) — they surface
+      // as their own strip above the Hosted/Attended tabs. GET /events already
+      // returns private events alongside public ones, so "Hosted" covers both.
       const all: UserEvent[] = res.data.events || [];
       setEvents(
-        all.filter((e) => e.userStatus === "creator" || e.userStatus === "accepted")
+        all.filter(
+          (e) =>
+            e.userStatus === "creator" ||
+            e.userStatus === "accepted" ||
+            e.userStatus === "pending"
+        )
       );
     } catch (err) {
       console.error("Error fetching events:", err);
@@ -153,7 +168,44 @@ export default function ProfileScreen() {
     () => events.filter((e) => e.userStatus === "accepted"),
     [events]
   );
+  const pending = useMemo(
+    () => events.filter((e) => e.userStatus === "pending"),
+    [events]
+  );
   const visibleEvents = tab === "hosted" ? hosted : attended;
+
+  /**
+   * Accept or decline an event invite. Moved here from the events tab, which
+   * was the only place invites could be actioned.
+   */
+  const handleRespondInvite = useCallback(
+    async (eventId: string, status: "accepted" | "declined") => {
+      setRespondingInvite(eventId);
+      try {
+        const token = await SecureStore.getItemAsync("token");
+        const response = await fetch(`${BASE_URL}/events/${eventId}/respond-invite`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ status }),
+        });
+        const data = await response.json();
+        if (response.ok) {
+          await loadData(true);
+          Alert.alert(
+            status === "accepted" ? "Joined!" : "Declined",
+            status === "accepted" ? "You've joined the event." : "Invite declined."
+          );
+        } else {
+          Alert.alert("Error", data.message || "Could not respond to invite");
+        }
+      } catch {
+        Alert.alert("Error", "Failed to respond to invite");
+      } finally {
+        setRespondingInvite(null);
+      }
+    },
+    []
+  );
 
   if (isGuest) return <GuestGate />;
 
@@ -167,16 +219,23 @@ export default function ProfileScreen() {
           ListHeaderComponent={
             <Header
               user={user}
-              eventsTotal={events.length}
+              // Pendings are deliberately excluded — this stat means "events
+              // you're part of", and an unanswered invite isn't one yet.
+              eventsTotal={hosted.length + attended.length}
               guidesTotal={guides.length}
               tab={tab}
               setTab={setTab}
               loading={loading}
               onAvatarPress={() => setAvatarViewerVisible(true)}
+              pending={pending}
+              respondingInvite={respondingInvite}
+              onRespondInvite={handleRespondInvite}
             />
           }
           ListEmptyComponent={
-            loading ? null : <EmptyState tab={tab} />
+            loading ? null : (
+              <EmptyState tab={tab} onCreateEvent={() => setCreateEventVisible(true)} />
+            )
           }
           ListFooterComponent={
             loading ? null : <GuidesSection guides={guides} />
@@ -202,6 +261,14 @@ export default function ProfileScreen() {
           onClose={() => setAvatarViewerVisible(false)}
         />
       ) : null}
+      <CreateEventModal
+        visible={createEventVisible}
+        onClose={() => setCreateEventVisible(false)}
+        onEventCreated={() => {
+          setCreateEventVisible(false);
+          loadData(true);
+        }}
+      />
     </View>
   );
 }
@@ -215,6 +282,9 @@ function Header({
   setTab,
   loading,
   onAvatarPress,
+  pending,
+  respondingInvite,
+  onRespondInvite,
 }: {
   user: UserProfile | null;
   eventsTotal: number;
@@ -223,6 +293,9 @@ function Header({
   setTab: (t: TabKey) => void;
   loading: boolean;
   onAvatarPress: () => void;
+  pending: UserEvent[];
+  respondingInvite: string | null;
+  onRespondInvite: (eventId: string, status: "accepted" | "declined") => void;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -353,11 +426,73 @@ function Header({
         </TouchableOpacity>
       </View>
 
+      {/* Pending invites. Deliberately above the tabs rather than inside one:
+          an unanswered invite is neither hosted nor attended, and it's
+          time-sensitive enough that it shouldn't hide behind a tab selection. */}
+      {pending.length > 0 && (
+        <View style={styles.invitesBlock}>
+          <Text style={styles.invitesTitle}>
+            {pending.length} pending invite{pending.length === 1 ? "" : "s"}
+          </Text>
+          {pending.map((ev) => (
+            <View key={ev._id} style={styles.inviteRow}>
+              <TouchableOpacity
+                style={styles.inviteInfo}
+                activeOpacity={0.75}
+                onPress={() => router.push(`/event/${ev._id}` as any)}
+              >
+                <Text style={styles.inviteName} numberOfLines={1}>
+                  {ev.title}
+                </Text>
+                <Text style={styles.inviteMeta} numberOfLines={1}>
+                  {new Date(ev.date).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </Text>
+              </TouchableOpacity>
+              {respondingInvite === ev._id ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <View style={styles.inviteActions}>
+                  <TouchableOpacity
+                    style={styles.inviteDecline}
+                    activeOpacity={0.8}
+                    onPress={() => onRespondInvite(ev._id, "declined")}
+                  >
+                    <Ionicons name="close" size={16} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.inviteAccept}
+                    activeOpacity={0.8}
+                    onPress={() => onRespondInvite(ev._id, "accepted")}
+                  >
+                    <Text style={styles.inviteAcceptText}>Accept</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
+
       {/* Events section header + tabs */}
       <View style={styles.eventsHeader}>
         <Text style={styles.sectionTitle}>Events</Text>
         <TabsRow tab={tab} setTab={setTab} />
       </View>
+      {/* Edit / invite / delete live on the management screen — the profile
+          list itself is read-only links. */}
+      {tab === "hosted" && eventsTotal > 0 && (
+        <TouchableOpacity
+          style={styles.manageLink}
+          activeOpacity={0.75}
+          onPress={() => router.push("/manage-events" as any)}
+        >
+          <Ionicons name="settings-outline" size={14} color={colors.primary} />
+          <Text style={styles.manageLinkText}>Manage your events</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -611,7 +746,13 @@ function GuideRow({ guide }: { guide: Guide }) {
 }
 
 // ─── Empty states ───────────────────────────────────────────────────────────
-function EmptyState({ tab }: { tab: TabKey }) {
+function EmptyState({
+  tab,
+  onCreateEvent,
+}: {
+  tab: TabKey;
+  onCreateEvent: () => void;
+}) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   if (tab === "hosted") {
@@ -619,7 +760,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
       <View style={styles.empty}>
         <Text style={styles.emptyTitle}>You haven't hosted yet</Text>
         <TouchableOpacity
-          onPress={() => router.push("/(tabs)/events" as any)}
+          onPress={onCreateEvent}
           activeOpacity={0.85}
           style={styles.ctaPrimaryWrap}
         >
@@ -639,7 +780,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>Nothing yet — pick a night.</Text>
       <TouchableOpacity
-        onPress={() => router.push("/(tabs)/events" as any)}
+        onPress={() => router.push("/search" as any)}
         activeOpacity={0.85}
         style={styles.ctaSecondary}
       >
@@ -758,6 +899,52 @@ const createStyles = (c: ThemeColors) =>
   },
 
   // Events header + tabs
+  manageLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 22,
+    paddingBottom: 10,
+  },
+  manageLinkText: { fontFamily: Fonts.semiBold, fontSize: 13, color: c.primary },
+  invitesBlock: { marginBottom: 20, gap: 8 },
+  invitesTitle: {
+    fontFamily: Fonts.semiBold,
+    fontSize: 13,
+    color: c.textSecondary,
+    marginBottom: 2,
+  },
+  inviteRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: c.card,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  inviteInfo: { flex: 1, gap: 2 },
+  inviteName: { fontFamily: Fonts.semiBold, fontSize: 14, color: c.text },
+  inviteMeta: { fontFamily: Fonts.regular, fontSize: 12, color: c.textMuted },
+  inviteActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  inviteDecline: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  inviteAccept: {
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: c.primary,
+  },
+  inviteAcceptText: { fontFamily: Fonts.semiBold, fontSize: 13, color: c.white },
   eventsHeader: {
     paddingHorizontal: 22,
     paddingTop: 22,

@@ -18,6 +18,8 @@ import * as SecureStore from "expo-secure-store";
 import { GUIDE_TOPICS, GuideSection, Guide, LocationSelection } from "@/libs/interfaces";
 import { LocationPicker, ImagePickerButton } from "@/components/shared";
 import { resolveImageUrls } from "@/utils/imageUpload";
+import { sectionMedia, MAX_MEDIA_ITEMS } from "@/utils/media";
+import MultiImagePicker from "@/components/shared/MultiImagePicker";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { Colors } from "@/constants/colors";
@@ -116,7 +118,7 @@ export default function CreateGuidePage() {
   const updateSection = (
     index: number,
     field: keyof GuideSection,
-    value: string | number
+    value: string | number | string[]
   ) => {
     const updatedSections = [...sections];
     updatedSections[index] = {
@@ -196,13 +198,14 @@ export default function CreateGuidePage() {
         }
         sectionsPayload = await Promise.all(
           sections.map(async (s) => {
-            if (!s.image) return s;
-            const [url] = await resolveImageUrls([s.image], "guides", token);
-            return { ...s, image: url };
+            const media = sectionMedia(s);
+            if (media.length === 0) return { ...s, media: [] };
+            const urls = await resolveImageUrls(media, "guides", token);
+            return { ...s, media: urls };
           })
         );
       } catch {
-        Alert.alert("Upload Error", "Failed to upload one or more images");
+        Alert.alert("Upload Error", "Failed to upload one or more items");
         setLoading(false);
         return;
       }
@@ -451,14 +454,12 @@ export default function CreateGuidePage() {
               </View>
 
               <View style={styles.sectionInputGroup}>
-                <Text style={styles.label}>Photo (optional)</Text>
-                <ImagePickerButton
-                  imageUri={section.image}
-                  onImageSelected={(uri) => updateSection(index, "image", uri)}
-                  label=""
-                  showLabel={false}
-                  size={120}
-                  shape="square"
+                <MultiImagePicker
+                  value={sectionMedia(section)}
+                  onChange={(media) => updateSection(index, "media", media)}
+                  label="Photos & videos (optional)"
+                  max={MAX_MEDIA_ITEMS}
+                  size={90}
                 />
               </View>
             </View>

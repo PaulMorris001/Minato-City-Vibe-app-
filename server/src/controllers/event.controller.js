@@ -13,8 +13,12 @@ import { setCache, getCache, invalidateCache, invalidateCachePattern } from "../
 import { areMutualFollows } from "../utils/followCheck.js";
 import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean, assertMeaningful } from "../utils/contentFilter.js";
-import { hasPayoutOnboarding, currencyForUser } from "../services/payments/resolveProvider.js";
-import { exactCaseInsensitive } from "../utils/escapeRegex.js";
+import {
+  hasPayoutOnboarding,
+  currencyForUser,
+  PAYOUT_ROUTING_FIELDS,
+} from "../services/payments/resolveProvider.js";
+import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { issueEventPass } from "../services/pass.service.js";
 import { linkQrDataUrl } from "../utils/qrcode.js";
 import config from "../config/env.js";
@@ -32,24 +36,36 @@ function listHasUser(list, userId) {
 }
 
 /**
- * Attendance data is organizer-only.
+ * Attendance data is organizer-only unless the organizer opts in.
  *
- * Headcount, capacity and the guest list are the host's numbers: a half-empty
- * room is not something an organizer wants broadcast to people deciding whether
- * to come, and the guest list is other attendees' data. So everything that
- * answers "how many are coming / who is coming / how full is it" is stripped
- * for anyone who isn't running the event — creator and co-hosts see it all.
+ * Headcount and capacity are the host's numbers by default: a half-empty room
+ * is not something an organizer wants broadcast to people deciding whether to
+ * come. So everything that answers "how many are coming / how full is it" is
+ * stripped for anyone who isn't running the event — until the host flips
+ * `showAttendance` on the event, at which point every viewer sees the same
+ * counts the organizer does (going, capacity, spots left, per-tier remaining).
  *
- * What deliberately survives, because checkout depends on it and none of it
- * reveals a count:
+ * The guest LIST is not part of that opt-in. `rsvpUsers` is other attendees'
+ * data, not the organizer's to publish, so it is stripped for non-organizers
+ * regardless of the flag.
+ *
+ * What survives even with the flag off, because checkout depends on it and none
+ * of it reveals a count:
  *   - `soldOut` on the event, and `soldOut` on each tier (replacing the
  *     numeric `remaining`), so the client can still disable a sold-out CTA.
  *   - `userRsvp` / `userHasPurchased` — the viewer's own relationship.
+ *
+ * `friendsGoing` follows the counts (hidden by default, revealed by the flag)
+ * rather than shipping publicly on its own: turning the flag off has to leave
+ * an event exactly as private as it was before this opt-in existed.
  *
  * Mutates and returns `eventObj`. Call it last, once every derived field it
  * needs to redact has been computed.
  */
 function applyAttendanceVisibility(eventObj, { isOrganizer }) {
+  // The organizer always sees their own numbers; everyone else sees them only
+  // when the event opts in.
+  const canSeeCounts = isOrganizer || !!eventObj.showAttendance;
   const maxGuests = eventObj.maxGuests;
   // Free events measure fullness in RSVPs, paid ones in tickets. Only events
   // that declared a cap can sell out at all.
@@ -61,14 +77,14 @@ function applyAttendanceVisibility(eventObj, { isOrganizer }) {
         : null;
   eventObj.soldOut = !!maxGuests && remaining !== null && remaining <= 0;
 
-  // Per-tier availability collapses to a boolean for everyone but the host.
-  // Only rewrite when tiers actually exist — free events have none, and
+  // Per-tier availability collapses to a boolean when counts are hidden. Only
+  // rewrite when tiers actually exist — free events have none, and
   // materialising an empty array on every payload is a needless shape change.
   if (Array.isArray(eventObj.ticketTiers) && eventObj.ticketTiers.length > 0) {
     eventObj.ticketTiers = eventObj.ticketTiers.map((t) => {
       const tier = { ...t };
       if (typeof t.remaining === "number") tier.soldOut = t.remaining <= 0;
-      if (!isOrganizer) {
+      if (!canSeeCounts) {
         delete tier.remaining;
         // `quantity` is this tier's capacity — same class of number as
         // maxGuests, so it goes with it.
@@ -78,9 +94,11 @@ function applyAttendanceVisibility(eventObj, { isOrganizer }) {
     });
   }
 
-  if (isOrganizer) return eventObj;
+  // The guest list is never part of the opt-in — it's other attendees' data.
+  if (!isOrganizer) delete eventObj.rsvpUsers;
 
-  delete eventObj.rsvpUsers;
+  if (canSeeCounts) return eventObj;
+
   delete eventObj.rsvpCount;
   delete eventObj.maxGuests;
   delete eventObj.ticketsSold;
@@ -122,6 +140,7 @@ export const createEvent = async (req, res) => {
       ticketPrice,
       ticketTiers,
       maxGuests,
+      showAttendance,
       venueProofImage,
       isVirtual,
       meetingLink,
@@ -225,11 +244,12 @@ export const createEvent = async (req, res) => {
       }
 
       // Trust gates for sellers: must have verified their email AND submitted ID
-      // AND completed payout onboarding (Paystack for Nigerian sellers, Wise for
-      // everyone else) so ticket revenue has a payout destination. Without this
-      // gate, the failure surfaces to the *buyer* at checkout — the wrong layer.
+      // AND completed payout onboarding on whichever rail settles them (Paystack,
+      // Stripe Connect or Wise) so ticket revenue has a payout destination.
+      // Without this gate, the failure surfaces to the *buyer* at checkout — the
+      // wrong layer.
       const organizer = await User.findById(userId).select(
-        "verified paidEventsApproved paidEventsCount emailVerifiedAt location paystackRecipientCode paystackOnboardingComplete wiseRecipientId wiseOnboardingComplete"
+        `verified paidEventsApproved paidEventsCount emailVerifiedAt ${PAYOUT_ROUTING_FIELDS}`
       );
       if (!organizer?.emailVerifiedAt) {
         return res.status(403).json({
@@ -372,6 +392,9 @@ export const createEvent = async (req, res) => {
       ticketTiers: isPublic && isPaid ? tiers : [],
       currency: ticketCurrency,
       maxGuests: isPublic && isPaid ? maxGuests : 0,
+      // Only meaningful on a public event — a private one has no audience to
+      // reveal the numbers to.
+      showAttendance: Boolean(isPublic && showAttendance),
       venueProofImage: venueProofUrl,
       approvalStatus,
       payoutStatus: isPublic && isPaid ? "pending" : "none",
@@ -649,7 +672,7 @@ export const getEventById = async (req, res) => {
     // auto-routes to `/event/[id]`) resolve correctly without bouncing the
     // user through a 404 alert.
     const POPULATIONS = [
-      ['createdBy', 'username email profilePicture verified location paystackRecipientCode paystackOnboardingComplete wiseRecipientId wiseOnboardingComplete'],
+      ['createdBy', `username email profilePicture verified ${PAYOUT_ROUTING_FIELDS}`],
       ['cohosts', 'username email profilePicture'],
       ['invitedUsers', 'username email profilePicture'],
       ['pendingInvites', 'username email profilePicture'],
@@ -820,7 +843,13 @@ export const getEventById = async (req, res) => {
       delete eventObj.createdBy.paystackRecipientCode;
       delete eventObj.createdBy.paystackOnboardingComplete;
       delete eventObj.createdBy.wiseRecipientId;
+      delete eventObj.createdBy.wiseRecipientCurrency;
       delete eventObj.createdBy.wiseOnboardingComplete;
+      delete eventObj.createdBy.stripeAccountId;
+      delete eventObj.createdBy.stripeAccountCountry;
+      delete eventObj.createdBy.stripeAccountCurrency;
+      delete eventObj.createdBy.stripeOnboardingComplete;
+      delete eventObj.createdBy.stripePayoutsEnabled;
       delete eventObj.createdBy.location;
     }
 
@@ -1019,7 +1048,7 @@ export const updateEvent = async (req, res) => {
     const { eventId } = req.params;
     const {
       title, date, location, address, city, state, country, image, images,
-      description, isPublic, isVirtual, meetingLink,
+      description, isPublic, isVirtual, meetingLink, showAttendance,
       // Material (pricing/capacity) fields — held for admin approval on public events.
       ticketTiers, ticketPrice, maxGuests,
     } = req.body;
@@ -1136,6 +1165,11 @@ export const updateEvent = async (req, res) => {
       event.meetingLink = willBeVirtual ? meetingLink : "";
     }
     if (description !== undefined) event.description = description;
+
+    // Minor field: this only changes who may READ the headcount, not the price,
+    // date or capacity itself — so it applies immediately rather than sitting in
+    // pendingEdits waiting on an admin.
+    if (showAttendance !== undefined) event.showAttendance = Boolean(showAttendance);
 
     // ── Material changes (date + pricing/capacity) ─────────────────────────────
     // On a PUBLIC event these are held in `pendingEdits` for an admin to approve
@@ -1676,7 +1710,7 @@ export const joinFreePublicEvent = async (req, res) => {
 // Shared by getPublicEvents for both the primary result page and the
 // neighbouring-city fallback below — same ticket/RSVP shape either way so
 // the client can render both sets of cards identically.
-async function attachTicketInfo(events, userId) {
+export async function attachTicketInfo(events, userId) {
   return Promise.all(
     events.map(async (event) => {
       const eventObj = event.toObject();
@@ -1779,71 +1813,110 @@ async function findNearbyCityEvents({ city, state, country, blockedIds, userId }
   };
 }
 
+/**
+ * Build the public-event filter. Shared by getPublicEvents (the Discover feed)
+ * and the unified /search endpoint so the visibility rules — paid-event
+ * approval, blocked authors, virtual-event placement — can't drift apart.
+ *
+ * Every OR-group goes into `$and`. Assigning `query.$or` directly would mean
+ * the next filter added silently clobbers the paid-approval rule, which is a
+ * visibility bug, not just a search bug.
+ *
+ * @param {object} args
+ * @param {string} [args.q]  free-text term; matched against title/description/location/city
+ */
+export function buildPublicEventQuery({ city, state, country, date, online, blockedIds = [], q }) {
+  const onlineOnly = online === true || online === "true";
+
+  const andConditions = [
+    {
+      $or: [
+        { isPaid: { $ne: true } },
+        { isPaid: true, approvalStatus: "approved" },
+      ],
+    },
+  ];
+
+  // City matches the structured field, falling back to the free-text
+  // location string for legacy events created before structured fields.
+  if (city && !onlineOnly) {
+    andConditions.push({
+      $or: [
+        { city: { $regex: exactCaseInsensitive(city) } },
+        { location: { $regex: escapeRegex(city), $options: "i" } },
+      ],
+    });
+  }
+
+  // Virtual events show under the dedicated Online filter and in the
+  // unfiltered feed — never under a specific place. ($ne matches legacy
+  // docs where isVirtual is undefined.)
+  if (onlineOnly) {
+    andConditions.push({ isVirtual: true });
+  } else if (city || state || country) {
+    andConditions.push({ isVirtual: { $ne: true } });
+  }
+
+  // Free-text search is its own OR-group, AND-ed with everything above.
+  const term = (q || "").trim();
+  if (term) {
+    const safe = escapeRegex(term);
+    andConditions.push({
+      $or: [
+        { title: { $regex: safe, $options: "i" } },
+        { description: { $regex: safe, $options: "i" } },
+        { location: { $regex: safe, $options: "i" } },
+        { city: { $regex: safe, $options: "i" } },
+      ],
+    });
+  }
+
+  const query = {
+    isPublic: true,
+    isActive: true,
+    date: { $gte: new Date() },
+    ...(state && !onlineOnly ? { state: { $regex: exactCaseInsensitive(state) } } : {}),
+    ...(country && !onlineOnly ? { country: { $regex: exactCaseInsensitive(country) } } : {}),
+    ...(blockedIds.length > 0 ? { createdBy: { $nin: blockedIds } } : {}),
+    $and: andConditions,
+  };
+
+  if (date) {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    query.date = { $gte: startOfDay, $lte: endOfDay };
+  }
+
+  return query;
+}
+
 // Get public events for exploration
 export const getPublicEvents = async (req, res) => {
   try {
-    const { limit = 20, page = 1, city, state, country, date, sort, online } = req.query;
+    const { limit = 20, page = 1, city, state, country, date, sort, online, q } = req.query;
     // optionalAuth — userId is null for logged-out (guest) browsers.
     const userId = req.user?.id || null;
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const onlineOnly = online === "true";
+    const term = (q || "").trim();
 
-    const cacheKey = `public_events_${userId || 'guest'}_${page}_${limit}_${city || ''}_${state || ''}_${country || ''}_${date || ''}_${onlineOnly ? 'online' : ''}`;
-    const cached = getCache(cacheKey);
-    if (cached) return res.status(200).json(cached);
+    // Searched requests are NOT cached: utils/cache.js is an unbounded Map with
+    // no eviction, so caching the per-keystroke keyspace at a 2-minute TTL grows
+    // memory without bound. `q` is still in the key so that if this ever does
+    // cache, a searched request can never collide with the unsearched feed.
+    const cacheKey = `public_events_${userId || 'guest'}_${page}_${limit}_${city || ''}_${state || ''}_${country || ''}_${date || ''}_${onlineOnly ? 'online' : ''}_${term}`;
+    if (!term) {
+      const cached = getCache(cacheKey);
+      if (cached) return res.status(200).json(cached);
+    }
 
     const blockedIds = userId ? await getBlockedIds(userId) : [];
 
-    const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-    // OR-groups are AND-combined so the paid-approval rule and the city
-    // filter don't overwrite each other.
-    const andConditions = [
-      {
-        $or: [
-          { isPaid: { $ne: true } },
-          { isPaid: true, approvalStatus: "approved" },
-        ],
-      },
-    ];
-
-    // City matches the structured field, falling back to the free-text
-    // location string for legacy events created before structured fields.
-    if (city && !onlineOnly) {
-      andConditions.push({
-        $or: [
-          { city: { $regex: new RegExp(`^${esc(city)}$`, "i") } },
-          { location: { $regex: esc(city), $options: "i" } },
-        ],
-      });
-    }
-
-    // Virtual events show under the dedicated Online filter and in the
-    // unfiltered feed — never under a specific place. ($ne matches legacy
-    // docs where isVirtual is undefined.)
-    if (onlineOnly) {
-      andConditions.push({ isVirtual: true });
-    } else if (city || state || country) {
-      andConditions.push({ isVirtual: { $ne: true } });
-    }
-
-    const query = {
-      isPublic: true,
-      isActive: true,
-      date: { $gte: new Date() },
-      ...(state && !onlineOnly ? { state: { $regex: new RegExp(`^${esc(state)}$`, "i") } } : {}),
-      ...(country && !onlineOnly ? { country: { $regex: new RegExp(`^${esc(country)}$`, "i") } } : {}),
-      ...(blockedIds.length > 0 ? { createdBy: { $nin: blockedIds } } : {}),
-      $and: andConditions,
-    };
-
-    if (date) {
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
-      query.date = { $gte: startOfDay, $lte: endOfDay };
-    }
+    const query = buildPublicEventQuery({
+      city, state, country, date, online: onlineOnly, blockedIds, q: term,
+    });
 
     const total = await Event.countDocuments(query);
 
@@ -1858,13 +1931,15 @@ export const getPublicEvents = async (req, res) => {
     // Thin results for a specific city? Surface the next-most-active nearby
     // city instead of leaving the page feeling empty. Only worth the extra
     // queries on page 1 — a "load more" call already knows the feed is real.
+    // Skipped for searches: "nothing here, try Austin" is a nonsensical reply to
+    // a text query, and it costs two extra queries per keystroke.
     let nearby = null;
-    if (city && !onlineOnly && parseInt(page) === 1 && total < NEARBY_MIN_RESULTS) {
+    if (city && !onlineOnly && !term && parseInt(page) === 1 && total < NEARBY_MIN_RESULTS) {
       nearby = await findNearbyCityEvents({ city, state, country, blockedIds, userId });
     }
 
     const result = { events: eventsWithTicketInfo, total, page: parseInt(page), nearby };
-    setCache(cacheKey, result, 120); // 2 min TTL
+    if (!term) setCache(cacheKey, result, 120); // 2 min TTL
     res.status(200).json(result);
   } catch (error) {
     console.error("Get public events error:", error);
@@ -2008,7 +2083,7 @@ export const getEventHighlights = async (req, res) => {
     const now = new Date();
     const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const esc = escapeRegex;
 
     const publicFilter = {
       isPublic: true,

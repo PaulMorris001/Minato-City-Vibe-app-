@@ -37,6 +37,7 @@ import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
 import EventQRModal from "@/components/shared/EventQRModal";
 import { ImageViewerModal } from "@/components/shared";
+import MediaTile from "@/components/shared/MediaTile";
 import { GlassCard } from "@/components/event-details/GlassCard";
 import { AU } from "@/components/auth/tokens";
 import {
@@ -100,11 +101,14 @@ interface Event {
   ticketPrice?: number;
   ticketTiers?: { _id: string; name: string; price: number }[];
   currency?: string;
-  // Capacity + headcount are organizer-only: the API strips them for anyone
-  // who isn't the creator or a co-host, so treat them as absent by default.
+  // Capacity + headcount reach the creator and co-hosts always, and everyone
+  // else only when the organizer flipped `showAttendance` on. The API strips
+  // them otherwise, so treat them as absent by default.
   maxGuests?: number;
   ticketsSold?: number;
   ticketsRemaining?: number;
+  /** Organizer opt-in: publishes the headcount/capacity numbers to all viewers. */
+  showAttendance?: boolean;
   /** Server-computed, sent to everyone — the CTA needs it without the numbers. */
   soldOut?: boolean;
   ticketingReady?: boolean;
@@ -898,11 +902,12 @@ export default function EventDetailsPage() {
   const userIsPendingInvite = event.userStatus === "pending";
   const userHasRequested = event.userStatus === "requested";
 
-  // Headcount, capacity and the guest list are for the people running the
-  // event. The API already withholds the numbers from everyone else (see
-  // applyAttendanceVisibility on the server); this gates the UI that renders
-  // them so a guest gets a clean layout instead of zeroes and empty bars.
-  const canSeeAttendance = isCreatorOrCohost;
+  // Headcount and capacity are for the people running the event, unless the
+  // organizer opted into publishing them. The API already withholds the numbers
+  // from everyone else (see applyAttendanceVisibility on the server); this gates
+  // the UI that renders them so a guest gets a clean layout instead of zeroes
+  // and empty bars.
+  const canSeeAttendance = isCreatorOrCohost || !!event.showAttendance;
 
   // Capacity numbers shared by the bar + the GOING / CAPACITY stat cards
   const goingCount = event.rsvpCount ?? event.rsvpUsers?.length ?? 0;
@@ -1086,7 +1091,9 @@ export default function EventDetailsPage() {
                   activeOpacity={0.85}
                   onPress={() => { setViewerIndex(i); setViewerVisible(true); }}
                 >
-                  <Image source={{ uri }} style={styles.galleryImage} contentFit="cover" />
+                  {/* Poster-only: a strip of live players is expensive, and
+                      tapping opens the full-screen viewer to actually watch. */}
+                  <MediaTile uri={uri} style={styles.galleryImage} posterOnly />
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -1445,7 +1452,10 @@ export default function EventDetailsPage() {
               headcount and opens the full roster instead. */}
           {!isCancelled && canSeeAttendance && (goingCount > 0 || (event.ticketsSold ?? 0) > 0) && (
             <TouchableOpacity
-              activeOpacity={0.8}
+              activeOpacity={isCreatorOrCohost ? 0.8 : 1}
+              // The roster endpoint is organizer-only, so a public viewer who
+              // can see the count still has nowhere to drill into.
+              disabled={!isCreatorOrCohost}
               onPress={() => router.push(`/event-attendees/${event._id}` as any)}
             >
               <GlassCard style={styles.attendeesCard}>
@@ -1463,6 +1473,10 @@ export default function EventDetailsPage() {
                     ) : null}
                   </Text>
                 </View>
+                {/* The guest list is never part of the showAttendance opt-in —
+                    the server withholds rsvpUsers from non-organizers, so this
+                    strip (and its drill-in chevron) is organizer-only. */}
+                {isCreatorOrCohost && (
                 <View style={styles.avatarStack}>
                   {(event.rsvpUsers ?? []).slice(0, 4).map((u, i) => (
                     <TouchableOpacity
@@ -1509,6 +1523,7 @@ export default function EventDetailsPage() {
                     style={{ marginLeft: 8 }}
                   />
                 </View>
+                )}
               </GlassCard>
             </TouchableOpacity>
           )}

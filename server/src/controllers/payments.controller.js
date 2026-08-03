@@ -21,7 +21,9 @@ import { Booking } from "../models/booking.model.js";
 import { Order } from "../models/order.model.js";
 import {
   getPayoutProvider,
+  getSettlementProvider,
   hasPayoutOnboarding,
+  PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
 import { fulfillTicket, issueRecipientTicket, fulfillGuide, fulfillBooking, fulfillOrder } from "../services/payments/fulfillment.js";
 import { computeSplit } from "../services/payments/split.js";
@@ -208,9 +210,9 @@ export const initPayment = async (req, res) => {
 
     // Stripe branch — always charge to the PLATFORM account (no transfer_data /
     // application_fee). Every sale's funds are held in the platform balance and
-    // only leave once an admin approves the resulting Payout, which Wise then
-    // sends to the seller's bank.
-    const settlement = "wise";
+    // only leave once an admin approves the resulting Payout, which Wise or
+    // Stripe Connect then sends to the seller, depending on their country.
+    const settlement = getSettlementProvider(seller);
     const amountCents = Math.round(amount * 100);
     const feeCents = Math.round(amountCents * (PLATFORM_FEE_PERCENT / 100));
     const sellerNetCents = amountCents - feeCents;
@@ -291,11 +293,13 @@ async function confirmStripe(type, id, paymentIntentId, userId, res) {
     return res.status(403).json({ message: "Payment does not match this purchase" });
   }
 
-  // Stripe-collected sales settle via Wise. The coercion (rather than trusting
-  // metadata verbatim) also covers in-flight PIs created before the remap,
-  // whose metadata still says "stripe". The seller's net stays in the platform
-  // balance; a Payout(awaiting_approval) is created for an admin to release.
-  const settlement = "wise";
+  // Settlement rail is re-derived from the seller rather than read from PI
+  // metadata, so in-flight PIs created before a routing change (or before the
+  // Wise+Paystack remap, whose metadata still says "stripe") settle on today's
+  // rail. The seller's net stays in the platform balance; a
+  // Payout(awaiting_approval) is created for an admin to release.
+  const seller = await User.findById(pi.metadata?.sellerId).select(PAYOUT_ROUTING_FIELDS);
+  const settlement = seller ? getSettlementProvider(seller) : "wise";
   const sellerNetCents = Number(pi.metadata?.sellerNetCents || 0);
   // Collection is cents; Wise sources major USD.
   const payoutAmount = sellerNetCents / 100;
@@ -633,7 +637,9 @@ export const initTicketBatch = async (req, res) => {
       return res.status(200).json({ ...init, orderId: order._id });
     }
 
-    // Stripe — charge the total into the platform balance (settled via Wise).
+    // Stripe — charge the total into the platform balance; an approved Payout
+    // settles it to the seller via whichever rail their country routes to.
+    const settlement = getSettlementProvider(seller);
     const amountCents = Math.round(total * 100);
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountCents,
@@ -644,7 +650,7 @@ export const initTicketBatch = async (req, res) => {
         sellerId: seller._id.toString(),
         eventId: eventId.toString(),
         ticketOrderId: order._id.toString(),
-        payoutProvider: "wise",
+        payoutProvider: settlement,
       },
       transfer_group: `event_${eventId}`,
     });
@@ -711,7 +717,10 @@ export const confirmTicketBatch = async (req, res) => {
     const event = await Event.findById(eventId);
     if (!event) return res.status(404).json({ message: "Event not found" });
 
-    const payoutProvider = isPaystack ? "paystack" : "wise";
+    // Re-derived from the seller rather than read back from the order/PI, so a
+    // routing change between init and confirm settles on today's rail.
+    const batchSeller = await User.findById(order.seller).select(PAYOUT_ROUTING_FIELDS);
+    const payoutProvider = isPaystack ? "paystack" : getSettlementProvider(batchSeller);
     const ticketIds = [];
     for (const item of order.items) {
       const recipient = await findOrCreateGuestUser(item.recipientEmail, item.recipientName);

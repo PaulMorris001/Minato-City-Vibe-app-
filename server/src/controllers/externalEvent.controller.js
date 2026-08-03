@@ -1,9 +1,5 @@
 import ExternalEvent from "../models/externalEvent.model.js";
-
-/** Escape a string for safe use as a literal inside a regex. */
-function escapeRegex(str) {
-  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+import { escapeRegex } from "../utils/escapeRegex.js";
 
 /**
  * Map between ISO-2 country codes and display names so callers can pass
@@ -64,6 +60,50 @@ function countryMatchCandidates(input) {
  *   - limit:     1..100, default 20
  *   - cursor:    ISO date string — return events with date > cursor (pagination)
  */
+/**
+ * Dedup pipeline, shared by the explore feed and the unified /search endpoint.
+ *
+ * Same-show / same-tour entries appear many times (Beyoncé residency across 6
+ * nights, NBA playoff series, recurring weekly trivia). They all share
+ * (title, venueName) but differ by date / sourceId.
+ *
+ * We bucket by (title, venueName) and return only the soonest event per bucket,
+ * carrying `additionalDates` so a card can show a "+ N more dates" affordance.
+ *
+ * @param {object} args
+ * @param {object} args.match  the $match stage — caller owns filtering
+ * @param {number} args.limit  documents to return (pass +1 to detect has-more)
+ */
+export function buildExternalExplorePipeline({ match, limit }) {
+  return [
+    { $match: match },
+    { $sort: { date: 1 } }, // soonest first, so $first below is "the soonest"
+    {
+      $group: {
+        _id: {
+          title: { $toLower: "$title" },
+          venue: { $toLower: { $ifNull: ["$venueName", ""] } },
+        },
+        // Keep the soonest event of each duplicate-set as the canonical one.
+        event: { $first: "$$ROOT" },
+        additionalDates: { $sum: 1 },
+      },
+    },
+    {
+      $replaceRoot: {
+        newRoot: {
+          $mergeObjects: ["$event", { additionalDates: { $subtract: ["$additionalDates", 1] } }],
+        },
+      },
+    },
+    // _id breaks date ties deterministically. Without it the sort is only
+    // partial — huge numbers of events share a date — so skip/limit paging
+    // returns the same document on two consecutive pages and drops others.
+    { $sort: { date: 1, _id: 1 } },
+    { $limit: limit },
+  ];
+}
+
 export const getExternalEventsExplore = async (req, res) => {
   try {
     const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
@@ -102,39 +142,9 @@ export const getExternalEventsExplore = async (req, res) => {
     if (category) match.category = category;
     if (!includePlaceholders) match.hasRealImage = true;
 
-    /*
-     * Dedup pipeline.
-     *
-     * Same-show / same-tour entries appear many times (Beyoncé residency
-     * across 6 nights, NBA playoff series, recurring weekly trivia). They
-     * all share (title, venueName) but differ by date / sourceId.
-     *
-     * We bucket by (title, venueName) and return only the soonest event
-     * per bucket. The detail screen can later query the rest of the
-     * bucket as "more dates available."
-     */
-    const pipeline = [
-      { $match: match },
-      { $sort: { date: 1 } }, // soonest first, so $first below is "the soonest"
-      {
-        $group: {
-          _id: {
-            title: { $toLower: "$title" },
-            venue: { $toLower: { $ifNull: ["$venueName", ""] } },
-          },
-          // Keep the soonest event of each duplicate-set as the canonical one.
-          event: { $first: "$$ROOT" },
-          // Track how many other dates exist for this (title, venue) so the
-          // mobile card can show "+ N more dates" affordance.
-          additionalDates: { $sum: 1 },
-        },
-      },
-      { $replaceRoot: { newRoot: { $mergeObjects: ["$event", { additionalDates: { $subtract: ["$additionalDates", 1] } }] } } },
-      { $sort: { date: 1 } },
-      { $limit: limit + 1 }, // +1 to detect "has more"
-    ];
-
-    const events = await ExternalEvent.aggregate(pipeline);
+    const events = await ExternalEvent.aggregate(
+      buildExternalExplorePipeline({ match, limit: limit + 1 }) // +1 to detect "has more"
+    );
 
     const hasMore = events.length > limit;
     const page = hasMore ? events.slice(0, limit) : events;

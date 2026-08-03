@@ -61,7 +61,9 @@ export async function fulfillTicket({
     ticketPrice: tier ? tier.price : event.ticketPrice,
     ...(tier ? { tierId: tier._id, tierName: tier.name } : {}),
     provider,
-    // Stripe-collected sales settle via Wise; Paystack settles its own.
+    // Defensive fallback only — every live caller resolves the settlement rail
+    // and passes it explicitly. Wise is the safe default: it can reach any
+    // seller, whereas Connect only reaches its own footprint.
     payoutProvider: payoutProvider || (provider === "stripe" ? "wise" : provider),
     currency: currency || event.currency || "usd",
     platformFeeCents,
@@ -127,7 +129,7 @@ export async function fulfillTicket({
  * @param {string} args.buyerUserId         the payer
  * @param {object|null} args.tier           { tierId, name, price } or null (single-price)
  * @param {"stripe"|"paystack"} args.provider
- * @param {"wise"|"paystack"} args.payoutProvider
+ * @param {"wise"|"paystack"|"stripe"} args.payoutProvider
  * @param {string} args.paymentRef
  * @param {string} args.currency
  * @param {number} args.platformFeeCents
@@ -237,7 +239,7 @@ export async function fulfillBooking({
 
   booking.paymentStatus = "paid";
   booking.provider = provider;
-  // Stripe-collected bookings settle via Wise; Paystack settles its own.
+  // Defensive fallback only — see fulfillTicket.
   booking.payoutProvider = payoutProvider || (provider === "stripe" ? "wise" : provider);
   booking.paymentRef = paymentRef;
   booking.platformFee = platformFee;
@@ -286,7 +288,7 @@ export async function fulfillOrder({
   order.paymentStatus = "paid";
   order.status = "paid";
   order.provider = provider;
-  // Stripe-collected orders settle via Wise; Paystack settles its own.
+  // Defensive fallback only — see fulfillTicket.
   order.payoutProvider = payoutProvider || (provider === "stripe" ? "wise" : provider);
   order.paymentRef = paymentRef;
   order.platformFee = platformFee;

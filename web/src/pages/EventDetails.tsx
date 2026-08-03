@@ -4,6 +4,7 @@ import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
 import AppPromo from "../components/AppPromo";
 import { api } from "../lib/api";
+import { isVideoUrl, videoPosterUrl } from "../lib/media";
 import { useAuth } from "../context/AuthContext";
 import type { EventItem } from "../lib/types";
 import { fallbackGradient, formatDateTime, money, relativeDay } from "../lib/format";
@@ -121,20 +122,26 @@ export default function EventDetails() {
     );
   }
 
-  const cover = ev.image || ev.images?.[0];
-  const gallery = (ev.images || []).filter((img) => img !== cover);
+  const coverMedia = ev.image || ev.images?.[0];
+  // The hero has the title and date laid over it, so a video there is shown as
+  // its still frame — it plays in the gallery below instead. A video we can't
+  // derive a poster from falls through to the gradient placeholder.
+  const cover = isVideoUrl(coverMedia) ? videoPosterUrl(coverMedia) : coverMedia;
+  const gallery = (ev.images || []).filter((item) => item !== coverMedia);
   const tiers = ev.ticketTiers || [];
   const host = ev.createdBy;
   const going =
     justJoined || ev.userRsvp || ev.userStatus === "accepted" || ev.userStatus === "creator";
   const soon = relativeDay(ev.date);
 
-  // Headcount, capacity and the guest list belong to whoever is running the
-  // event. The API strips those fields for everyone else (see
-  // applyAttendanceVisibility on the server), so their presence IS the
-  // permission check — no separate role lookup, and co-hosts are covered.
+  // Headcount and capacity reach the organizer always, and everyone else only
+  // when the host turned on `showAttendance`. The API strips the fields in
+  // every other case (see applyAttendanceVisibility on the server), so their
+  // presence IS the permission check — no separate role lookup, co-hosts are
+  // covered, and the opt-in needs no extra branch here. Same rule mobile
+  // applies in app/event/[id].tsx.
   const attending = ev.rsvpCount;
-  const showAttendance =
+  const canSeeAttendance =
     attending !== undefined || ev.ticketsSold !== undefined || ev.maxGuests !== undefined;
 
   return (
@@ -207,8 +214,9 @@ export default function EventDetails() {
             </section>
           )}
 
-          {/* Stats — attendance numbers are organizer-only; Views is not. */}
-          {(showAttendance || !!ev.seenCount) && (
+          {/* Stats — attendance numbers are organizer-only unless the host
+              opted in; Views is organizer-only regardless. */}
+          {(canSeeAttendance || !!ev.seenCount) && (
           <section className="cv-panel cv-section">
             <div className="cv-stats">
               {attending !== undefined && (
@@ -341,11 +349,22 @@ export default function EventDetails() {
           {/* Gallery */}
           {!!gallery.length && (
             <section className="cv-section">
-              <h3 className="cv-h3">Photos</h3>
+              <h3 className="cv-h3">{gallery.some(isVideoUrl) ? "Photos & videos" : "Photos"}</h3>
               <div className="cv-gallery">
-                {gallery.map((img) => (
-                  <img key={img} src={img} alt="" loading="lazy" />
-                ))}
+                {gallery.map((item) =>
+                  isVideoUrl(item) ? (
+                    <video
+                      key={item}
+                      src={item}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      poster={videoPosterUrl(item) || undefined}
+                    />
+                  ) : (
+                    <img key={item} src={item} alt="" loading="lazy" />
+                  )
+                )}
               </div>
             </section>
           )}

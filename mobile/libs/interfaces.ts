@@ -195,7 +195,14 @@ export interface GuideSection {
   title: string;
   rank: number;
   description: string;
+  /**
+   * @deprecated Superseded by `media`. Sections held exactly one photo before
+   * galleries and video shipped; guides written then still only have this.
+   * Read through `sectionMedia()` in utils/media.ts, never directly.
+   */
   image?: string;
+  /** Photos and videos for this section, max MAX_MEDIA_ITEMS. */
+  media?: string[];
 }
 
 export interface Guide {
