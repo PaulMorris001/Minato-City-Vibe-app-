@@ -143,18 +143,24 @@ export default function BestsPage() {
             Others can purchase your guides to discover the best places!
           </Text>
 
-          <TouchableOpacity style={styles.createButton} onPress={handleCreateGuide}>
-            <Ionicons name="add-circle" size={22} color="#fff" />
-            <Text style={styles.createButtonText}>Create Your Guide</Text>
-          </TouchableOpacity>
+          <View style={styles.guideActions}>
+            <TouchableOpacity style={styles.createButton} onPress={handleCreateGuide}>
+              <Ionicons name="add-circle" size={18} color="#fff" />
+              <Text style={styles.createButtonText} numberOfLines={1}>
+                Create guide
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.sampleGuideLink}
-            onPress={() => router.push("/guide/sample" as any)}
-          >
-            <Ionicons name="document-text-outline" size={18} color={colors.primary} />
-            <Text style={styles.sampleGuideText}>View Sample Guide</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.sampleGuideLink}
+              onPress={() => router.push("/guide/sample" as any)}
+            >
+              <Ionicons name="document-text-outline" size={16} color={colors.primary} />
+              <Text style={styles.sampleGuideText} numberOfLines={1}>
+                View sample
+              </Text>
+            </TouchableOpacity>
+          </View>
 
           <Text style={styles.sectionHeading}>Browse Guides</Text>
         </View>
@@ -256,35 +262,43 @@ const createStyles = (c: ThemeColors) =>
     lineHeight: 22,
     marginBottom: 20,
   },
+  // The two guide CTAs sit side by side — each is short enough not to need a
+  // full row, and stacking them pushed the guide list below the fold.
+  guideActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 20,
+  },
   sampleGuideLink: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    marginBottom: 20,
+    gap: 6,
     paddingVertical: 12,
+    paddingHorizontal: 10,
     backgroundColor: c.primaryFaded,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   sampleGuideText: {
-    fontSize: scaleFontSize(15),
+    fontSize: scaleFontSize(13),
     fontFamily: Fonts.semiBold,
     color: c.primary,
   },
   createButton: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: c.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-    marginBottom: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 6,
   },
   createButtonText: {
     color: c.white,
-    fontSize: scaleFontSize(15),
+    fontSize: scaleFontSize(13),
     fontFamily: Fonts.semiBold,
     textAlign: "center",
   },

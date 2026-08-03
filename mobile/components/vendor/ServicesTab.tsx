@@ -8,7 +8,6 @@ import {
   RefreshControl,
   Alert,
 } from "react-native";
-import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as SecureStore from "expo-secure-store";
@@ -23,6 +22,7 @@ import { VN, VNF, VN_CTA_GRADIENT, coverGradient, categoryEmoji } from "./vendor
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
+import MediaTile from "@/components/shared/MediaTile";
 
 interface ServicesTabProps {
   categories: CatalogueCategory[];
@@ -176,7 +176,7 @@ export default function ServicesTab({
       >
         <View style={styles.catCover}>
           {hasImg ? (
-            <Image source={{ uri: item.images![0] }} style={StyleSheet.absoluteFill as any} contentFit="cover" />
+            <MediaTile uri={item.images![0]} style={StyleSheet.absoluteFill as any} posterOnly />
           ) : (
             <LinearGradient colors={[c1, c2]} style={StyleSheet.absoluteFill as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
               <Text style={styles.coverEmoji}>{categoryEmoji(item.name)}</Text>
@@ -228,7 +228,7 @@ export default function ServicesTab({
       <View style={styles.card}>
         <View style={styles.cover}>
           {hasImg ? (
-            <Image source={{ uri: item.images[0] }} style={StyleSheet.absoluteFill as any} contentFit="cover" />
+            <MediaTile uri={item.images[0]} style={StyleSheet.absoluteFill as any} posterOnly />
           ) : (
             <LinearGradient colors={[c1, c2]} style={StyleSheet.absoluteFill as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
               <Text style={styles.coverEmoji}>{categoryEmoji(item.category)}</Text>

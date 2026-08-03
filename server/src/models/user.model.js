@@ -84,6 +84,21 @@ const userSchema = mongoose.Schema({
   wiseRecipientCurrency: { type: String },
   wiseOnboardingComplete: { type: Boolean, default: false },
 
+  // Stripe Connect payout fields (sellers inside Stripe's cross-border-payouts
+  // footprint: US, UK, EEA, CA, CH). Like Wise sellers they COLLECT via the
+  // platform Stripe account; settlement is a Transfer from the platform balance
+  // to their Express account once an admin approves the payout.
+  stripeAccountId: { type: String },
+  // ISO-3166-1 alpha-2 the Express account was opened in. Immutable on Stripe's
+  // side, so it's kept here to detect a later country change on the profile.
+  stripeAccountCountry: { type: String },
+  stripeAccountCurrency: { type: String },
+  stripeOnboardingComplete: { type: Boolean, default: false },
+  // account.payouts_enabled. A Transfer still succeeds while this is false —
+  // funds land in the vendor's Stripe balance but don't reach their bank — so
+  // it's surfaced in the UI rather than gating onboarding.
+  stripePayoutsEnabled: { type: Boolean, default: false },
+
   // Paid-event organizer trust: false until an admin approves their first paid event.
   // After approval, subsequent paid events skip the approval queue.
   paidEventsApproved: { type: Boolean, default: false },
@@ -126,5 +141,10 @@ const userSchema = mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// The Connect webhook resolves the vendor by account id on every
+// `account.updated`, which Stripe emits liberally. Sparse — only Connect
+// vendors carry the field.
+userSchema.index({ stripeAccountId: 1 }, { sparse: true });
 
 export default mongoose.model("user", userSchema);

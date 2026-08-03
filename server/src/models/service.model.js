@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { mediaArrayLimit } from "../utils/mediaLimit.js";
 
 const serviceSchema = mongoose.Schema({
     vendor: {
@@ -66,9 +67,12 @@ const serviceSchema = mongoose.Schema({
         type: Number,
         default: null
     },
-    images: [{
-        type: String
-    }],
+    // Photos and videos for this item, max MAX_MEDIA_ITEMS.
+    images: {
+        type: [String],
+        default: [],
+        validate: mediaArrayLimit("Item media"),
+    },
     // ── Service-kind fields ──
     duration: {
         value: { type: Number },

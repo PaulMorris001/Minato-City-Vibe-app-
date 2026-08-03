@@ -154,9 +154,14 @@ export const config = {
     secretKey: process.env.STRIPE_SECRET_KEY || "",
     publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || "",
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
+    // Connect events (account.updated for connected accounts) are delivered to a
+    // SEPARATE Stripe webhook endpoint with its OWN signing secret — the account
+    // webhook secret above will NOT verify them.
+    connectWebhookSecret: process.env.STRIPE_CONNECT_WEBHOOK_SECRET || "",
     platformFeePercent: parseFloat(process.env.PLATFORM_FEE_PERCENT || "10"),
     // Public HTTPS base URL of this server — used for provider checkout
-    // return/callback URLs (e.g. the Paystack redirect).
+    // return/callback URLs (e.g. the Paystack redirect) and the Connect
+    // onboarding return/refresh URLs.
     serverUrl: process.env.SERVER_URL || "https://api.ourcityvibe.com",
   },
 

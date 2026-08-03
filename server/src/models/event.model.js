@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { mediaArrayLimit } from "../utils/mediaLimit.js";
 
 const eventSchema = mongoose.Schema({
   title: { type: String, required: true },
@@ -15,7 +16,13 @@ const eventSchema = mongoose.Schema({
   // Optional meeting URL (Zoom/Meet/etc). Only returned to attendees.
   meetingLink: { type: String, default: "" },
   image: { type: String, default: "" }, // primary/cover image (first of images)
-  images: { type: [String], default: [] }, // gallery — all event photos
+  // Gallery — photos and videos, max MAX_MEDIA_ITEMS. Each entry is a
+  // Cloudinary URL whose delivery path identifies the kind.
+  images: {
+    type: [String],
+    default: [],
+    validate: mediaArrayLimit("Event photos"),
+  },
   description: { type: String, default: "" },
 
   // Creator of the event
@@ -77,6 +84,14 @@ const eventSchema = mongoose.Schema({
   // for Paystack sellers). Drives the provider charge currency.
   currency: { type: String, default: "USD" },
   maxGuests: { type: Number, default: 0 },
+
+  // Organizer opt-in for public attendance numbers. Off by default: headcount
+  // and capacity are the host's numbers (a half-empty room is not something an
+  // organizer wants broadcast), so they stay organizer-only unless the host
+  // deliberately turns them on as social proof. Never covers the guest LIST —
+  // who is coming is other attendees' data and stays private either way.
+  // See applyAttendanceVisibility in controllers/event.controller.js.
+  showAttendance: { type: Boolean, default: false },
 
   // Group chat for this event (auto-created when first user is invited)
   groupChatId: {
@@ -187,6 +202,15 @@ const eventSchema = mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// The public-events feed and unified search both filter on
+// (isPublic, isActive, date) and narrow by city. Nothing on this collection was
+// indexed at all, so every Discover load was a full scan — these help the whole
+// browse path, not just search. (Text search itself stays on $regex, which
+// can't use an index; see search.controller.js for why $text is the wrong tool
+// for type-ahead.)
+eventSchema.index({ isPublic: 1, isActive: 1, date: 1 });
+eventSchema.index({ city: 1, date: 1 });
 
 // Generate share token before saving
 eventSchema.pre('save', function(next) {

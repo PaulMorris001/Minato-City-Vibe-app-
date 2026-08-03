@@ -1,18 +1,24 @@
 import Event from "../models/event.model.js";
 import Ticket from "../models/ticket.model.js";
 import User from "../models/user.model.js";
-import { getSettlementProvider, hasPayoutOnboarding } from "../services/payments/resolveProvider.js";
+import {
+  getSettlementProvider,
+  hasPayoutOnboarding,
+  PAYOUT_ROUTING_FIELDS,
+} from "../services/payments/resolveProvider.js";
 import { createPayout } from "../services/payments/payout.service.js";
 
 /**
- * Convert a ticket-sales net (held in the collection provider's units) into the
- * settlement provider's payout units (major).
- *  - Stripe-collected nets are cents; Wise settles them as major USD (÷ 100).
- *  - Paystack-collected nets are already major local units.
+ * Convert a ticket-sales net (held in the COLLECTION provider's units) into the
+ * settlement provider's payout units — always major, see payout.model.js.
+ *  - Paystack collects in major local units and settles them as-is.
+ *  - Everything else was Stripe-collected, i.e. cents. Both Stripe-collected
+ *    rails (wise and stripe/Connect) settle in major USD, so ÷ 100.
+ *    payout.service.js re-multiplies to cents at the Transfers API boundary.
  */
 function ticketPayoutAmount(totalNet, settlement) {
-  if (settlement === "wise") return totalNet / 100; // cents → major USD
-  return totalNet; // paystack: major
+  if (settlement === "paystack") return totalNet; // already major local units
+  return totalNet / 100; // cents → major USD (wise + stripe)
 }
 
 /**
@@ -48,7 +54,7 @@ async function releaseDuePayouts() {
   for (const evt of due) {
     try {
       const seller = await User.findById(evt.createdBy).select(
-        "location paystackRecipientCode paystackBank paystackOnboardingComplete wiseRecipientId wiseRecipientCurrency wiseOnboardingComplete username"
+        `${PAYOUT_ROUTING_FIELDS} paystackBank username`
       );
 
       if (!hasPayoutOnboarding(seller)) {

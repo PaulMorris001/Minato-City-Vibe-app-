@@ -5,6 +5,26 @@ import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean } from "../utils/contentFilter.js";
 import { currencyForUser } from "../services/payments/resolveProvider.js";
 import { isSupportUser } from "../utils/supportAccount.js";
+import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
+import { MAX_MEDIA_ITEMS } from "../utils/mediaLimit.js";
+
+/**
+ * Reconcile the two shapes a section's media can arrive in.
+ *
+ * Sections used to carry a single `image`; they now carry a `media` array of up
+ * to MAX_MEDIA_ITEMS photos/videos. Older app builds still send `image`, so a
+ * payload with only that is promoted into a one-item array. Going the other
+ * way, `image` is kept mirroring `media[0]` so any client still reading the old
+ * field shows the section's cover instead of nothing.
+ */
+function normalizeSectionMedia(section) {
+  const media = Array.isArray(section.media)
+    ? section.media.filter(Boolean).slice(0, MAX_MEDIA_ITEMS)
+    : section.image
+      ? [section.image]
+      : [];
+  return { media, image: media[0] || "" };
+}
 
 // Get all topics
 export const getTopics = async (req, res) => {
@@ -112,7 +132,7 @@ export const createGuide = async (req, res) => {
         title: s.title,
         rank: s.rank,
         description: s.description,
-        image: s.image || "",
+        ...normalizeSectionMedia(s),
       })),
       isDraft: isDraft || false,
     });
@@ -138,45 +158,73 @@ export const createGuide = async (req, res) => {
 export const getGuides = async (req, res) => {
   try {
     const { city, state, country, topic, minPrice, maxPrice, search } = req.query;
+    // Generous default so the pre-pagination callers (bests, city guides, saved
+    // guides) keep getting everything they used to.
+    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 200);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
 
     const blockedIds = req.user?.id ? await getBlockedIds(req.user.id) : [];
 
-    const filter = {
-      isDraft: false,
-      isActive: true,
-      ...(blockedIds.length > 0 ? { author: { $nin: blockedIds } } : {}),
-    };
+    const filter = buildGuideQuery({ city, state, country, topic, minPrice, maxPrice, search, blockedIds });
 
-    // Filter by location if provided
-    const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (city) filter.city = { $regex: new RegExp(`^${esc(city)}$`, "i") };
-    if (state) filter.cityState = { $regex: new RegExp(`^${esc(state)}$`, "i") };
-    if (country) filter.country = { $regex: new RegExp(`^${esc(country)}$`, "i") };
+    const [guides, total] = await Promise.all([
+      Guide.find(filter)
+        .populate("author", "username email profilePicture")
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      Guide.countDocuments(filter),
+    ]);
 
-    if (topic) filter.topic = topic;
-    if (minPrice || maxPrice) {
-      filter.price = {};
-      if (minPrice) filter.price.$gte = parseFloat(minPrice);
-      if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
-    }
-    if (search) {
-      filter.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-        { authorName: { $regex: search, $options: "i" } },
-      ];
-    }
-
-    const guides = await Guide.find(filter)
-      .populate("author", "username email profilePicture")
-      .sort({ createdAt: -1 });
-
-    res.status(200).json({ guides });
+    res.status(200).json({ guides, total, page });
   } catch (error) {
     console.error("Get guides error:", error);
     res.status(500).json({ message: "Failed to fetch guides" });
   }
 };
+
+/**
+ * Shared guide filter builder — used by getGuides and the unified /search
+ * endpoint so the two can't drift.
+ *
+ * OR-groups go into `$and` rather than assigning `filter.$or` directly: a bare
+ * assignment means the next feature that needs its own OR-group silently
+ * clobbers this one.
+ */
+export function buildGuideQuery({ city, state, country, topic, minPrice, maxPrice, search, blockedIds = [] }) {
+  const filter = {
+    isDraft: false,
+    isActive: true,
+    ...(blockedIds.length > 0 ? { author: { $nin: blockedIds } } : {}),
+  };
+
+  // Location filters are anchored exact matches, not substrings.
+  if (city) filter.city = { $regex: exactCaseInsensitive(city) };
+  if (state) filter.cityState = { $regex: exactCaseInsensitive(state) };
+  if (country) filter.country = { $regex: exactCaseInsensitive(country) };
+
+  if (topic) filter.topic = topic;
+  if (minPrice || maxPrice) {
+    filter.price = {};
+    if (minPrice) filter.price.$gte = parseFloat(minPrice);
+    if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
+  }
+
+  const andConditions = [];
+  if (search) {
+    const safe = escapeRegex(String(search));
+    andConditions.push({
+      $or: [
+        { title: { $regex: safe, $options: "i" } },
+        { description: { $regex: safe, $options: "i" } },
+        { authorName: { $regex: safe, $options: "i" } },
+      ],
+    });
+  }
+  if (andConditions.length > 0) filter.$and = andConditions;
+
+  return filter;
+}
 
 // Get the top-selling published guides (most purchases, then most views)
 export const getTopGuides = async (req, res) => {
@@ -421,7 +469,7 @@ export const updateGuide = async (req, res) => {
         title: s.title,
         rank: s.rank,
         description: s.description,
-        image: s.image || "",
+        ...normalizeSectionMedia(s),
       }));
     if (isDraft !== undefined) guide.isDraft = isDraft;
 

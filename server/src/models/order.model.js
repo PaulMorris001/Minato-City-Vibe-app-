@@ -85,7 +85,7 @@ const orderSchema = new mongoose.Schema(
       default: "unpaid",
     },
     provider: { type: String, enum: ["stripe", "paystack"] },
-    payoutProvider: { type: String, enum: ["wise", "paystack"] },
+    payoutProvider: { type: String, enum: ["wise", "paystack", "stripe"] },
     platformFee: { type: Number, default: 0 },
     vendorNet: { type: Number, default: 0 },
     paymentRef: { type: String },

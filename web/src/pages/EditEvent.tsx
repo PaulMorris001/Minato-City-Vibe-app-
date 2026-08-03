@@ -45,6 +45,9 @@ export default function EditEvent() {
   const [tiers, setTiers] = useState<TierRow[]>([]);
   const [ticketPrice, setTicketPrice] = useState("");
   const [maxGuests, setMaxGuests] = useState("");
+  // Organizer opt-in for public headcount/capacity. Minor field — the server
+  // applies it immediately instead of queueing it for admin approval.
+  const [showAttendance, setShowAttendance] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -74,6 +77,7 @@ export default function EditEvent() {
         }
         setTicketPrice(event.ticketPrice ? String(event.ticketPrice) : "");
         setMaxGuests(event.maxGuests ? String(event.maxGuests) : "");
+        setShowAttendance(!!event.showAttendance);
       })
       .catch((err) => setError(err.message || "Couldn't load this event"))
       .finally(() => setLoading(false));
@@ -107,6 +111,7 @@ export default function EditEvent() {
         body.location = location;
         body.address = address;
       }
+      if (ev.isPublic) body.showAttendance = showAttendance;
       if (ev.isPaid) {
         if (useTiers) {
           body.ticketTiers = tiers.map((t) => ({
@@ -229,6 +234,26 @@ export default function EditEvent() {
               />
             </div>
           </>
+        )}
+
+        {/* Headcount is private by default; this publishes it as social proof.
+            Unlike pricing below, it applies immediately — it changes who may
+            read the numbers, not the numbers themselves. */}
+        {ev?.isPublic && (
+          <div>
+            <label className="cv-label" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={showAttendance}
+                onChange={(e) => setShowAttendance(e.target.checked)}
+              />
+              Show how many are going
+            </label>
+            <p className="cv-muted" style={{ fontSize: 13, marginTop: 4 }}>
+              Guests see the headcount, capacity and spots left. Your guest list stays
+              private either way.
+            </p>
+          </div>
         )}
 
         {ev?.isPaid && (

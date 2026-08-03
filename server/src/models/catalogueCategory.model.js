@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { mediaArrayLimit } from "../utils/mediaLimit.js";
 
 /**
  * A top-level catalogue category owned by a vendor (e.g. "Catering",
@@ -31,8 +32,13 @@ const catalogueCategorySchema = mongoose.Schema(
       enum: ["product", "service"],
       required: true,
     },
-    // Cover art for the category card (Cloudinary URLs).
-    images: [{ type: String }],
+    // Cover art for the category card — photos or videos, max
+    // MAX_MEDIA_ITEMS (Cloudinary URLs).
+    images: {
+      type: [String],
+      default: [],
+      validate: mediaArrayLimit("Category media"),
+    },
     isActive: {
       type: Boolean,
       default: true,

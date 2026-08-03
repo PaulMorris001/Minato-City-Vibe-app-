@@ -10,6 +10,7 @@ import {
   relativeDay,
   sourceLabel,
 } from "../lib/format";
+import { isVideoUrl, videoPosterUrl } from "../lib/media";
 import type { FeedEvent } from "../lib/types";
 
 /**
@@ -22,7 +23,14 @@ export default function EventCard({ ev }: { ev: FeedEvent }) {
   // Some ingested/legacy rows point at images that 404 — fall back to the
   // gradient rather than leaving a dead grey rectangle.
   const [imgFailed, setImgFailed] = useState(false);
-  const cover = imgFailed ? undefined : ev.image || ev.images?.[0];
+  const coverMedia = ev.image || ev.images?.[0];
+  // A video cover shows its still frame — a card in a scrolling feed should
+  // never spin up a player. Tapping through opens the detail page to watch.
+  const cover = imgFailed
+    ? undefined
+    : isVideoUrl(coverMedia)
+      ? videoPosterUrl(coverMedia) ?? undefined
+      : coverMedia;
   const badge = dateBadge(ev.date);
   const soon = relativeDay(ev.date);
   const href = ev.kind === "native" ? `/events/${ev._id}` : `/external-events/${ev._id}`;

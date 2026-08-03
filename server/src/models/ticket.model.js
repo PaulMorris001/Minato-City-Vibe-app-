@@ -46,9 +46,9 @@ const ticketSchema = mongoose.Schema({
   provider: { type: String, enum: ["stripe", "paystack"], default: "stripe" },
 
   // Which provider settles the seller's share. Stripe-collected sales settle
-  // via Wise; Paystack collects and settles its own. Drives the payout job's
-  // transfer branch.
-  payoutProvider: { type: String, enum: ["wise", "paystack"], default: "wise" },
+  // via Wise or Stripe Connect depending on the seller's country; Paystack
+  // collects and settles its own. Drives the payout job's transfer branch.
+  payoutProvider: { type: String, enum: ["wise", "paystack", "stripe"], default: "wise" },
 
   // Stripe payment tracking
   stripePaymentIntentId: { type: String },

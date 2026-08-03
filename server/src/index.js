@@ -22,9 +22,11 @@ import guideRoutes from "./routes/guide.route.js";
 import uploadRoutes from "./routes/upload.route.js";
 import logRoutes from "./routes/log.route.js";
 import stripeRoutes from "./routes/stripe.route.js";
+import stripeConnectRoutes from "./routes/stripeConnect.route.js";
 import paystackRoutes from "./routes/paystack.route.js";
 import wiseRoutes from "./routes/wise.route.js";
 import paymentsRoutes from "./routes/payments.route.js";
+import searchRoutes from "./routes/search.route.js";
 import notificationRoutes from "./routes/notification.route.js";
 import favoritesRoutes from "./routes/favorites.route.js";
 import adminRoutes from "./routes/admin.route.js";
@@ -71,6 +73,8 @@ app.options(/(.*)/, cors(config.cors));
 // Stripe + Wise + Paystack webhooks need the raw body for signature
 // verification — must be registered BEFORE express.json()
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+// Connect events arrive on their own endpoint with their own signing secret.
+app.use('/api/stripe/connect/webhook', express.raw({ type: 'application/json' }));
 app.use('/api/wise/webhook', express.raw({ type: 'application/json' }));
 app.use('/api/paystack/webhook', express.raw({ type: 'application/json' }));
 
@@ -105,10 +109,12 @@ app.use("/api/", chatRoutes);
 app.use("/api/", guideRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/", logRoutes);
+app.use("/api/", stripeConnectRoutes);
 app.use("/api/", stripeRoutes);
 app.use("/api/", paystackRoutes);
 app.use("/api/", wiseRoutes);
 app.use("/api/", paymentsRoutes);
+app.use("/api/", searchRoutes);
 app.use("/api/", notificationRoutes);
 app.use("/api/", favoritesRoutes);
 app.use("/api/", followRoutes);

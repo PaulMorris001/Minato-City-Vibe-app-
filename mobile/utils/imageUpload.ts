@@ -36,6 +36,18 @@ function mimeFromExtension(filename: string): string {
       return "image/heic";
     case "heif":
       return "image/heif";
+    // Video. These must be labelled correctly or the server's file filter reads
+    // the part as an image and Cloudinary rejects the upload.
+    case "mp4":
+      return "video/mp4";
+    case "mov":
+      return "video/quicktime";
+    case "webm":
+      return "video/webm";
+    case "m4v":
+      return "video/x-m4v";
+    case "mkv":
+      return "video/x-matroska";
     default:
       return "image/jpeg";
   }
@@ -60,8 +72,10 @@ async function readErrorMessage(response: Response, fallback: string): Promise<s
       }
     }
     // HTML or plain text — don't surface the markup, just hint at the cause.
-    if (response.status === 413) return "That image is too large. Pick something under 10 MB.";
-    if (response.status === 415) return "Unsupported image format. Try JPEG, PNG, or HEIC.";
+    if (response.status === 413)
+      return "That file is too large. Photos must be under 10 MB and videos under 64 MB.";
+    if (response.status === 415)
+      return "Unsupported format. Try JPEG, PNG or HEIC photos, or MP4/MOV video.";
     return fallback;
   } catch {
     return fallback;
@@ -94,22 +108,43 @@ export async function pickImage(): Promise<string | null> {
   return null;
 }
 
+/** Longest video we accept, in seconds. Keeps uploads inside the server's 64 MB cap. */
+export const MAX_VIDEO_SECONDS = 60;
+
+export interface PickMediaOptions {
+  /** Also offer videos in the picker. Off by default — avatars and cover photos must stay stills. */
+  allowVideos?: boolean;
+  /** Cap the number of items the picker will hand back (iOS enforces it natively). */
+  limit?: number;
+}
+
 /**
- * Pick multiple images from the device library
+ * Pick multiple photos — and, with `allowVideos`, videos — from the device
+ * library.
+ *
+ * `limit` is passed to the OS picker so the user is stopped at the cap while
+ * selecting, rather than picking twelve and silently losing two. Callers should
+ * still clamp the result: Android's picker doesn't always honour it.
  */
-export async function pickMultipleImages(): Promise<string[]> {
+export async function pickMultipleImages(
+  options: PickMediaOptions = {}
+): Promise<string[]> {
+  const { allowVideos = false, limit } = options;
+
   // Request permissions
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
   if (status !== 'granted') {
-    alert('Sorry, we need camera roll permissions to upload images.');
+    alert('Sorry, we need camera roll permissions to upload media.');
     return [];
   }
 
-  // Pick images
+  // Pick media
   const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ['images'],
+    mediaTypes: allowVideos ? ['images', 'videos'] : ['images'],
     allowsMultipleSelection: true,
+    ...(limit ? { selectionLimit: limit } : {}),
+    videoMaxDuration: MAX_VIDEO_SECONDS,
     quality: 0.8,
   });
 
@@ -264,9 +299,11 @@ export async function uploadBase64Image(
 }
 
 /**
- * Resolve a mixed list of image URIs to remote URLs: anything already hosted
- * (http...) is kept as-is, local file:// / data: URIs are uploaded. Preserves
- * order. Used by forms that mix already-saved photos with newly-picked ones.
+ * Resolve a mixed list of media URIs to remote URLs: anything already hosted
+ * (http...) is kept as-is, local file:// / data: URIs are uploaded. Handles
+ * photos and videos alike — the server sniffs the resource type, and the
+ * returned Cloudinary URL carries the kind. Preserves order. Used by forms that
+ * mix already-saved media with newly-picked items.
  */
 export async function resolveImageUrls(
   uris: string[],

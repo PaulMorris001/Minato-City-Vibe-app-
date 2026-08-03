@@ -15,6 +15,10 @@ import Ticket from "../models/ticket.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
 import { fulfillTicket, fulfillGuide } from "../services/payments/fulfillment.js";
 import { refundPaystackCharge } from "./paystack.controller.js";
+import {
+  getSettlementProvider,
+  PAYOUT_ROUTING_FIELDS,
+} from "../services/payments/resolveProvider.js";
 
 /**
  * Return the publishable key that matches THIS server's secret key (same
@@ -254,13 +258,17 @@ export const stripeWebhook = async (req, res) => {
       // Webhook acts as a fallback if the app's confirm call never lands. The
       // shared helpers are idempotent, so a double-fire is harmless.
       if (type === "ticket" && eventId && buyerId) {
+        // Re-derived from the seller rather than read from PI metadata, so
+        // in-flight PIs created before a routing change (or before the
+        // Wise+Paystack remap) settle on today's rail.
+        const seller = await User.findById(paymentIntent.metadata?.sellerId).select(
+          PAYOUT_ROUTING_FIELDS
+        );
         await fulfillTicket({
           eventId,
           userId: buyerId,
           provider: "stripe",
-          // Stripe-collected sales settle via Wise regardless of what older
-          // PIs' metadata says.
-          payoutProvider: "wise",
+          payoutProvider: seller ? getSettlementProvider(seller) : "wise",
           paymentRef: paymentIntent.id,
           currency: "usd",
           platformFeeCents: Number(paymentIntent.metadata?.platformFeeCents || 0),

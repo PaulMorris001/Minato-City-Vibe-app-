@@ -12,6 +12,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import ZoomableImage from "./ZoomableImage";
+import MediaTile from "./MediaTile";
+import { isVideoUrl } from "@/utils/media";
 
 import { useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -25,9 +27,9 @@ interface ImageViewerModalProps {
 }
 
 /**
- * Full-screen, swipeable image viewer. Paged horizontally; pinch or
- * double-tap to zoom; tap once (or the X) to dismiss. Shows a
- * "current / total" indicator.
+ * Full-screen, swipeable media viewer. Paged horizontally; images pinch or
+ * double-tap to zoom and dismiss on a single tap; videos play inline with
+ * native controls. Shows a "current / total" indicator.
  */
 export default function ImageViewerModal({
   visible,
@@ -64,11 +66,17 @@ export default function ImageViewerModal({
           onMomentumScrollEnd={onScroll}
           renderItem={({ item }) => (
             <View style={styles.page}>
-              <ZoomableImage
-                uri={item}
-                onSingleTap={onClose}
-                onZoomChange={(zoomed) => setScrollEnabled(!zoomed)}
-              />
+              {isVideoUrl(item) ? (
+                // No single-tap-to-dismiss on video: that gesture belongs to
+                // the player's own controls. The X button closes it.
+                <MediaTile uri={item} style={styles.video} />
+              ) : (
+                <ZoomableImage
+                  uri={item}
+                  onSingleTap={onClose}
+                  onZoomChange={(zoomed) => setScrollEnabled(!zoomed)}
+                />
+              )}
             </View>
           )}
         />
@@ -102,6 +110,10 @@ const createStyles = (c: ThemeColors) =>
   image: {
     width: SCREEN_W,
     height: SCREEN_H * 0.85,
+  },
+  video: {
+    width: SCREEN_W,
+    height: SCREEN_H * 0.7,
   },
   closeButton: {
     position: "absolute",
