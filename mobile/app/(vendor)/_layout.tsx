@@ -24,6 +24,7 @@ import { capitalize } from "@/libs/helpers";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useAccount } from "@/contexts/AccountContext";
+import { useUnread } from "@/contexts/UnreadContext";
 import socketService from "@/services/socket.service";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -154,6 +155,10 @@ export default function VendorLayout() {
 
   const pendingBadgeLabel =
     pendingBookingsCount > 99 ? "99+" : String(pendingBookingsCount);
+
+  // Vendor-inbox unread count — separate from the client chats badge.
+  const { vendorUnread } = useUnread();
+  const vendorUnreadLabel = vendorUnread > 99 ? "99+" : String(vendorUnread);
 
   const renderModalContent = () => (
     <>
@@ -374,6 +379,7 @@ export default function VendorLayout() {
                 selected: "bubble.left.and.bubble.right.fill",
               }}
             />
+            {vendorUnread > 0 && <Badge>{vendorUnreadLabel}</Badge>}
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="account">
             <Label>Account</Label>
@@ -435,6 +441,8 @@ export default function VendorLayout() {
             name="chats"
             options={{
               title: "Chats",
+              tabBarBadge: vendorUnread > 0 ? vendorUnreadLabel : undefined,
+              tabBarBadgeStyle: { backgroundColor: colors.accentPink, color: "#fff", fontSize: 10 },
               tabBarIcon: ({ focused, color }) => (
                 <Ionicons name={focused ? "chatbubbles" : "chatbubbles-outline"} size={20} color={color} />
               ),

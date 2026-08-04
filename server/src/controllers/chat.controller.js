@@ -7,11 +7,13 @@ import { setCache, getCache, invalidateCache, invalidateCachePattern } from "../
  * Chat Controller - Handles HTTP requests for chat operations
  */
 
-// Create or get a direct chat with another user
+// Create or get a direct chat with another user.
+// Pass { context: "vendor", vendorUserId } to open a business↔customer thread
+// (kept separate from any personal chat between the same two users).
 export const getOrCreateDirectChat = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { otherUserId } = req.body;
+    const { otherUserId, context, vendorUserId } = req.body;
 
     if (!otherUserId) {
       return res.status(400).json({ message: "Other user ID is required" });
@@ -27,11 +29,26 @@ export const getOrCreateDirectChat = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const chat = await ChatService.getOrCreateDirectChat(userId, otherUserId);
+    let options = {};
+    if (context === "vendor") {
+      if (![userId, otherUserId].includes(vendorUserId)) {
+        return res.status(400).json({ message: "vendorUserId must be one of the two participants" });
+      }
+      // The business side of the thread must actually be a vendor.
+      const vendorUser = vendorUserId === userId
+        ? await User.findById(userId).select("isVendor")
+        : otherUser;
+      if (!vendorUser?.isVendor) {
+        return res.status(400).json({ message: "That user is not a vendor" });
+      }
+      options = { context: "vendor", vendorUserId };
+    }
 
-    // Invalidate both users' chat lists in case a new chat was created
-    invalidateCache(`user_chats_${userId}`);
-    invalidateCache(`user_chats_${otherUserId}`);
+    const chat = await ChatService.getOrCreateDirectChat(userId, otherUserId, options);
+
+    // Invalidate both users' chat lists (all scopes) in case a new chat was created
+    invalidateCachePattern(`user_chats_${userId}`);
+    invalidateCachePattern(`user_chats_${otherUserId}`);
     res.status(200).json({
       message: "Chat retrieved successfully",
       chat
@@ -74,16 +91,19 @@ export const createGroupChat = async (req, res) => {
   }
 };
 
-// Get all chats for the authenticated user
+// Get all chats for the authenticated user.
+// ?scope=vendor returns the business inbox (vendor-context chats where the
+// caller is the vendor); anything else returns the client inbox.
 export const getUserChats = async (req, res) => {
   try {
     const userId = req.user.id;
+    const scope = req.query.scope === "vendor" ? "vendor" : "client";
 
-    const cacheKey = `user_chats_${userId}`;
+    const cacheKey = `user_chats_${userId}_${scope}`;
     const cached = getCache(cacheKey);
     if (cached) return res.status(200).json(cached);
 
-    const chats = await ChatService.getUserChats(userId);
+    const chats = await ChatService.getUserChats(userId, scope);
 
     const response = { chats, count: chats.length };
     setCache(cacheKey, response, 30); // 30s TTL
@@ -101,7 +121,7 @@ export const getChatById = async (req, res) => {
     const { chatId } = req.params;
 
     const chat = await Chat.findById(chatId)
-      .populate('participants', 'username email profilePicture isVendor businessName')
+      .populate('participants', 'username email profilePicture isVendor businessName businessPicture')
       .populate('admins', 'username email profilePicture')
       .populate('pendingInvites.user', 'username email profilePicture')
       .populate('pendingInvites.invitedBy', 'username email profilePicture')
@@ -146,7 +166,7 @@ export const sendMessage = async (req, res) => {
     const message = await ChatService.sendMessage(chatId, userId, messageData);
 
     // Only invalidate sender's cache — recipients get real-time updates via socket
-    invalidateCache(`user_chats_${userId}`);
+    invalidateCachePattern(`user_chats_${userId}`);
     res.status(201).json({
       message: "Message sent successfully",
       data: message
@@ -182,7 +202,7 @@ export const markMessagesAsRead = async (req, res) => {
 
     await ChatService.markMessagesAsRead(chatId, userId);
 
-    invalidateCache(`user_chats_${userId}`);
+    invalidateCachePattern(`user_chats_${userId}`);
     res.status(200).json({ message: "Messages marked as read" });
   } catch (error) {
     console.error("Mark as read error:", error);
@@ -234,7 +254,7 @@ export const deleteChat = async (req, res) => {
 
     await ChatService.deleteChatForUser(chatId, userId);
 
-    invalidateCache(`user_chats_${userId}`);
+    invalidateCachePattern(`user_chats_${userId}`);
     res.status(200).json({ message: "Conversation deleted" });
   } catch (error) {
     console.error("Delete chat error:", error);
@@ -274,7 +294,7 @@ export const updateGroupChat = async (req, res) => {
     await chat.save();
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture isVendor businessName")
+      .populate("participants", "username email profilePicture isVendor businessName businessPicture")
       .populate("admins", "username email profilePicture");
 
     // Broadcast update to all participants via socket
@@ -320,7 +340,7 @@ export const removeParticipantFromGroup = async (req, res) => {
     await chat.save();
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture isVendor businessName")
+      .populate("participants", "username email profilePicture isVendor businessName businessPicture")
       .populate("admins", "username email profilePicture");
 
     // Notify the room (so the member list refreshes) and the removed user.
@@ -407,7 +427,7 @@ export const setChatPinned = async (req, res) => {
     const { pinned } = req.body;
 
     const chat = await ChatService.setChatPinned(chatId, userId, !!pinned);
-    invalidateCache(`user_chats_${userId}`);
+    invalidateCachePattern(`user_chats_${userId}`);
     res.status(200).json({ message: "Chat pin updated", chat });
   } catch (error) {
     console.error("Pin chat error:", error);
@@ -433,7 +453,7 @@ export const pinChatMessage = async (req, res) => {
     await chat.save();
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture isVendor businessName")
+      .populate("participants", "username email profilePicture isVendor businessName businessPicture")
       .populate("admins", "username email profilePicture")
       .populate({
         path: "pinnedMessage",
@@ -464,7 +484,7 @@ export const setChatMuted = async (req, res) => {
     const { muted } = req.body;
 
     const chat = await ChatService.setChatMuted(chatId, userId, !!muted);
-    invalidateCache(`user_chats_${userId}`);
+    invalidateCachePattern(`user_chats_${userId}`);
     res.status(200).json({ message: "Chat mute updated", chat });
   } catch (error) {
     console.error("Mute chat error:", error);
@@ -478,12 +498,13 @@ export const searchChatsAndMessages = async (req, res) => {
   try {
     const userId = req.user.id;
     const { query } = req.query;
+    const scope = req.query.scope === "vendor" ? "vendor" : "client";
 
     if (!query || query.trim().length < 2) {
       return res.status(400).json({ message: "Search query must be at least 2 characters" });
     }
 
-    const results = await ChatService.searchChatsAndMessages(userId, query);
+    const results = await ChatService.searchChatsAndMessages(userId, query, scope);
 
     res.status(200).json(results);
   } catch (error) {

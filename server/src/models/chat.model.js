@@ -15,6 +15,24 @@ const chatSchema = mongoose.Schema({
     required: true
   }],
 
+  // Which inbox this conversation belongs to. A 'vendor' chat is a
+  // business↔customer thread and lives in the vendor's Vendor inbox and the
+  // customer's Client inbox. A 'personal' chat is a social thread. The same
+  // two users can have both (and two vendor chats if both are vendors), so
+  // the context participates in direct-chat dedupe.
+  context: {
+    type: String,
+    enum: ['personal', 'vendor'],
+    default: 'personal'
+  },
+
+  // For context 'vendor': the participant who is acting as the business.
+  vendorParticipant: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "user",
+    default: null
+  },
+
   // Group chat specific fields
   name: {
     type: String,
@@ -121,6 +139,8 @@ const chatSchema = mongoose.Schema({
 
 // Index for faster queries
 chatSchema.index({ participants: 1 });
+chatSchema.index({ participants: 1, context: 1 });
+chatSchema.index({ vendorParticipant: 1, context: 1 });
 chatSchema.index({ type: 1 });
 chatSchema.index({ updatedAt: -1 });
 chatSchema.index({ "pendingInvites.user": 1 });

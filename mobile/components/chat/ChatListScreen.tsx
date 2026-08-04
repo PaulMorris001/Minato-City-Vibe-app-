@@ -92,7 +92,8 @@ export default function ChatListScreen({
 
   const fetchChats = async (silent = false) => {
     try {
-      const list = await chatService.getUserChats();
+      // Client inbox: personal chats plus threads where this user is the customer.
+      const list = await chatService.getUserChats("client");
       setChats(list);
     } catch (error: any) {
       console.error("Error fetching chats:", error);
