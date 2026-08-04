@@ -11,6 +11,7 @@ import {
   Alert,
   Modal,
   Image,
+  Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
@@ -52,7 +53,8 @@ export default function VendorChatsTab() {
 
   const fetchChats = async () => {
     try {
-      const chats = await chatService.getUserChats();
+      // Vendor inbox: only business↔customer threads where this user is the vendor.
+      const chats = await chatService.getUserChats("vendor");
       setChats(chats);
       setFilteredChats(chats);
     } catch (error: any) {
@@ -163,6 +165,12 @@ export default function VendorChatsTab() {
     fetchChats();
   }, []);
 
+  const closeNewChatModal = () => {
+    setNewChatModalVisible(false);
+    setUserSearchQuery("");
+    setSearchedUsers([]);
+  };
+
   const handleChatPress = (chat: Chat) => {
     router.push({
       pathname: "/chat/[id]",
@@ -201,11 +209,14 @@ export default function VendorChatsTab() {
 
   const handleUserSelect = async (user: SearchUser) => {
     try {
-      setNewChatModalVisible(false);
-      setUserSearchQuery("");
-      setSearchedUsers([]);
+      closeNewChatModal();
 
-      const chat = await chatService.getOrCreateDirectChat(user.id);
+      // Started from the vendor inbox, so this is a business thread with the
+      // current user as the vendor — separate from any personal chat.
+      const chat = await chatService.getOrCreateDirectChat(user.id, {
+        context: "vendor",
+        vendorUserId: currentUserId,
+      });
 
       router.push({
         pathname: "/chat/[id]",
@@ -324,24 +335,19 @@ export default function VendorChatsTab() {
         visible={newChatModalVisible}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => {
-          setNewChatModalVisible(false);
-          setUserSearchQuery("");
-          setSearchedUsers([]);
-        }}
+        onRequestClose={closeNewChatModal}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <Pressable style={styles.modalOverlay} onPress={closeNewChatModal}>
+          {/* Inner Pressable so taps inside the sheet don't fall through to
+              the dismissing backdrop. */}
+          <Pressable style={styles.modalContent} onPress={() => {}}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>New Message</Text>
               <TouchableOpacity
-                onPress={() => {
-                  setNewChatModalVisible(false);
-                  setUserSearchQuery("");
-                  setSearchedUsers([]);
-                }}
+                onPress={closeNewChatModal}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Ionicons name="close" size={28} color="#fff" />
+                <Ionicons name="close" size={28} color={colors.textBright} />
               </TouchableOpacity>
             </View>
 
@@ -403,8 +409,8 @@ export default function VendorChatsTab() {
               }
               contentContainerStyle={styles.userListContent}
             />
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </View>
   );

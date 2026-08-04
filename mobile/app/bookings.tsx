@@ -92,7 +92,12 @@ export default function BookingsScreen() {
   const handleChatWithVendor = async (vendorId: string, bookingId: string) => {
     setChattingWith(bookingId);
     try {
-      const chat = await chatService.getOrCreateDirectChat(vendorId);
+      // Booking conversations are business threads — they live alongside the
+      // order chats in this user's client inbox, not their personal chats.
+      const chat = await chatService.getOrCreateDirectChat(vendorId, {
+        context: "vendor",
+        vendorUserId: vendorId,
+      });
       router.push(`/chat/${chat._id}` as any);
     } catch {
       Alert.alert("Error", "Could not open chat");

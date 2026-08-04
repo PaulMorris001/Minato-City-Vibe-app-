@@ -15,9 +15,17 @@ export interface ChatEventRef {
   createdBy?: string | User;
 }
 
+/** Which inbox a chat belongs to. 'client' = personal chats + chats where the
+ *  user is the customer; 'vendor' = chats where the user is the business. */
+export type ChatScope = "client" | "vendor";
+
 export interface Chat {
   _id: string;
   type: "direct" | "group";
+  /** 'vendor' for business↔customer threads, 'personal' otherwise. */
+  context?: "personal" | "vendor";
+  /** For vendor-context chats: the participant acting as the business. */
+  vendorParticipant?: string | null;
   name?: string;
   groupImage?: string;
   participants: User[];
@@ -47,6 +55,7 @@ export interface User {
   profilePicture?: string;
   isVendor?: boolean;
   businessName?: string;
+  businessPicture?: string;
 }
 
 export interface Message {
@@ -97,12 +106,12 @@ class ChatService {
   }
 
   /**
-   * Get all chats for the user
+   * Get all chats for the user's client or vendor inbox
    */
-  async getUserChats(): Promise<Chat[]> {
+  async getUserChats(scope: ChatScope = "client"): Promise<Chat[]> {
     try {
       const headers = await this.getAuthHeader();
-      const response = await fetch(`${BASE_URL}/chats`, { headers });
+      const response = await fetch(`${BASE_URL}/chats?scope=${scope}`, { headers });
 
       if (!response.ok) {
         throw new Error("Failed to fetch chats");
@@ -117,15 +126,20 @@ class ChatService {
   }
 
   /**
-   * Get or create a direct chat with another user
+   * Get or create a direct chat with another user. Pass
+   * { context: "vendor", vendorUserId } for a business↔customer thread —
+   * it stays separate from any personal chat with the same user.
    */
-  async getOrCreateDirectChat(otherUserId: string): Promise<Chat> {
+  async getOrCreateDirectChat(
+    otherUserId: string,
+    options?: { context: "vendor"; vendorUserId: string }
+  ): Promise<Chat> {
     try {
       const headers = await this.getAuthHeader();
       const response = await fetch(`${BASE_URL}/chats/direct`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ otherUserId }),
+        body: JSON.stringify({ otherUserId, ...(options || {}) }),
       });
 
       if (!response.ok) {
@@ -487,14 +501,14 @@ class ChatService {
   /**
    * Search chats and messages
    */
-  async search(query: string): Promise<{
+  async search(query: string, scope: ChatScope = "client"): Promise<{
     chats: Chat[];
     messages: Message[];
   }> {
     try {
       const headers = await this.getAuthHeader();
       const response = await fetch(
-        `${BASE_URL}/chats/search?query=${encodeURIComponent(query)}`,
+        `${BASE_URL}/chats/search?query=${encodeURIComponent(query)}&scope=${scope}`,
         { headers }
       );
 

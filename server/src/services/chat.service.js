@@ -16,29 +16,58 @@ import { involvesSupport } from "../utils/supportAccount.js";
 
 class ChatService {
   /**
-   * Create or get existing direct chat between two users
+   * Create or get existing direct chat between two users.
+   *
+   * Chats are deduped per (pair, context): a 'personal' thread and a 'vendor'
+   * thread between the same two users are separate conversations, so a user's
+   * social identity and business identity keep distinct histories. For
+   * `context: 'vendor'`, `vendorUserId` must identify which of the two is
+   * acting as the business — two vendors can therefore have two vendor chats
+   * with each other, one per storefront.
    */
-  async getOrCreateDirectChat(userId1, userId2, skipMutualCheck = false) {
-    // Check if chat already exists
+  async getOrCreateDirectChat(userId1, userId2, options = {}) {
+    // Legacy boolean third argument meant skipMutualCheck.
+    const opts = typeof options === 'boolean' ? { skipMutualCheck: options } : options;
+    const { skipMutualCheck = false, context = 'personal', vendorUserId = null } = opts;
+
+    if (context === 'vendor') {
+      const vendorStr = vendorUserId && vendorUserId.toString();
+      if (!vendorStr || ![userId1.toString(), userId2.toString()].includes(vendorStr)) {
+        const error = new Error("A vendor chat needs one of the two participants as the vendor");
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+
+    // Check if chat already exists. `$ne: 'vendor'` (rather than
+    // `context: 'personal'`) keeps matching chats created before the
+    // context field existed.
+    const contextFilter = context === 'vendor'
+      ? { context: 'vendor', vendorParticipant: vendorUserId }
+      : { context: { $ne: 'vendor' } };
+
     let chat = await Chat.findOne({
       type: 'direct',
       participants: { $all: [userId1, userId2], $size: 2 },
-      isActive: true
+      isActive: true,
+      ...contextFilter
     })
-      .populate('participants', 'username email profilePicture isVendor businessName')
+      .populate('participants', 'username email profilePicture isVendor businessName businessPicture')
       .populate({
         path: 'lastMessage',
         populate: { path: 'sender', select: 'username profilePicture' }
       });
 
     if (!chat) {
-      // Only mutual follows can start new direct chats — unless this is a
-      // trusted commerce-initiated chat (see getOrCreateDirectChatForOrder),
+      // Only mutual follows can start new personal direct chats — unless this
+      // is a trusted commerce-initiated chat (see getOrCreateDirectChatForOrder),
       // or the official support account is one of the two. Support is a help
       // desk: anyone must be able to open a ticket without following anyone,
       // and support must be able to reach back out. The check is symmetric,
-      // so both directions are covered here.
-      if (!skipMutualCheck && !involvesSupport(userId1, userId2)) {
+      // so both directions are covered here. Vendor-context chats also skip
+      // the gate: contacting a business (or a business reaching a customer)
+      // is legitimate without a social relationship.
+      if (!skipMutualCheck && context !== 'vendor' && !involvesSupport(userId1, userId2)) {
         const isMutual = await areMutualFollows(userId1, userId2);
         if (!isMutual) {
           const error = new Error("You can only chat with mutual follows. Both users must follow each other.");
@@ -51,26 +80,31 @@ class ChatService {
       chat = new Chat({
         type: 'direct',
         participants: [userId1, userId2],
+        context: context === 'vendor' ? 'vendor' : 'personal',
+        vendorParticipant: context === 'vendor' ? vendorUserId : null,
         unreadCount: new Map([[userId1.toString(), 0], [userId2.toString(), 0]]),
         isArchived: new Map([[userId1.toString(), false], [userId2.toString(), false]]),
         isMuted: new Map([[userId1.toString(), false], [userId2.toString(), false]])
       });
 
       await chat.save();
-      await chat.populate('participants', 'username email profilePicture isVendor businessName');
+      await chat.populate('participants', 'username email profilePicture isVendor businessName businessPicture');
     }
 
     return chat;
   }
 
   /**
-   * Open (or reuse) a client↔vendor direct chat for an order checkout.
-   * Placing an order is a legitimate reason to start the conversation, so this
-   * bypasses the mutual-follow gate. Only the order controller calls this — the
-   * general POST /chats/direct endpoint keeps the gate.
+   * Open (or reuse) the client↔vendor chat for an order checkout. Order chats
+   * are vendor-context, so they land in the vendor's business inbox and stay
+   * separate from any personal thread between the same two users.
    */
   async getOrCreateDirectChatForOrder(clientId, vendorId) {
-    return this.getOrCreateDirectChat(clientId, vendorId, true);
+    return this.getOrCreateDirectChat(clientId, vendorId, {
+      skipMutualCheck: true,
+      context: 'vendor',
+      vendorUserId: vendorId
+    });
   }
 
   /**
@@ -106,7 +140,7 @@ class ChatService {
     });
 
     await chat.save();
-    await chat.populate('participants', 'username email profilePicture isVendor businessName');
+    await chat.populate('participants', 'username email profilePicture isVendor businessName businessPicture');
     await chat.populate('admins', 'username email profilePicture');
     if (eventId) {
       await chat.populate('event', 'title date location image createdBy');
@@ -116,20 +150,44 @@ class ChatService {
   }
 
   /**
-   * Get all chats for a user
+   * Filter for which conversations belong in a user's inbox for a scope.
+   * - 'vendor': vendor-context chats where this user is the business.
+   * - 'client': everything else — personal chats, groups, and vendor-context
+   *   chats where this user is the customer. `$ne`/`$or` shapes keep matching
+   *   legacy chats that predate the context field.
    */
-  async getUserChats(userId) {
+  scopeFilter(userId, scope) {
+    if (scope === 'vendor') {
+      return { context: 'vendor', vendorParticipant: userId };
+    }
+    return {
+      $or: [
+        { context: { $ne: 'vendor' } },
+        { vendorParticipant: { $ne: userId } }
+      ]
+    };
+  }
+
+  /**
+   * Get all chats for a user, scoped to their client or vendor inbox.
+   */
+  async getUserChats(userId, scope = 'client') {
     const chats = await Chat.find({
       // Include groups the user has only been invited to (not yet a participant)
       // so the pending invite surfaces in their inbox where they can respond.
-      $or: [
-        { participants: userId },
-        { "pendingInvites.user": userId }
+      $and: [
+        {
+          $or: [
+            { participants: userId },
+            { "pendingInvites.user": userId }
+          ]
+        },
+        this.scopeFilter(userId, scope)
       ],
       isActive: true,
       deletedFor: { $ne: userId }
     })
-      .populate('participants', 'username email profilePicture isVendor businessName')
+      .populate('participants', 'username email profilePicture isVendor businessName businessPicture')
       .populate('admins', 'username email profilePicture')
       .populate('pendingInvites.user', 'username email profilePicture')
       .populate('pendingInvites.invitedBy', 'username email profilePicture')
@@ -275,7 +333,17 @@ class ChatService {
         recipient.fcmToken,
         notificationTitle,
         body,
-        { type: "new_message", chatId: chatId.toString() }
+        {
+          type: "new_message",
+          chatId: chatId.toString(),
+          // Which inbox this thread belongs to for the recipient, so the app
+          // can open the right account context from a notification tap.
+          chatScope:
+            chat.context === "vendor" &&
+            chat.vendorParticipant?.toString() === participantId.toString()
+              ? "vendor"
+              : "client"
+        }
       );
     }
 
@@ -825,7 +893,7 @@ class ChatService {
     }
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture isVendor businessName")
+      .populate("participants", "username email profilePicture isVendor businessName businessPicture")
       .populate("admins", "username email profilePicture")
       .populate("pendingInvites.user", "username email profilePicture")
       .populate("pendingInvites.invitedBy", "username email profilePicture");
@@ -897,7 +965,7 @@ class ChatService {
     }
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture isVendor businessName")
+      .populate("participants", "username email profilePicture isVendor businessName businessPicture")
       .populate("admins", "username email profilePicture")
       .populate("pendingInvites.user", "username email profilePicture")
       .populate({
@@ -909,23 +977,29 @@ class ChatService {
   }
 
   /**
-   * Search chats and messages
+   * Search chats and messages within one inbox scope
    */
-  async searchChatsAndMessages(userId, query) {
+  async searchChatsAndMessages(userId, query, scope = 'client') {
     // Search in chat names
     const chats = await Chat.find({
       participants: userId,
       isActive: true,
-      $or: [
-        { name: { $regex: query, $options: 'i' } }
+      $and: [
+        { name: { $regex: query, $options: 'i' } },
+        this.scopeFilter(userId, scope)
       ]
     })
-      .populate('participants', 'username email profilePicture isVendor businessName')
+      .populate('participants', 'username email profilePicture isVendor businessName businessPicture')
       .limit(10);
 
-    // Search in messages
+    // Search in messages (only within chats belonging to this inbox)
     const messages = await Message.find({
-      chat: { $in: await Chat.find({ participants: userId }).distinct('_id') },
+      chat: {
+        $in: await Chat.find({
+          participants: userId,
+          ...this.scopeFilter(userId, scope)
+        }).distinct('_id')
+      },
       type: 'text',
       content: { $regex: query, $options: 'i' },
       isDeleted: false,

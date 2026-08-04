@@ -41,7 +41,7 @@ import followService, { FollowUser } from "@/services/follow.service";
 import socketService from "@/services/socket.service";
 import * as SecureStore from "expo-secure-store";
 import { capitalize } from "@/libs/helpers";
-import { displayName } from "@/utils/displayName";
+import { chatParticipantName, chatParticipantAvatar } from "@/utils/chatDisplay";
 import { uploadImage } from "@/utils/imageUpload";
 import { openUserProfile } from "@/utils/userNavigation";
 import { trackEvent } from "@/utils/analytics";
@@ -860,14 +860,14 @@ export default function ChatScreen() {
     if (!chat) return "";
     if (chat.type === "group") return chat.name || "Group Chat";
     const otherParticipant = chat.participants.find((p) => p._id !== currentUserId);
-    return displayName(otherParticipant) || "User";
+    return chatParticipantName(chat, otherParticipant) || "User";
   };
 
   const getChatAvatar = () => {
     if (!chat) return null;
     if (chat.type === "group") return chat.groupImage || null;
     const otherParticipant = chat.participants.find((p) => p._id !== currentUserId);
-    return otherParticipant?.profilePicture || null;
+    return chatParticipantAvatar(chat, otherParticipant) || null;
   };
 
   type MessageItem = Message & { showSender: boolean };
