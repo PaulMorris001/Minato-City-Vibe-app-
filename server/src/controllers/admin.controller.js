@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import config from "../config/env.js";
 import User from "../models/user.model.js";
@@ -17,22 +18,43 @@ import {
   PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
 
+/**
+ * Constant-time string comparison. Guards the username check against timing
+ * analysis; the length check leaks only the length, which isn't a secret.
+ */
+function safeEqual(a, b) {
+  const ab = Buffer.from(String(a ?? ""), "utf8");
+  const bb = Buffer.from(String(b ?? ""), "utf8");
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
+
 export async function adminLogin(req, res) {
   const { username, password } = req.body;
 
   const adminUsername = process.env.ADMIN_USERNAME;
-  const adminPassword = process.env.ADMIN_PASSWORD;
+  // Preferred: a bcrypt hash. ADMIN_PASSWORD (plaintext) is still honoured so an
+  // existing deploy keeps working, but env.js warns at boot until it's migrated.
+  const adminHash = process.env.ADMIN_PASSWORD_HASH;
+  const adminPlaintext = process.env.ADMIN_PASSWORD;
 
-  if (!adminUsername || !adminPassword) {
+  if (!adminUsername || (!adminHash && !adminPlaintext)) {
     return res.status(500).json({ message: "Admin credentials not configured" });
   }
 
-  if (username !== adminUsername || password !== adminPassword) {
+  // Both checks run unconditionally — no early return on a bad username, so the
+  // response time doesn't reveal whether the username existed.
+  const userOk = safeEqual(username, adminUsername);
+  const passOk = adminHash
+    ? await bcrypt.compare(String(password ?? ""), adminHash)
+    : safeEqual(password, adminPlaintext);
+
+  if (!userOk || !passOk) {
     return res.status(401).json({ message: "Invalid admin credentials" });
   }
 
-  const token = jwt.sign({ isAdmin: true, username }, config.jwt.secret, {
-    expiresIn: "24h",
+  const token = jwt.sign({ isAdmin: true, username }, config.jwt.adminSecret, {
+    expiresIn: config.jwt.adminExpiresIn,
   });
 
   res.json({ token });

@@ -1,8 +1,15 @@
 import axios from "axios";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "https://api.ourcityvibe.com/api";
-
-console.log(BASE_URL)
+// Environment-aware API base, mirroring web/src/config.ts:
+//   1. An explicit `VITE_API_URL` always wins (staging, LAN IP, prod-from-dev).
+//   2. `vite dev` → the local server on :3100.
+//   3. Production build → the deployed backend.
+// Note the trailing `/api` — unlike the web app, this client's paths omit it.
+const BASE_URL =
+  (import.meta.env.VITE_API_URL as string | undefined) ||
+  (import.meta.env.DEV
+    ? "http://localhost:3100/api"
+    : "https://api.ourcityvibe.com/api");
 
 const client = axios.create({ baseURL: BASE_URL });
 

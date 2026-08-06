@@ -5,7 +5,14 @@
   "scripts": {
     "mobile": "npm start --prefix mobile",
     "server": "npm run dev --prefix server",
-    "admin": "npm run dev --prefix admin"
+    "admin": "npm run dev --prefix admin",
+    "web": "npm run dev --prefix web",
+
+    "build:web": "npm run build --prefix web",
+    "build:admin": "npm run build --prefix admin",
+    "build:sites": "npm run build:web && npm run build:admin",
+
+    "hash-admin-password": "node server/scripts/hash-admin-password.mjs"
   },
   "keywords": [],
   "author": "",
