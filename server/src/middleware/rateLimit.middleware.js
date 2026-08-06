@@ -23,6 +23,22 @@ export const authLimiter = rateLimit({
 });
 
 /**
+ * Tight limiter for the single admin credential endpoint. There is exactly one
+ * admin account, so legitimate traffic here is a handful of logins a day —
+ * anything more is a brute-force attempt against a high-privilege password.
+ * `skipSuccessfulRequests` means a correct login doesn't burn the budget.
+ */
+export const adminLoginLimiter = rateLimit({
+  ...base,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  skipSuccessfulRequests: true,
+  message: {
+    message: "Too many attempts. Please wait a few minutes and try again.",
+  },
+});
+
+/**
  * Lenient limiter for read-only availability lookups (signup username/email
  * checks). These are called as the user types (debounced), so the budget is
  * higher than the credential endpoints — but still capped to blunt scripted

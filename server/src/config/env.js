@@ -66,11 +66,26 @@ export const config = {
   jwt: {
     secret: process.env.JWT_SECRET,
     expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+
+    // Admin tokens are signed with their OWN secret so they're cryptographically
+    // separate from user tokens: a leaked/forgeable user token can never be
+    // turned into an admin token by adding an `isAdmin` claim, because the
+    // signature won't verify. Falls back to JWT_SECRET (with a boot warning)
+    // so an existing deploy doesn't lock itself out — set ADMIN_JWT_SECRET.
+    adminSecret: process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET,
+    // Short-lived by design: admin sessions are high blast-radius.
+    adminExpiresIn: process.env.ADMIN_JWT_EXPIRES_IN || "8h",
   },
 
-  // CORS Configuration
+  // CORS Configuration. Accepts a comma-separated list so the marketing site and
+  // the admin subdomain can both be allowed without falling back to "*"
+  // (e.g. CORS_ORIGIN="https://www.ourcityvibe.com,https://admin.ourcityvibe.com").
   cors: {
-    origin: process.env.CORS_ORIGIN || "*",
+    origin: process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(",")
+          .map((o) => o.trim())
+          .filter(Boolean)
+      : "*",
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   },
@@ -194,5 +209,26 @@ export const config = {
     clientId: process.env.APPLE_CLIENT_ID || "com.ourcityvibe.app",
   },
 };
+
+// Boot-time warnings for admin hardening that's configured but not yet migrated.
+// These are warnings rather than hard failures so a deploy can never lock the
+// admin out of the portal — but each one should be resolved in production.
+if (!process.env.ADMIN_JWT_SECRET) {
+  console.warn(
+    "[security] ADMIN_JWT_SECRET is not set — admin tokens are signed with the " +
+      "same secret as user tokens. Set it to a distinct random value."
+  );
+}
+if (!process.env.ADMIN_PASSWORD_HASH && process.env.ADMIN_PASSWORD) {
+  console.warn(
+    "[security] ADMIN_PASSWORD is stored in plaintext — set ADMIN_PASSWORD_HASH " +
+      "to a bcrypt hash instead and remove ADMIN_PASSWORD."
+  );
+}
+if (config.cors.origin === "*") {
+  console.warn(
+    "[security] CORS_ORIGIN is unset — the API accepts requests from any origin."
+  );
+}
 
 export default config;
