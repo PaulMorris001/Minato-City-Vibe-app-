@@ -226,7 +226,14 @@ export interface Guide {
   sections: GuideSection[];
   isDraft: boolean;
   isPurchased: boolean;
-  purchasedBy: string[];
+  /**
+   * Buyer ids. Only sent on endpoints that genuinely need the access-control
+   * list — the seller-facing feeds send `salesCount` instead so one seller's
+   * buyer list never reaches another client.
+   */
+  purchasedBy?: string[];
+  /** Number of purchases. Sent by /guides/top and /guides/my-guides. */
+  salesCount?: number;
   views: number;
   isActive: boolean;
   createdAt: string;

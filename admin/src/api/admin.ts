@@ -164,10 +164,11 @@ export interface AdminPayout {
     businessName?: string;
     location?: { country?: string };
   };
-  relatedType: "ticket" | "guide" | "booking";
+  relatedType: "ticket" | "guide" | "booking" | "order";
   relatedId: string;
-  // "stripe" / "flutterwave" only appear on legacy docs from before the
-  // Paystack/Wise remap.
+  // Live rails are "paystack" and "stripe". "wise" / "flutterwave" only appear
+  // on legacy docs whose rails no longer exist — they can be rejected but never
+  // executed.
   provider: "wise" | "paystack" | "stripe" | "flutterwave";
   amount: number;
   currency: string;

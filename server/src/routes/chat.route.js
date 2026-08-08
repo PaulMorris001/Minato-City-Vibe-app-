@@ -1,6 +1,7 @@
 import express from "express";
 import {
   getOrCreateDirectChat,
+  getOrCreateSupportChat,
   createGroupChat,
   getUserChats,
   getChatById,
@@ -32,8 +33,17 @@ router.get("/chats", authenticate, getUserChats);
 // Get or create direct chat
 router.post("/chats/direct", authenticate, getOrCreateDirectChat);
 
+// Open the official support conversation. The server owns the support account
+// id so the client can never hold a stale one.
+router.post("/chats/support", authenticate, getOrCreateSupportChat);
+
 // Create group chat
 router.post("/chats/group", authenticate, createGroupChat);
+
+// Search chats and messages. MUST stay above "/chats/:chatId" — Express matches
+// in declaration order, so registering it after would make this URL resolve as a
+// chat whose id is the literal "search" (an ObjectId CastError → 500).
+router.get("/chats/search", authenticate, searchChatsAndMessages);
 
 // Get specific chat
 router.get("/chats/:chatId", authenticate, getChatById);
@@ -49,9 +59,6 @@ router.post("/chats/:chatId/invite", authenticate, inviteUsersToGroup);
 
 // Respond to a pending group invite (accept / decline)
 router.post("/chats/:chatId/invite/respond", authenticate, respondToGroupInvite);
-
-// Search chats and messages
-router.get("/chats/search", authenticate, searchChatsAndMessages);
 
 // ============ Message Routes ============
 

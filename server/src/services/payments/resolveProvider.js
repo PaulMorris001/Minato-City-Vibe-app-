@@ -5,11 +5,17 @@
  *  - COLLECTION provider (`getPayoutProvider`): how we charge the buyer. Stripe
  *    (card, USD, into the PLATFORM balance) or Paystack (NGN local methods).
  *  - SETTLEMENT provider (`getSettlementProvider`): how the seller's net is
- *    paid out once an admin approves. Three rails: Paystack transfers for
- *    Nigerian sellers, Stripe Connect for sellers inside Stripe's cross-border
- *    -payouts footprint, and Wise for everyone else. Both non-Paystack rails
- *    COLLECT via Stripe into the platform balance — they differ only in how the
- *    money leaves it.
+ *    paid out once an admin approves. Two rails: Paystack transfers for Nigerian
+ *    sellers, Stripe Connect for sellers inside Stripe's cross-border-payouts
+ *    footprint. Sellers outside both have NO rail — see below.
+ *
+ * There used to be a third rail (Wise) covering the long tail. It was removed in
+ * Aug 2026: it had never worked in any environment (the API credentials were
+ * placeholder strings and no seller ever completed its onboarding), so it was
+ * silently routing most of the world to a dead-end screen. Countries outside the
+ * two live rails now get an honest, explicit "not available yet" instead — they
+ * can still publish free listings. Restoring long-tail coverage means adding a
+ * rail that works, not re-adding a default that doesn't.
  *
  * This module reads its rollout knobs straight from process.env (rather than
  * importing the validated config) so it stays free of env-validation side
@@ -19,7 +25,7 @@
 // ── Paystack rollout ─────────────────────────────────────────────────────────
 // Local-currency selling runs on Paystack. Launch scope is Nigeria only
 // (USD + NGN): Nigerian sellers price and collect in NGN and are settled by
-// Paystack transfers; everyone else is on the Stripe(USD)+Wise path. Grow
+// Paystack transfers; everyone else collects in USD via Stripe. Grow
 // PAYSTACK_LAUNCH_COUNTRIES as each additional currency's checkout + payout is
 // verified. The mobile mirror of these knobs lives in
 // mobile/constants/payments.ts — keep them in sync.
@@ -84,17 +90,15 @@ const CONNECT_COUNTRIES = {
   norway: "NO", no: "NO",
 };
 
-// Read lazily, NOT at module load (unlike PAYSTACK_ENABLED above). The unit test
-// uses static ESM imports, so it can't set the env var before this module
-// evaluates — reading per-call is what lets it toggle the flag between
-// assertions and cover both the dark and live states. Don't "tidy" this into a
-// module-level const.
-function connectEnabled() {
-  return process.env.STRIPE_CONNECT_ENABLED === "true";
-}
-
+// There is deliberately no STRIPE_CONNECT_ENABLED flag any more. With Wise gone,
+// Connect is the ONLY rail outside Nigeria, so switching it off would return null
+// for the US, UK and the whole EEA at once: every non-Nigerian seller would
+// instantly lose paid listings, queued payouts would fail, and sellers with live,
+// fully-onboarded Stripe accounts would read as un-onboarded. A kill switch whose
+// off position bricks the product is not a kill switch. To pause a country, take
+// it out of CONNECT_COUNTRIES.
 function isConnectCountry(country) {
-  return connectEnabled() && !!CONNECT_COUNTRIES[country];
+  return !!CONNECT_COUNTRIES[country];
 }
 
 /**
@@ -134,31 +138,46 @@ export function getPayoutProvider(user) {
  * Precedence, and why:
  *  1. Nigeria → paystack. Collection and settlement are the same rail; nothing
  *     else here can reach an NGN bank.
- *  2. A seller with a working Wise recipient keeps Wise, even if their country
- *     is Connect-eligible. Nobody matches this today (no Wise onboarding has
- *     ever completed), but it guarantees that enabling Connect can never strand
- *     a live seller behind a fresh KYC wall or reopen in-flight payouts against
- *     the wrong rail. To migrate one deliberately, an admin clears
- *     wiseOnboardingComplete and they route to Connect on their next visit.
- *  3. Connect-eligible country → stripe. Transfers draw from the same platform
- *     balance the charge landed in (no Wise pre-funding float), and Stripe runs
- *     KYC/AML on the connected account.
- *  4. Everyone else → wise. The long tail (GH, KE, ZA, IN, LatAm, SEA) that only
- *     Wise reaches.
+ *  2. Connect-eligible country → stripe. Transfers draw from the same platform
+ *     balance the charge landed in, and Stripe runs KYC/AML on the connected
+ *     account.
+ *  3. Everyone else → null. No rail reaches them, and saying so is the point.
+ *
+ * Returning `null` rather than a placeholder string is deliberate: a string would
+ * flow unchecked into Payout.provider, ticket.payoutProvider and PaymentIntent
+ * metadata, passing every enum until it finally blew up inside runTransfer with
+ * the money already collected. `null` forces each call site to decide.
+ *
+ * Callers that need to explain the state to a human should use `payoutSupported`
+ * to tell "not in your country" (permanent) apart from "finish onboarding"
+ * (fixable) — they are different messages with different CTAs.
  *
  * @param {object} user
- * @returns {"wise" | "paystack" | "stripe"}
+ * @returns {"paystack" | "stripe" | null}
  */
 export function getSettlementProvider(user) {
   const country = (user?.location?.country || "").trim().toLowerCase();
   if (isPaystackCountry(country)) return "paystack";
-  if (user?.wiseRecipientId && user?.wiseOnboardingComplete) return "wise";
   if (isConnectCountry(country)) return "stripe";
-  return "wise";
+  return null;
+}
+
+/**
+ * Whether any payout rail can reach this seller's country at all.
+ *
+ * Distinct from `hasPayoutOnboarding`: this is about the country (the seller can
+ * do nothing about it), that is about the seller's own setup (they can).
+ *
+ * @param {object} user
+ * @returns {boolean}
+ */
+export function payoutSupported(user) {
+  return getSettlementProvider(user) !== null;
 }
 
 /**
  * Whether a seller has completed onboarding for the provider that settles them.
+ * False when no rail reaches them — there is nothing to complete.
  *
  * The Connect branch deliberately does NOT require `stripePayoutsEnabled`: that
  * flips false transiently whenever Stripe re-requests KYC, and gating on it
@@ -177,7 +196,7 @@ export function hasPayoutOnboarding(user) {
   if (provider === "stripe") {
     return !!(user?.stripeAccountId && user?.stripeOnboardingComplete);
   }
-  return !!(user?.wiseRecipientId && user?.wiseOnboardingComplete);
+  return false;
 }
 
 /**
@@ -188,7 +207,6 @@ export function hasPayoutOnboarding(user) {
  */
 export const PAYOUT_ROUTING_FIELDS =
   "location paystackRecipientCode paystackOnboardingComplete " +
-  "wiseRecipientId wiseRecipientCurrency wiseOnboardingComplete " +
   "stripeAccountId stripeAccountCountry stripeOnboardingComplete stripePayoutsEnabled";
 
 // Country (lowercased) → default selling currency. Drives the currency a
@@ -211,9 +229,9 @@ const COUNTRY_CURRENCY = {
  * via Stripe in USD.
  *
  * Connect sellers are NOT an exception — a German seller still prices and
- * collects in USD, and Stripe converts on payout, exactly as Wise does. Making
- * this return EUR for them would break the currency check in event.controller.js
- * and produce EUR-priced tickets charged as USD.
+ * collects in USD, and Stripe converts on payout. Making this return EUR for
+ * them would break the currency check in event.controller.js and produce
+ * EUR-priced tickets charged as USD.
  *
  * @param {object} user
  * @returns {string} ISO currency code
@@ -227,6 +245,7 @@ export function currencyForUser(user) {
 export default {
   getPayoutProvider,
   getSettlementProvider,
+  payoutSupported,
   hasPayoutOnboarding,
   connectCountryCode,
   currencyForUser,

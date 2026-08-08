@@ -17,12 +17,16 @@ import { FormInput, PrimaryButton } from "@/components/shared";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import { passwordChecks, passwordError } from "@/utils/passwordPolicy";
 
-import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import { darkColors } from "@/constants/theme";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function ResetPassword() {
-  const { colors } = useTheme();
-  const styles = useThemedStyles(createStyles);
+  // Same pinned palette the stylesheet uses — mixing live theme tokens into a
+  // pinned-dark screen puts light-mode colours on a dark surface.
+  const colors = darkColors;
+  // Pinned dark, like login and signup: this screen is reached from the auth
+  // flow, and theming only these steps made the flow flip to white mid-way.
+  const styles = createStyles(darkColors);
   const router = useRouter();
   const { email, resetToken } = useLocalSearchParams();
   const [newPassword, setNewPassword] = useState("");

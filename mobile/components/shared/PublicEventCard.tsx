@@ -13,6 +13,7 @@ import { Fonts } from "@/constants/fonts";
 import { currencyPrefix } from "@/constants/payments";
 import { scaleFontSize } from "@/utils/responsive";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
+import { usePosterAspect } from "@/hooks/usePosterAspect";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 
@@ -76,6 +77,9 @@ export default function PublicEventCard({
   const formatPrice = useFormatPrice();
   const [favorited, setFavorited] = useState(event.isFavorited ?? false);
   const [togglingFavorite, setTogglingFavorite] = useState(false);
+  // Event posters are flyers — usually portrait, often 4:5 or taller. The card
+  // takes the poster's own shape instead of cropping it into a fixed 400px box.
+  const poster = usePosterAspect();
 
   const toggleFavorite = async () => {
     if (togglingFavorite) return;
@@ -97,13 +101,20 @@ export default function PublicEventCard({
 
   return (
     <TouchableOpacity
-      style={[styles.eventCard, style]}
+      style={[styles.eventCard, style, poster.style]}
       activeOpacity={0.9}
       onPress={() => router.push(`/event/${event._id}` as any)}
     >
       <View style={styles.eventCardInner}>
         {event.image ? (
-          <Image source={{ uri: event.image }} style={styles.eventCardImage} contentFit="cover" cachePolicy="memory-disk" transition={200} />
+          <Image
+            source={{ uri: event.image }}
+            style={styles.eventCardImage}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={200}
+            onLoad={poster.onLoad}
+          />
         ) : (
           <LinearGradient
             colors={["#667eea", "#764ba2"]}

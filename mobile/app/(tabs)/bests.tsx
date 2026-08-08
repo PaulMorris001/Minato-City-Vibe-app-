@@ -18,7 +18,7 @@ import UserListItemSkeleton from "@/components/skeletons/UserListItemSkeleton";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchGuidesAll } from "@/libs/api";
 import { formatLocation } from "@/utils/location";
-import { useFormatPrice } from "@/hooks/useFormatPrice";
+import { priceLabel } from "@/constants/payments";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import { useActiveCity } from "@/hooks/useActiveCity";
 
@@ -28,7 +28,6 @@ export default function BestsPage() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
-  const formatPrice = useFormatPrice();
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [guides, setGuides] = useState<Guide[]>([]);
@@ -93,7 +92,7 @@ export default function BestsPage() {
       <Text style={styles.guideAuthor} numberOfLines={1}>by {g.authorName}</Text>
       <View style={styles.guideFooter}>
         <Text style={styles.guidePrice}>
-          {g.price === 0 ? "FREE" : `$${formatPrice(g.price)}`}
+          {priceLabel(g.price, g.currency)}
         </Text>
         <View style={styles.guideViews}>
           <Ionicons name="eye-outline" size={13} color={colors.textMuted} />

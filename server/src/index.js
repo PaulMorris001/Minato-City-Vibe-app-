@@ -24,10 +24,10 @@ import logRoutes from "./routes/log.route.js";
 import stripeRoutes from "./routes/stripe.route.js";
 import stripeConnectRoutes from "./routes/stripeConnect.route.js";
 import paystackRoutes from "./routes/paystack.route.js";
-import wiseRoutes from "./routes/wise.route.js";
 import paymentsRoutes from "./routes/payments.route.js";
 import searchRoutes from "./routes/search.route.js";
 import notificationRoutes from "./routes/notification.route.js";
+import earningsRoutes from "./routes/earnings.route.js";
 import favoritesRoutes from "./routes/favorites.route.js";
 import adminRoutes from "./routes/admin.route.js";
 import followRoutes from "./routes/follow.route.js";
@@ -70,12 +70,11 @@ app.use(
 app.use(cors(config.cors));
 app.options(/(.*)/, cors(config.cors));
 
-// Stripe + Wise + Paystack webhooks need the raw body for signature
-// verification — must be registered BEFORE express.json()
+// Stripe + Paystack webhooks need the raw body for signature verification —
+// must be registered BEFORE express.json()
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 // Connect events arrive on their own endpoint with their own signing secret.
 app.use('/api/stripe/connect/webhook', express.raw({ type: 'application/json' }));
-app.use('/api/wise/webhook', express.raw({ type: 'application/json' }));
 app.use('/api/paystack/webhook', express.raw({ type: 'application/json' }));
 
 app.use(express.json({ limit: '50mb' }));
@@ -112,10 +111,20 @@ app.use("/api/", logRoutes);
 app.use("/api/", stripeConnectRoutes);
 app.use("/api/", stripeRoutes);
 app.use("/api/", paystackRoutes);
-app.use("/api/", wiseRoutes);
+// Deprecation stub for the removed Wise rail. App binaries shipped before the
+// removal still route sellers outside the Paystack/Connect footprint to their
+// /wise-onboarding screen, which polls this endpoint on mount. A 404 there makes
+// the screen render an error state; this makes it render an honest "not
+// connected" instead. Those sellers were always dead-ended (Wise never worked) —
+// they get the real blocked-country message once they update. Delete this after
+// one release.
+app.get("/api/wise/connect/status", (req, res) =>
+  res.json({ connected: false, onboardingComplete: false, deprecated: true })
+);
 app.use("/api/", paymentsRoutes);
 app.use("/api/", searchRoutes);
 app.use("/api/", notificationRoutes);
+app.use("/api/", earningsRoutes);
 app.use("/api/", favoritesRoutes);
 app.use("/api/", followRoutes);
 app.use("/api/", verificationRoutes);

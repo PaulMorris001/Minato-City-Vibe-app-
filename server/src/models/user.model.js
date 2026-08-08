@@ -77,17 +77,10 @@ const userSchema = mongoose.Schema({
   paystackRecipientCode: { type: String },
   paystackOnboardingComplete: { type: Boolean, default: false },
 
-  // Wise payout fields (every seller outside the Paystack footprint). These
-  // vendors collect via Stripe (USD) but settle via Wise: the recipient account
-  // is created once during onboarding and reused for transfers.
-  wiseRecipientId: { type: String },
-  wiseRecipientCurrency: { type: String },
-  wiseOnboardingComplete: { type: Boolean, default: false },
-
   // Stripe Connect payout fields (sellers inside Stripe's cross-border-payouts
-  // footprint: US, UK, EEA, CA, CH). Like Wise sellers they COLLECT via the
-  // platform Stripe account; settlement is a Transfer from the platform balance
-  // to their Express account once an admin approves the payout.
+  // footprint: US, UK, EEA, CA, CH). They COLLECT via the platform Stripe
+  // account; settlement is a Transfer from the platform balance to their Express
+  // account once an admin approves the payout.
   stripeAccountId: { type: String },
   // ISO-3166-1 alpha-2 the Express account was opened in. Immutable on Stripe's
   // side, so it's kept here to detect a later country change on the profile.

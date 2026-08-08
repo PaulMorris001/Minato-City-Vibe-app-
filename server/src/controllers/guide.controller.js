@@ -3,7 +3,11 @@ import Guide, { guideTopicsList } from "../models/guide.model.js";
 import User from "../models/user.model.js";
 import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean } from "../utils/contentFilter.js";
-import { currencyForUser } from "../services/payments/resolveProvider.js";
+import {
+  currencyForUser,
+  PAYOUT_ROUTING_FIELDS,
+} from "../services/payments/resolveProvider.js";
+import { rejectIfCannotSell } from "../services/payments/sellingEligibility.js";
 import { isSupportUser } from "../utils/supportAccount.js";
 import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { MAX_MEDIA_ITEMS } from "../utils/mediaLimit.js";
@@ -108,10 +112,14 @@ export const createGuide = async (req, res) => {
     ]);
 
     // Get author name
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).select(`username ${PAYOUT_ROUTING_FIELDS}`);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
+
+    // A paid guide needs somewhere for the money to land. Free guides skip this
+    // entirely — anyone anywhere can publish one.
+    if (parseFloat(price) > 0 && rejectIfCannotSell(res, user)) return;
 
     const guide = new Guide({
       title,
@@ -264,6 +272,9 @@ export const getTopGuides = async (req, res) => {
           authorName: 1,
           description: 1,
           price: 1,
+          // Without this the home-screen cards fall back to "$" for every
+          // seller, whatever currency they actually priced the guide in.
+          currency: 1,
           city: 1,
           cityState: 1,
           coverImage: 1,
@@ -287,12 +298,25 @@ export const getTopGuides = async (req, res) => {
   }
 };
 
-// Get user's guides (including drafts)
+// Get user's guides (including drafts), each with its sales count.
+//
+// $size on the in-document array is the cheapest correct count — no $lookup,
+// no extra index. The $project exclusion also fixes a real leak: the previous
+// bare find() shipped every buyer's ObjectId to the client on every load.
 export const getUserGuides = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const guides = await Guide.find({ author: userId }).sort({ createdAt: -1 });
+    const guides = await Guide.aggregate([
+      { $match: { author: new mongoose.Types.ObjectId(userId) } },
+      { $addFields: { salesCount: { $size: { $ifNull: ["$purchasedBy", []] } } } },
+      // Counted off purchasedBy, not the newer `sales` ledger: purchasedBy is
+      // complete for guides sold before the ledger existed. Both are dropped
+      // from the payload — a list screen has no use for buyer ids, and the
+      // money detail belongs to /earnings.
+      { $project: { purchasedBy: 0, sales: 0 } },
+      { $sort: { createdAt: -1 } },
+    ]);
 
     res.status(200).json({ guides });
   } catch (error) {
@@ -411,6 +435,13 @@ export const updateGuide = async (req, res) => {
       return res
         .status(403)
         .json({ message: "You can only edit your own guides" });
+    }
+
+    // Same payout gate as creation — otherwise publishing a free guide and then
+    // editing a price onto it would walk straight around it.
+    if (price !== undefined && parseFloat(price) > 0) {
+      const author = await User.findById(userId).select(PAYOUT_ROUTING_FIELDS);
+      if (rejectIfCannotSell(res, author)) return;
     }
 
     // Validate sections if provided
@@ -554,8 +585,16 @@ export const purchaseGuide = async (req, res) => {
       });
     }
 
-    // Free guide — grant access directly
+    // Free guide — grant access directly. Still recorded in the sales ledger
+    // (gross 0) so the author's "unlocks" count is complete.
     guide.purchasedBy.push(userId);
+    guide.sales.push({
+      user: userId,
+      purchasedAt: new Date(),
+      gross: 0,
+      net: 0,
+      currency: guide.currency || "USD",
+    });
     await guide.save();
 
     res.status(200).json({

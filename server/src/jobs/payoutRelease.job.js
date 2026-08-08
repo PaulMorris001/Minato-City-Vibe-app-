@@ -4,21 +4,23 @@ import User from "../models/user.model.js";
 import {
   getSettlementProvider,
   hasPayoutOnboarding,
+  payoutSupported,
   PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
 import { createPayout } from "../services/payments/payout.service.js";
+import { notifyUser } from "../services/notification.service.js";
 
 /**
  * Convert a ticket-sales net (held in the COLLECTION provider's units) into the
  * settlement provider's payout units — always major, see payout.model.js.
  *  - Paystack collects in major local units and settles them as-is.
- *  - Everything else was Stripe-collected, i.e. cents. Both Stripe-collected
- *    rails (wise and stripe/Connect) settle in major USD, so ÷ 100.
- *    payout.service.js re-multiplies to cents at the Transfers API boundary.
+ *  - Everything else was Stripe-collected, i.e. cents, and settles in major USD,
+ *    so ÷ 100. payout.service.js re-multiplies to cents at the Transfers API
+ *    boundary.
  */
 function ticketPayoutAmount(totalNet, settlement) {
   if (settlement === "paystack") return totalNet; // already major local units
-  return totalNet / 100; // cents → major USD (wise + stripe)
+  return totalNet / 100; // cents → major USD (stripe/Connect)
 }
 
 /**
@@ -57,11 +59,53 @@ async function releaseDuePayouts() {
         `${PAYOUT_ROUTING_FIELDS} paystackBank username`
       );
 
+      // Two different dead ends, and the organizer deserves to be told which.
+      // This used to fail silently: the event flipped to "failed" and the only
+      // trace was a banner on that one event's detail screen, which an organizer
+      // has no reason to revisit after the event is over.
+      //
+      // Only notify on the pending → failed TRANSITION. The job rescans failed
+      // events every 30 minutes forever, so notifying unconditionally would mean
+      // two messages an hour for the rest of time.
+      const wasPending = evt.payoutStatus === "pending";
+
+      if (!payoutSupported(seller)) {
+        await Event.updateOne(
+          { _id: evt._id },
+          {
+            payoutStatus: "failed",
+            payoutError: "No payout rail is available in the organizer's country",
+          }
+        );
+        if (wasPending) {
+          notifyUser(seller?._id, {
+            type: "payout_blocked",
+            title: "We can't release your payout yet",
+            body:
+              `Payouts aren't available in your country yet, so the money from ` +
+              `"${evt.title}" is being held safely. We'll release it as soon as we can pay you.`,
+            data: { eventId: String(evt._id) },
+          });
+        }
+        console.warn(`[PayoutRelease] Skipping event ${evt._id} — no rail in organizer's country`);
+        continue;
+      }
+
       if (!hasPayoutOnboarding(seller)) {
         await Event.updateOne(
           { _id: evt._id },
           { payoutStatus: "failed", payoutError: "Organizer has no completed payout account" }
         );
+        if (wasPending) {
+          notifyUser(seller?._id, {
+            type: "payout_action_required",
+            title: "Finish your payout setup to get paid",
+            body:
+              `Your earnings from "${evt.title}" are ready, but we need your payout ` +
+              `details first. Open Settings → Earnings to finish setting up.`,
+            data: { eventId: String(evt._id) },
+          });
+        }
         console.warn(`[PayoutRelease] Skipping event ${evt._id} — organizer not onboarded`);
         continue;
       }
