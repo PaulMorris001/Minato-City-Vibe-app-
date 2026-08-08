@@ -9,7 +9,6 @@ import {
   Alert,
 } from "react-native";
 import { showError, showSuccess } from "@/utils/toast";
-import { Image } from "expo-image";
 import { createGuideShareLink } from "@/utils/shareLinks";
 import { formatLocation } from "@/utils/location";
 import { toggleGuideSave } from "@/libs/api";
@@ -33,19 +32,36 @@ import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 import MediaTile from "@/components/shared/MediaTile";
+import ImageViewerModal from "@/components/shared/ImageViewerModal";
 import { sectionMedia } from "@/utils/media";
 
 /**
  * A section's photos and videos. One item fills the width the way the old
  * single-photo layout did; several scroll horizontally so a long gallery
  * doesn't push the section's text off the screen.
+ *
+ * Both layouts size themselves to the photo rather than centre-cropping it,
+ * and tapping any item opens the full-screen viewer.
  */
-function SectionMedia({ media }: { media: string[] }) {
+function SectionMedia({
+  media,
+  onOpen,
+}: {
+  media: string[];
+  onOpen: (media: string[], index: number) => void;
+}) {
   const styles = useThemedStyles(createStyles);
   if (media.length === 0) return null;
 
   if (media.length === 1) {
-    return <MediaTile uri={media[0]} style={styles.sectionImage} />;
+    return (
+      <MediaTile
+        uri={media[0]}
+        style={styles.sectionImage}
+        adaptive="height"
+        onPress={() => onOpen(media, 0)}
+      />
+    );
   }
 
   return (
@@ -54,8 +70,16 @@ function SectionMedia({ media }: { media: string[] }) {
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.sectionMediaStrip}
     >
-      {media.map((uri) => (
-        <MediaTile key={uri} uri={uri} style={styles.sectionMediaTile} />
+      {media.map((uri, i) => (
+        <MediaTile
+          key={uri}
+          uri={uri}
+          style={styles.sectionMediaTile}
+          // "width" not "height": a horizontal strip with varying heights
+          // reads as broken, so the row height stays fixed.
+          adaptive="width"
+          onPress={() => onOpen(media, i)}
+        />
       ))}
     </ScrollView>
   );
@@ -87,6 +111,10 @@ export default function GuideDetailPage() {
   const [reportSheetVisible, setReportSheetVisible] = useState(false);
   const [shareSheetVisible, setShareSheetVisible] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
+  // Full-screen media viewer. Each surface opens with its own list — the cover
+  // alone, or the tapped section's strip — so the swipe range matches what the
+  // user just tapped instead of every photo in the guide.
+  const [viewer, setViewer] = useState<{ media: string[]; index: number } | null>(null);
 
   useEffect(() => {
     SecureStore.getItemAsync("user").then((u) => {
@@ -208,12 +236,9 @@ export default function GuideDetailPage() {
       }
 
       showSuccess("Guide unlocked! Enjoy reading.");
-      // Notify guide author that their guide was sold (in-app feed entry).
-      fetch(`${BASE_URL}/notifications/sold`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "guide", id }),
-      }).catch(() => {});
+      // The author's sale notification is sent server-side by fulfillment.js —
+      // the buyer's client no longer has to stay open for the seller to hear
+      // about their own sale.
       setHasPurchased(true);
       fetchGuide();
     } finally {
@@ -286,7 +311,12 @@ export default function GuideDetailPage() {
         showsVerticalScrollIndicator={false}
       >
         {!!guide.coverImage && (
-          <Image source={{ uri: guide.coverImage }} style={styles.coverImage} contentFit="cover" />
+          <MediaTile
+            uri={guide.coverImage}
+            style={styles.coverImage}
+            adaptive="height"
+            onPress={() => setViewer({ media: [guide.coverImage!], index: 0 })}
+          />
         )}
 
         <View style={styles.titleSection}>
@@ -402,7 +432,10 @@ export default function GuideDetailPage() {
                       {section.title}
                     </Text>
                   </View>
-                  <SectionMedia media={sectionMedia(section)} />
+                  <SectionMedia
+                    media={sectionMedia(section)}
+                    onOpen={(media, index) => setViewer({ media, index })}
+                  />
                   <Text style={styles.sectionDescription}>
                     {section.description}
                   </Text>
@@ -454,6 +487,17 @@ export default function GuideDetailPage() {
         onClose={() => setShareSheetVisible(false)}
         target={shareTarget}
       />
+
+      {/* Mounted only while open so the pager always starts at the tapped
+          index — FlatList's initialScrollIndex is read on mount. */}
+      {viewer && (
+        <ImageViewerModal
+          visible
+          images={viewer.media}
+          initialIndex={viewer.index}
+          onClose={() => setViewer(null)}
+        />
+      )}
     </View>
   );
 }

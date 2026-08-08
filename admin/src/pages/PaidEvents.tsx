@@ -32,7 +32,7 @@ interface PaidEvent {
     verified?: boolean;
     paidEventsApproved?: boolean;
     paidEventsCount?: number;
-    /** Computed server-side: vendor has completed Paystack or Wise payout setup. */
+    /** Computed server-side: vendor has completed Paystack or Stripe Connect payout setup. */
     payoutOnboarded?: boolean;
     emailVerifiedAt?: string;
     contactInfo?: { phone?: string };

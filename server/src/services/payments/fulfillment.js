@@ -3,9 +3,14 @@
  *
  * Once a payment is verified (by Stripe or Paystack), these helpers grant the
  * buyer access and run the side effects (passes, attendee lists, cache busting,
- * push notifications). Keeping this logic in one place means both providers
+ * seller notifications). Keeping this logic in one place means both providers
  * behave identically — the only provider-specific work is verifying the payment
  * and moving the money, which lives in the provider controllers.
+ *
+ * Seller notifications belong HERE, not in the buyer's client. They used to be
+ * fired by a POST the buying app made after checkout, which meant a buyer who
+ * closed the app — or bought from the web, which never called it at all — left
+ * the seller with no record of the sale.
  */
 
 import User from "../../models/user.model.js";
@@ -16,7 +21,8 @@ import { Booking } from "../../models/booking.model.js";
 import { Order } from "../../models/order.model.js";
 import Chat from "../../models/chat.model.js";
 import chatService from "../chat.service.js";
-import { sendPushNotification } from "../notification.service.js";
+import { notifyUser } from "../notification.service.js";
+import { computeSplit } from "./split.js";
 import { issueEventPass } from "../pass.service.js";
 import { invalidateCachePattern } from "../../utils/cache.js";
 
@@ -61,10 +67,10 @@ export async function fulfillTicket({
     ticketPrice: tier ? tier.price : event.ticketPrice,
     ...(tier ? { tierId: tier._id, tierName: tier.name } : {}),
     provider,
-    // Defensive fallback only — every live caller resolves the settlement rail
-    // and passes it explicitly. Wise is the safe default: it can reach any
-    // seller, whereas Connect only reaches its own footprint.
-    payoutProvider: payoutProvider || (provider === "stripe" ? "wise" : provider),
+    // Left unset when the caller resolved no rail (seller outside every payout
+    // footprint). Recording a rail that can't reach them would be a lie the
+    // payout job later trips over — absent is the honest value.
+    ...(payoutProvider ? { payoutProvider } : {}),
     currency: currency || event.currency || "usd",
     platformFeeCents,
     sellerNetCents,
@@ -100,15 +106,15 @@ export async function fulfillTicket({
     .populate("event", "title date location image")
     .populate("user", "username email profilePicture");
 
-  // Notify the event creator
+  // Notify the event creator. Inside the non-early-return branch, so a confirm
+  // and a webhook racing the same payment can't notify twice.
   const buyer = await User.findById(userId).select("username");
-  const creator = await User.findById(event.createdBy).select("fcmToken");
-  await sendPushNotification(
-    creator?.fcmToken,
-    "🎟️ New Ticket Sold!",
-    `${buyer?.username || "Someone"} just bought a ticket to "${event.title}"`,
-    { type: "ticket_sold", eventId: eventId.toString() }
-  );
+  await notifyUser(event.createdBy, {
+    type: "ticket_sold",
+    title: "🎟️ New Ticket Sold!",
+    body: `${buyer?.username || "Someone"} just bought a ticket to "${event.title}"`,
+    data: { eventId: eventId.toString() },
+  });
 
   return { ticket: populated, alreadyExisted: false };
 }
@@ -129,7 +135,7 @@ export async function fulfillTicket({
  * @param {string} args.buyerUserId         the payer
  * @param {object|null} args.tier           { tierId, name, price } or null (single-price)
  * @param {"stripe"|"paystack"} args.provider
- * @param {"wise"|"paystack"|"stripe"} args.payoutProvider
+ * @param {"paystack"|"stripe"|null} args.payoutProvider
  * @param {string} args.paymentRef
  * @param {string} args.currency
  * @param {number} args.platformFeeCents
@@ -160,7 +166,8 @@ export async function issueRecipientTicket({
     ticketPrice: tier ? tier.price : event.ticketPrice,
     ...(tier ? { tierId: tier.tierId, tierName: tier.name } : {}),
     provider,
-    payoutProvider: payoutProvider || (provider === "stripe" ? "wise" : provider),
+    // See fulfillTicket — absent when the seller has no payout rail.
+    ...(payoutProvider ? { payoutProvider } : {}),
     currency: currency || event.currency || "usd",
     platformFeeCents,
     sellerNetCents,
@@ -200,16 +207,29 @@ export async function fulfillGuide({ guideId, userId }) {
   }
 
   guide.purchasedBy.push(userId);
+  // Ledger entry alongside the access grant — purchasedBy answers "may they read
+  // it?", this answers "what did the author earn, and when?".
+  const { sellerNet } = computeSplit(guide.price || 0);
+  guide.sales.push({
+    user: userId,
+    purchasedAt: new Date(),
+    gross: guide.price || 0,
+    net: sellerNet,
+    currency: guide.currency || "USD",
+  });
   await guide.save();
 
+  // `guide.author` — NOT `createdBy`, which doesn't exist on this schema. The
+  // now-deprecated client-called /notifications/sold endpoint used `createdBy`,
+  // so it wrote `{ user: undefined }`, failed validation, and had its error
+  // swallowed: guide sellers never once received an in-app sale notification.
   const buyer = await User.findById(userId).select("username");
-  const author = await User.findById(guide.author).select("fcmToken");
-  await sendPushNotification(
-    author?.fcmToken,
-    "📖 Guide Purchased!",
-    `${buyer?.username || "Someone"} just bought your guide "${guide.title}"`,
-    { type: "guide_sold", guideId: guideId.toString() }
-  );
+  await notifyUser(guide.author, {
+    type: "guide_sold",
+    title: "📖 Guide Purchased!",
+    body: `${buyer?.username || "Someone"} just bought your guide "${guide.title}"`,
+    data: { guideId: guideId.toString() },
+  });
 
   return { alreadyPurchased: false };
 }
@@ -239,8 +259,8 @@ export async function fulfillBooking({
 
   booking.paymentStatus = "paid";
   booking.provider = provider;
-  // Defensive fallback only — see fulfillTicket.
-  booking.payoutProvider = payoutProvider || (provider === "stripe" ? "wise" : provider);
+  // Left unset when the seller has no payout rail — see fulfillTicket.
+  if (payoutProvider) booking.payoutProvider = payoutProvider;
   booking.paymentRef = paymentRef;
   booking.platformFee = platformFee;
   booking.vendorNet = vendorNet;
@@ -249,13 +269,12 @@ export async function fulfillBooking({
 
   // Notify the vendor that the client has paid.
   const client = await User.findById(booking.client).select("username");
-  const vendor = await User.findById(booking.vendor).select("fcmToken");
-  await sendPushNotification(
-    vendor?.fcmToken,
-    "💳 Booking Paid",
-    `${client?.username || "A client"} just paid for their booking`,
-    { type: "booking_paid", bookingId: bookingId.toString() }
-  );
+  await notifyUser(booking.vendor, {
+    type: "booking_paid",
+    title: "💳 Booking Paid",
+    body: `${client?.username || "A client"} just paid for their booking`,
+    data: { bookingId: bookingId.toString() },
+  });
 
   return { booking, alreadyPaid: false };
 }
@@ -288,8 +307,8 @@ export async function fulfillOrder({
   order.paymentStatus = "paid";
   order.status = "paid";
   order.provider = provider;
-  // Defensive fallback only — see fulfillTicket.
-  order.payoutProvider = payoutProvider || (provider === "stripe" ? "wise" : provider);
+  // Left unset when the seller has no payout rail — see fulfillTicket.
+  if (payoutProvider) order.payoutProvider = payoutProvider;
   order.paymentRef = paymentRef;
   order.platformFee = platformFee;
   order.vendorNet = vendorNet;
@@ -308,13 +327,12 @@ export async function fulfillOrder({
 
   // Notify the vendor that the client has paid.
   const client = await User.findById(order.client).select("username");
-  const vendor = await User.findById(order.vendor).select("fcmToken");
-  await sendPushNotification(
-    vendor?.fcmToken,
-    "💳 Order Paid",
-    `${client?.username || "A client"} just paid for their order`,
-    { type: "order_paid", orderId: orderId.toString() }
-  );
+  await notifyUser(order.vendor, {
+    type: "order_paid",
+    title: "💳 Order Paid",
+    body: `${client?.username || "A client"} just paid for their order`,
+    data: { orderId: orderId.toString() },
+  });
 
   return { order, alreadyPaid: false };
 }

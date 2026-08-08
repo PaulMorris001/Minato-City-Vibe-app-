@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import {
   Alert,
+  StatusBar,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -32,7 +33,7 @@ import {
   PrimaryCTA,
   Wordmark,
 } from "@/components/auth/AuthPrimitives";
-import { AU } from "@/components/auth/tokens";
+import { AU, AU_FONT } from "@/components/auth/tokens";
 
 import { darkColors, type ThemeColors } from "@/constants/theme";
 export default function Login() {
@@ -145,11 +146,15 @@ export default function Login() {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
       <PosterBackground />
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          // Android needs "height" — leaving it undefined (as this did) means no
+          // avoidance at all and the keyboard covers the password field. Matches
+          // forgot-password / reset-password / verify-otp.
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <ScrollView
             contentContainerStyle={styles.scrollContent}
@@ -175,12 +180,12 @@ export default function Login() {
               {/* Live stat pill */}
               <View style={styles.statPill}>
                 <LiveDot />
-                <Text style={styles.statText}>312 events live in NYC tonight</Text>
+                <Text style={styles.statText}>Live events happening near you</Text>
               </View>
 
               <Text style={styles.headline}>
                 Welcome{"\n"}
-                <GradientAccent style={styles.headline}>back, regular!</GradientAccent>
+                <GradientAccent style={styles.headline}>back.</GradientAccent>
               </Text>
               <Text style={styles.subhint}>
                 Your friends are already RSVP'ing. Let's catch up.
@@ -366,7 +371,7 @@ const createStyles = (c: ThemeColors) =>
     paddingVertical: 7,
     paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: c.glassFillSubtle,
+    backgroundColor: AU.stroke,
     borderWidth: 1,
     borderColor: AU.stroke,
     marginBottom: 16,
@@ -395,7 +400,7 @@ const createStyles = (c: ThemeColors) =>
     marginTop: 20,
     padding: 14,
     borderRadius: 18,
-    backgroundColor: "rgba(26,16,48,0.78)",
+    backgroundColor: AU.surface,
     borderWidth: 1,
     borderColor: AU.stroke,
     gap: 10,
@@ -405,7 +410,7 @@ const createStyles = (c: ThemeColors) =>
     paddingHorizontal: 14,
     paddingTop: 10,
     paddingBottom: 10,
-    backgroundColor: c.glassFillSubtle,
+    backgroundColor: AU.stroke,
     borderWidth: 1,
     borderColor: AU.stroke,
   },
@@ -465,7 +470,7 @@ const createStyles = (c: ThemeColors) =>
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.85)",
+    backgroundColor: c.modalOverlay,
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
@@ -507,18 +512,20 @@ const createStyles = (c: ThemeColors) =>
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: c.primaryFaded,
+    backgroundColor: AU.purple + "22",
     alignItems: "center",
     justifyContent: "center",
   },
   roleTitle: {
-    fontFamily: "Outfit_600SemiBold",
+    fontFamily: AU_FONT.bodySemi,
     fontSize: 16,
     color: AU.text,
   },
   roleDescription: {
-    fontFamily: "Outfit_500Medium",
-    fontSize: 18,
+    fontFamily: AU_FONT.body,
+    // Must stay below roleTitle's 16 — this was 18, so every description
+    // out-shouted its own heading.
+    fontSize: 13,
     color: AU.textDim,
     marginTop: 2,
   },

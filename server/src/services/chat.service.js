@@ -291,7 +291,7 @@ class ChatService {
       { path: 'sender', select: 'username email profilePicture' },
       { path: 'replyTo', populate: { path: 'sender', select: 'username profilePicture' } },
       { path: 'event' },
-      { path: 'guide', select: 'title authorName city cityState topic price' },
+      { path: 'guide', select: 'title authorName city cityState topic price currency' },
       { path: 'order' },
     ]);
 
@@ -391,7 +391,7 @@ class ChatService {
         populate: { path: 'sender', select: 'username profilePicture' }
       })
       .populate('event')
-      .populate('guide', 'title authorName city cityState topic price')
+      .populate('guide', 'title authorName city cityState topic price currency')
       .populate('order')
       .populate('reactions.user', 'username profilePicture');
 
@@ -556,7 +556,7 @@ class ChatService {
       populate: { path: 'sender', select: 'username profilePicture' }
     });
     await message.populate('event');
-    await message.populate('guide', 'title authorName city cityState topic price');
+    await message.populate('guide', 'title authorName city cityState topic price currency');
     await message.populate('order');
     await message.populate('reactions.user', 'username profilePicture');
 

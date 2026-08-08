@@ -1,6 +1,6 @@
 import { Alert } from "react-native";
 import { router } from "expo-router";
-import { SUPPORT_USER_ID, isSupportUser } from "@/constants/support";
+import { isSupportUser } from "@/constants/support";
 import chatService from "@/services/chat.service";
 
 /**
@@ -9,10 +9,14 @@ import chatService from "@/services/chat.service";
  * Support has no profile to visit — it's a help desk, so the useful
  * destination is always the chat. The server waives the mutual-follow rule
  * for this pair, so this succeeds for any signed-in user.
+ *
+ * The support account is resolved server-side rather than from a bundled id:
+ * a build carrying the wrong literal previously broke every support entry point
+ * in the app with no way to recover without shipping again.
  */
 export async function openSupportChat({ replace = false }: { replace?: boolean } = {}) {
   try {
-    const chat = await chatService.getOrCreateDirectChat(SUPPORT_USER_ID);
+    const chat = await chatService.getOrCreateSupportChat();
     const target = { pathname: "/chat/[id]" as const, params: { id: chat._id } };
     // `replace` when we're bouncing off a screen the user should never land
     // back on (e.g. a support profile route reached via a deep link).

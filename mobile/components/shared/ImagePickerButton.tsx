@@ -52,12 +52,18 @@ export default function ImagePickerButton({
     // PHPickerViewController (iOS 14+) handles permissions itself — no pre-request needed.
     // Calling requestMediaLibraryPermissionsAsync() from inside a Modal crashes the iOS simulator
     // because it tries to present a native alert from a transparent modal context.
-    const aspectRatio = aspect || (shape === "circle" ? [1, 1] : [16, 9]);
+    // A circle crop is meaningless at anything but 1:1, so that default stays.
+    // Square pickers get no default: the old [16, 9] fallback silently forced a
+    // widescreen crop on every one of them, guide covers included. Callers that
+    // genuinely want a fixed ratio pass `aspect` explicitly. This only bites
+    // when `allowsEditing` is on — which is exactly why it should be fixed
+    // before someone turns that on and wonders where their photo went.
+    const aspectRatio = aspect || (shape === "circle" ? [1, 1] : undefined);
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing,
-      aspect: aspectRatio as [number, number],
+      aspect: aspectRatio,
       quality: 0.8,
     });
 

@@ -30,7 +30,7 @@ import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { heroEmojiFor } from "@/utils/eventDetails";
 import { createUserShareLink } from "@/utils/shareLinks";
-import { useFormatPrice } from "@/hooks/useFormatPrice";
+import { priceLabel } from "@/constants/payments";
 import { Guide } from "@/libs/interfaces";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -683,7 +683,6 @@ function GuidesSection({ guides }: { guides: Guide[] }) {
 function GuideRow({ guide }: { guide: Guide }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const formatPrice = useFormatPrice();
   return (
     <TouchableOpacity
       activeOpacity={0.85}
@@ -725,7 +724,12 @@ function GuideRow({ guide }: { guide: Guide }) {
           </Text>
           <View style={styles.subDot} />
           <Text style={styles.subText} numberOfLines={1}>
-            {guide.price === 0 ? "FREE" : `$${formatPrice(guide.price)}`}
+            {priceLabel(guide.price, guide.currency)}
+          </Text>
+          <View style={styles.subDot} />
+          {/* Free guides are "unlocked", not "sold" — no money changed hands. */}
+          <Text style={styles.subText} numberOfLines={1}>
+            {guide.salesCount ?? 0} {guide.price === 0 ? "unlocks" : "sold"}
           </Text>
         </View>
       </View>

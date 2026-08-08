@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, StyleSheet, Pressable, StyleProp, ViewStyle, ImageStyle } from "react-native";
-import { Image, ImageContentFit } from "expo-image";
+import { Image, ImageContentFit, ImageLoadEventData } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { isVideoUrl, videoPosterUrl } from "@/utils/media";
@@ -18,6 +18,32 @@ interface MediaTileProps {
   posterOnly?: boolean;
   /** Start playing as soon as the player is ready. Ignored when posterOnly. */
   autoPlay?: boolean;
+  /**
+   * Size the tile to the photo's own aspect ratio instead of the fixed box in
+   * `style`, so a portrait photo gets a taller (or narrower) card rather than
+   * having its edges cropped away by `contentFit: "cover"`.
+   *
+   * - `"height"` keeps the style's width and derives the height. Use in a
+   *   vertical layout, where a column of differing heights reads naturally.
+   * - `"width"` keeps the style's height and derives the width. Use in a
+   *   horizontal strip, where differing heights would look ragged.
+   *
+   * Until the image reports its dimensions the style's own box applies, so
+   * there is no layout jump to zero.
+   *
+   * Images only — videos keep their fixed box, since a poster frame is not a
+   * reliable guide to how the player should be sized.
+   */
+  adaptive?: "height" | "width";
+  /**
+   * Aspect-ratio clamp for `adaptive`, as width/height. The low default is 3:4
+   * so an ordinary portrait phone photo — much the most common upload — renders
+   * uncropped; anything taller (9:16 screenshots, story exports) is cropped to
+   * that limit rather than eating the whole screen. The high default is 16:9,
+   * which stops a panorama collapsing to a letterbox strip.
+   */
+  minAspectRatio?: number;
+  maxAspectRatio?: number;
   onPress?: () => void;
 }
 
@@ -34,17 +60,43 @@ export default function MediaTile({
   contentFit = "cover",
   posterOnly = false,
   autoPlay = false,
+  adaptive,
+  minAspectRatio = 3 / 4,
+  maxAspectRatio = 16 / 9,
   onPress,
 }: MediaTileProps) {
   const isVideo = isVideoUrl(uri);
   const showPlayer = isVideo && !posterOnly;
+
+  // Natural aspect ratio, learned from the decoded image. null until it loads.
+  const [ratio, setRatio] = useState<number | null>(null);
+
+  const onLoad = (e: ImageLoadEventData) => {
+    const { width, height } = e.source ?? {};
+    if (!width || !height) return;
+    setRatio(Math.min(Math.max(width / height, minAspectRatio), maxAspectRatio));
+  };
+
+  // Clearing the opposite dimension is load-bearing: RN honours an explicit
+  // width AND height over aspectRatio, so leaving both set makes the ratio a
+  // no-op.
+  const adaptiveStyle = !adaptive || !ratio
+    ? null
+    : adaptive === "height"
+      ? { aspectRatio: ratio, height: undefined }
+      : { aspectRatio: ratio, width: undefined };
 
   const content = showPlayer ? (
     <VideoPlayerTile uri={uri} style={style} autoPlay={autoPlay} />
   ) : isVideo ? (
     <VideoPoster uri={uri} style={style} contentFit={contentFit} />
   ) : (
-    <Image source={{ uri }} style={style} contentFit={contentFit} />
+    <Image
+      source={{ uri }}
+      style={[style, adaptiveStyle]}
+      contentFit={contentFit}
+      onLoad={adaptive ? onLoad : undefined}
+    />
   );
 
   if (!onPress) return <>{content}</>;

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  StatusBar,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -394,11 +395,13 @@ export default function Signup() {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
       <PosterBackground />
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          // "height" on Android — see login.tsx; undefined means no avoidance.
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <ScrollView
             contentContainerStyle={styles.scrollContent}

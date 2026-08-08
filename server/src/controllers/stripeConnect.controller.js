@@ -10,7 +10,7 @@
  * admin-approval gate requires and what Stripe requires for cross-border
  * payouts. Nothing in this file ever touches a charge.
  *
- * Response shapes mirror wise.controller.js / paystack.controller.js so the
+ * Response shapes mirror paystack.controller.js so the
  * mobile client can treat all three rails uniformly.
  */
 
@@ -18,6 +18,7 @@ import stripe from "../config/stripe.js";
 import config from "../config/env.js";
 import User from "../models/user.model.js";
 import { connectCountryCode } from "../services/payments/resolveProvider.js";
+import { markVerified } from "../services/verification.service.js";
 
 /** Deep link the return pages below drive the browser to. Matches the app
  * scheme in mobile/app.config.js ("mobile") and the route file name
@@ -221,8 +222,7 @@ export const getAccountLink = async (req, res) => {
 };
 
 /**
- * Onboarding status (shape mirrors /wise/connect/status and
- * /paystack/connect/status).
+ * Onboarding status (shape mirrors /paystack/connect/status).
  * GET /stripe/connect/status
  */
 export const getAccountStatus = async (req, res) => {
@@ -300,8 +300,8 @@ export const getAccountStatus = async (req, res) => {
       onboardingComplete,
       // Echoed as onboardingComplete rather than the literal
       // account.charges_enabled (which is always false here — we never request
-      // card_payments), matching wise.controller.js. Returning the literal would
-      // show a red ✗ next to a fully working account.
+      // card_payments). Returning the literal would show a red ✗ next to a
+      // fully working account.
       chargesEnabled: onboardingComplete,
       payoutsEnabled: !!account.payouts_enabled,
       currency: account.default_currency?.toUpperCase() || null,
@@ -381,16 +381,39 @@ export const stripeConnectWebhook = async (req, res) => {
       // transfers capability; a seller who silently lost it must stop being
       // routed sales rather than accruing unpayable payouts. (The pre-2026
       // implementation only ever set this true.)
+      const complete = isOnboardingComplete(account);
       const result = await User.updateOne(
         { stripeAccountId: account.id },
         {
-          stripeOnboardingComplete: isOnboardingComplete(account),
+          stripeOnboardingComplete: complete,
           stripePayoutsEnabled: !!account.payouts_enabled,
           stripeAccountCurrency: account.default_currency?.toUpperCase(),
         }
       );
       if (result.matchedCount === 0) {
         console.warn(`[Stripe Connect] account.updated for unknown account ${account.id}`);
+      }
+
+      // Inherit Stripe's identity check as platform verification.
+      //
+      // Stripe runs full KYC/AML before it enables transfers, so an account that
+      // reaches "transfers active with nothing outstanding" has already had its
+      // identity verified more rigorously than an admin squinting at a phone
+      // photo of a driving licence. Re-doing that by hand was pure duplicated
+      // work and days of delay for the seller.
+      //
+      // `currently_due` must be empty too: Stripe can enable transfers while
+      // still awaiting documents under a later deadline, and that is not a
+      // finished check.
+      const nothingOutstanding = (account.requirements?.currently_due?.length ?? 0) === 0;
+      if (complete && nothingOutstanding) {
+        const seller = await User.findOne({ stripeAccountId: account.id }).select("_id");
+        if (seller) {
+          await markVerified(seller._id, {
+            source: "stripe_connect",
+            notes: `Verified automatically via Stripe Connect account ${account.id}.`,
+          });
+        }
       }
     }
   } catch (error) {

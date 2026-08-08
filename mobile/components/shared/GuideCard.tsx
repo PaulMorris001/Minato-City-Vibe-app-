@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { formatLocation } from "@/utils/location";
-import { useFormatPrice } from "@/hooks/useFormatPrice";
+import { priceLabel } from "@/constants/payments";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 
@@ -16,6 +16,8 @@ export interface GuideCardItem {
   country?: string;
   authorName?: string;
   price: number;
+  /** The seller's selling currency. Absent on legacy docs — defaults to USD. */
+  currency?: string;
   views?: number;
 }
 
@@ -37,7 +39,6 @@ export default function GuideCard({
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const formatPrice = useFormatPrice();
 
   return (
     <TouchableOpacity
@@ -62,7 +63,7 @@ export default function GuideCard({
       )}
       <View style={styles.footer}>
         <Text style={styles.price}>
-          {guide.price === 0 ? "FREE" : `$${formatPrice(guide.price)}`}
+          {priceLabel(guide.price, guide.currency)}
         </Text>
         {guide.views != null && (
           <View style={styles.views}>

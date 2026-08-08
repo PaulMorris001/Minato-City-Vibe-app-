@@ -1,6 +1,10 @@
 import { Service } from "../models/service.model.js";
 import { CatalogueCategory } from "../models/catalogueCategory.model.js";
-import { currencyForUser } from "../services/payments/resolveProvider.js";
+import {
+  currencyForUser,
+  PAYOUT_ROUTING_FIELDS,
+} from "../services/payments/resolveProvider.js";
+import { rejectIfCannotSell } from "../services/payments/sellingEligibility.js";
 import User from "../models/user.model.js";
 import { Vendor } from "../models/vendor.model.js";
 import { Booking } from "../models/booking.model.js";
@@ -85,6 +89,10 @@ export async function createService(req, res) {
         .json({ message: "Catalogue category not found" });
     }
 
+    // A priced item needs somewhere for the money to land. Free/POA items skip
+    // this — the vendor can still list their catalogue.
+    if (parseFloat(req.body.price) > 0 && rejectIfCannotSell(res, user)) return;
+
     const serviceData = {
       ...req.body,
       vendor: req.user.id,
@@ -119,6 +127,13 @@ export async function updateService(req, res) {
 
     if (!service) {
       return res.status(404).json({ message: "Service not found" });
+    }
+
+    // Same payout gate as creation — otherwise a free item could be edited into
+    // a priced one to walk around it.
+    if (req.body.price !== undefined && parseFloat(req.body.price) > 0) {
+      const vendor = await User.findById(req.user.id).select(PAYOUT_ROUTING_FIELDS);
+      if (rejectIfCannotSell(res, vendor)) return;
     }
 
     // Update fields. Immutable: `vendor`; `currency` (server-assigned, must keep

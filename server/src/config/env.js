@@ -188,21 +188,6 @@ export const config = {
     publicKey: process.env.PAYSTACK_PUBLIC_KEY || "",
   },
 
-  // Wise (Wise Platform Payouts API) — the settlement rail for every seller who
-  // collects via Stripe (i.e. everyone outside the Paystack footprint). Payout-
-  // only: Stripe collects USD into the platform balance; Wise then settles the
-  // seller's net to a local bank in ~40 currencies.
-  wise: {
-    apiToken: process.env.WISE_API_TOKEN || "",
-    profileId: process.env.WISE_PROFILE_ID || "",
-    // PEM public key from the Wise dashboard, used to verify webhook signatures.
-    webhookPublicKey: process.env.WISE_WEBHOOK_PUBLIC_KEY || "",
-    // Sandbox: https://api.sandbox.transferwise.tech — Prod: https://api.transferwise.com
-    baseUrl: process.env.WISE_BASE_URL || "https://api.sandbox.transferwise.tech",
-    // Currency the platform balance is funded in / quotes source from.
-    sourceCurrency: (process.env.WISE_SOURCE_CURRENCY || "USD").toUpperCase(),
-  },
-
   // Sign in with Apple. For native iOS sign-in, the identity token's `aud`
   // claim is the app's bundle identifier, so that's the expected audience.
   apple: {

@@ -12,6 +12,7 @@ import Notification from "../models/notification.model.js";
 import Report from "../models/report.model.js";
 import Message from "../models/message.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
+import { markVerified } from "../services/verification.service.js";
 import { getSocketInstance } from "../services/socket.service.js";
 import {
   hasPayoutOnboarding,
@@ -450,44 +451,13 @@ export async function approveVerification(req, res) {
     const { id } = req.params;
     const { reviewedBy = "admin" } = req.body ?? {};
 
-    const request = await VerificationRequest.findById(id).populate(
-      "user",
-      "_id fcmToken isVendor"
-    );
+    const request = await VerificationRequest.findById(id).populate("user", "_id");
     if (!request) return res.status(404).json({ message: "Verification request not found" });
 
-    request.status = "approved";
-    request.reviewedAt = new Date();
-    request.reviewedBy = reviewedBy;
-    await request.save();
-
-    // Set user.verified = true
-    await User.findByIdAndUpdate(request.user._id, { verified: true });
-
-    // Sync to linked Vendor doc if exists
-    Vendor.findOneAndUpdate({ user: request.user._id }, { verified: true }).catch(() => {});
-
-    const isVendor = !!request.user.isVendor;
-    const notifTitle = isVendor ? "Business Verified!" : "You're Verified!";
-    const notifBody = isVendor
-      ? "Your business has been verified. You now have a verification badge on your profile."
-      : "Your identity has been verified. You now have a verification badge on your profile and faster approval on paid events.";
-
-    // In-app notification
-    await Notification.create({
-      user: request.user._id,
-      type: "verification_approved",
-      title: notifTitle,
-      body: notifBody,
-      data: {},
-    });
-
-    // Push notification
-    if (request.user.fcmToken) {
-      sendPushNotification(request.user.fcmToken, notifTitle, notifBody, {
-        type: "verification_approved",
-      }).catch(() => {});
-    }
+    // Shared with the automated Connect/Paystack paths so the user flag, the
+    // Vendor mirror, the request record and the notification can't diverge
+    // between how someone got verified.
+    await markVerified(request.user._id, { source: "manual", reviewedBy });
 
     res.json({ status: "approved" });
   } catch (error) {
@@ -590,9 +560,6 @@ export async function getPendingPaidEvents(req, res) {
         delete obj.createdBy.location;
         delete obj.createdBy.paystackRecipientCode;
         delete obj.createdBy.paystackOnboardingComplete;
-        delete obj.createdBy.wiseRecipientId;
-        delete obj.createdBy.wiseRecipientCurrency;
-        delete obj.createdBy.wiseOnboardingComplete;
         delete obj.createdBy.stripeAccountId;
         delete obj.createdBy.stripeAccountCountry;
         delete obj.createdBy.stripeAccountCurrency;
