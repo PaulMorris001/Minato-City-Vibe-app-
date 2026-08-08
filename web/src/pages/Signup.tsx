@@ -67,6 +67,7 @@ export default function Signup() {
               <label className="cv-label">Username</label>
               <input
                 className="cv-input"
+                autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="yourname"
@@ -76,6 +77,7 @@ export default function Signup() {
               <input
                 className="cv-input"
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
@@ -85,6 +87,7 @@ export default function Signup() {
               <input
                 className="cv-input"
                 type="password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Choose a password"
@@ -106,12 +109,13 @@ export default function Signup() {
               finish setting up your account.
             </p>
             {error && <div className="cv-error">{error}</div>}
-            {info && <div className="cv-error" style={{ background: "rgba(34,197,94,0.12)", borderColor: "#22c55e", color: "#86efac" }}>{info}</div>}
+            {info && <div className="cv-success">{info}</div>}
             <form onSubmit={handleVerify}>
               <label className="cv-label">Verification code</label>
               <input
                 className="cv-input"
                 inputMode="numeric"
+                autoComplete="one-time-code"
                 maxLength={6}
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
@@ -123,7 +127,10 @@ export default function Signup() {
               </button>
             </form>
             <p className="cv-muted cv-center" style={{ marginTop: 20 }}>
-              Didn't get it? <span className="cv-link" onClick={resendCode}>Resend code</span>
+              Didn't get it?{" "}
+              <button type="button" className="cv-linkbtn cv-link" onClick={resendCode}>
+                Resend code
+              </button>
             </p>
           </>
         )}

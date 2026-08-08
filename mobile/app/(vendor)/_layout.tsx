@@ -29,6 +29,7 @@ import socketService from "@/services/socket.service";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
+import { openSupportChat } from "@/utils/userNavigation";
 export const unstable_settings = {
   initialRouteName: "dashboard",
 };
@@ -242,13 +243,12 @@ export default function VendorLayout() {
 
       <TouchableOpacity
         style={styles.menuItem}
-        onPress={() =>
-          Alert.alert("Help & Support", "Need help? Reach us at:\n\nSupport@nvibez.com", [{ text: "Got it" }])
-        }
+        // Opens the in-app support conversation — see the client drawer.
+        onPress={() => openSupportChat()}
       >
         <View style={styles.menuIconContainer}>
           <Ionicons
-            name="help-circle-outline"
+            name="chatbubble-ellipses-outline"
             size={20}
             color={colors.primary}
           />

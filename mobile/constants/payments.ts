@@ -5,18 +5,17 @@
  *
  * The architecture: Nigerian sellers collect NGN via Paystack and are paid out
  * by Paystack transfers. Everyone else collects via Stripe (USD, into the
- * platform balance) and is paid out through either Stripe Connect (sellers
- * inside Stripe's cross-border-payouts footprint) or Wise (everyone else).
+ * platform balance) and is paid out through Stripe Connect — but only if they're
+ * inside Stripe's cross-border-payouts footprint. Sellers outside both get
+ * `null`: there is no rail that reaches them, so they can publish free listings
+ * but not paid ones.
  *
- * This mirror is exact only because settlement routing is a pure function of
- * country. The server also carries a grandfather clause for sellers with a
- * completed Wise recipient, which the client can't see — no seller matches it
- * today (none has ever finished Wise onboarding), and the Connect rail is meant
- * to go live before that becomes possible. If that ordering ever slips, the
- * client will need the provider handed to it by the server instead.
+ * This mirror is exact because settlement routing is a pure function of country
+ * on both sides. Keep it that way — the moment the server needs per-seller state
+ * to decide, this file has to be replaced by a value handed down from the API.
  */
 
-export type PayoutProvider = "paystack" | "wise" | "stripe";
+export type PayoutProvider = "paystack" | "stripe";
 
 // Paystack rollout — mirrors the server's PAYSTACK_ENABLED +
 // PAYSTACK_LAUNCH_COUNTRIES knobs (services/payments/resolveProvider.js).
@@ -29,16 +28,15 @@ function isPaystackCountry(country: string): boolean {
   return PAYSTACK_ENABLED && PAYSTACK_LAUNCH_COUNTRIES.has(country);
 }
 
-// Stripe Connect rollout — mirrors the server's STRIPE_CONNECT_ENABLED env flag
-// and CONNECT_COUNTRIES map. Stripe's cross-border payouts only reach connected
-// accounts in the US, UK, EEA, CA and CH. Keys are lowercased country names and
-// ISO2 codes, matching the free-text `location.country` the app stores. The
-// client doesn't need the ISO2 values the server maps to, only membership.
+// Stripe Connect footprint — mirrors the server's CONNECT_COUNTRIES map. Stripe's
+// cross-border payouts only reach connected accounts in the US, UK, EEA, CA and
+// CH. Keys are lowercased country names and ISO2 codes, matching the free-text
+// `location.country` the app stores. The client doesn't need the ISO2 values the
+// server maps to, only membership.
 //
-// FLIP THIS IN LOCKSTEP WITH THE SERVER'S STRIPE_CONNECT_ENABLED — if the client
-// says Connect and the server says Wise, vendors land on an onboarding screen
-// whose status endpoint will never report them set up.
-const STRIPE_CONNECT_ENABLED = true;
+// There is no enable/disable flag: Connect is the only rail outside Nigeria, so
+// turning it off would strand every non-Nigerian seller at once. To pause a
+// country, remove it here and on the server together.
 const CONNECT_COUNTRIES = new Set([
   // North America
   "united states", "united states of america", "usa", "us", "canada", "ca",
@@ -58,19 +56,28 @@ const CONNECT_COUNTRIES = new Set([
 ]);
 
 function isConnectCountry(country: string): boolean {
-  return STRIPE_CONNECT_ENABLED && CONNECT_COUNTRIES.has(country);
+  return CONNECT_COUNTRIES.has(country);
 }
 
 /**
  * Which payout provider a vendor in `country` uses. Mirrors the server's
  * getSettlementProvider: Nigeria → Paystack, the cross-border footprint →
- * Stripe Connect, everyone else → Wise.
+ * Stripe Connect, everyone else → null (no rail reaches them).
  */
-export function payoutProviderForCountry(country?: string): PayoutProvider {
+export function payoutProviderForCountry(country?: string): PayoutProvider | null {
   const c = (country || "").trim().toLowerCase();
   if (isPaystackCountry(c)) return "paystack";
   if (isConnectCountry(c)) return "stripe";
-  return "wise";
+  return null;
+}
+
+/**
+ * Whether payouts are available in `country` at all. Use this to tell the
+ * permanent "not in your country yet" state apart from the fixable "finish your
+ * setup" one — they need different copy and only one of them has a CTA.
+ */
+export function payoutSupportedForCountry(country?: string): boolean {
+  return payoutProviderForCountry(country) !== null;
 }
 
 // Country (lowercased) → local selling currency, mirroring the server's
@@ -93,20 +100,33 @@ export function sellingCurrencyForCountry(country?: string): string {
 /** Payout-onboarding screen for each rail. */
 export const PAYOUT_ONBOARDING_ROUTES: Record<PayoutProvider, string> = {
   paystack: "/paystack-onboarding",
-  wise: "/wise-onboarding",
   stripe: "/stripe-connect-onboarding",
 };
 
-/** Onboarding-status endpoint for each rail. All three return the same shape. */
+/** Onboarding-status endpoint for each rail. Both return the same shape. */
 export const PAYOUT_STATUS_ENDPOINTS: Record<PayoutProvider, string> = {
   paystack: "/paystack/connect/status",
-  wise: "/wise/connect/status",
   stripe: "/stripe/connect/status",
 };
 
-/** Onboarding screen route for a vendor in `country`. */
-export function payoutOnboardingRoute(country?: string): string {
-  return PAYOUT_ONBOARDING_ROUTES[payoutProviderForCountry(country)];
+/**
+ * Onboarding screen route for a vendor in `country`, or null when no rail
+ * reaches them. Callers MUST handle null — routing to an onboarding screen that
+ * can't succeed is the exact dead end the Wise rail used to create.
+ */
+export function payoutOnboardingRoute(country?: string): string | null {
+  const provider = payoutProviderForCountry(country);
+  return provider ? PAYOUT_ONBOARDING_ROUTES[provider] : null;
+}
+
+/**
+ * Copy for a seller whose country has no payout rail. Kept here so the wording
+ * stays identical everywhere it surfaces.
+ */
+export function payoutUnavailableMessage(country?: string): string {
+  return `Payouts aren't available in ${country?.trim() || "your country"} yet. ` +
+    `You can still publish free events and guides — we'll let you know the moment ` +
+    `payouts launch where you are.`;
 }
 
 // Display symbols for the currencies we support. Unknown codes fall back to the
@@ -127,4 +147,49 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 export function currencyPrefix(currency?: string): string {
   const code = (currency || "USD").toUpperCase();
   return CURRENCY_SYMBOLS[code] || `${code} `;
+}
+
+/**
+ * Thousands-separated amount with no currency symbol. "1000" → "1,000".
+ * Trailing ".00" is dropped, so whole amounts read cleanly.
+ *
+ * This is the implementation behind useFormatPrice(). It exists as a PURE
+ * function because the hook can't be called from module-level render helpers
+ * (MessageBubble, list item renderers defined outside a component) — which is
+ * exactly why those call sites hardcoded "$" instead of formatting properly.
+ */
+export function formatAmount(value?: number | string | null): string {
+  if (value === undefined || value === null || value === "") return "0";
+
+  const numeric = typeof value === "string" ? parseFloat(value) : value;
+  if (isNaN(numeric)) return "0";
+
+  const [integerPart, decimalPart] = numeric.toFixed(2).split(".");
+  const withSeparators = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+  return decimalPart === "00" ? withSeparators : `${withSeparators}.${decimalPart}`;
+}
+
+/**
+ * Amount with its currency symbol: formatMoney(12500, "NGN") → "₦12,500".
+ * Defaults to USD when the currency is unknown, matching currencyPrefix.
+ *
+ * Always pass the item's OWN currency (guide.currency, event.currency, …) — a
+ * seller's prices are denominated in their selling currency, not the viewer's.
+ */
+export function formatMoney(value?: number | string | null, currency?: string): string {
+  return `${currencyPrefix(currency)}${formatAmount(value)}`;
+}
+
+/**
+ * Price for display, with free items labelled rather than shown as a zero.
+ * priceLabel(0) → "FREE"; priceLabel(15000, "NGN") → "₦15,000".
+ */
+export function priceLabel(
+  price?: number | null,
+  currency?: string,
+  freeLabel = "FREE"
+): string {
+  if (price === 0 || price === null || price === undefined) return freeLabel;
+  return formatMoney(price, currency);
 }

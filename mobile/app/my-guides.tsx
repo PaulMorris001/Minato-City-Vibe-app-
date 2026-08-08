@@ -18,7 +18,7 @@ import { Guide } from "@/libs/interfaces";
 import { Colors } from "@/constants/colors";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
-import { useFormatPrice } from "@/hooks/useFormatPrice";
+import { priceLabel } from "@/constants/payments";
 import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -30,7 +30,6 @@ export default function MyGuidesPage() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
-  const formatPrice = useFormatPrice();
   const [guides, setGuides] = useState<Guide[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -145,8 +144,13 @@ export default function MyGuidesPage() {
           <Ionicons name="eye-outline" size={14} color={colors.textMuted} />
           <Text style={styles.statsText}>{item.views} views</Text>
           <Text style={styles.statsSeparator}>•</Text>
+          {/* Free guides are "unlocked", not "sold" — no money changed hands. */}
+          <Text style={styles.statsText}>
+            {item.salesCount ?? 0} {item.price === 0 ? "unlocks" : "sold"}
+          </Text>
+          <Text style={styles.statsSeparator}>•</Text>
           <Text style={styles.priceText}>
-            {item.price === 0 ? "FREE" : `$${formatPrice(item.price)}`}
+            {priceLabel(item.price, item.currency)}
           </Text>
         </View>
         <View style={styles.actionsRow}>

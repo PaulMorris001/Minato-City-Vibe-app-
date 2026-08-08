@@ -9,8 +9,11 @@ type VerifStatus = "all" | "pending" | "approved" | "rejected";
 interface VerifRequest {
   _id: string;
   user: { _id: string; username: string; email: string; profilePicture?: string };
-  documentImageUrl: string;
+  /** Only the manual upload path has a document — the automated paths don't. */
+  documentImageUrl?: string;
   status: "pending" | "approved" | "rejected";
+  /** How the decision was reached. Legacy rows have none and are manual. */
+  source?: "manual" | "stripe_connect" | "paystack_account_name";
   reviewNotes: string;
   createdAt: string;
   reviewedAt?: string;
@@ -21,6 +24,14 @@ const statusColor: Record<string, string> = {
   pending: "#f59e0b",
   approved: "#22c55e",
   rejected: "#ef4444",
+};
+
+// Where a verification came from. Most approvals should now be automatic —
+// this queue is for exceptions: name mismatches and non-sellers.
+const sourceLabel: Record<string, string> = {
+  manual: "Manual review",
+  stripe_connect: "Auto · Stripe KYC",
+  paystack_account_name: "Auto · bank name match",
 };
 
 export default function Verifications() {
@@ -131,19 +142,22 @@ export default function Verifications() {
                   <td style={styles.td}>{r.user?.email ?? "—"}</td>
                   <td style={styles.td}>{new Date(r.createdAt).toLocaleDateString()}</td>
                   <td style={styles.td}>
-                    <a href={r.documentImageUrl} target="_blank" rel="noreferrer">
-                      <img
-                        src={r.documentImageUrl}
-                        style={styles.docThumb}
-                        alt="document"
-                      />
-                    </a>
+                    {r.documentImageUrl ? (
+                      <a href={r.documentImageUrl} target="_blank" rel="noreferrer">
+                        <img src={r.documentImageUrl} style={styles.docThumb} alt="document" />
+                      </a>
+                    ) : (
+                      <span style={styles.reviewNotes}>
+                        No document — verified by the payment provider
+                      </span>
+                    )}
                   </td>
                   <td style={styles.td}>
                     <span style={{ ...styles.statusBadge, color: statusColor[r.status], borderColor: statusColor[r.status] }}>
                       {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
                     </span>
-                    {r.status === "rejected" && r.reviewNotes && (
+                    <div style={styles.reviewNotes}>{sourceLabel[r.source || "manual"]}</div>
+                    {(r.status === "rejected" || r.status === "pending") && r.reviewNotes && (
                       <div style={styles.reviewNotes}>{r.reviewNotes}</div>
                     )}
                   </td>

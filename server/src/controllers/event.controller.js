@@ -18,6 +18,7 @@ import {
   currencyForUser,
   PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
+import { rejectIfCannotSell } from "../services/payments/sellingEligibility.js";
 import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { issueEventPass } from "../services/pass.service.js";
 import { linkQrDataUrl } from "../utils/qrcode.js";
@@ -244,10 +245,9 @@ export const createEvent = async (req, res) => {
       }
 
       // Trust gates for sellers: must have verified their email AND submitted ID
-      // AND completed payout onboarding on whichever rail settles them (Paystack,
-      // Stripe Connect or Wise) so ticket revenue has a payout destination.
-      // Without this gate, the failure surfaces to the *buyer* at checkout — the
-      // wrong layer.
+      // AND have a usable payout destination on whichever rail settles them
+      // (Paystack or Stripe Connect). Without this gate, the failure surfaces to
+      // the *buyer* at checkout — the wrong layer.
       const organizer = await User.findById(userId).select(
         `verified paidEventsApproved paidEventsCount emailVerifiedAt ${PAYOUT_ROUTING_FIELDS}`
       );
@@ -263,13 +263,7 @@ export const createEvent = async (req, res) => {
             "Identity verification is required before you can sell tickets. Submit your ID in Settings → Identity Verification.",
         });
       }
-      if (!hasPayoutOnboarding(organizer)) {
-        return res.status(403).json({
-          message:
-            "Connect your payout account before selling tickets. Open Settings → Payouts to finish onboarding.",
-          code: "payout_setup_required",
-        });
-      }
+      if (rejectIfCannotSell(res, organizer)) return;
 
       // The selling currency is server-authoritative — it must match the
       // provider the seller collects through (Stripe charges USD, Paystack
@@ -828,9 +822,9 @@ export const getEventById = async (req, res) => {
 
     // Derived: is this paid event actually purchasable right now? Folds the
     // approval gate AND the organizer's payout-onboarding status into one flag
-    // (Paystack for Nigerian sellers, Wise for everyone else) so the client can
-    // show a graceful "tickets not on sale yet" state instead of letting the
-    // user tap "Buy" and bounce off a provider error.
+    // (Paystack for Nigerian sellers, Stripe Connect for the cross-border
+    // footprint) so the client can show a graceful "tickets not on sale yet"
+    // state instead of letting the user tap "Buy" and bounce off a provider error.
     if (event.isPaid) {
       eventObj.ticketingReady =
         event.approvalStatus === "approved" && hasPayoutOnboarding(event.createdBy);
@@ -842,9 +836,6 @@ export const getEventById = async (req, res) => {
     if (eventObj.createdBy) {
       delete eventObj.createdBy.paystackRecipientCode;
       delete eventObj.createdBy.paystackOnboardingComplete;
-      delete eventObj.createdBy.wiseRecipientId;
-      delete eventObj.createdBy.wiseRecipientCurrency;
-      delete eventObj.createdBy.wiseOnboardingComplete;
       delete eventObj.createdBy.stripeAccountId;
       delete eventObj.createdBy.stripeAccountCountry;
       delete eventObj.createdBy.stripeAccountCurrency;

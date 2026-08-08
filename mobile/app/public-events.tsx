@@ -252,13 +252,8 @@ export default function PublicEventsPage() {
       if (result.error) Alert.alert("Payment Failed", result.error);
       return;
     }
-    const token = await SecureStore.getItemAsync("token");
+    // The organizer's sale notification is sent server-side by fulfillment.js.
     Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
-    fetch(`${BASE_URL}/notifications/sold`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "ticket", id: eventId }),
-    }).catch(() => {});
     setPage(1);
     fetchPublicEvents(1, true);
   };

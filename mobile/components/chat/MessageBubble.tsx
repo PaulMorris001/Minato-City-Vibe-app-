@@ -27,7 +27,7 @@ import type { Message } from "@/services/chat.service";
 import { groupReactions } from "@/utils/reactions";
 import { openUserProfile } from "@/utils/userNavigation";
 import { Avatar } from "@/components/shared/Avatar";
-import { currencyPrefix } from "@/constants/payments";
+import { currencyPrefix, formatMoney } from "@/constants/payments";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -388,7 +388,7 @@ function MessageBubble({
         const priceLine =
           typeof guideData?.price === "number"
             ? guideData.price > 0
-              ? `$${guideData.price}`
+              ? formatMoney(guideData.price, guideData.currency)
               : "Free"
             : null;
         return (

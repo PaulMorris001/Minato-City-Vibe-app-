@@ -74,6 +74,8 @@ export interface Message {
     cityState?: string;
     topic?: string;
     price?: number;
+    /** Seller's selling currency. Absent on legacy docs — defaults to USD. */
+    currency?: string;
   };
   order?: import("@/libs/interfaces").Order;
   status: "sent" | "delivered" | "read" | "sending" | "failed";
@@ -150,6 +152,34 @@ class ChatService {
       return data.chat;
     } catch (error) {
       console.error("Get/Create direct chat error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Open (or resume) the chat with the official support account.
+   *
+   * The support account's id is resolved SERVER-side. The client used to send
+   * its own hardcoded copy, which silently drifted out of sync with the server's
+   * and made every support entry point 404 with no way to fix it short of a new
+   * build.
+   */
+  async getOrCreateSupportChat(): Promise<Chat> {
+    try {
+      const headers = await this.getAuthHeader();
+      const response = await fetch(`${BASE_URL}/chats/support`, {
+        method: "POST",
+        headers,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to open support chat");
+      }
+
+      const data = await response.json();
+      return data.chat;
+    } catch (error) {
+      console.error("Get/Create support chat error:", error);
       throw error;
     }
   }

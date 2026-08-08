@@ -2,6 +2,7 @@ import ChatService from "../services/chat.service.js";
 import Chat from "../models/chat.model.js";
 import User from "../models/user.model.js";
 import { setCache, getCache, invalidateCache, invalidateCachePattern } from "../utils/cache.js";
+import { SUPPORT_USER_ID } from "../utils/supportAccount.js";
 
 /**
  * Chat Controller - Handles HTTP requests for chat operations
@@ -57,6 +58,52 @@ export const getOrCreateDirectChat = async (req, res) => {
     console.error("Get/Create direct chat error:", error);
     const status = error.statusCode || 500;
     res.status(status).json({ message: error.message || "Error creating chat" });
+  }
+};
+
+/**
+ * Open (or resume) the conversation with the official support account.
+ *
+ * The support account's id lives on the SERVER. The client used to hold its own
+ * copy and POST it to /chats/direct, which meant a build shipped with a stale or
+ * wrong literal made every support entry point 404 — and there was no way to fix
+ * it without shipping a new binary. Resolving it here removes that whole class
+ * of drift: the client asks for "support" and the server knows who that is.
+ * POST /chats/support
+ */
+export const getOrCreateSupportChat = async (req, res) => {
+  try {
+    if (!SUPPORT_USER_ID) {
+      return res.status(503).json({
+        message: "Support chat isn't available right now. Please try again later.",
+        code: "support_unconfigured",
+      });
+    }
+    if (String(req.user.id) === String(SUPPORT_USER_ID)) {
+      return res.status(400).json({ message: "You are the support account" });
+    }
+
+    const support = await User.findById(SUPPORT_USER_ID).select("_id");
+    if (!support) {
+      // Misconfiguration, not a user error — the configured id matches no user.
+      console.error(
+        `[support] SUPPORT_USER_ID ${SUPPORT_USER_ID} does not match any user. ` +
+          `Run src/scripts/setupSupportAccount.mjs or correct the env var.`
+      );
+      return res.status(503).json({
+        message: "Support chat isn't available right now. Please try again later.",
+        code: "support_unconfigured",
+      });
+    }
+
+    const chat = await ChatService.getOrCreateDirectChat(req.user.id, String(support._id));
+
+    invalidateCachePattern(`user_chats_${req.user.id}`);
+    invalidateCachePattern(`user_chats_${support._id}`);
+    res.status(200).json({ message: "Support chat ready", chat });
+  } catch (error) {
+    console.error("Get/Create support chat error:", error);
+    res.status(error.statusCode || 500).json({ message: "Couldn't reach support" });
   }
 };
 

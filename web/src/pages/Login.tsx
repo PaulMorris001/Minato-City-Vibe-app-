@@ -39,6 +39,7 @@ export default function Login() {
           <input
             className="cv-input"
             type="email"
+            autoComplete="email"
             placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -48,6 +49,7 @@ export default function Login() {
           <input
             className="cv-input"
             type="password"
+            autoComplete="current-password"
             placeholder="Your password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

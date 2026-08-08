@@ -48,12 +48,23 @@ function notifIcon(type: string) {
   switch (type) {
     case "ticket_sold": return "ticket";
     case "guide_sold": return "book";
+    case "booking_paid": return "calendar";
+    case "order_paid": return "receipt";
     case "event_invite": return "mail";
     case "invite_accepted": return "checkmark-circle";
     case "event_update": return "calendar";
     case "new_follower": return "person-add";
     case "verification_approved": return "shield-checkmark";
     case "verification_rejected": return "shield-outline";
+    // Money on its way vs money that needs the seller to do something. The
+    // second group is deliberately an alert icon — these are the ones a seller
+    // must act on to actually get paid.
+    case "payout_queued": return "time";
+    case "payout_paid": return "cash";
+    case "payout_failed":
+    case "payout_rejected":
+    case "payout_blocked":
+    case "payout_action_required": return "alert-circle";
     default: return "notifications";
   }
 }
@@ -141,6 +152,27 @@ export default function NotificationsScreen() {
         if (item.data?.guideId) {
           router.push({ pathname: "/guide/[id]", params: { id: item.data.guideId } } as any);
         }
+        break;
+      case "booking_paid":
+        router.push("/bookings" as any);
+        break;
+      case "order_paid":
+        if (item.data?.orderId) {
+          router.push({
+            pathname: "/order-confirm/[orderId]",
+            params: { orderId: item.data.orderId },
+          } as any);
+        }
+        break;
+      // Every payout notification lands on Earnings — where the money, its
+      // status and the payout setup CTA all live.
+      case "payout_queued":
+      case "payout_paid":
+      case "payout_failed":
+      case "payout_rejected":
+      case "payout_blocked":
+      case "payout_action_required":
+        router.push("/earnings" as any);
         break;
       case "verification_approved":
       case "verification_rejected":

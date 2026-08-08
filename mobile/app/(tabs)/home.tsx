@@ -22,7 +22,7 @@ import * as SecureStore from "expo-secure-store";
 import * as Location from "expo-location";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
-import { currencyPrefix } from "@/constants/payments";
+import { currencyPrefix, priceLabel } from "@/constants/payments";
 import CreateEventModal from "@/components/client/CreateEventModal";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
@@ -33,6 +33,7 @@ import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useL
 import { useActiveCity, setActiveCity as setSharedActiveCity } from "@/hooks/useActiveCity";
 import { trackEvent } from "@/utils/analytics";
 import { ensureAuth } from "@/utils/requireAuth";
+import SupportFab from "@/components/shared/SupportFab";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -257,7 +258,9 @@ function SmallExternalEventCard({
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const sym = currencyPrefix(event.currency);
-  const priceLabel =
+  // Named priceBadge, not priceLabel: this is a "from" price for an external
+  // listing, and the name priceLabel belongs to the shared money helper.
+  const priceBadge =
     event.priceMin != null ? `${sym}${Math.round(event.priceMin)}` : "TICKETS";
 
   return (
@@ -272,7 +275,7 @@ function SmallExternalEventCard({
             </View>
           )}
           <View style={[styles.smallCardBadge, styles.smallCardBadgePaid]}>
-            <Text style={styles.smallCardBadgeText}>{priceLabel}</Text>
+            <Text style={styles.smallCardBadgeText}>{priceBadge}</Text>
           </View>
         </View>
 
@@ -350,8 +353,15 @@ function GuideCard({ guide, onPress }: { guide: TopGuide; onPress: () => void })
           <View style={styles.guideTopicBadge}>
             <Text style={styles.guideTopicText} numberOfLines={1}>{guide.topic}</Text>
           </View>
+          {/* Social proof, so only shown once there is any. A discovery card
+              reading "0 sold" argues against the guide it's advertising. */}
+          {guide.salesCount > 0 && (
+            <Text style={styles.guideCardSales} numberOfLines={1}>
+              {guide.salesCount} {guide.price === 0 ? "unlocked" : "sold"}
+            </Text>
+          )}
           <Text style={styles.guideCardPrice}>
-            {guide.price === 0 ? "FREE" : `${currencyPrefix(guide.currency)}${guide.price}`}
+            {priceLabel(guide.price, guide.currency)}
           </Text>
         </View>
       </View>
@@ -363,7 +373,7 @@ function GuideCardSkeleton() {
   const styles = useThemedStyles(createStyles);
   return (
     <View style={[styles.guideCard, { overflow: "hidden" }]}>
-      <Skeleton width="100%" height={70} borderRadius={0} />
+      <Skeleton width="100%" height={124} borderRadius={0} />
       <View style={{ padding: 12, gap: 8 }}>
         <Skeleton width="100%" height={14} />
         <Skeleton width={120} height={10} />
@@ -704,14 +714,9 @@ export default function Home() {
       return;
     }
 
-    const token = await SecureStore.getItemAsync("token");
     trackEvent("ticket_purchased", { eventId, eventTitle });
+    // The organizer's sale notification is sent server-side by fulfillment.js.
     Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
-    fetch(`${BASE_URL}/notifications/sold`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "ticket", id: eventId }),
-    }).catch(() => {});
     fetchPublicEvents();
   };
 
@@ -1239,6 +1244,10 @@ export default function Home() {
         </LinearGradient>
       </TouchableOpacity>
 
+      {/* Labelled support pill, bottom-left so it clears the create FAB. It
+          gates itself on tap, so guests get the standard sign-in prompt. */}
+      <SupportFab />
+
       <CreateEventModal
         visible={isModalVisible}
         onClose={() => setIsModalVisible(false)}
@@ -1673,7 +1682,10 @@ const createStyles = (c: ThemeColors) =>
     overflow: "hidden",
   },
   guideCardBanner: {
-    height: 70,
+    // 220x124 (16:9) rather than the old 220x70. A 70px band cropped all but a
+    // sliver out of every cover; the cards sit in a horizontal rail, so they
+    // must stay a uniform height and cannot adapt per photo.
+    height: 124,
     paddingHorizontal: 12,
     justifyContent: "center",
   },
@@ -1714,6 +1726,12 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.medium,
     fontSize: 11,
     color: c.primary,
+  },
+  guideCardSales: {
+    fontFamily: Fonts.medium,
+    fontSize: 11,
+    color: c.textDim,
+    marginRight: 8,
   },
   guideCardPrice: {
     fontFamily: Fonts.bold,

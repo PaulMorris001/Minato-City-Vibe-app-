@@ -4,7 +4,7 @@
  * Stripe's job in this architecture is to CHARGE buyers into the platform
  * balance (via the unified /payments dispatcher) and to REFUND those charges.
  * It never moves money to sellers: settlement runs through the admin-approved
- * Payout queue (Wise for Stripe-collected sales, Paystack for NGN).
+ * Payout queue (Stripe Connect for Stripe-collected sales, Paystack for NGN).
  */
 
 import stripe from "../config/stripe.js";
@@ -13,12 +13,8 @@ import User from "../models/user.model.js";
 import Event from "../models/event.model.js";
 import Ticket from "../models/ticket.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
-import { fulfillTicket, fulfillGuide } from "../services/payments/fulfillment.js";
+import { settleStripePurchase } from "../services/payments/settleStripePayment.js";
 import { refundPaystackCharge } from "./paystack.controller.js";
-import {
-  getSettlementProvider,
-  PAYOUT_ROUTING_FIELDS,
-} from "../services/payments/resolveProvider.js";
 
 /**
  * Return the publishable key that matches THIS server's secret key (same
@@ -252,34 +248,16 @@ export const stripeWebhook = async (req, res) => {
 
   if (event.type === "payment_intent.succeeded") {
     const paymentIntent = event.data.object;
-    const { type, eventId, guideId, buyerId } = paymentIntent.metadata;
 
     try {
-      // Webhook acts as a fallback if the app's confirm call never lands. The
-      // shared helpers are idempotent, so a double-fire is harmless.
-      if (type === "ticket" && eventId && buyerId) {
-        // Re-derived from the seller rather than read from PI metadata, so
-        // in-flight PIs created before a routing change (or before the
-        // Wise+Paystack remap) settle on today's rail.
-        const seller = await User.findById(paymentIntent.metadata?.sellerId).select(
-          PAYOUT_ROUTING_FIELDS
-        );
-        await fulfillTicket({
-          eventId,
-          userId: buyerId,
-          provider: "stripe",
-          payoutProvider: seller ? getSettlementProvider(seller) : "wise",
-          paymentRef: paymentIntent.id,
-          currency: "usd",
-          platformFeeCents: Number(paymentIntent.metadata?.platformFeeCents || 0),
-          sellerNetCents: Number(paymentIntent.metadata?.sellerNetCents || 0),
-          tierId: paymentIntent.metadata?.tierId,
-        });
-      }
-
-      if (type === "guide" && guideId && buyerId) {
-        await fulfillGuide({ guideId, userId: buyerId });
-      }
+      // Fallback for when the app's confirm call never lands (backgrounded,
+      // network dropped after payment). Shares settleStripePurchase with the
+      // confirm endpoint, so it handles all four purchase types AND queues the
+      // seller's payout — this used to cover only tickets and guides and never
+      // called createPayout, which left sales fulfilled with the seller's money
+      // stranded and nothing in the admin queue. Everything downstream is
+      // idempotent, so racing the confirm is harmless.
+      await settleStripePurchase(paymentIntent);
     } catch (fulfillErr) {
       console.error("Fulfillment error after payment:", fulfillErr);
     }

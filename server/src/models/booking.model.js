@@ -46,8 +46,8 @@ const bookingSchema = new mongoose.Schema(
     // priceSnapshot.currency major units for Paystack, cents for Stripe).
     provider: { type: String, enum: ["stripe", "paystack"] },
     // Which provider settled the vendor's net — Stripe-collected bookings settle
-    // via Wise or Stripe Connect depending on the vendor's country; Paystack
-    // collects and settles its own.
+    // via Stripe Connect; Paystack collects and settles its own. "wise" is
+    // legacy-readable only (that rail is gone).
     payoutProvider: { type: String, enum: ["wise", "paystack", "stripe"] },
     platformFee: { type: Number, default: 0 },
     vendorNet: { type: Number, default: 0 },

@@ -51,9 +51,11 @@ check("is lossless for every sampled amount", () => {
   }
 });
 
-check("holds for the wise rail too (same conversion)", () => {
+check("holds for a null rail (unsupported country) — still cents-denominated", () => {
+  // A seller with no rail can still have collected money; the amount must not be
+  // silently mis-scaled just because there's nowhere to send it yet.
   for (const cents of CENT_AMOUNTS) {
-    assert.equal(toCents(toMajor(cents, "wise")), cents);
+    assert.equal(toCents(toMajor(cents, null)), cents);
   }
 });
 

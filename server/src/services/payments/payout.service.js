@@ -4,9 +4,8 @@
  * Every paid sale collects into the platform balance and creates a Payout
  * record (status "awaiting_approval") instead of transferring money. An admin
  * approves, and only then does `executePayout` run the real provider transfer:
- * Wise or Stripe Connect for Stripe-collected (USD) sellers depending on their
- * country, Paystack for Nigerian sellers. No vendor money leaves the platform
- * without an explicit approval.
+ * Stripe Connect for Stripe-collected (USD) sellers, Paystack for Nigerian
+ * sellers. No vendor money leaves the platform without an explicit approval.
  */
 
 import config from "../../config/env.js";
@@ -17,12 +16,11 @@ import Event from "../../models/event.model.js";
 import Ticket from "../../models/ticket.model.js";
 import { Booking } from "../../models/booking.model.js";
 import { Order } from "../../models/order.model.js";
-import { sendPushNotification } from "../notification.service.js";
+import { notifyUser } from "../notification.service.js";
 import {
   createPaystackTransfer,
   getPaystackBalance,
 } from "../../controllers/paystack.controller.js";
-import { createWiseTransfer, getWiseBalance } from "./wise.js";
 import { PAYOUT_ROUTING_FIELDS } from "./resolveProvider.js";
 
 /**
@@ -41,9 +39,9 @@ const CONNECT_REINSTATED_AT = new Date("2026-08-01T00:00:00Z");
  * @param {string} args.vendor        seller user id
  * @param {"ticket"|"guide"|"booking"} args.relatedType
  * @param {string} args.relatedId     event (for tickets) / guide / booking id
- * @param {"wise"|"paystack"|"stripe"} args.provider  settlement rail
- * @param {number} args.amount        seller net in MAJOR units (USD for wise and
- *                                    stripe, local currency for paystack)
+ * @param {"paystack"|"stripe"} args.provider  settlement rail
+ * @param {number} args.amount        seller net in MAJOR units (USD for stripe,
+ *                                    local currency for paystack)
  * @param {string} args.currency      settlement currency
  * @param {string} args.reference     idempotency key + provider transfer ref
  * @param {string} [args.buyer]
@@ -62,8 +60,9 @@ export async function createPayout({
   stripePaymentIntentId,
 }) {
   const cur = (currency || "").toUpperCase();
+  let payout;
   try {
-    return await Payout.create({
+    payout = await Payout.create({
       vendor,
       relatedType,
       relatedId,
@@ -79,9 +78,28 @@ export async function createPayout({
     });
   } catch (e) {
     // Duplicate reference — the payout already exists; return it (idempotent).
+    // Deliberately no notification on this path: a confirm racing a webhook, or
+    // a re-run of the release job, must not tell the seller twice.
     if (e?.code === 11000) return Payout.findOne({ reference });
     throw e;
   }
+
+  const ITEM_LABEL = {
+    ticket: "ticket sales",
+    guide: "a guide sale",
+    booking: "a booking",
+    order: "an order",
+  };
+  await notifyUser(vendor, {
+    type: "payout_queued",
+    title: "💰 You've got earnings on the way",
+    body:
+      `${payoutLabel(payout)} from ${ITEM_LABEL[relatedType] || "a sale"} is queued for ` +
+      `release. We'll let you know the moment it's sent.`,
+    data: { payoutId: String(payout._id), relatedType, relatedId: String(relatedId) },
+  });
+
+  return payout;
 }
 
 /**
@@ -121,36 +139,32 @@ export async function executePayout(payoutId, { approvedBy } = {}) {
     await payout.save();
 
     await markRelatedSettled(payout, transferId);
-    await notifyVendorPaid(payout, vendor);
+    await notifyVendorPaid(payout);
     return payout;
   } catch (err) {
     payout.status = "failed";
     payout.error = String(err?.message ?? err);
     await payout.save();
+
+    // Tell the vendor something went wrong, but never the raw provider message —
+    // "Stripe available USD balance 3.10 < payout 45.00" is an operational
+    // detail about the platform, not something a seller should read. The full
+    // error stays on payout.error for admins.
+    await notifyUser(payout.vendor, {
+      type: "payout_failed",
+      title: "There was a problem with your payout",
+      body:
+        `We couldn't send your payout (${payoutLabel(payout)}) just yet. ` +
+        `Our team has been alerted and will sort it out — your money is safe.`,
+      data: { payoutId: String(payout._id) },
+    });
+
     throw err;
   }
 }
 
 /** Provider-specific transfer. Returns the provider transfer id. */
 async function runTransfer(payout, vendor) {
-  if (payout.provider === "wise") {
-    if (!vendor?.wiseRecipientId) throw new Error("Vendor has no Wise payout account");
-    const amountUsd = payout.amount; // major USD
-    const balance = await getWiseBalance();
-    if (balance < amountUsd) {
-      throw new Error(
-        `Wise balance ${balance} ${config.wise.sourceCurrency} < payout ${amountUsd} — top up the Wise balance`
-      );
-    }
-    const t = await createWiseTransfer({
-      recipientId: vendor.wiseRecipientId,
-      sourceAmount: amountUsd,
-      targetCurrency: vendor.wiseRecipientCurrency || config.wise.sourceCurrency,
-      reference: payout.reference,
-    });
-    return t.id;
-  }
-
   if (payout.provider === "paystack") {
     if (!vendor?.paystackRecipientCode) throw new Error("Vendor has no Paystack payout account");
     const balance = await getPaystackBalance(payout.currency);
@@ -234,8 +248,9 @@ async function runTransfer(payout, vendor) {
     return t.id;
   }
 
-  // "flutterwave" docs predate the Wise+Paystack remap and that rail no longer
-  // exists here.
+  // "wise" and "flutterwave" are dead rails. Their docs remain readable so an
+  // admin can reject them, but there is no way to move money on them — the
+  // migration script remaps any that are still owed onto a live rail.
   throw new Error(`Payout provider "${payout.provider}" is a legacy rail and can't be executed`);
 }
 
@@ -264,16 +279,27 @@ async function markRelatedSettled(payout, transferId) {
   // guide: the purchase is already recorded on the guide; nothing else to mark.
 }
 
-/** Notify the vendor their payout went out. */
-async function notifyVendorPaid(payout, vendor) {
-  if (!vendor?.fcmToken) return;
-  const label = `${payout.displayCurrency} ${Number(payout.displayAmount).toFixed(2)}`;
-  await sendPushNotification(
-    vendor.fcmToken,
-    "💸 Payout sent",
-    `Your payout (${label}) is on its way to your account.`,
-    { type: "payout_released", payoutId: String(payout._id) }
-  );
+/** Human-readable payout amount, e.g. "USD 45.00". */
+function payoutLabel(payout) {
+  const currency = payout.displayCurrency || payout.currency;
+  const amount = Number(payout.displayAmount ?? payout.amount);
+  return `${currency} ${amount.toFixed(2)}`;
+}
+
+/**
+ * Notify the vendor their payout went out.
+ *
+ * No fcmToken early-return: that used to skip the in-app record too, so a vendor
+ * without push permission had no way at all to learn they'd been paid. notifyUser
+ * writes the durable notification regardless and treats push as best-effort.
+ */
+async function notifyVendorPaid(payout) {
+  await notifyUser(payout.vendor, {
+    type: "payout_paid",
+    title: "💸 Payout sent",
+    body: `Your payout (${payoutLabel(payout)}) is on its way to your account.`,
+    data: { payoutId: String(payout._id) },
+  });
 }
 
 export default { createPayout, executePayout };

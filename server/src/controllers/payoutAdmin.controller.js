@@ -8,6 +8,7 @@
 
 import Payout from "../models/payout.model.js";
 import { executePayout } from "../services/payments/payout.service.js";
+import { notifyUser } from "../services/notification.service.js";
 
 /**
  * List payouts, newest first. Defaults to the pending-approval queue.
@@ -51,7 +52,7 @@ export const approvePayout = async (req, res) => {
   } catch (error) {
     console.error("approvePayout error:", error.message);
     // The payout has been marked "failed" with the error by executePayout; the
-    // admin can retry once the cause (e.g. underfunded Wise balance) is fixed.
+    // admin can retry once the cause (e.g. an underfunded platform balance) is fixed.
     res.status(400).json({ message: error.message || "Couldn't release payout" });
   }
 };
@@ -70,6 +71,20 @@ export const rejectPayout = async (req, res) => {
     payout.status = "rejected";
     payout.rejectedReason = req.body?.reason || "";
     await payout.save();
+
+    // The seller is owed an explanation — this is their money not arriving.
+    // The admin's reason is shown when they gave one.
+    const currency = payout.displayCurrency || payout.currency;
+    const amount = Number(payout.displayAmount ?? payout.amount).toFixed(2);
+    await notifyUser(payout.vendor, {
+      type: "payout_rejected",
+      title: "Your payout was put on hold",
+      body: payout.rejectedReason
+        ? `Your payout (${currency} ${amount}) was held: ${payout.rejectedReason}`
+        : `Your payout (${currency} ${amount}) was put on hold. Contact support if you think this is a mistake.`,
+      data: { payoutId: String(payout._id) },
+    });
+
     res.status(200).json({ message: "Payout rejected", payout });
   } catch (error) {
     console.error("rejectPayout error:", error.message);

@@ -33,6 +33,7 @@ import { getCircularAvatarUrl } from "@/utils/imageUpload";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
+import { openSupportChat } from "@/utils/userNavigation";
 // Circular navbar action surface. On iOS 26 this is real Liquid Glass;
 // everywhere else it keeps the original gradient fill.
 function PillSurface({
@@ -351,15 +352,13 @@ export default function TabsLayout() {
         style={styles.menuItem}
         onPress={() => {
           setIsProfileModalVisible(false);
-          Alert.alert(
-            "Help & Support",
-            "Need help? Reach us at:\n\nSupport@nvibez.com",
-            [{ text: "Got it" }]
-          );
+          // Opens the in-app support conversation. This used to show an email
+          // address in an alert, which was a dead end inside a chat app.
+          openSupportChat();
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="help-circle-outline" size={20} color={colors.primary} />
+          <Ionicons name="chatbubble-ellipses-outline" size={20} color={colors.primary} />
         </View>
         <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
           Help & Support

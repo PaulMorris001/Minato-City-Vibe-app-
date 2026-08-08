@@ -84,9 +84,27 @@ const guideSchema = mongoose.Schema({
   },
   isDraft: { type: Boolean, default: false },
   isPurchased: { type: Boolean, default: false },
+  // Access-control list: who may read this guide. Kept as a plain id array
+  // because a lot of code checks membership with `.some()`.
   purchasedBy: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: "user"
+  }],
+  // Sales ledger, written alongside purchasedBy at fulfillment time.
+  //
+  // purchasedBy alone can't answer "what did I earn, and when?" — it has no
+  // timestamp and no amount, and `price` is mutable, so multiplying it by the
+  // buyer count misreports every guide whose price ever changed. These entries
+  // snapshot what actually happened. Free unlocks are recorded too (gross 0),
+  // which is why the seller-facing UI labels zero-price guides "unlocks" rather
+  // than "sold".
+  sales: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "user" },
+    purchasedAt: { type: Date, default: Date.now },
+    gross: { type: Number, default: 0 },   // major units of `currency`
+    net: { type: Number, default: 0 },     // seller's share after the platform fee
+    currency: { type: String },
+    _id: false,
   }],
   // Users who bookmarked this guide (saved for later)
   savedBy: [{

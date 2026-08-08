@@ -220,6 +220,10 @@ const css = `
     padding: 12px 16px; border-radius: 12px; font-size: 14px; margin-bottom: 18px;
     background: rgba(220,38,38,0.14); border: 1px solid rgba(248,113,113,0.4); color: #fca5a5;
   }
+  .cv-success {
+    padding: 12px 16px; border-radius: 12px; font-size: 14px; margin-bottom: 18px;
+    background: rgba(34,197,94,0.12); border: 1px solid #22c55e; color: #86efac;
+  }
   .cv-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
   /* ── Pills / chips / badges ──────────────────────────── */

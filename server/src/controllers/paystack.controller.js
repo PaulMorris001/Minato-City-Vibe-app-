@@ -23,7 +23,9 @@ import Event from "../models/event.model.js";
 import Ticket from "../models/ticket.model.js";
 import Payout from "../models/payout.model.js";
 import { Booking } from "../models/booking.model.js";
+import { Vendor } from "../models/vendor.model.js";
 import { fulfillGuide } from "../services/payments/fulfillment.js";
+import { markVerified, queueManualReview, namesMatch } from "../services/verification.service.js";
 
 const toKobo = (major) => Math.round(Number(major) * 100);
 const toMajor = (kobo) => Number(kobo) / 100;
@@ -115,7 +117,48 @@ export const saveBank = async (req, res) => {
         paystackOnboardingComplete: true,
       },
       { new: true }
-    ).select("paystackBank paystackOnboardingComplete");
+    ).select("paystackBank paystackOnboardingComplete username isVendor");
+
+    // Inherit the bank's identity check as platform verification.
+    //
+    // `accountName` is the registered account holder returned by Paystack's
+    // /bank/resolve — i.e. a name on a KYC'd Nigerian bank record, not something
+    // the user typed. If it matches their profile name, their identity has
+    // effectively been checked by the bank already and there is nothing useful
+    // for an admin to add by looking at a photo of an ID.
+    //
+    // A mismatch is NOT treated as fraud — maiden names, middle names and
+    // transliterations differ legitimately — so it goes to a human with the
+    // discrepancy recorded instead of silently failing.
+    try {
+      // A vendor's account is often in the BUSINESS name, so both are valid
+      // matches. Note a single-word username can never satisfy namesMatch — it
+      // deliberately needs two matching name parts — so those fall to review.
+      const vendor = user?.isVendor
+        ? await Vendor.findOne({ user: req.user.id }).select("businessName").lean()
+        : null;
+      const candidates = [user?.username, vendor?.businessName].filter(Boolean);
+      const matched = candidates.some((candidate) => namesMatch(accountName, candidate));
+
+      if (matched) {
+        await markVerified(req.user.id, {
+          source: "paystack_account_name",
+          notes: `Bank account holder "${accountName}" matched the account name on file.`,
+        });
+      } else {
+        await queueManualReview(req.user.id, {
+          source: "paystack_account_name",
+          notes:
+            `Automatic check inconclusive: bank account holder "${accountName}" ` +
+            `does not clearly match ${candidates.map((c) => `"${c}"`).join(" or ") || "the profile"}. ` +
+            `Needs a human look.`,
+        });
+      }
+    } catch (verifyErr) {
+      // Verification is a bonus on top of bank setup — never fail the payout
+      // onboarding because the badge logic tripped.
+      console.error("Paystack auto-verification error:", verifyErr?.message ?? verifyErr);
+    }
 
     res.status(200).json({
       onboardingComplete: true,
@@ -128,7 +171,7 @@ export const saveBank = async (req, res) => {
 };
 
 /**
- * Onboarding status (shape mirrors /wise/connect/status).
+ * Onboarding status (shape mirrors /stripe/connect/status).
  * GET /paystack/connect/status
  */
 export const getStatus = async (req, res) => {
@@ -389,8 +432,7 @@ function verifyPaystackSignature(rawBody, signature) {
  *    (guides only — tickets/bookings need the confirm endpoint's amount
  *    accounting, and the confirm path is idempotent anyway).
  *  - transfer.failed / transfer.reversed: a payout we optimistically marked
- *    paid bounced — reopen it for the admin and reverse the record updates
- *    (parallel to the Wise webhook's state-change handling).
+ *    paid bounced — reopen it for the admin and reverse the record updates.
  * POST /paystack/webhook
  */
 export const paystackWebhook = async (req, res) => {

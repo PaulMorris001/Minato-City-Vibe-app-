@@ -21,7 +21,7 @@ import { scaleFontSize } from "@/utils/responsive";
 import { capitalize } from "@/libs/helpers";
 import { createUserShareLink } from "@/utils/shareLinks";
 import { Guide } from "@/libs/interfaces";
-import { useFormatPrice } from "@/hooks/useFormatPrice";
+import { priceLabel } from "@/constants/payments";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import followService from "@/services/follow.service";
@@ -66,7 +66,6 @@ export default function UserProfileScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { userId } = useLocalSearchParams<{ userId: string }>();
-  const formatPrice = useFormatPrice();
   const [user, setUser] = useState<UserData | null>(null);
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
@@ -356,7 +355,7 @@ export default function UserProfileScreen() {
                 {guide.city}{guide.cityState ? `, ${guide.cityState}` : ""} • {guide.topic}
               </Text>
               <Text style={styles.guidePrice}>
-                {guide.price === 0 ? "FREE" : `$${formatPrice(guide.price)}`}
+                {priceLabel(guide.price, guide.currency)}
               </Text>
             </View>
           </TouchableOpacity>

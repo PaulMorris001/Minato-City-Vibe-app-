@@ -22,7 +22,7 @@ import * as Location from "expo-location";
 import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
-import { payoutOnboardingRoute } from "@/constants/payments";
+import { payoutOnboardingRoute, payoutUnavailableMessage } from "@/constants/payments";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { ImagePickerButton } from "@/components/shared";
 import { getAddressFromCurrentPosition } from "@/hooks/useLocation";
@@ -85,6 +85,10 @@ export default function SettingsScreen() {
   const [verificationNotes, setVerificationNotes] = useState("");
   const [licenseImage, setLicenseImage] = useState("");
   const [submittingVerification, setSubmittingVerification] = useState(false);
+
+  // Onboarding screen for whichever rail settles this user, or null when no rail
+  // reaches their country (they can still publish free listings).
+  const payoutRoute = payoutOnboardingRoute(user.country);
 
   // Inline username editing (client account only).
   const [editingUsername, setEditingUsername] = useState(false);
@@ -702,23 +706,50 @@ export default function SettingsScreen() {
 
       
 
-      {/* Payouts — for guide sellers */}
+      {/* Earnings — for guide sellers and vendors alike (not vendor-gated) */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Earnings</Text>
         <Text style={styles.sectionDescription}>
-          Set up payouts to receive money from guide sales
+          See what you've earned and set up how you get paid
         </Text>
 
         <TouchableOpacity
           style={styles.preferenceItem}
-          onPress={() => router.push(payoutOnboardingRoute(user.country) as any)}
+          onPress={() => router.push("/earnings" as any)}
         >
           <View style={styles.preferenceLeft}>
-            <Ionicons name="cash-outline" size={22} color={Colors.primary} />
-            <Text style={styles.preferenceText}>Payout Setup</Text>
+            <Ionicons name="stats-chart-outline" size={22} color={Colors.primary} />
+            <Text style={styles.preferenceText}>Earnings & payouts</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
         </TouchableOpacity>
+
+        {payoutRoute ? (
+          <TouchableOpacity
+            style={styles.preferenceItem}
+            onPress={() => router.push(payoutRoute as any)}
+          >
+            <View style={styles.preferenceLeft}>
+              <Ionicons name="cash-outline" size={22} color={Colors.primary} />
+              <Text style={styles.preferenceText}>Payout Setup</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+        ) : (
+          /* No rail reaches this country. Rendered inert rather than hidden —
+             a seller wondering where payout setup went deserves the reason. */
+          <View style={[styles.preferenceItem, { opacity: 0.6 }]}>
+            <View style={[styles.preferenceLeft, { flex: 1, paddingRight: 12 }]}>
+              <Ionicons name="cash-outline" size={22} color={colors.textMuted} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.preferenceText}>Payout Setup</Text>
+                <Text style={styles.reminderHint}>
+                  {payoutUnavailableMessage(user.country)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Notification channels */}

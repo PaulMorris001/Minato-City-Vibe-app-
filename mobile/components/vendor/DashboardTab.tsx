@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -11,13 +11,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as SecureStore from "expo-secure-store";
 import { VendorStats } from "@/libs/interfaces";
-import { useFormatPrice } from "@/hooks/useFormatPrice";
 import VendorEventInvites from "./VendorEventInvites";
 import {
   VN,
   VNF,
   VN_CTA_GRADIENT,
-  VN_EARNINGS_GRADIENT,
   coverGradient,
   categoryEmoji,
 } from "./vendorTheme";
@@ -25,12 +23,23 @@ import {
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import MediaTile from "@/components/shared/MediaTile";
+import { EarningsHero, StatCard } from "@/components/shared/EarningsHero";
+import { useRouter } from "expo-router";
+import { BASE_URL } from "@/constants/constants";
+import { formatMoney } from "@/constants/payments";
+
+/** The slice of /earnings/summary this dashboard renders. */
+interface EarningsSummary {
+  currency: string;
+  thisMonthNet: number;
+  lastMonthNet: number;
+  dailyNet: number[];
+}
 interface DashboardTabProps {
   stats: VendorStats | null;
   onRefresh: () => void;
   refreshing: boolean;
   onGoToServices?: () => void;
-  onGoToAccount?: () => void;
 }
 
 const ACCENTS: Record<string, string> = {
@@ -46,45 +55,17 @@ function greeting() {
   return "Good evening";
 }
 
-function StatCard({
-  icon,
-  accent,
-  label,
-  value,
-  sub,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  accent: string;
-  label: string;
-  value: string | number;
-  sub: string;
-}) {
-  const styles = useThemedStyles(createStyles);
-  return (
-    <View style={styles.statCard}>
-      <View style={styles.statTop}>
-        <View style={[styles.statIcon, { backgroundColor: accent + "22", borderColor: accent + "44" }]}>
-          <Ionicons name={icon} size={14} color={accent} />
-        </View>
-        <Text style={styles.statValue}>{value}</Text>
-      </View>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statSub}>{sub}</Text>
-    </View>
-  );
-}
-
 export default function DashboardTab({
   stats,
   onRefresh,
   refreshing,
   onGoToServices,
-  onGoToAccount,
 }: DashboardTabProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const formatPrice = useFormatPrice();
+  const router = useRouter();
   const [firstName, setFirstName] = useState("");
+  const [earnings, setEarnings] = useState<EarningsSummary | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -98,22 +79,26 @@ export default function DashboardTab({
     })();
   }, []);
 
-  const earningsThis = stats?.earningsThisMonth ?? 0;
-  const earningsLast = stats?.earningsLastMonth ?? 0;
-  const delta = earningsThis - earningsLast;
-  const pct = earningsLast > 0 ? Math.round((delta / earningsLast) * 100) : earningsThis > 0 ? 100 : 0;
-  const up = delta >= 0;
-  const hasBookings = (stats?.bookingsThisMonth ?? 0) > 0 || earningsThis > 0;
+  // Earnings come from /earnings/summary, not /vendor/stats: the latter's
+  // earnings fields sum CONFIRMED BOOKINGS ONLY, so a vendor who also sells
+  // tickets or guides saw a number far below what they'd actually made.
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await SecureStore.getItemAsync("token");
+        const res = await fetch(`${BASE_URL}/earnings/summary`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) setEarnings(await res.json());
+      } catch {
+        // Non-critical — the hero falls back to zeroes.
+      }
+    })();
+  }, [refreshing]);
 
-  const bars = useMemo(() => {
-    const daily = stats?.dailyEarnings && stats.dailyEarnings.length ? stats.dailyEarnings : [];
-    const max = Math.max(1, ...daily);
-    const src = daily.length ? daily : [24, 32, 18, 40, 22, 36, 28, 44, 30, 38, 50, 46];
-    return src.map((v) => {
-      const pctH = daily.length ? Math.round((v / max) * 100) : v;
-      return Math.max(8, Math.min(100, pctH));
-    });
-  }, [stats?.dailyEarnings]);
+  const earningsThis = earnings?.thisMonthNet ?? 0;
+  const earningsLast = earnings?.lastMonthNet ?? 0;
+  const hasBookings = (stats?.bookingsThisMonth ?? 0) > 0 || earningsThis > 0;
 
   const categories = stats?.servicesByCategory ?? [];
 
@@ -143,51 +128,18 @@ export default function DashboardTab({
       {/* Pending event invitations */}
       <VendorEventInvites />
 
-      {/* Earnings hero */}
+      {/* Earnings hero. Sourced from /earnings/summary — which counts tickets,
+          guides, bookings AND orders — rather than /vendor/stats, whose
+          earnings figures only ever counted bookings. Tapping through opens the
+          full breakdown. */}
       <View style={styles.sectionH}>
-        <LinearGradient
-          colors={VN_EARNINGS_GRADIENT}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.earningsCard}
-        >
-          <View style={[styles.blob, { right: -60, top: -60, backgroundColor: "rgba(236,72,153,0.35)" }]} />
-          <View style={[styles.blob, { left: -40, bottom: -60, backgroundColor: "rgba(34,211,238,0.18)" }]} />
-          <View style={styles.earningsTopRow}>
-            <Text style={styles.earningsKicker}>EARNINGS · THIS MONTH</Text>
-            <View
-              style={[
-                styles.trendChip,
-                up
-                  ? { backgroundColor: "rgba(52,211,153,0.18)", borderColor: "rgba(52,211,153,0.35)" }
-                  : { backgroundColor: "rgba(236,72,153,0.18)", borderColor: "rgba(236,72,153,0.35)" },
-              ]}
-            >
-              <Ionicons name={up ? "chevron-up" : "chevron-down"} size={10} color={up ? VN.greenSoft : "#FBCFE8"} />
-              <Text style={[styles.trendText, { color: up ? VN.greenSoft : "#FBCFE8" }]}>{Math.abs(pct)}%</Text>
-            </View>
-          </View>
-          <Text style={styles.earningsAmount}>
-            ${formatPrice(earningsThis)}
-          </Text>
-          <Text style={styles.earningsDelta}>
-            {up ? "+" : "-"}${formatPrice(Math.abs(delta))} vs. last month
-          </Text>
-          <View style={styles.sparkline}>
-            {bars.map((h, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.bar,
-                  { height: `${h}%` },
-                  i > 8
-                    ? { backgroundColor: VN.pink }
-                    : { backgroundColor: "rgba(255,255,255,0.16)" },
-                ]}
-              />
-            ))}
-          </View>
-        </LinearGradient>
+        <EarningsHero
+          net={earningsThis}
+          previousNet={earningsLast}
+          daily={earnings?.dailyNet}
+          currency={earnings?.currency}
+          onPress={() => router.push("/earnings" as any)}
+        />
       </View>
 
       {/* Stats grid */}
@@ -218,7 +170,7 @@ export default function DashboardTab({
             icon="cash-outline"
             accent={VN.green}
             label="Avg. price"
-            value={`$${formatPrice(Number(stats?.averagePrice ?? 0))}`}
+            value={formatMoney(Number(stats?.averagePrice ?? 0), earnings?.currency)}
             sub="per service"
           />
         </View>
@@ -239,7 +191,13 @@ export default function DashboardTab({
               <Text style={styles.primaryBtnText}>New service</Text>
             </LinearGradient>
           </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.85} style={styles.glassBtn} onPress={onGoToAccount}>
+          {/* Opens the real payouts list. This used to go to the account tab,
+              which has bank setup and no payouts at all. */}
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={styles.glassBtn}
+            onPress={() => router.push("/earnings" as any)}
+          >
             <Ionicons name="cash-outline" size={16} color={colors.textBright} />
             <Text style={styles.glassBtnText}>View payouts</Text>
           </TouchableOpacity>
@@ -308,7 +266,7 @@ export default function DashboardTab({
                     <View style={styles.recentMeta}>
                       <Text style={styles.recentMetaText} numberOfLines={1}>{s.category}</Text>
                       <View style={styles.metaDot} />
-                      <Text style={styles.recentPrice}>${formatPrice(s.price)}</Text>
+                      <Text style={styles.recentPrice}>{formatMoney(s.price, s.currency)}</Text>
                     </View>
                   </View>
                   <View
@@ -361,45 +319,8 @@ const createStyles = (c: ThemeColors) =>
   greetingHeadline: { fontFamily: VNF.display, fontSize: 30, color: c.textBright, letterSpacing: -0.8, lineHeight: 33 },
   greetingName: { color: c.primaryLight },
 
-  earningsCard: {
-    borderRadius: 20,
-    overflow: "hidden",
-    padding: 18,
-    borderWidth: 1,
-    // The earnings hero keeps its dark gradient in both schemes, so its
-    // border and text stay pinned to the dark-mode values.
-    borderColor: "rgba(255,255,255,0.14)",
-    shadowColor: VN.purpleDeep,
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.45,
-    shadowRadius: 30,
-    elevation: 10,
-  },
-  blob: { position: "absolute", width: 200, height: 200, borderRadius: 100 },
-  earningsTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  earningsKicker: { fontFamily: VNF.bold, fontSize: 10, color: "rgba(244,238,255,0.62)", letterSpacing: 1.2 },
-  trendChip: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1 },
-  trendText: { fontFamily: VNF.bold, fontSize: 10 },
-  earningsAmount: { fontFamily: VNF.display, fontSize: 42, color: "#F4EEFF", letterSpacing: -1.6, marginTop: 6 },
-  earningsDelta: { fontFamily: VNF.medium, fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 4 },
-  sparkline: { flexDirection: "row", alignItems: "flex-end", gap: 3, height: 28, marginTop: 14 },
-  bar: { flex: 1, borderRadius: 2 },
 
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  statCard: {
-    width: "47.8%",
-    flexGrow: 1,
-    padding: 12,
-    borderRadius: 14,
-    backgroundColor: c.cardGlass,
-    borderWidth: 1,
-    borderColor: c.glassStroke,
-  },
-  statTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  statIcon: { width: 28, height: 28, borderRadius: 8, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  statValue: { fontFamily: VNF.heading, fontSize: 22, color: c.textBright, letterSpacing: -0.4 },
-  statLabel: { fontFamily: VNF.semibold, fontSize: 11.5, color: c.textBright, marginTop: 8 },
-  statSub: { fontFamily: VNF.medium, fontSize: 10.5, color: c.textFaint, marginTop: 2 },
 
   sectionTitle: { fontFamily: VNF.heading, fontSize: 18, color: c.textBright, letterSpacing: -0.4, marginBottom: 12 },
   sectionTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
