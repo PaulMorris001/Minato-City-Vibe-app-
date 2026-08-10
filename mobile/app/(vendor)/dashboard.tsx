@@ -70,7 +70,6 @@ export default function VendorDashboard() {
         onRefresh={handleRefresh}
         refreshing={refreshing}
         onGoToServices={() => router.push("/(vendor)/services" as any)}
-        onGoToAccount={() => router.push("/(vendor)/account" as any)}
       />
     </View>
   );

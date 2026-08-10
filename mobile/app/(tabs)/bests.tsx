@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   ScrollView,
   Animated,
 } from "react-native";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { Guide, GUIDE_TOPICS } from "@/libs/interfaces";
@@ -18,9 +18,13 @@ import UserListItemSkeleton from "@/components/skeletons/UserListItemSkeleton";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchGuidesAll } from "@/libs/api";
 import { formatLocation } from "@/utils/location";
-import { useFormatPrice } from "@/hooks/useFormatPrice";
+import { priceLabel } from "@/constants/payments";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
+<<<<<<< HEAD
 import { useRefreshOnForeground } from "@/hooks/useRefreshOnForeground";
+=======
+import { useActiveCity } from "@/hooks/useActiveCity";
+>>>>>>> e50971ee0bca36ef8b08daca424723a703aeee4a
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -28,12 +32,11 @@ export default function BestsPage() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
-  const formatPrice = useFormatPrice();
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [guides, setGuides] = useState<Guide[]>([]);
   // The one shared active browsing location — see ActiveLocationChip.
-  const [activeCity, setActiveCity] = useState<string | null>(null);
+  const activeCity = useActiveCity();
   const headerAnim = useRef(new Animated.Value(0)).current;
 
   const loadGuides = async (city: string | null) => {
@@ -56,12 +59,6 @@ export default function BestsPage() {
       useNativeDriver: true,
     }).start();
   }, [headerAnim]);
-
-  useFocusEffect(
-    useCallback(() => {
-      SecureStore.getItemAsync("selectedCity").then((city) => setActiveCity(city || null));
-    }, [])
-  );
 
   useEffect(() => {
     loadGuides(activeCity);
@@ -103,7 +100,7 @@ export default function BestsPage() {
       <Text style={styles.guideAuthor} numberOfLines={1}>by {g.authorName}</Text>
       <View style={styles.guideFooter}>
         <Text style={styles.guidePrice}>
-          {g.price === 0 ? "FREE" : `$${formatPrice(g.price)}`}
+          {priceLabel(g.price, g.currency)}
         </Text>
         <View style={styles.guideViews}>
           <Ionicons name="eye-outline" size={13} color={colors.textMuted} />
@@ -153,18 +150,24 @@ export default function BestsPage() {
             Others can purchase your guides to discover the best places!
           </Text>
 
-          <TouchableOpacity style={styles.createButton} onPress={handleCreateGuide}>
-            <Ionicons name="add-circle" size={22} color="#fff" />
-            <Text style={styles.createButtonText}>Create Your Guide</Text>
-          </TouchableOpacity>
+          <View style={styles.guideActions}>
+            <TouchableOpacity style={styles.createButton} onPress={handleCreateGuide}>
+              <Ionicons name="add-circle" size={18} color="#fff" />
+              <Text style={styles.createButtonText} numberOfLines={1}>
+                Create guide
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.sampleGuideLink}
-            onPress={() => router.push("/guide/sample" as any)}
-          >
-            <Ionicons name="document-text-outline" size={18} color={colors.primary} />
-            <Text style={styles.sampleGuideText}>View Sample Guide</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.sampleGuideLink}
+              onPress={() => router.push("/guide/sample" as any)}
+            >
+              <Ionicons name="document-text-outline" size={16} color={colors.primary} />
+              <Text style={styles.sampleGuideText} numberOfLines={1}>
+                View sample
+              </Text>
+            </TouchableOpacity>
+          </View>
 
           <Text style={styles.sectionHeading}>Browse Guides</Text>
         </View>
@@ -266,35 +269,43 @@ const createStyles = (c: ThemeColors) =>
     lineHeight: 22,
     marginBottom: 20,
   },
+  // The two guide CTAs sit side by side — each is short enough not to need a
+  // full row, and stacking them pushed the guide list below the fold.
+  guideActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 20,
+  },
   sampleGuideLink: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    marginBottom: 20,
+    gap: 6,
     paddingVertical: 12,
+    paddingHorizontal: 10,
     backgroundColor: c.primaryFaded,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   sampleGuideText: {
-    fontSize: scaleFontSize(15),
+    fontSize: scaleFontSize(13),
     fontFamily: Fonts.semiBold,
     color: c.primary,
   },
   createButton: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: c.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-    marginBottom: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 6,
   },
   createButtonText: {
     color: c.white,
-    fontSize: scaleFontSize(15),
+    fontSize: scaleFontSize(13),
     fontFamily: Fonts.semiBold,
     textAlign: "center",
   },

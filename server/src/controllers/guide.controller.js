@@ -3,7 +3,32 @@ import Guide, { guideTopicsList } from "../models/guide.model.js";
 import User from "../models/user.model.js";
 import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean } from "../utils/contentFilter.js";
-import { currencyForUser } from "../services/payments/resolveProvider.js";
+import {
+  currencyForUser,
+  PAYOUT_ROUTING_FIELDS,
+} from "../services/payments/resolveProvider.js";
+import { rejectIfCannotSell } from "../services/payments/sellingEligibility.js";
+import { isSupportUser } from "../utils/supportAccount.js";
+import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
+import { MAX_MEDIA_ITEMS } from "../utils/mediaLimit.js";
+
+/**
+ * Reconcile the two shapes a section's media can arrive in.
+ *
+ * Sections used to carry a single `image`; they now carry a `media` array of up
+ * to MAX_MEDIA_ITEMS photos/videos. Older app builds still send `image`, so a
+ * payload with only that is promoted into a one-item array. Going the other
+ * way, `image` is kept mirroring `media[0]` so any client still reading the old
+ * field shows the section's cover instead of nothing.
+ */
+function normalizeSectionMedia(section) {
+  const media = Array.isArray(section.media)
+    ? section.media.filter(Boolean).slice(0, MAX_MEDIA_ITEMS)
+    : section.image
+      ? [section.image]
+      : [];
+  return { media, image: media[0] || "" };
+}
 
 // Get all topics
 export const getTopics = async (req, res) => {
@@ -87,10 +112,14 @@ export const createGuide = async (req, res) => {
     ]);
 
     // Get author name
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).select(`username ${PAYOUT_ROUTING_FIELDS}`);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
+
+    // A paid guide needs somewhere for the money to land. Free guides skip this
+    // entirely — anyone anywhere can publish one.
+    if (parseFloat(price) > 0 && rejectIfCannotSell(res, user)) return;
 
     const guide = new Guide({
       title,
@@ -111,7 +140,7 @@ export const createGuide = async (req, res) => {
         title: s.title,
         rank: s.rank,
         description: s.description,
-        image: s.image || "",
+        ...normalizeSectionMedia(s),
       })),
       isDraft: isDraft || false,
     });
@@ -137,45 +166,73 @@ export const createGuide = async (req, res) => {
 export const getGuides = async (req, res) => {
   try {
     const { city, state, country, topic, minPrice, maxPrice, search } = req.query;
+    // Generous default so the pre-pagination callers (bests, city guides, saved
+    // guides) keep getting everything they used to.
+    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 200);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
 
     const blockedIds = req.user?.id ? await getBlockedIds(req.user.id) : [];
 
-    const filter = {
-      isDraft: false,
-      isActive: true,
-      ...(blockedIds.length > 0 ? { author: { $nin: blockedIds } } : {}),
-    };
+    const filter = buildGuideQuery({ city, state, country, topic, minPrice, maxPrice, search, blockedIds });
 
-    // Filter by location if provided
-    const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (city) filter.city = { $regex: new RegExp(`^${esc(city)}$`, "i") };
-    if (state) filter.cityState = { $regex: new RegExp(`^${esc(state)}$`, "i") };
-    if (country) filter.country = { $regex: new RegExp(`^${esc(country)}$`, "i") };
+    const [guides, total] = await Promise.all([
+      Guide.find(filter)
+        .populate("author", "username email profilePicture")
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      Guide.countDocuments(filter),
+    ]);
 
-    if (topic) filter.topic = topic;
-    if (minPrice || maxPrice) {
-      filter.price = {};
-      if (minPrice) filter.price.$gte = parseFloat(minPrice);
-      if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
-    }
-    if (search) {
-      filter.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-        { authorName: { $regex: search, $options: "i" } },
-      ];
-    }
-
-    const guides = await Guide.find(filter)
-      .populate("author", "username email profilePicture")
-      .sort({ createdAt: -1 });
-
-    res.status(200).json({ guides });
+    res.status(200).json({ guides, total, page });
   } catch (error) {
     console.error("Get guides error:", error);
     res.status(500).json({ message: "Failed to fetch guides" });
   }
 };
+
+/**
+ * Shared guide filter builder — used by getGuides and the unified /search
+ * endpoint so the two can't drift.
+ *
+ * OR-groups go into `$and` rather than assigning `filter.$or` directly: a bare
+ * assignment means the next feature that needs its own OR-group silently
+ * clobbers this one.
+ */
+export function buildGuideQuery({ city, state, country, topic, minPrice, maxPrice, search, blockedIds = [] }) {
+  const filter = {
+    isDraft: false,
+    isActive: true,
+    ...(blockedIds.length > 0 ? { author: { $nin: blockedIds } } : {}),
+  };
+
+  // Location filters are anchored exact matches, not substrings.
+  if (city) filter.city = { $regex: exactCaseInsensitive(city) };
+  if (state) filter.cityState = { $regex: exactCaseInsensitive(state) };
+  if (country) filter.country = { $regex: exactCaseInsensitive(country) };
+
+  if (topic) filter.topic = topic;
+  if (minPrice || maxPrice) {
+    filter.price = {};
+    if (minPrice) filter.price.$gte = parseFloat(minPrice);
+    if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
+  }
+
+  const andConditions = [];
+  if (search) {
+    const safe = escapeRegex(String(search));
+    andConditions.push({
+      $or: [
+        { title: { $regex: safe, $options: "i" } },
+        { description: { $regex: safe, $options: "i" } },
+        { authorName: { $regex: safe, $options: "i" } },
+      ],
+    });
+  }
+  if (andConditions.length > 0) filter.$and = andConditions;
+
+  return filter;
+}
 
 // Get the top-selling published guides (most purchases, then most views)
 export const getTopGuides = async (req, res) => {
@@ -215,6 +272,9 @@ export const getTopGuides = async (req, res) => {
           authorName: 1,
           description: 1,
           price: 1,
+          // Without this the home-screen cards fall back to "$" for every
+          // seller, whatever currency they actually priced the guide in.
+          currency: 1,
           city: 1,
           cityState: 1,
           coverImage: 1,
@@ -238,12 +298,25 @@ export const getTopGuides = async (req, res) => {
   }
 };
 
-// Get user's guides (including drafts)
+// Get user's guides (including drafts), each with its sales count.
+//
+// $size on the in-document array is the cheapest correct count — no $lookup,
+// no extra index. The $project exclusion also fixes a real leak: the previous
+// bare find() shipped every buyer's ObjectId to the client on every load.
 export const getUserGuides = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const guides = await Guide.find({ author: userId }).sort({ createdAt: -1 });
+    const guides = await Guide.aggregate([
+      { $match: { author: new mongoose.Types.ObjectId(userId) } },
+      { $addFields: { salesCount: { $size: { $ifNull: ["$purchasedBy", []] } } } },
+      // Counted off purchasedBy, not the newer `sales` ledger: purchasedBy is
+      // complete for guides sold before the ledger existed. Both are dropped
+      // from the payload — a list screen has no use for buyer ids, and the
+      // money detail belongs to /earnings.
+      { $project: { purchasedBy: 0, sales: 0 } },
+      { $sort: { createdAt: -1 } },
+    ]);
 
     res.status(200).json({ guides });
   } catch (error) {
@@ -256,6 +329,11 @@ export const getUserGuides = async (req, res) => {
 export const getUserPublicGuides = async (req, res) => {
   try {
     const { userId } = req.params;
+
+    // The support account has no public profile to hang guides off.
+    if (isSupportUser(userId)) {
+      return res.status(200).json({ guides: [] });
+    }
 
     // Respect blocks in either direction — hide guides from blocked users
     if (req.user?.id) {
@@ -359,6 +437,13 @@ export const updateGuide = async (req, res) => {
         .json({ message: "You can only edit your own guides" });
     }
 
+    // Same payout gate as creation — otherwise publishing a free guide and then
+    // editing a price onto it would walk straight around it.
+    if (price !== undefined && parseFloat(price) > 0) {
+      const author = await User.findById(userId).select(PAYOUT_ROUTING_FIELDS);
+      if (rejectIfCannotSell(res, author)) return;
+    }
+
     // Validate sections if provided
     if (sections) {
       if (
@@ -415,7 +500,7 @@ export const updateGuide = async (req, res) => {
         title: s.title,
         rank: s.rank,
         description: s.description,
-        image: s.image || "",
+        ...normalizeSectionMedia(s),
       }));
     if (isDraft !== undefined) guide.isDraft = isDraft;
 
@@ -500,8 +585,16 @@ export const purchaseGuide = async (req, res) => {
       });
     }
 
-    // Free guide — grant access directly
+    // Free guide — grant access directly. Still recorded in the sales ledger
+    // (gross 0) so the author's "unlocks" count is complete.
     guide.purchasedBy.push(userId);
+    guide.sales.push({
+      user: userId,
+      purchasedAt: new Date(),
+      gross: 0,
+      net: 0,
+      currency: guide.currency || "USD",
+    });
     await guide.save();
 
     res.status(200).json({

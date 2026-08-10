@@ -114,13 +114,19 @@ export default function VerifySignupEmail() {
         { headers: await authHeaders() }
       );
       if (res.data?.success) {
+        let wantsVendor = false;
         const userJson = await SecureStore.getItemAsync("user");
         if (userJson) {
           const u = JSON.parse(userJson);
           u.emailVerifiedAt = res.data.emailVerifiedAt;
+          wantsVendor = !!u.vendorSignupPending && !u.isVendor;
           await SecureStore.setItemAsync("user", JSON.stringify(u));
         }
-        router.replace("/interests" as any);
+        // Business signups go to the vendor setup form, not the client
+        // interests picker — /interests tunes the consumer event feed, which a
+        // vendor account hasn't got yet. Read off the stored user rather than a
+        // route param so it survives a reload of this screen.
+        router.replace((wantsVendor ? "/vendor-setup" : "/interests") as any);
       }
     } catch (error: any) {
       let msg = "Could not verify code. Try again.";

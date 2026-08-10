@@ -6,6 +6,7 @@ import {
   updateVendorProfile,
   getProfile,
   becomeVendor,
+  markVendorSignupIntent,
   updateProfilePicture,
   searchUsers,
   getUserById,
@@ -49,6 +50,9 @@ router.post("/auth/resend-signup-otp", authenticate, otpLimiter, resendSignupOTP
 router.get("/profile", authenticate, getProfile);
 router.put("/profile/picture", authenticate, updateProfilePicture);
 router.post("/become-vendor", authenticate, becomeVendor);
+// Records "signed up as a business" for the OAuth paths, which can't carry
+// accountType through their callbacks the way /register does.
+router.post("/vendor-signup-intent", authenticate, markVendorSignupIntent);
 router.put("/vendor/profile", authenticate, updateVendorProfile);
 router.get("/users/search", authenticate, searchUsers);
 router.get("/users/:userId/events", authenticate, getUserEvents);

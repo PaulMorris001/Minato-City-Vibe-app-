@@ -4,6 +4,7 @@ import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
 import AppPromo from "../components/AppPromo";
 import { api } from "../lib/api";
+import { isVideoUrl, videoPosterUrl } from "../lib/media";
 import { useAuth } from "../context/AuthContext";
 import type { EventItem } from "../lib/types";
 import { fallbackGradient, formatDateTime, money, relativeDay } from "../lib/format";
@@ -18,6 +19,13 @@ export default function EventDetails() {
   const [error, setError] = useState("");
   const [selectedTier, setSelectedTier] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Shareable QR. Rendered server-side (GET /events/:id/qr) so the code is
+  // identical everywhere it appears — app, web, printed flyer — and the web
+  // bundle doesn't ship a QR encoder.
+  const [qr, setQr] = useState<{ url: string; qr: string } | null>(null);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrError, setQrError] = useState("");
 
   // Free-event RSVP state
   const [rsvping, setRsvping] = useState(false);
@@ -73,6 +81,16 @@ export default function EventDetails() {
     }
   }
 
+  function toggleQr() {
+    const next = !qrOpen;
+    setQrOpen(next);
+    if (!next || qr) return;
+    setQrError("");
+    api<{ url: string; qr: string }>(`/events/${eventId}/qr`)
+      .then(setQr)
+      .catch(() => setQrError("Couldn't load the QR code."));
+  }
+
   function share() {
     const url = window.location.href;
     if (navigator.share) {
@@ -104,14 +122,27 @@ export default function EventDetails() {
     );
   }
 
-  const cover = ev.image || ev.images?.[0];
-  const gallery = (ev.images || []).filter((img) => img !== cover);
+  const coverMedia = ev.image || ev.images?.[0];
+  // The hero has the title and date laid over it, so a video there is shown as
+  // its still frame — it plays in the gallery below instead. A video we can't
+  // derive a poster from falls through to the gradient placeholder.
+  const cover = isVideoUrl(coverMedia) ? videoPosterUrl(coverMedia) : coverMedia;
+  const gallery = (ev.images || []).filter((item) => item !== coverMedia);
   const tiers = ev.ticketTiers || [];
   const host = ev.createdBy;
   const going =
     justJoined || ev.userRsvp || ev.userStatus === "accepted" || ev.userStatus === "creator";
-  const attending = ev.rsvpCount ?? ev.invitedUsers?.length ?? 0;
   const soon = relativeDay(ev.date);
+
+  // Headcount and capacity reach the organizer always, and everyone else only
+  // when the host turned on `showAttendance`. The API strips the fields in
+  // every other case (see applyAttendanceVisibility on the server), so their
+  // presence IS the permission check — no separate role lookup, co-hosts are
+  // covered, and the opt-in needs no extra branch here. Same rule mobile
+  // applies in app/event/[id].tsx.
+  const attending = ev.rsvpCount;
+  const canSeeAttendance =
+    attending !== undefined || ev.ticketsSold !== undefined || ev.maxGuests !== undefined;
 
   return (
     <Layout>
@@ -183,13 +214,17 @@ export default function EventDetails() {
             </section>
           )}
 
-          {/* Stats */}
+          {/* Stats — attendance numbers are organizer-only unless the host
+              opted in; Views is organizer-only regardless. */}
+          {(canSeeAttendance || !!ev.seenCount) && (
           <section className="cv-panel cv-section">
             <div className="cv-stats">
-              <div>
-                <div className="cv-stat-n">{attending}</div>
-                <div className="cv-stat-l">Going</div>
-              </div>
+              {attending !== undefined && (
+                <div>
+                  <div className="cv-stat-n">{attending}</div>
+                  <div className="cv-stat-l">Going</div>
+                </div>
+              )}
               {ev.isPaid && ev.ticketsSold !== undefined && (
                 <div>
                   <div className="cv-stat-n">{ev.ticketsSold}</div>
@@ -216,6 +251,7 @@ export default function EventDetails() {
               )}
             </div>
           </section>
+          )}
 
           {/* About */}
           {ev.description && (
@@ -313,11 +349,22 @@ export default function EventDetails() {
           {/* Gallery */}
           {!!gallery.length && (
             <section className="cv-section">
-              <h3 className="cv-h3">Photos</h3>
+              <h3 className="cv-h3">{gallery.some(isVideoUrl) ? "Photos & videos" : "Photos"}</h3>
               <div className="cv-gallery">
-                {gallery.map((img) => (
-                  <img key={img} src={img} alt="" loading="lazy" />
-                ))}
+                {gallery.map((item) =>
+                  isVideoUrl(item) ? (
+                    <video
+                      key={item}
+                      src={item}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      poster={videoPosterUrl(item) || undefined}
+                    />
+                  ) : (
+                    <img key={item} src={item} alt="" loading="lazy" />
+                  )
+                )}
               </div>
             </section>
           )}
@@ -343,6 +390,48 @@ export default function EventDetails() {
             <button className="cv-btn cv-btn-ghost" style={{ marginTop: 10 }} onClick={share}>
               {copied ? "Link copied ✓" : "Share this event"}
             </button>
+            <button
+              className="cv-btn cv-btn-ghost"
+              style={{ marginTop: 10 }}
+              onClick={toggleQr}
+              aria-expanded={qrOpen}
+            >
+              {qrOpen ? "Hide QR code" : "Show QR code"}
+            </button>
+
+            {qrOpen && (
+              <div style={{ marginTop: 12, textAlign: "center" }}>
+                {qrError ? (
+                  <div className="cv-error">{qrError}</div>
+                ) : qr ? (
+                  <>
+                    {/* Fixed white plate in both themes — QR contrast is a
+                        scanning requirement, not a styling choice. */}
+                    <div
+                      style={{
+                        background: "#fff",
+                        borderRadius: 16,
+                        padding: 12,
+                        display: "inline-block",
+                        lineHeight: 0,
+                      }}
+                    >
+                      <img
+                        src={qr.qr}
+                        alt={`QR code linking to ${ev.title}`}
+                        style={{ width: "100%", maxWidth: 220, height: "auto" }}
+                      />
+                    </div>
+                    <p className="cv-muted" style={{ marginTop: 10, fontSize: 13 }}>
+                      Scan to open this event in the OurCityvibe app — or here on the
+                      web if the app isn't installed.
+                    </p>
+                  </>
+                ) : (
+                  <div className="cv-skel" style={{ height: 220 }} />
+                )}
+              </div>
+            )}
           </div>
         </aside>
       </div>
@@ -412,7 +501,10 @@ function TicketBox({
   onPay: () => void;
 }) {
   const multiTier = tiers.length > 1;
-  const soldOut = ev.ticketsRemaining !== undefined && ev.ticketsRemaining <= 0;
+  // The server sends soldOut to every viewer precisely because ticketsRemaining
+  // is now withheld from non-organizers; fall back for older API responses.
+  const soldOut =
+    ev.soldOut ?? (ev.ticketsRemaining !== undefined && ev.ticketsRemaining <= 0);
 
   if (!ev.isPaid) {
     return going ? (
@@ -489,7 +581,7 @@ function TicketBox({
       {multiTier ? (
         <div style={{ marginBottom: 16 }}>
           {tiers.map((t) => {
-            const tierSoldOut = t.remaining !== undefined && t.remaining <= 0;
+            const tierSoldOut = t.soldOut ?? (t.remaining !== undefined && t.remaining <= 0);
             return (
               <label
                 key={t._id}

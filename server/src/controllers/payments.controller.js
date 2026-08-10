@@ -8,7 +8,8 @@
  *
  * The flow both providers implement: charge the buyer into the PLATFORM
  * balance, then create a Payout(awaiting_approval) — an admin approves before
- * any money moves out (Wise for Stripe-collected sales, Paystack for NGN).
+ * any money moves out (Stripe Connect for Stripe-collected sales, Paystack for
+ * NGN).
  */
 
 import stripe from "../config/stripe.js";
@@ -21,12 +22,15 @@ import { Booking } from "../models/booking.model.js";
 import { Order } from "../models/order.model.js";
 import {
   getPayoutProvider,
+  getSettlementProvider,
   hasPayoutOnboarding,
+  PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
 import { fulfillTicket, issueRecipientTicket, fulfillGuide, fulfillBooking, fulfillOrder } from "../services/payments/fulfillment.js";
 import { computeSplit } from "../services/payments/split.js";
 import { buildPaystackInit, verifyPaystackCharge } from "./paystack.controller.js";
 import { createPayout } from "../services/payments/payout.service.js";
+import { settleStripePurchase } from "../services/payments/settleStripePayment.js";
 import TicketOrder from "../models/ticketOrder.model.js";
 import { findOrCreateGuestUser } from "./guestCheckout.controller.js";
 import { sendPushNotification } from "../services/notification.service.js";
@@ -208,9 +212,9 @@ export const initPayment = async (req, res) => {
 
     // Stripe branch — always charge to the PLATFORM account (no transfer_data /
     // application_fee). Every sale's funds are held in the platform balance and
-    // only leave once an admin approves the resulting Payout, which Wise then
-    // sends to the seller's bank.
-    const settlement = "wise";
+    // only leave once an admin approves the resulting Payout, which Stripe
+    // Connect then transfers to the seller's connected account.
+    const settlement = getSettlementProvider(seller);
     const amountCents = Math.round(amount * 100);
     const feeCents = Math.round(amountCents * (PLATFORM_FEE_PERCENT / 100));
     const sellerNetCents = amountCents - feeCents;
@@ -282,6 +286,15 @@ export const confirmPayment = async (req, res) => {
   }
 };
 
+/**
+ * Confirm a Stripe purchase the app has just completed.
+ *
+ * Verification (payment succeeded, buyer matches, the PI is for the item the
+ * client claims) lives here; the fulfillment + payout work is delegated to
+ * settleStripePurchase, which the webhook fallback also calls. Keeping one
+ * settlement implementation is what stops the two paths drifting — the webhook
+ * used to handle only tickets and guides and never queued a payout at all.
+ */
 async function confirmStripe(type, id, paymentIntentId, userId, res) {
   const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
   if (pi.status !== "succeeded") {
@@ -291,110 +304,38 @@ async function confirmStripe(type, id, paymentIntentId, userId, res) {
     return res.status(403).json({ message: "Payment does not match this purchase" });
   }
 
-  // Stripe-collected sales settle via Wise. The coercion (rather than trusting
-  // metadata verbatim) also covers in-flight PIs created before the remap,
-  // whose metadata still says "stripe". The seller's net stays in the platform
-  // balance; a Payout(awaiting_approval) is created for an admin to release.
-  const settlement = "wise";
-  const sellerNetCents = Number(pi.metadata?.sellerNetCents || 0);
-  // Collection is cents; Wise sources major USD.
-  const payoutAmount = sellerNetCents / 100;
-  const payoutCurrency = "USD";
+  // The PI must be for the item the client says it is, or a buyer could confirm
+  // a cheap purchase against an expensive one.
+  const ID_FIELD = { ticket: "eventId", guide: "guideId", booking: "bookingId", order: "orderId" };
+  const MISMATCH = {
+    ticket: "Payment does not match this event",
+    guide: "Payment does not match this guide",
+    booking: "Payment does not match this booking",
+    order: "Payment does not match this order",
+  };
+  const idField = ID_FIELD[type];
+  if (!idField) return res.status(400).json({ message: "Unknown purchase type" });
+  if (pi.metadata?.[idField] !== id) {
+    return res.status(403).json({ message: MISMATCH[type] });
+  }
+  if (pi.metadata?.type !== type) {
+    return res.status(403).json({ message: "Payment does not match this purchase" });
+  }
+
+  const { result } = await settleStripePurchase(pi);
 
   if (type === "ticket") {
-    if (pi.metadata?.eventId !== id) {
-      return res.status(403).json({ message: "Payment does not match this event" });
-    }
-    const { ticket, alreadyExisted } = await fulfillTicket({
-      eventId: id,
-      userId,
-      provider: "stripe",
-      payoutProvider: settlement, // ticket payouts are batched by the job after the hold window
-      paymentRef: paymentIntentId,
-      currency: "usd",
-      platformFeeCents: Number(pi.metadata?.platformFeeCents || 0),
-      sellerNetCents,
-      // Tier chosen at init — the PI was created for that tier's price.
-      tierId: pi.metadata?.tierId,
-    });
-    return res.status(alreadyExisted ? 200 : 201).json({ message: "Ticket confirmed", ticket });
+    return res
+      .status(result.alreadyExisted ? 200 : 201)
+      .json({ message: "Ticket confirmed", ticket: result.ticket });
   }
-
   if (type === "guide") {
-    if (pi.metadata?.guideId !== id) {
-      return res.status(403).json({ message: "Payment does not match this guide" });
-    }
-    await fulfillGuide({ guideId: id, userId });
-    // Unconditional on purpose: if the webhook fulfilled first, this confirm
-    // would see alreadyPurchased and a gated createPayout would silently never
-    // queue the vendor's money. createPayout is idempotent on `reference`.
-    await createPayout({
-      vendor: pi.metadata?.sellerId,
-      relatedType: "guide",
-      relatedId: id,
-      provider: settlement,
-      amount: payoutAmount,
-      currency: payoutCurrency,
-      reference: `guide_${id}_${userId}`,
-      buyer: userId,
-      stripePaymentIntentId: paymentIntentId,
-    });
     return res.status(200).json({ message: "Guide purchase confirmed", hasPurchased: true });
   }
-
   if (type === "booking") {
-    if (pi.metadata?.bookingId !== id) {
-      return res.status(403).json({ message: "Payment does not match this booking" });
-    }
-    const { booking } = await fulfillBooking({
-      bookingId: id,
-      provider: "stripe",
-      payoutProvider: settlement,
-      paymentRef: paymentIntentId,
-      platformFee: Number(pi.metadata?.platformFeeCents || 0),
-      vendorNet: sellerNetCents,
-    });
-    // Unconditional for the same webhook-race reason as guides.
-    await createPayout({
-      vendor: pi.metadata?.sellerId,
-      relatedType: "booking",
-      relatedId: id,
-      provider: settlement,
-      amount: payoutAmount,
-      currency: payoutCurrency,
-      reference: `booking_${id}`,
-      buyer: userId,
-      stripePaymentIntentId: paymentIntentId,
-    });
-    return res.status(200).json({ message: "Booking paid", booking });
+    return res.status(200).json({ message: "Booking paid", booking: result.booking });
   }
-
-  if (type === "order") {
-    if (pi.metadata?.orderId !== id) {
-      return res.status(403).json({ message: "Payment does not match this order" });
-    }
-    const { order } = await fulfillOrder({
-      orderId: id,
-      provider: "stripe",
-      payoutProvider: settlement,
-      paymentRef: paymentIntentId,
-      platformFee: Number(pi.metadata?.platformFeeCents || 0),
-      vendorNet: sellerNetCents,
-    });
-    // Unconditional for the same webhook-race reason as guides.
-    await createPayout({
-      vendor: pi.metadata?.sellerId,
-      relatedType: "order",
-      relatedId: id,
-      provider: settlement,
-      amount: payoutAmount,
-      currency: payoutCurrency,
-      reference: `order_${id}`,
-      buyer: userId,
-      stripePaymentIntentId: paymentIntentId,
-    });
-    return res.status(200).json({ message: "Order paid", order });
-  }
+  return res.status(200).json({ message: "Order paid", order: result.order });
 }
 
 async function confirmPaystack(type, id, reference, userId, res, tierId) {
@@ -633,7 +574,9 @@ export const initTicketBatch = async (req, res) => {
       return res.status(200).json({ ...init, orderId: order._id });
     }
 
-    // Stripe — charge the total into the platform balance (settled via Wise).
+    // Stripe — charge the total into the platform balance; an approved Payout
+    // settles it to the seller via whichever rail their country routes to.
+    const settlement = getSettlementProvider(seller);
     const amountCents = Math.round(total * 100);
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountCents,
@@ -644,7 +587,7 @@ export const initTicketBatch = async (req, res) => {
         sellerId: seller._id.toString(),
         eventId: eventId.toString(),
         ticketOrderId: order._id.toString(),
-        payoutProvider: "wise",
+        payoutProvider: settlement,
       },
       transfer_group: `event_${eventId}`,
     });
@@ -711,7 +654,10 @@ export const confirmTicketBatch = async (req, res) => {
     const event = await Event.findById(eventId);
     if (!event) return res.status(404).json({ message: "Event not found" });
 
-    const payoutProvider = isPaystack ? "paystack" : "wise";
+    // Re-derived from the seller rather than read back from the order/PI, so a
+    // routing change between init and confirm settles on today's rail.
+    const batchSeller = await User.findById(order.seller).select(PAYOUT_ROUTING_FIELDS);
+    const payoutProvider = isPaystack ? "paystack" : getSettlementProvider(batchSeller);
     const ticketIds = [];
     for (const item of order.items) {
       const recipient = await findOrCreateGuestUser(item.recipientEmail, item.recipientName);

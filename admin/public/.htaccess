@@ -1,0 +1,71 @@
+# Hostinger (Apache) config for admin.ourcityvibe.com.
+#
+# Vite copies everything in admin/public/ into admin/dist/ at build time, so this
+# file ships with the bundle — upload dist/ and the rules come with it.
+#
+# Note on what this does and doesn't buy you: the admin bundle is public static
+# JS, so none of this hides the portal. Real authorization is enforced by the API
+# (authenticateAdmin in server/src/middleware/admin.middleware.js). What these
+# rules protect is the *browser session* — chiefly the admin token in
+# localStorage, which is why the portal lives on its own origin.
+
+# ── Force HTTPS ────────────────────────────────────────────────────────────
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !https
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# ── SPA fallback ───────────────────────────────────────────────────────────
+# Serves index.html for any path that isn't a real file/dir, so client-side
+# routes like /users and /payouts resolve on a hard refresh or a direct link.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
+
+# ── Security headers ───────────────────────────────────────────────────────
+<IfModule mod_headers.c>
+  # Content Security Policy.
+  #   script-src 'self'          — Vite emits external module scripts only.
+  #   style-src  'unsafe-inline' — required: index.html has an inline <style>
+  #                                block and the app styles via React `style={{}}`
+  #                                attributes. Remove only if both change.
+  #   connect-src                — the API origin; nothing else is called.
+  #   frame-ancestors 'none'     — the portal can never be framed (clickjacking).
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://api.ourcityvibe.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+
+  # Belt-and-braces for older browsers that ignore frame-ancestors.
+  Header always set X-Frame-Options "DENY"
+  Header always set X-Content-Type-Options "nosniff"
+  # Admin URLs can carry record ids — never leak them to third parties.
+  Header always set Referrer-Policy "no-referrer"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  # Keep the portal out of search results.
+  Header always set X-Robots-Tag "noindex, nofollow, noarchive"
+</IfModule>
+
+# ── Caching ────────────────────────────────────────────────────────────────
+# Vite fingerprints everything in /assets, so those are immutable. index.html
+# must never be cached or a deploy won't reach browsers that already have it.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css|woff2?|png|jpg|jpeg|svg|webp)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "^(index\.html)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+  </FilesMatch>
+</IfModule>
+
+# Don't serve source maps or stray dotfiles if any slip into the upload.
+<FilesMatch "\.(map|env|json.bak)$">
+  Require all denied
+</FilesMatch>
+
+Options -Indexes

@@ -244,7 +244,12 @@ export default function Pay() {
             1. Choose your tickets
           </h3>
           {saleTiers.map((t) => {
-            const soldOut = t.remaining !== undefined && t.remaining <= 0;
+            // `remaining` is a capacity number, so the API withholds it from
+            // buyers unless the organizer opted into public attendance — which
+            // meant this page never disabled a sold-out tier. `soldOut` is the
+            // count-free flag sent to everyone; prefer it and keep the numeric
+            // derivation as the fallback (same order as EventDetails).
+            const soldOut = t.soldOut ?? (t.remaining !== undefined && t.remaining <= 0);
             const count = countFor(t._id);
             const atCap = t.remaining !== undefined && count >= t.remaining;
             return (

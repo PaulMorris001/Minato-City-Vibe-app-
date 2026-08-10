@@ -20,6 +20,9 @@ import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean } from "../utils/contentFilter.js";
 import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { validatePassword } from "../utils/passwordPolicy.js";
+import { SUPPORT_USER_ID, isSupportUser } from "../utils/supportAccount.js";
+import { countFollows } from "../utils/followCounts.js";
+import { searchUsersQuery } from "../services/userSearch.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -69,7 +72,7 @@ async function generateUniqueUsername(seed) {
 }
 
 export async function register(req, res) {
-  const { username, email, password, termsAccepted } = req.body;
+  const { username, email, password, termsAccepted, accountType } = req.body;
 
   try {
     if (!termsAccepted) {
@@ -134,11 +137,19 @@ export async function register(req, res) {
     const otp = generateOTP();
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
+    // Signing up as a business doesn't create a vendor account here — the
+    // Vendor doc needs a business name, type and city, which are collected
+    // after email verification. We only record the intent so the client can
+    // route straight into that form (and resume it on the next login if the
+    // user drops out mid-way). becomeVendor flips isVendor and clears this.
+    const wantsVendor = accountType === "vendor";
+
     const user = new User({
       username: normalizedUsername,
       email: normalizedEmail,
       password: hashed,
-      isVendor: false, // All users start as clients
+      isVendor: false, // vendor status is earned by completing the business form
+      vendorSignupPending: wantsVendor,
       termsAcceptedAt: new Date(),
       signupOTP: otp,
       signupOTPExpires: otpExpires,
@@ -166,6 +177,7 @@ export async function register(req, res) {
         username: user.username,
         email: user.email,
         isVendor: user.isVendor,
+        vendorSignupPending: user.vendorSignupPending,
         emailVerifiedAt: null,
       },
     });
@@ -284,12 +296,46 @@ export async function login(req, res) {
         id: user._id,
         username: user.username,
         email: user.email,
-        isVendor: user.isVendor
+        isVendor: user.isVendor,
+        // Signed up as a business but never finished the details form — the
+        // client resumes vendor setup instead of opening the client app.
+        vendorSignupPending: user.vendorSignupPending
       }
     });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ message: "Something went wrong. Please try again." });
+  }
+}
+
+/**
+ * Flag the caller as mid-vendor-signup.
+ *
+ * `/register` takes accountType directly, but the OAuth paths can't: Apple and
+ * Google both return through fixed callbacks (the Google one via a server-held
+ * `state`), so there's nowhere to carry "they picked business on the signup
+ * screen" without threading it through the whole redirect chain. The app calls
+ * this straight after a social signup instead — one round trip, and the flag
+ * behaves identically from then on.
+ *
+ * Idempotent, and a no-op for accounts that are already vendors.
+ */
+export async function markVendorSignupIntent(req, res) {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (user.isVendor) {
+      return res.json({ vendorSignupPending: false, isVendor: true });
+    }
+
+    user.vendorSignupPending = true;
+    await user.save();
+    res.json({ vendorSignupPending: true, isVendor: false });
+  } catch (error) {
+    res
+      .status(400)
+      .json({ message: "Error saving vendor signup intent", details: error.message });
   }
 }
 
@@ -326,6 +372,8 @@ export async function becomeVendor(req, res) {
 
     // Upgrade user to vendor (store string fields for vendor dashboard)
     user.isVendor = true;
+    // Onboarding is finished — stop routing this user back into the setup form.
+    user.vendorSignupPending = false;
     user.businessName = businessName;
     user.businessDescription = businessDescription;
     user.businessPicture = businessPictureUrl;
@@ -566,10 +614,7 @@ export async function getProfile(req, res) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const [followersCount, followingCount] = await Promise.all([
-      Follow.countDocuments({ following: req.user.id }),
-      Follow.countDocuments({ follower: req.user.id }),
-    ]);
+    const { followersCount, followingCount } = await countFollows(req.user.id);
 
     res.json({
       user: {
@@ -686,7 +731,9 @@ export async function updateProfilePicture(req, res) {
   }
 }
 
-// Search users by username or email
+// Search users by username, business name, or exact email.
+// Thin wrapper over services/userSearch.js — the unified /search endpoint calls
+// the same helper, so exclusion rules stay identical across both.
 export async function searchUsers(req, res) {
   const { query } = req.query;
 
@@ -695,50 +742,13 @@ export async function searchUsers(req, res) {
       return res.status(400).json({ message: "Search query must be at least 2 characters" });
     }
 
-    const blockedIds = await getBlockedIds(req.user.id);
-
-    // Escape the query — raw user input in $regex is a ReDoS / regex-injection
-    // vector (e.g. ".*" would match everyone).
-    const safeQuery = escapeRegex(query.trim());
-
-    const users = await User.find({
-      _id: { $ne: req.user.id, $nin: blockedIds }, // Exclude current user + blocked
-      isBanned: { $ne: true },
-      $or: [
-        { username: { $regex: safeQuery, $options: "i" } },
-        { email: { $regex: safeQuery, $options: "i" } }
-      ]
-    })
-      .select("_id username email profilePicture isVendor businessName")
-      .limit(20)
-      .lean();
-
-    // Batch follow status lookup
-    const userIds = users.map((u) => u._id);
-    const [outgoing, incoming] = await Promise.all([
-      Follow.find({ follower: req.user.id, following: { $in: userIds } }).lean(),
-      Follow.find({ follower: { $in: userIds }, following: req.user.id }).lean(),
-    ]);
-    const followingSet = new Set(outgoing.map((f) => f.following.toString()));
-    const followedBySet = new Set(incoming.map((f) => f.follower.toString()));
-
-    res.json({
-      users: users.map(user => {
-        const isFollowing = followingSet.has(user._id.toString());
-        const isFollowedBy = followedBySet.has(user._id.toString());
-        return {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-          profilePicture: user.profilePicture,
-          isVendor: user.isVendor,
-          businessName: user.businessName,
-          isFollowing,
-          isFollowedBy,
-          isMutual: isFollowing && isFollowedBy,
-        };
-      })
+    const { users } = await searchUsersQuery({
+      viewerId: req.user.id,
+      q: query,
+      limit: 20,
     });
+
+    res.json({ users });
   } catch (error) {
     res.status(400).json({ message: "Error searching users", details: error.message });
   }
@@ -747,6 +757,23 @@ export async function searchUsers(req, res) {
 // Get user by ID (public profile)
 export async function getUserById(req, res) {
   try {
+    // The support account has no public profile — it's a help desk, not a
+    // person. Return a marker instead of a 404 so clients can route the
+    // viewer into the support conversation rather than dead-ending; that
+    // also keeps older builds (which only know the ID from a baked-in
+    // constant) working if the configured ID ever changes.
+    if (isSupportUser(req.params.userId)) {
+      const support = await User.findById(req.params.userId)
+        .select("_id username profilePicture")
+        .lean();
+      if (!support) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      return res.json({
+        user: { ...support, id: support._id, isSupport: true, verified: true },
+      });
+    }
+
     const user = await User.findById(req.params.userId)
       .select("_id username email profilePicture bio isVendor businessName verified isBanned blockedUsers")
       .lean();
@@ -802,6 +829,10 @@ export async function getUserById(req, res) {
 // Get public events created by a user
 export async function getUserEvents(req, res) {
   try {
+    // The support account has no public profile to hang events off.
+    if (isSupportUser(req.params.userId)) {
+      return res.json({ events: [] });
+    }
     // If the requesting user has blocked (or is blocked by) this user, return empty
     if (req.user?.id) {
       const blockedIds = await getBlockedIds(req.user.id);
@@ -958,6 +989,14 @@ export async function googleAuth(req, res) {
         await user.save();
         console.log(`[google-auth ${reqId}] linked Google to existing account id=${user._id}`);
       }
+      // Signing in through Google proves control of the address, so the account
+      // is email-verified — no OTP round trip needed.
+      if (!user.emailVerifiedAt) {
+        user.emailVerifiedAt = new Date();
+        user.signupOTP = undefined;
+        user.signupOTPExpires = undefined;
+        await user.save();
+      }
     } else {
       console.log(`[google-auth ${reqId}] no existing user — creating new account email=${normalizedEmail}`);
       // Create new user — Google sign-in implies acceptance of Terms via the in-app prompt
@@ -969,6 +1008,7 @@ export async function googleAuth(req, res) {
         profilePicture: picture || "",
         isVendor: false,
         termsAcceptedAt: new Date(),
+        emailVerifiedAt: new Date(),
       });
       await user.save();
       console.log(`[google-auth ${reqId}] ✓ new user created id=${user._id}`);
@@ -992,7 +1032,8 @@ export async function googleAuth(req, res) {
         email: user.email,
         profilePicture: user.profilePicture,
         isVendor: user.isVendor,
-        authProvider: user.authProvider
+        authProvider: user.authProvider,
+        emailVerifiedAt: user.emailVerifiedAt || null
       }
     });
   } catch (error) {
@@ -1264,6 +1305,13 @@ export async function googleWebCallback(req, res) {
         await user.save();
         console.log(`[google-web-callback ${reqId}] linked Google to existing user id=${user._id}`);
       }
+      // Google-verified address — no OTP needed (see /google-auth).
+      if (!user.emailVerifiedAt) {
+        user.emailVerifiedAt = new Date();
+        user.signupOTP = undefined;
+        user.signupOTPExpires = undefined;
+        await user.save();
+      }
     } else {
       user = new User({
         username: await generateUniqueUsername(name || normalizedEmail.split("@")[0]),
@@ -1273,6 +1321,7 @@ export async function googleWebCallback(req, res) {
         profilePicture: picture || "",
         isVendor: false,
         termsAcceptedAt: new Date(),
+        emailVerifiedAt: new Date(),
       });
       await user.save();
       console.log(`[google-web-callback ${reqId}] ✓ created new user id=${user._id}`);
@@ -1291,6 +1340,7 @@ export async function googleWebCallback(req, res) {
       profilePicture: user.profilePicture || "",
       isVendor: !!user.isVendor,
       authProvider: user.authProvider,
+      emailVerifiedAt: user.emailVerifiedAt || null,
     };
 
     console.log(
@@ -1379,6 +1429,15 @@ export async function appleAuth(req, res) {
         if (user.authProvider === "local") user.authProvider = "apple";
         await user.save();
       }
+      // Apple vouches for the address (including a private-relay one), so the
+      // account is email-verified. Without this an @privaterelay.appleid.com
+      // signup is stuck: it can never complete the OTP flow.
+      if (!user.emailVerifiedAt) {
+        user.emailVerifiedAt = new Date();
+        user.signupOTP = undefined;
+        user.signupOTPExpires = undefined;
+        await user.save();
+      }
     } else {
       if (!normalizedEmail) {
         return res.status(400).json({
@@ -1400,6 +1459,7 @@ export async function appleAuth(req, res) {
         appleId,
         isVendor: false,
         termsAcceptedAt: new Date(),
+        emailVerifiedAt: new Date(),
       });
       await user.save();
     }
@@ -1418,6 +1478,7 @@ export async function appleAuth(req, res) {
         profilePicture: user.profilePicture,
         isVendor: user.isVendor,
         authProvider: user.authProvider,
+        emailVerifiedAt: user.emailVerifiedAt || null,
       },
     });
   } catch (error) {

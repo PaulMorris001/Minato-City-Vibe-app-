@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import type { Chat } from "@/services/chat.service";
 import { capitalize } from "@/libs/helpers";
-import { displayName } from "@/utils/displayName";
+import { chatParticipantName, chatParticipantAvatar } from "@/utils/chatDisplay";
 import { Avatar } from "@/components/shared/Avatar";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -56,8 +56,8 @@ export default function ChatListItem({
     } else {
       const otherUser = chat.participants.find((p) => p._id !== currentUserId);
       return {
-        name: displayName(otherUser) || "Unknown User",
-        image: otherUser?.profilePicture,
+        name: chatParticipantName(chat, otherUser) || "Unknown User",
+        image: chatParticipantAvatar(chat, otherUser),
       };
     }
   };
@@ -138,6 +138,14 @@ export default function ChatListItem({
           >
             {capitalize(chatInfo.name)}
           </Text>
+          {chat.context === "vendor" && (
+            <Ionicons
+              name="storefront-outline"
+              size={11}
+              color={colors.primaryLight}
+              style={{ marginLeft: 4 }}
+            />
+          )}
           {isPinned && (
             <Ionicons name="star" size={11} color={colors.primaryLight} style={{ marginLeft: 4 }} />
           )}

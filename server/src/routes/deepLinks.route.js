@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import Event from '../models/event.model.js';
 import Guide from '../models/guide.model.js';
 import User from '../models/user.model.js';
+import { isSupportUser } from '../utils/supportAccount.js';
 
 const router = express.Router();
 
@@ -491,7 +492,9 @@ router.get('/user/:id', async (req, res) => {
 
   let user = null;
   try {
-    if (mongoose.isValidObjectId(id)) {
+    // The support account has no shareable public profile — fall through to
+    // the generic landing page rather than rendering a profile card for it.
+    if (mongoose.isValidObjectId(id) && !isSupportUser(id)) {
       user = await User.findById(id)
         .select('username profilePicture bio isVendor businessName verified')
         .lean();

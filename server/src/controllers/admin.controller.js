@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import config from "../config/env.js";
 import User from "../models/user.model.js";
@@ -11,25 +12,50 @@ import Notification from "../models/notification.model.js";
 import Report from "../models/report.model.js";
 import Message from "../models/message.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
+import { markVerified } from "../services/verification.service.js";
 import { getSocketInstance } from "../services/socket.service.js";
-import { hasPayoutOnboarding } from "../services/payments/resolveProvider.js";
+import {
+  hasPayoutOnboarding,
+  PAYOUT_ROUTING_FIELDS,
+} from "../services/payments/resolveProvider.js";
+
+/**
+ * Constant-time string comparison. Guards the username check against timing
+ * analysis; the length check leaks only the length, which isn't a secret.
+ */
+function safeEqual(a, b) {
+  const ab = Buffer.from(String(a ?? ""), "utf8");
+  const bb = Buffer.from(String(b ?? ""), "utf8");
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
 
 export async function adminLogin(req, res) {
   const { username, password } = req.body;
 
   const adminUsername = process.env.ADMIN_USERNAME;
-  const adminPassword = process.env.ADMIN_PASSWORD;
+  // Preferred: a bcrypt hash. ADMIN_PASSWORD (plaintext) is still honoured so an
+  // existing deploy keeps working, but env.js warns at boot until it's migrated.
+  const adminHash = process.env.ADMIN_PASSWORD_HASH;
+  const adminPlaintext = process.env.ADMIN_PASSWORD;
 
-  if (!adminUsername || !adminPassword) {
+  if (!adminUsername || (!adminHash && !adminPlaintext)) {
     return res.status(500).json({ message: "Admin credentials not configured" });
   }
 
-  if (username !== adminUsername || password !== adminPassword) {
+  // Both checks run unconditionally — no early return on a bad username, so the
+  // response time doesn't reveal whether the username existed.
+  const userOk = safeEqual(username, adminUsername);
+  const passOk = adminHash
+    ? await bcrypt.compare(String(password ?? ""), adminHash)
+    : safeEqual(password, adminPlaintext);
+
+  if (!userOk || !passOk) {
     return res.status(401).json({ message: "Invalid admin credentials" });
   }
 
-  const token = jwt.sign({ isAdmin: true, username }, config.jwt.secret, {
-    expiresIn: "24h",
+  const token = jwt.sign({ isAdmin: true, username }, config.jwt.adminSecret, {
+    expiresIn: config.jwt.adminExpiresIn,
   });
 
   res.json({ token });
@@ -425,44 +451,13 @@ export async function approveVerification(req, res) {
     const { id } = req.params;
     const { reviewedBy = "admin" } = req.body ?? {};
 
-    const request = await VerificationRequest.findById(id).populate(
-      "user",
-      "_id fcmToken isVendor"
-    );
+    const request = await VerificationRequest.findById(id).populate("user", "_id");
     if (!request) return res.status(404).json({ message: "Verification request not found" });
 
-    request.status = "approved";
-    request.reviewedAt = new Date();
-    request.reviewedBy = reviewedBy;
-    await request.save();
-
-    // Set user.verified = true
-    await User.findByIdAndUpdate(request.user._id, { verified: true });
-
-    // Sync to linked Vendor doc if exists
-    Vendor.findOneAndUpdate({ user: request.user._id }, { verified: true }).catch(() => {});
-
-    const isVendor = !!request.user.isVendor;
-    const notifTitle = isVendor ? "Business Verified!" : "You're Verified!";
-    const notifBody = isVendor
-      ? "Your business has been verified. You now have a verification badge on your profile."
-      : "Your identity has been verified. You now have a verification badge on your profile and faster approval on paid events.";
-
-    // In-app notification
-    await Notification.create({
-      user: request.user._id,
-      type: "verification_approved",
-      title: notifTitle,
-      body: notifBody,
-      data: {},
-    });
-
-    // Push notification
-    if (request.user.fcmToken) {
-      sendPushNotification(request.user.fcmToken, notifTitle, notifBody, {
-        type: "verification_approved",
-      }).catch(() => {});
-    }
+    // Shared with the automated Connect/Paystack paths so the user flag, the
+    // Vendor mirror, the request record and the notification can't diverge
+    // between how someone got verified.
+    await markVerified(request.user._id, { source: "manual", reviewedBy });
 
     res.json({ status: "approved" });
   } catch (error) {
@@ -533,7 +528,7 @@ export async function getPendingPaidEvents(req, res) {
         .limit(Number(limit))
         .populate(
           "createdBy",
-          "username email profilePicture verified paidEventsApproved paidEventsCount location paystackRecipientCode paystackOnboardingComplete wiseRecipientId wiseOnboardingComplete contactInfo emailVerifiedAt"
+          `username email profilePicture verified paidEventsApproved paidEventsCount contactInfo emailVerifiedAt ${PAYOUT_ROUTING_FIELDS}`
         ),
       Event.countDocuments(query),
     ]);
@@ -565,8 +560,11 @@ export async function getPendingPaidEvents(req, res) {
         delete obj.createdBy.location;
         delete obj.createdBy.paystackRecipientCode;
         delete obj.createdBy.paystackOnboardingComplete;
-        delete obj.createdBy.wiseRecipientId;
-        delete obj.createdBy.wiseOnboardingComplete;
+        delete obj.createdBy.stripeAccountId;
+        delete obj.createdBy.stripeAccountCountry;
+        delete obj.createdBy.stripeAccountCurrency;
+        delete obj.createdBy.stripeOnboardingComplete;
+        delete obj.createdBy.stripePayoutsEnabled;
       }
       return obj;
     });

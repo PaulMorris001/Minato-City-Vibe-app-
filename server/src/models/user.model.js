@@ -19,6 +19,14 @@ const userSchema = mongoose.Schema({
   // User is always a client by default, can optionally become a vendor
   isVendor: { type: Boolean, default: false },
 
+  // Set when someone signs up *as a business* rather than upgrading later.
+  // A vendor account can't exist until the business details are filled in
+  // (becomeVendor needs a name, type and city), and that form comes after email
+  // verification — so this records the intent in between. Every entry point
+  // that routes a user after auth reads it to resume onboarding instead of
+  // dropping them into the client app, and becomeVendor clears it.
+  vendorSignupPending: { type: Boolean, default: false },
+
   // Passwordless "guest" account, created the first time someone buys a ticket
   // (for themselves or as a gift recipient) without signing up. Keyed by email,
   // so it upgrades seamlessly if they later register with the same address.
@@ -69,12 +77,20 @@ const userSchema = mongoose.Schema({
   paystackRecipientCode: { type: String },
   paystackOnboardingComplete: { type: Boolean, default: false },
 
-  // Wise payout fields (every seller outside the Paystack footprint). These
-  // vendors collect via Stripe (USD) but settle via Wise: the recipient account
-  // is created once during onboarding and reused for transfers.
-  wiseRecipientId: { type: String },
-  wiseRecipientCurrency: { type: String },
-  wiseOnboardingComplete: { type: Boolean, default: false },
+  // Stripe Connect payout fields (sellers inside Stripe's cross-border-payouts
+  // footprint: US, UK, EEA, CA, CH). They COLLECT via the platform Stripe
+  // account; settlement is a Transfer from the platform balance to their Express
+  // account once an admin approves the payout.
+  stripeAccountId: { type: String },
+  // ISO-3166-1 alpha-2 the Express account was opened in. Immutable on Stripe's
+  // side, so it's kept here to detect a later country change on the profile.
+  stripeAccountCountry: { type: String },
+  stripeAccountCurrency: { type: String },
+  stripeOnboardingComplete: { type: Boolean, default: false },
+  // account.payouts_enabled. A Transfer still succeeds while this is false —
+  // funds land in the vendor's Stripe balance but don't reach their bank — so
+  // it's surfaced in the UI rather than gating onboarding.
+  stripePayoutsEnabled: { type: Boolean, default: false },
 
   // Paid-event organizer trust: false until an admin approves their first paid event.
   // After approval, subsequent paid events skip the approval queue.
@@ -94,6 +110,15 @@ const userSchema = mongoose.Schema({
   // FCM push notification token (updated on each app launch)
   fcmToken: { type: String, default: null },
 
+  // Email/push channel preferences. Push follows the OS permission; these
+  // cover the channels we control. Default on — users opt out, not in.
+  notificationPrefs: {
+    eventReminderEmails: { type: Boolean, default: true },
+  },
+  // Minted the first time we email this user, so the reminder footer can carry
+  // a one-click unsubscribe that needs no login.
+  unsubscribeToken: { type: String, index: true, sparse: true },
+
   // Password reset fields
   resetPasswordOTP: { type: String },
   resetPasswordOTPExpires: { type: Date },
@@ -109,5 +134,10 @@ const userSchema = mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// The Connect webhook resolves the vendor by account id on every
+// `account.updated`, which Stripe emits liberally. Sparse — only Connect
+// vendors carry the field.
+userSchema.index({ stripeAccountId: 1 }, { sparse: true });
 
 export default mongoose.model("user", userSchema);

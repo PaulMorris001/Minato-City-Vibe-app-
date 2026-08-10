@@ -41,6 +41,59 @@ export const deletePushToken = async (req, res) => {
 };
 
 /**
+ * Read the email/push channel preferences for the authenticated user.
+ * Absent sub-fields fall back to the schema defaults (opt-out model).
+ */
+export const getNotificationPreferences = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("notificationPrefs").lean();
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({
+      preferences: {
+        eventReminderEmails: user.notificationPrefs?.eventReminderEmails !== false,
+      },
+    });
+  } catch (error) {
+    console.error("Get notification preferences error:", error);
+    res.status(500).json({ message: "Failed to load notification preferences" });
+  }
+};
+
+/**
+ * Update the channel preferences. Only the keys present in the body change, so
+ * the client can toggle one switch without echoing the whole object back.
+ */
+export const updateNotificationPreferences = async (req, res) => {
+  try {
+    const { eventReminderEmails } = req.body;
+    const update = {};
+    if (typeof eventReminderEmails === "boolean") {
+      update["notificationPrefs.eventReminderEmails"] = eventReminderEmails;
+    }
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ message: "No supported preference supplied" });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: update },
+      { new: true }
+    ).select("notificationPrefs");
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.json({
+      message: "Preferences updated",
+      preferences: {
+        eventReminderEmails: user.notificationPrefs?.eventReminderEmails !== false,
+      },
+    });
+  } catch (error) {
+    console.error("Update notification preferences error:", error);
+    res.status(500).json({ message: "Failed to update notification preferences" });
+  }
+};
+
+/**
  * Get all notifications for the authenticated user (newest first).
  */
 export const getNotifications = async (req, res) => {
@@ -83,40 +136,28 @@ export const markAllRead = async (req, res) => {
 };
 
 /**
- * Called by the mobile after a ticket/guide purchase to notify the seller.
- * Body: { type: "ticket" | "guide", id: eventId | guideId }
+ * DEPRECATED — no-op. Sale notifications are written server-side now.
+ *
+ * This used to be called by the BUYER's client after checkout to notify the
+ * seller, which made a seller's record of their own sale depend on the buyer's
+ * app staying open long enough to fire it. Web checkout never called it at all.
+ * It also read `guide.createdBy`, a field that doesn't exist on the Guide schema
+ * (it's `author`), so every guide branch wrote `{ user: undefined }`, failed
+ * validation, and had the error swallowed by the catch below — guide sellers
+ * never received a single in-app sale notification.
+ *
+ * Both are fixed in services/payments/fulfillment.js, which notifies from the
+ * server the moment a payment is verified.
+ *
+ * Returns 200 rather than 410: app binaries already in the wild still call this
+ * and only `.catch(() => {})` around it, so a 200 guarantees no error surfaces
+ * to a buyer. Delete the route once the warning below stops appearing in logs.
  */
 export const notifySold = async (req, res) => {
-  try {
-    const { type, id } = req.body;
-
-    if (type === "ticket") {
-      const event = await Event.findById(id);
-      if (!event) return res.status(404).json({ message: "Event not found" });
-
-      await Notification.create({
-        user: event.createdBy,
-        type: "ticket_sold",
-        title: "Ticket Sold!",
-        body: `Someone purchased a ticket for "${event.title}"`,
-        data: { eventId: id },
-      });
-    } else if (type === "guide") {
-      const guide = await Guide.findById(id);
-      if (!guide) return res.status(404).json({ message: "Guide not found" });
-
-      await Notification.create({
-        user: guide.createdBy,
-        type: "guide_sold",
-        title: "Guide Sold!",
-        body: `Someone purchased your guide "${guide.title}"`,
-        data: { guideId: id },
-      });
-    }
-
-    res.json({ message: "Notification sent" });
-  } catch (error) {
-    console.error("Notify sold error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
+  console.warn(
+    `[notifySold] Deprecated endpoint called by user ${req.user?.id} ` +
+      `(type=${req.body?.type}). Sale notifications are sent by fulfillment.js; ` +
+      `this client build is out of date.`
+  );
+  res.json({ message: "deprecated — sale notifications are sent server-side" });
 };

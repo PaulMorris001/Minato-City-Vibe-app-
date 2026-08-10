@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import { Fonts } from "@/constants/fonts";
 import { currencyPrefix } from "@/constants/payments";
 import { scaleFontSize } from "@/utils/responsive";
+import { usePosterAspect } from "@/hooks/usePosterAspect";
 import type { ExternalEvent } from "@/services/externalEvent.service";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -30,6 +31,9 @@ interface ExternalEventCardProps {
 
 function formatPriceLine(event: ExternalEvent): string | null {
   if (event.priceMin == null && event.priceMax == null) return null;
+  // Most Eventbrite listings are free registration; without this they'd read
+  // "From ₦0", which looks like missing data rather than the actual price.
+  if (!event.priceMin && !event.priceMax) return "Free";
   const sym = currencyPrefix(event.currency);
   if (event.priceMin != null && event.priceMax != null && event.priceMin !== event.priceMax) {
     return `${sym}${Math.round(event.priceMin)} – ${sym}${Math.round(event.priceMax)}`;
@@ -43,6 +47,8 @@ export default function ExternalEventCard({ event, style }: ExternalEventCardPro
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const priceLine = formatPriceLine(event);
+  // Matches PublicEventCard so the two sit level in a mixed feed.
+  const poster = usePosterAspect();
 
   // Card tap → detail screen (NOT the provider URL). Only the explicit
   // "Get Tickets" button in the detail screen sends users out to the provider.
@@ -50,7 +56,7 @@ export default function ExternalEventCard({ event, style }: ExternalEventCardPro
 
   return (
     <TouchableOpacity
-      style={[styles.eventCard, style]}
+      style={[styles.eventCard, style, poster.style]}
       activeOpacity={0.9}
       onPress={openDetail}
     >
@@ -62,6 +68,7 @@ export default function ExternalEventCard({ event, style }: ExternalEventCardPro
             contentFit="cover"
             cachePolicy="memory-disk"
             transition={200}
+            onLoad={poster.onLoad}
           />
         ) : (
           <LinearGradient

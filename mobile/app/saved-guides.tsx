@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Guide } from "@/libs/interfaces";
 import { Colors } from "@/constants/colors";
 import { Fonts } from "@/constants/fonts";
-import { useFormatPrice } from "@/hooks/useFormatPrice";
+import { priceLabel } from "@/constants/payments";
 import { fetchSavedGuides } from "@/libs/api";
 import { formatLocation } from "@/utils/location";
 import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
@@ -26,7 +26,6 @@ export default function SavedGuidesPage() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
-  const formatPrice = useFormatPrice();
   const [guides, setGuides] = useState<Guide[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -74,7 +73,7 @@ export default function SavedGuidesPage() {
       <View style={styles.cardFooter}>
         <Text style={styles.author} numberOfLines={1}>by {item.authorName}</Text>
         <Text style={styles.priceText}>
-          {item.price === 0 ? "FREE" : `$${formatPrice(item.price)}`}
+          {priceLabel(item.price, item.currency)}
         </Text>
       </View>
     </TouchableOpacity>

@@ -16,21 +16,22 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import * as Location from "expo-location";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
-import { currencyPrefix } from "@/constants/payments";
+import { currencyPrefix, priceLabel } from "@/constants/payments";
 import CreateEventModal from "@/components/client/CreateEventModal";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
+import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useLocation";
-import { useRefreshOnForeground } from "@/hooks/useRefreshOnForeground";
 import { trackEvent } from "@/utils/analytics";
 import { ensureAuth } from "@/utils/requireAuth";
+import SupportFab from "@/components/shared/SupportFab";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -91,13 +92,23 @@ function VendorCardSkeleton() {
   );
 }
 
+/**
+ * The populated vendor shape from /vendors and /vendors/search. The legacy
+ * fields below (vendorName/businessName/username/profilePicture/image, and
+ * vendorType as a bare string) are kept optional because older payloads used
+ * them — VendorCard falls back through both.
+ */
 interface Vendor {
   _id: string;
+  name?: string;
+  images?: string[];
+  city?: { name?: string; state?: string; country?: string };
+  vendorType?: { _id?: string; name?: string; icon?: string } | string;
+  // Legacy / alternate field names.
   vendorName?: string;
   businessName?: string;
   username?: string;
   category?: string;
-  vendorType?: string;
   profilePicture?: string;
   image?: string;
 }
@@ -245,7 +256,9 @@ function SmallExternalEventCard({
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const sym = currencyPrefix(event.currency);
-  const priceLabel =
+  // Named priceBadge, not priceLabel: this is a "from" price for an external
+  // listing, and the name priceLabel belongs to the shared money helper.
+  const priceBadge =
     event.priceMin != null ? `${sym}${Math.round(event.priceMin)}` : "TICKETS";
 
   return (
@@ -260,7 +273,7 @@ function SmallExternalEventCard({
             </View>
           )}
           <View style={[styles.smallCardBadge, styles.smallCardBadgePaid]}>
-            <Text style={styles.smallCardBadgeText}>{priceLabel}</Text>
+            <Text style={styles.smallCardBadgeText}>{priceBadge}</Text>
           </View>
         </View>
 
@@ -281,14 +294,20 @@ function SmallExternalEventCard({
 function VendorCard({ vendor, onPress }: { vendor: Vendor; onPress: () => void }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const name = vendor.vendorName || vendor.businessName || vendor.username || "Vendor";
-  const type = vendor.category || vendor.vendorType || "";
+  const name =
+    vendor.name || vendor.vendorName || vendor.businessName || vendor.username || "Vendor";
+  // vendorType is populated to an object; older payloads sent a bare string.
+  const type =
+    vendor.category ||
+    (typeof vendor.vendorType === "string" ? vendor.vendorType : vendor.vendorType?.name) ||
+    "";
+  const image = vendor.images?.[0] || vendor.profilePicture || vendor.image;
   return (
     <TouchableOpacity style={styles.vendorCard} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.vendorCardImage}>
-        {vendor.profilePicture || vendor.image ? (
+        {image ? (
           <Image
-            source={{ uri: vendor.profilePicture || vendor.image }}
+            source={{ uri: image }}
             style={{ width: "100%", height: "100%" }}
             contentFit="cover"
           />
@@ -332,8 +351,15 @@ function GuideCard({ guide, onPress }: { guide: TopGuide; onPress: () => void })
           <View style={styles.guideTopicBadge}>
             <Text style={styles.guideTopicText} numberOfLines={1}>{guide.topic}</Text>
           </View>
+          {/* Social proof, so only shown once there is any. A discovery card
+              reading "0 sold" argues against the guide it's advertising. */}
+          {guide.salesCount > 0 && (
+            <Text style={styles.guideCardSales} numberOfLines={1}>
+              {guide.salesCount} {guide.price === 0 ? "unlocked" : "sold"}
+            </Text>
+          )}
           <Text style={styles.guideCardPrice}>
-            {guide.price === 0 ? "FREE" : `${currencyPrefix(guide.currency)}${guide.price}`}
+            {priceLabel(guide.price, guide.currency)}
           </Text>
         </View>
       </View>
@@ -345,7 +371,7 @@ function GuideCardSkeleton() {
   const styles = useThemedStyles(createStyles);
   return (
     <View style={[styles.guideCard, { overflow: "hidden" }]}>
-      <Skeleton width="100%" height={70} borderRadius={0} />
+      <Skeleton width="100%" height={124} borderRadius={0} />
       <View style={{ padding: 12, gap: 8 }}>
         <Skeleton width="100%" height={14} />
         <Skeleton width={120} height={10} />
@@ -378,10 +404,6 @@ export default function Home() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [username, setUsername] = useState("");
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
-  // True once the saved city has been read from SecureStore (whether or not
-  // one was actually saved) — gates the very first events fetch so it never
-  // goes out unfiltered before we know the user's saved location.
-  const [locationLoaded, setLocationLoaded] = useState(false);
   // Set when the home feed is showing an IP-approximated location rather than
   // a precise device one — surfaces a nudge to grant location permission.
   const [locationBanner, setLocationBanner] = useState<"approximate" | null>(null);
@@ -411,10 +433,7 @@ export default function Home() {
       } else {
         setSelectedCity(null);
       }
-    } catch {
-    } finally {
-      setLocationLoaded(true);
-    }
+    } catch {}
   }, []);
 
   // Persists a detected/selected city as the home feed's default. `source`
@@ -423,9 +442,8 @@ export default function Home() {
   // which uses it to avoid clobbering an explicit pick with auto-detection
   // on a later cold start.
   const applyCity = useCallback(async (city: string, source: "auto" | "manual" = "auto") => {
-    setSelectedCity(city);
+    await setSharedActiveCity(city);
     try {
-      await SecureStore.setItemAsync("selectedCity", city);
       await SecureStore.setItemAsync("citySource", source);
     } catch {}
   }, []);
@@ -657,19 +675,11 @@ export default function Home() {
     setRefreshing(false);
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      loadSelectedCity();
-      return () => {};
-    }, [loadSelectedCity])
-  );
-
   useEffect(() => {
-    loadSelectedCity();
     fetchUsername();
     // Only resolve device/IP location once per app session — after that,
-    // focus-driven loadSelectedCity() calls respect whatever the user picks
-    // manually via the Select Location screen.
+    // the shared active-city store (see useActiveCity) reflects whatever the
+    // user picks manually via the Select Location screen.
     if (!locationInitRef.current) {
       locationInitRef.current = true;
       resolveHomeLocation();
@@ -697,19 +707,9 @@ export default function Home() {
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      subscription.remove();
     };
-  }, [loadSelectedCity, selectedCity, locationLoaded, resolveHomeLocation]);
-
-  // Coming back after the app sat backgrounded for a while means everything
-  // here — events, vendors, guides — has likely gone stale, so refresh the
-  // whole feed rather than just the two pieces the old interval covered.
-  useRefreshOnForeground(() => {
-    fetchPublicEvents(selectedCity, true);
-    fetchExternalEvents(selectedCity);
-    fetchHighlights(selectedCity);
-    fetchVendors();
-    fetchTopGuides(selectedCity);
-  });
+  }, [loadSelectedCity, selectedCity, resolveHomeLocation]);
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
     if (!(await ensureAuth("buy a ticket"))) return;
@@ -725,14 +725,9 @@ export default function Home() {
       return;
     }
 
-    const token = await SecureStore.getItemAsync("token");
     trackEvent("ticket_purchased", { eventId, eventTitle });
+    // The organizer's sale notification is sent server-side by fulfillment.js.
     Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
-    fetch(`${BASE_URL}/notifications/sold`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "ticket", id: eventId }),
-    }).catch(() => {});
     fetchPublicEvents();
   };
 
@@ -856,39 +851,21 @@ export default function Home() {
       >
         {/* Greeting */}
         <View style={styles.greetingSection}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.greetingText}>
-              {getGreeting()}{username ? `, ${username}` : ""} {getGreetingEmoji()}
-            </Text>
+          <Text style={styles.greetingText}>
+            {getGreeting()}{username ? `, ${username}` : ""} {getGreetingEmoji()}
+          </Text>
+          {/* Date and city read as one line — "here's when and where you're
+              browsing". The chip was in the navbar; it belongs with the date. */}
+          <View style={styles.greetingDateRow}>
             <Text style={styles.greetingDate}>
               {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
             </Text>
+            <ActiveLocationChip city={selectedCity} compact />
           </View>
         </View>
 
-        <View style={styles.searchSection}>
-          <TouchableOpacity
-            style={styles.locationPill}
-            activeOpacity={0.85}
-            onPress={() => router.push("/select-location" as any)}
-          >
-            <Ionicons name="location-outline" size={18} color={colors.primary} />
-            <View style={styles.locationTextWrap}>
-              <Text style={styles.locationLabel}>Location</Text>
-              <Text style={styles.locationValue}>{selectedCity || "All"}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.textDim} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.searchBar}
-            activeOpacity={0.85}
-            onPress={() => router.push("/search" as any)}
-          >
-            <Ionicons name="search-outline" size={18} color={colors.textDim} />
-            <Text style={styles.searchPlaceholder}>Search events & guides</Text>
-          </TouchableOpacity>
-        </View>
+        {/* The search bar that used to sit here moved into the unified search
+            page. */}
 
         {locationBanner === "approximate" && (
           <View style={styles.locationBanner}>
@@ -1278,6 +1255,10 @@ export default function Home() {
         </LinearGradient>
       </TouchableOpacity>
 
+      {/* Labelled support pill, bottom-left so it clears the create FAB. It
+          gates itself on tap, so guests get the standard sign-in prompt. */}
+      <SupportFab />
+
       <CreateEventModal
         visible={isModalVisible}
         onClose={() => setIsModalVisible(false)}
@@ -1300,61 +1281,15 @@ const createStyles = (c: ThemeColors) =>
     paddingBottom: 96,
   },
   greetingSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 12,
   },
-  searchSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    gap: 10,
-  },
-  locationPill: {
+  greetingDateRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 16,
-    backgroundColor: c.card,
-    borderWidth: 1,
-    borderColor: c.border,
-  },
-  locationTextWrap: {
-    flex: 1,
-  },
-  locationLabel: {
-    fontFamily: Fonts.regular,
-    fontSize: 11,
-    color: c.textDim,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-  locationValue: {
-    fontFamily: Fonts.semiBold,
-    fontSize: 14,
-    color: c.textBright,
-    marginTop: 2,
-  },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 16,
-    backgroundColor: c.card,
-    borderWidth: 1,
-    borderColor: c.border,
-  },
-  searchPlaceholder: {
-    flex: 1,
-    fontFamily: Fonts.regular,
-    fontSize: 15,
-    color: c.textDim,
+    justifyContent: "space-between",
+    gap: 12,
   },
   locationBanner: {
     flexDirection: "row",
@@ -1444,6 +1379,8 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 13,
     color: c.textDim,
     marginTop: 4,
+    // Yields to the chip when a long city name needs the room.
+    flexShrink: 1,
   },
   heroCard: {
     marginHorizontal: 14,
@@ -1756,7 +1693,10 @@ const createStyles = (c: ThemeColors) =>
     overflow: "hidden",
   },
   guideCardBanner: {
-    height: 70,
+    // 220x124 (16:9) rather than the old 220x70. A 70px band cropped all but a
+    // sliver out of every cover; the cards sit in a horizontal rail, so they
+    // must stay a uniform height and cannot adapt per photo.
+    height: 124,
     paddingHorizontal: 12,
     justifyContent: "center",
   },
@@ -1797,6 +1737,12 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.medium,
     fontSize: 11,
     color: c.primary,
+  },
+  guideCardSales: {
+    fontFamily: Fonts.medium,
+    fontSize: 11,
+    color: c.textDim,
+    marginRight: 8,
   },
   guideCardPrice: {
     fontFamily: Fonts.bold,

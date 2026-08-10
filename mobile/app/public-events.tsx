@@ -67,6 +67,17 @@ const priceOf = (e: PublicEvent) => (e.isPaid ? e.ticketPrice ?? 0 : 0);
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
+// Events carry no coordinates, so "nearby" is a proxy: the most active OTHER
+// city in the same state/country (see findNearbyCityEvents on the server),
+// returned only when the searched city's own results are thin.
+interface NearbyCity {
+  city: string;
+  state: string | null;
+  country: string | null;
+  totalThere: number;
+  events: PublicEvent[];
+}
+
 export default function PublicEventsPage() {
   const { isDark, colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -81,6 +92,7 @@ export default function PublicEventsPage() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [totalEvents, setTotalEvents] = useState(0);
+  const [nearby, setNearby] = useState<NearbyCity | null>(null);
 
   const [discoverLoc, setDiscoverLoc] = useState<Partial<LocationSelection> | null>(null);
   const [onlineOnly, setOnlineOnly] = useState(false);
@@ -146,6 +158,7 @@ export default function PublicEventsPage() {
           setPublicEvents((prev) => (isRefresh || pageNum === 1 ? newEvents : [...prev, ...newEvents]));
           setTotalEvents(data.total || newEvents.length);
           setHasMore(newEvents.length === EVENTS_PER_PAGE);
+          if (pageNum === 1) setNearby(data.nearby || null);
         } else {
           Alert.alert("Error", data.message || "Failed to load events");
         }
@@ -239,13 +252,8 @@ export default function PublicEventsPage() {
       if (result.error) Alert.alert("Payment Failed", result.error);
       return;
     }
-    const token = await SecureStore.getItemAsync("token");
+    // The organizer's sale notification is sent server-side by fulfillment.js.
     Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
-    fetch(`${BASE_URL}/notifications/sold`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "ticket", id: eventId }),
-    }).catch(() => {});
     setPage(1);
     fetchPublicEvents(1, true);
   };
@@ -554,11 +562,14 @@ export default function PublicEventsPage() {
               <Text style={styles.priceText}>
                 {isFree ? "Free" : `${currencyPrefix(item.currency)}${priceOf(item)}`}
               </Text>
-              {typeof left === "number" && (
+              {/* Spot counts are organizer-only; guests just get "Sold out". */}
+              {typeof left === "number" ? (
                 <Text style={[styles.scarcityText, scarce && { color: SCARCITY_WARN }]}>
                   {scarce ? `Only ${left} left` : `${left} spots`}
                 </Text>
-              )}
+              ) : item.soldOut ? (
+                <Text style={[styles.scarcityText, { color: SCARCITY_WARN }]}>Sold out</Text>
+              ) : null}
             </View>
             <TouchableOpacity
               style={styles.ctaBtn}
@@ -661,8 +672,25 @@ export default function PublicEventsPage() {
     );
   };
 
+  // Rendered below the primary list — either after a thin result set or
+  // after the "no events" empty state (ListFooterComponent renders in both
+  // cases). Reuses the same card layout as the primary feed.
+  const renderNearbySection = () => {
+    if (!nearby || nearby.events.length === 0) return null;
+    const label = nearby.state ? `${nearby.city}, ${nearby.state}` : nearby.city;
+    return (
+      <View style={styles.nearbySection}>
+        <Text style={styles.nearbyTitle}>Not much happening here — check out {label}</Text>
+        {nearby.events.map((ev) => (
+          <View key={`nearby-${ev._id}`}>{renderCard({ item: { _kind: "native", data: ev } })}</View>
+        ))}
+      </View>
+    );
+  };
+
   const renderFooter = () => {
-    if (loading || visibleEvents.length === 0) return null;
+    if (loading) return null;
+    if (visibleEvents.length === 0) return renderNearbySection();
     if (loadingMore) {
       return (
         <View style={styles.footerLoader}>
@@ -670,11 +698,25 @@ export default function PublicEventsPage() {
         </View>
       );
     }
-    if (!hasMore) return null;
+    if (!hasMore) {
+      // Confirms pagination actually finished rather than silently stopping —
+      // otherwise the list just ends with no feedback, which reads as broken.
+      return (
+        <>
+          <View style={styles.footerLoader}>
+            <Text style={styles.footerText}>You've reached the end</Text>
+          </View>
+          {renderNearbySection()}
+        </>
+      );
+    }
     return (
-      <TouchableOpacity style={styles.seeMoreBtn} onPress={handleLoadMore} activeOpacity={0.85}>
-        <Text style={styles.seeMoreBtnText}>See more events</Text>
-      </TouchableOpacity>
+      <>
+        <TouchableOpacity style={styles.seeMoreBtn} onPress={handleLoadMore} activeOpacity={0.85}>
+          <Text style={styles.seeMoreBtnText}>See more events</Text>
+        </TouchableOpacity>
+        {renderNearbySection()}
+      </>
     );
   };
 
@@ -1050,6 +1092,15 @@ const createStyles = (c: ThemeColors) =>
     borderColor: "rgba(168,85,247,0.25)",
   },
   seeMoreBtnText: { fontFamily: AU_FONT.bodyBold, fontSize: 14, color: c.primaryLight },
+
+  // Nearby-city fallback
+  nearbySection: { marginTop: 22, gap: 14 },
+  nearbyTitle: {
+    fontFamily: AU_FONT.bodySemi,
+    fontSize: 13,
+    color: c.textDim,
+    marginHorizontal: 20,
+  },
 
   // Sheets
   sheetOverlay: { flex: 1, backgroundColor: c.modalOverlay },

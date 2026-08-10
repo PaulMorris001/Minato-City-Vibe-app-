@@ -5,7 +5,7 @@ import { View, ActivityIndicator } from "react-native";
 import { consumePendingDeepLink, deepLinkToPath } from "@/utils/pendingDeepLink";
 
 import { useTheme } from "@/contexts/ThemeContext";
-type AppState = "checking" | "onboarding" | "login" | "home" | "deeplink";
+type AppState = "checking" | "onboarding" | "login" | "home" | "deeplink" | "vendorSetup";
 
 export default function Index() {
   const { colors } = useTheme();
@@ -28,14 +28,30 @@ export default function Index() {
       }
 
       // Logged in — see if a notification or universal link is waiting for us.
+      // A deep link wins over vendor setup: someone opening a shared event
+      // should get the event, not a form.
       const pending = consumePendingDeepLink();
       const path = pending ? deepLinkToPath(pending) : null;
       if (path) {
         setDeepLinkPath(path);
         setAppState("deeplink");
-      } else {
-        setAppState("home");
+        return;
       }
+
+      // Signed up as a business and never finished the details form — resume it
+      // instead of opening the client app they never asked for.
+      try {
+        const raw = await SecureStore.getItemAsync("user");
+        const u = raw ? JSON.parse(raw) : null;
+        if (u?.vendorSignupPending && !u?.isVendor) {
+          setAppState("vendorSetup");
+          return;
+        }
+      } catch {
+        // Unparseable stored user — fall through to Home.
+      }
+
+      setAppState("home");
     };
     checkAppState();
   }, []);
@@ -51,5 +67,6 @@ export default function Index() {
   if (appState === "onboarding") return <Redirect href="/onboarding" />;
   if (appState === "login") return <Redirect href="/login" />;
   if (appState === "deeplink" && deepLinkPath) return <Redirect href={deepLinkPath as any} />;
+  if (appState === "vendorSetup") return <Redirect href={"/vendor-setup" as any} />;
   return <Redirect href="/(tabs)/home" />;
 }

@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Linking,
   Platform,
+  Switch,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect, useNavigation } from "expo-router";
@@ -21,10 +22,11 @@ import * as Location from "expo-location";
 import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
-import { payoutOnboardingRoute } from "@/constants/payments";
+import { payoutOnboardingRoute, payoutUnavailableMessage } from "@/constants/payments";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { ImagePickerButton } from "@/components/shared";
 import { getAddressFromCurrentPosition } from "@/hooks/useLocation";
+import { useActiveCity, setActiveCity } from "@/hooks/useActiveCity";
 import type { LocationSelection } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { useAccount } from "@/contexts/AccountContext";
@@ -33,6 +35,8 @@ import { uploadImage } from "@/utils/imageUpload";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
+import { isSupportUser } from "@/constants/support";
+import { openSupportChat } from "@/utils/userNavigation";
 const THEME_OPTIONS = [
   { value: "system", label: "System", icon: "phone-portrait-outline" },
   { value: "light", label: "Light", icon: "sunny-outline" },
@@ -63,19 +67,28 @@ export default function SettingsScreen() {
   // SecureStore `selectedCity` the home feed reads, so a first-run IP guess
   // still shows here even before the user has ever tapped the button below.
   const [location, setLocation] = useState<Partial<LocationSelection> | null>(null);
-  const [homeCity, setHomeCity] = useState<string | null>(null);
+  const homeCity = useActiveCity();
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [user, setUser] = useState({
+    _id: "",
     username: "",
     email: "",
     isVendor: false,
     emailVerifiedAt: null as string | null,
     country: "",
   });
+  // Reminder emails are opt-out, so the switch starts on until the profile says
+  // otherwise. `savingReminders` blocks a double-tap while the PUT is in flight.
+  const [eventReminderEmails, setEventReminderEmails] = useState(true);
+  const [savingReminders, setSavingReminders] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<"none" | "pending" | "approved" | "rejected">("none");
   const [verificationNotes, setVerificationNotes] = useState("");
   const [licenseImage, setLicenseImage] = useState("");
   const [submittingVerification, setSubmittingVerification] = useState(false);
+
+  // Onboarding screen for whichever rail settles this user, or null when no rail
+  // reaches their country (they can still publish free listings).
+  const payoutRoute = payoutOnboardingRoute(user.country);
 
   // Inline username editing (client account only).
   const [editingUsername, setEditingUsername] = useState(false);
@@ -164,7 +177,6 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     fetchProfile();
-    loadHomeLocation();
   }, []);
 
   // Re-fetch when the screen regains focus so returning from /verify-email
@@ -172,19 +184,8 @@ export default function SettingsScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchProfile();
-      loadHomeLocation();
     }, [])
   );
-
-  // Fallback display only — reflects whatever the home feed is currently
-  // using (its own GPS/IP resolution), so this screen shows something
-  // sensible even before the user has ever tapped the button below.
-  const loadHomeLocation = async () => {
-    try {
-      const city = await SecureStore.getItemAsync("selectedCity");
-      setHomeCity(city || null);
-    } catch {}
-  };
 
   // The only way to set location anywhere in the app now — no typing. Grabs
   // device GPS (prompting for permission if needed), reverse-geocodes it,
@@ -244,9 +245,8 @@ export default function SettingsScreen() {
       setLocation(resolved);
       setUser((prev) => ({ ...prev, country: resolved.country }));
       if (resolved.city) {
-        await SecureStore.setItemAsync("selectedCity", resolved.city);
+        await setActiveCity(resolved.city);
         await SecureStore.setItemAsync("citySource", "auto");
-        setHomeCity(resolved.city);
       }
       showSuccess(`Location set to ${resolved.city || resolved.country}`);
     } catch {
@@ -271,6 +271,7 @@ export default function SettingsScreen() {
 
       const userData = profileRes.data.user;
       setUser({
+        _id: userData._id || userData.id || "",
         username: userData.username || "",
         email: userData.email || "",
         isVendor: userData.isVendor || false,
@@ -279,6 +280,9 @@ export default function SettingsScreen() {
       });
       setProfilePicture(userData.profilePicture || "");
       setBio(userData.bio || "");
+      setEventReminderEmails(
+        userData.notificationPrefs?.eventReminderEmails !== false
+      );
       if (userData.location?.country) {
         setLocation({
           country: userData.location.country,
@@ -295,6 +299,25 @@ export default function SettingsScreen() {
       showError("Failed to load profile");
     } finally {
       setLoading(false);
+    }
+  };
+
+  /** Optimistic toggle — reverts if the server rejects the change. */
+  const handleToggleReminderEmails = async (value: boolean) => {
+    setEventReminderEmails(value);
+    setSavingReminders(true);
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      await axios.put(
+        `${BASE_URL}/notifications/preferences`,
+        { eventReminderEmails: value },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+    } catch {
+      setEventReminderEmails(!value);
+      showError("Couldn't update your email preference. Please try again.");
+    } finally {
+      setSavingReminders(false);
     }
   };
 
@@ -683,23 +706,77 @@ export default function SettingsScreen() {
 
       
 
-      {/* Payouts — for guide sellers */}
+      {/* Earnings — for guide sellers and vendors alike (not vendor-gated) */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Earnings</Text>
         <Text style={styles.sectionDescription}>
-          Set up payouts to receive money from guide sales
+          See what you've earned and set up how you get paid
         </Text>
 
         <TouchableOpacity
           style={styles.preferenceItem}
-          onPress={() => router.push(payoutOnboardingRoute(user.country) as any)}
+          onPress={() => router.push("/earnings" as any)}
         >
           <View style={styles.preferenceLeft}>
-            <Ionicons name="cash-outline" size={22} color={Colors.primary} />
-            <Text style={styles.preferenceText}>Payout Setup</Text>
+            <Ionicons name="stats-chart-outline" size={22} color={Colors.primary} />
+            <Text style={styles.preferenceText}>Earnings & payouts</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
         </TouchableOpacity>
+
+        {payoutRoute ? (
+          <TouchableOpacity
+            style={styles.preferenceItem}
+            onPress={() => router.push(payoutRoute as any)}
+          >
+            <View style={styles.preferenceLeft}>
+              <Ionicons name="cash-outline" size={22} color={Colors.primary} />
+              <Text style={styles.preferenceText}>Payout Setup</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+        ) : (
+          /* No rail reaches this country. Rendered inert rather than hidden —
+             a seller wondering where payout setup went deserves the reason. */
+          <View style={[styles.preferenceItem, { opacity: 0.6 }]}>
+            <View style={[styles.preferenceLeft, { flex: 1, paddingRight: 12 }]}>
+              <Ionicons name="cash-outline" size={22} color={colors.textMuted} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.preferenceText}>Payout Setup</Text>
+                <Text style={styles.reminderHint}>
+                  {payoutUnavailableMessage(user.country)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+      </View>
+
+      {/* Notification channels */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Notifications</Text>
+        <Text style={styles.sectionDescription}>
+          Push notifications follow your device settings. These control what we
+          send to your inbox.
+        </Text>
+        <View style={[styles.preferenceItem, { borderBottomWidth: 0 }]}>
+          <View style={[styles.preferenceLeft, { flex: 1, paddingRight: 12 }]}>
+            <Ionicons name="mail-outline" size={22} color={Colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.preferenceText}>Event reminder emails</Text>
+              <Text style={styles.reminderHint}>
+                {"A reminder the day before an event you're going to."}
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={eventReminderEmails}
+            onValueChange={handleToggleReminderEmails}
+            disabled={savingReminders}
+            trackColor={{ false: colors.borderMuted, true: Colors.primary }}
+            thumbColor="#fff"
+          />
+        </View>
       </View>
 
       {/* Email Verification status */}
@@ -795,6 +872,28 @@ export default function SettingsScreen() {
             </>
           )}
         </View>
+
+      {/* Support — hidden when you are the support account */}
+      {!isSupportUser(user._id) && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Support</Text>
+          <Text style={styles.sectionDescription}>
+            Having trouble with an event, payment or your account? Message our
+            team and we'll get back to you here.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.preferenceItem, { borderBottomWidth: 0 }]}
+            onPress={() => openSupportChat()}
+          >
+            <View style={styles.preferenceLeft}>
+              <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.textBody} />
+              <Text style={styles.preferenceText}>Contact Support</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Additional Settings */}
       <View style={styles.section}>
@@ -1105,6 +1204,12 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 16,
     fontFamily: Fonts.medium,
     color: c.textBody,
+  },
+  reminderHint: {
+    fontSize: 13,
+    fontFamily: Fonts.regular,
+    color: c.textSecondary,
+    marginTop: 2,
   },
   themeToggle: {
     flexDirection: "row",

@@ -20,7 +20,7 @@ import axios from "axios";
 import { useRouter } from "expo-router";
 import socketService from "@/services/socket.service";
 import { BASE_URL } from "@/constants/constants";
-import { payoutProviderForCountry } from "@/constants/payments";
+import { payoutProviderForCountry, PAYOUT_STATUS_ENDPOINTS } from "@/constants/payments";
 import { fetchVendorTypes } from "@/libs/api";
 import { VendorType, LocationSelection } from "@/libs/interfaces";
 import { LocationPicker, ImagePickerButton } from "@/components/shared";
@@ -47,6 +47,9 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [payoutOnboardingComplete, setPayoutOnboardingComplete] = useState(false);
+  // Whether any payout rail reaches this vendor's country. Distinct from the
+  // flag above: "not onboarded" is fixable and gets a CTA, "unsupported" is not.
+  const [payoutSupported, setPayoutSupported] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [vendorTypes, setVendorTypes] = useState<VendorType[]>([]);
@@ -82,15 +85,21 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
   }, []);
 
   // Check the right provider's payout status for this vendor's country
-  // (Paystack for Nigerian vendors, Wise for everyone else). Called once the
-  // country is known.
+  // (Paystack for Nigerian vendors, Stripe Connect inside the cross-border
+  // footprint). Called once the country is known.
   const fetchPayoutStatus = async (country: string) => {
+    const provider = payoutProviderForCountry(country);
+    // No rail in this country — there is no status to fetch. Without this guard
+    // the lookup yields undefined and we'd request `${BASE_URL}undefined`.
+    if (!provider) {
+      setPayoutSupported(false);
+      setPayoutOnboardingComplete(false);
+      return;
+    }
+    setPayoutSupported(true);
     try {
       const token = await SecureStore.getItemAsync("token");
-      const provider = payoutProviderForCountry(country);
-      const path =
-        provider === "paystack" ? "/paystack/connect/status" : "/wise/connect/status";
-      const res = await axios.get(`${BASE_URL}${path}`, {
+      const res = await axios.get(`${BASE_URL}${PAYOUT_STATUS_ENDPOINTS[provider]}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setPayoutOnboardingComplete(res.data.onboardingComplete ?? false);
@@ -358,10 +367,22 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
                 label={profile.verified ? "Verified" : "Verification pending"}
               />
               <StatusPill
-                tone={payoutOnboardingComplete ? "green" : "amber"}
+                tone={payoutSupported && payoutOnboardingComplete ? "green" : "amber"}
                 icon="cash-outline"
-                label={payoutOnboardingComplete ? "Payouts active" : "Set up payouts →"}
-                onPress={payoutOnboardingComplete ? undefined : () => router.push("/settings")}
+                label={
+                  !payoutSupported
+                    ? "Payouts not in your country yet"
+                    : payoutOnboardingComplete
+                      ? "Payouts active"
+                      : "Set up payouts →"
+                }
+                // No tap target when it's unsupported — there is nothing for the
+                // vendor to do, and a CTA that leads nowhere is worse than none.
+                onPress={
+                  payoutSupported && !payoutOnboardingComplete
+                    ? () => router.push("/settings")
+                    : undefined
+                }
               />
               <StatusPill tone="purple" icon="star" label={`${rating.toFixed(1)} · ${ratingCount}`} />
             </View>

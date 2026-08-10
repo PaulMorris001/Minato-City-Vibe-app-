@@ -46,13 +46,26 @@ function isExpectedAuthError(error: any): boolean {
   return KNOWN_USER_FACING_ERRORS.some((needle) => msg.includes(needle));
 }
 
+interface SocialAuthButtonsProps {
+  /**
+   * Set by the signup screen to the account type the user picked. "vendor"
+   * sends a brand-new account into vendor setup instead of the client tabs.
+   *
+   * Neither OAuth provider can carry this through its callback (Google's runs
+   * through a server-held `state`), so the intent is recorded with a follow-up
+   * call once we hold a token. Omitted on the login screen — an existing
+   * account's type is whatever it already is.
+   */
+  accountType?: "client" | "vendor";
+}
+
 /**
  * OR divider + "Continue with Apple / Google" buttons, shared between the login
  * and signup screens. Handles the full OAuth flow: token exchange with the
  * backend, secure storage, push registration, the vendor role picker, and
  * navigation. Apple is shown on supported iOS devices only.
  */
-export function SocialAuthButtons() {
+export function SocialAuthButtons({ accountType }: SocialAuthButtonsProps = {}) {
   const router = useRouter();
   const { setActiveAccount } = useAccount();
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -74,13 +87,42 @@ export function SocialAuthButtons() {
     await SecureStore.setItemAsync("token", token);
     await SecureStore.setItemAsync("user", JSON.stringify(user));
     registerForPushNotifications();
+
     if (user.isVendor) {
       setUserData(user);
       setShowRolePicker(true);
-    } else {
-      await setActiveAccount("client");
-      router.replace("/(tabs)/home");
+      return;
     }
+
+    // Signed up as a business: flag it server-side (so the setup form can be
+    // resumed on any later login) and go straight there. A failed flag write
+    // isn't worth blocking on — they still reach the form now, and finishing it
+    // is what actually creates the vendor account.
+    if (accountType === "vendor" || user.vendorSignupPending) {
+      if (accountType === "vendor" && !user.vendorSignupPending) {
+        try {
+          await axios.post(
+            `${BASE_URL}/vendor-signup-intent`,
+            {},
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          await SecureStore.setItemAsync(
+            "user",
+            JSON.stringify({ ...user, vendorSignupPending: true })
+          );
+        } catch (err) {
+          remoteLog("warn", "vendor signup intent failed", {
+            userId: user.id,
+            message: (err as any)?.message,
+          });
+        }
+      }
+      router.replace("/vendor-setup" as any);
+      return;
+    }
+
+    await setActiveAccount("client");
+    router.replace("/(tabs)/home");
   };
 
   const selectRole = async (role: "client" | "vendor") => {

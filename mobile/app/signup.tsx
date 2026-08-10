@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  StatusBar,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -37,10 +38,14 @@ type StepKey = "username" | "email" | "password" | "confirm";
 
 type AvailStatus = "idle" | "checking" | "available" | "taken" | "error";
 
+type AccountType = "client" | "vendor";
+
 type StepDef = {
   key: StepKey;
   question: string;
   hint: string;
+  /** Replaces `hint` when signing up as a business. */
+  vendorHint?: string;
   placeholder: string;
   secure?: boolean;
   keyboardType?: "default" | "email-address";
@@ -52,6 +57,7 @@ const STEPS: StepDef[] = [
     key: "username",
     question: "What's your\nuser name?",
     hint: "Show up as @___ on RSVPs and parties.",
+    vendorHint: "Your handle. The business name comes next — you can differ.",
     placeholder: "@nightowl",
     autoComplete: "username",
   },
@@ -59,6 +65,7 @@ const STEPS: StepDef[] = [
     key: "email",
     question: "Where do we\nfind you?",
     hint: "For RSVPs and recovery. We never spam.",
+    vendorHint: "For bookings, payouts and recovery. We never spam.",
     placeholder: "you@mail.com",
     keyboardType: "email-address",
     autoComplete: "email",
@@ -103,6 +110,12 @@ function computePasswordStrength(pwd: string) {
 export default function Signup() {
   const router = useRouter();
   const inputRef = useRef<TextInput>(null);
+  /**
+   * Which kind of account is being created. Chosen before the wizard starts —
+   * a vendor no longer has to sign up as a client and upgrade afterwards.
+   * `null` means the chooser is still on screen.
+   */
+  const [accountType, setAccountType] = useState<AccountType | null>(null);
   const [step, setStep] = useState(0);
   const [values, setValues] = useState<Record<StepKey, string>>({
     username: "",
@@ -219,6 +232,10 @@ export default function Signup() {
         email: values.email,
         password: values.password,
         termsAccepted: agreedTerms,
+        // The server records this as `vendorSignupPending` rather than creating
+        // a vendor outright — the business details form comes after email
+        // verification, and /become-vendor needs them.
+        accountType,
       });
 
       const user = res.data.user;
@@ -235,6 +252,10 @@ export default function Signup() {
           pathname: "/verify-signup-email",
           params: { email: values.email },
         } as any);
+      } else if (accountType === "vendor") {
+        // Straight to the business form — a vendor signup never touches the
+        // client tabs on the way in.
+        router.replace("/vendor-setup" as any);
       } else {
         router.replace("/(tabs)/home");
       }
@@ -343,6 +364,7 @@ export default function Signup() {
 
   const handleBack = () => {
     if (step > 0) setStep((s) => s - 1);
+    else setAccountType(null); // back out of the wizard to the account chooser
   };
 
   // CTA variant: primary if current field has any text and not mismatched.
@@ -359,13 +381,27 @@ export default function Signup() {
   // Accent fill under the input: empty → small dim slice, filled → full
   const accent = value ? 1 : 0.18 + step * 0.18;
 
+  // Step 0 of the flow, before any field: what kind of account is this? Kept
+  // out of STEPS because those are all single text inputs driven by one
+  // renderer, and this is a two-card pick.
+  if (!accountType) {
+    return (
+      <AccountTypeChooser
+        onPick={setAccountType}
+        onLogin={() => router.push("/login" as any)}
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
       <PosterBackground />
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          // "height" on Android — see login.tsx; undefined means no avoidance.
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <ScrollView
             contentContainerStyle={styles.scrollContent}
@@ -374,11 +410,7 @@ export default function Signup() {
           >
             {/* Top bar */}
             <View style={styles.topBar}>
-              <GlassRoundButton
-                icon="chevron-back"
-                onPress={handleBack}
-                disabled={step === 0}
-              />
+              <GlassRoundButton icon="chevron-back" onPress={handleBack} />
               <View style={styles.progressPill}>
                 <ProgressArc value={(step + 1) / STEPS.length} />
                 <Text style={styles.progressLabel}>
@@ -396,7 +428,9 @@ export default function Signup() {
             {/* Question */}
             <View style={styles.questionBlock}>
               <Text style={styles.question}>{current.question}</Text>
-              <Text style={styles.hint}>{current.hint}</Text>
+              <Text style={styles.hint}>
+                {(accountType === "vendor" && current.vendorHint) || current.hint}
+              </Text>
 
               <View style={styles.fieldWrap}>
                 <View style={styles.inputRow}>
@@ -563,7 +597,7 @@ export default function Signup() {
                     pointerEvents={agreedTerms ? "auto" : "none"}
                     style={!agreedTerms && { opacity: 0.45 }}
                   >
-                    <SocialAuthButtons />
+                    <SocialAuthButtons accountType={accountType} />
                   </View>
                   {/* Social signup also creates an account — same consent gate. */}
                   {!agreedTerms && (
@@ -592,6 +626,96 @@ export default function Signup() {
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
+  );
+}
+
+/**
+ * The first thing a new user sees. Business accounts used to be reachable only
+ * by signing up as a client and upgrading from the Vendors tab; picking
+ * "business" here routes straight into vendor setup after verification, so a
+ * vendor never has to create a client account first.
+ */
+function AccountTypeChooser({
+  onPick,
+  onLogin,
+}: {
+  onPick: (type: AccountType) => void;
+  onLogin: () => void;
+}) {
+  const options: {
+    type: AccountType;
+    icon: keyof typeof Ionicons.glyphMap;
+    title: string;
+    body: string;
+  }[] = [
+    {
+      type: "client",
+      icon: "sparkles",
+      title: "I'm going out",
+      body: "Find events, RSVP with friends, book vendors and buy tickets.",
+    },
+    {
+      type: "vendor",
+      icon: "briefcase",
+      title: "I'm a business",
+      body: "List your services, take bookings and get paid. Set up in one step.",
+    },
+  ];
+
+  return (
+    <View style={styles.container}>
+      <PosterBackground />
+      <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.wordmarkRow}>
+            <Wordmark />
+          </View>
+
+          <View style={styles.questionBlock}>
+            <Text style={styles.question}>How will you{"\n"}use it?</Text>
+            <Text style={styles.hint}>
+              Pick one to get started. You can add the other side later.
+            </Text>
+          </View>
+
+          <View style={styles.roleList}>
+            {options.map((o) => (
+              <TouchableOpacity
+                key={o.type}
+                style={styles.roleCard}
+                onPress={() => onPick(o.type)}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={o.title}
+              >
+                <View style={styles.roleIcon}>
+                  <Ionicons name={o.icon} size={22} color={AU.purpleSoft} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.roleTitle}>{o.title}</Text>
+                  <Text style={styles.roleBody}>{o.body}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={AU.textMute} />
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={{ flex: 1, minHeight: 16 }} />
+
+          <View style={styles.bottomBlock}>
+            <Text style={styles.footerText}>
+              Already on OurCityvibe?{" "}
+              <Text style={styles.footerLink} onPress={onLogin}>
+                Log in
+              </Text>
+            </Text>
+          </View>
+        </ScrollView>
       </SafeAreaView>
     </View>
   );
@@ -750,6 +874,38 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 10.5,
     color: AU.textMute,
     letterSpacing: 0.5,
+  },
+  roleList: { paddingHorizontal: 22, paddingTop: 28, gap: 12 },
+  roleCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: c.glassFillSubtle,
+    borderWidth: 1,
+    borderColor: AU.stroke,
+  },
+  roleIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 13,
+    backgroundColor: c.primaryFaded,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  roleTitle: {
+    fontFamily: "BricolageGrotesque_700Bold",
+    fontSize: 17,
+    color: AU.text,
+    letterSpacing: -0.3,
+  },
+  roleBody: {
+    fontFamily: "Outfit_400Regular",
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: AU.textDim,
+    marginTop: 3,
   },
   bottomBlock: { paddingHorizontal: 22, paddingBottom: 0 },
   socialWrap: { marginTop: 18, gap: 10 },

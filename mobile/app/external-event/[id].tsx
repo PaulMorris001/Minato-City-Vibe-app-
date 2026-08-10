@@ -58,6 +58,11 @@ const SOURCE_META: Record<
     chipBg: "rgba(0,206,200,0.22)",
     chipBorder: "rgba(0,206,200,0.45)",
   },
+  eventbrite: {
+    label: "EVENTBRITE",
+    chipBg: "rgba(240,85,55,0.22)",
+    chipBorder: "rgba(240,85,55,0.45)",
+  },
 };
 
 function GlassRoundIcon({
@@ -74,6 +79,9 @@ function GlassRoundIcon({
 
 function formatPriceLine(event: ExternalEvent): string | null {
   if (event.priceMin == null && event.priceMax == null) return null;
+  // Most Eventbrite listings are free registration; without this they'd read
+  // "From ₦0", which looks like missing data rather than the actual price.
+  if (!event.priceMin && !event.priceMax) return "Free";
   const sym = event.currency === "USD" ? "$" : event.currency + " ";
   if (event.priceMin != null && event.priceMax != null && event.priceMin !== event.priceMax) {
     return `${sym}${Math.round(event.priceMin)} – ${sym}${Math.round(event.priceMax)}`;

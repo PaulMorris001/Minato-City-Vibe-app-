@@ -21,7 +21,7 @@ import { scaleFontSize } from "@/utils/responsive";
 import { capitalize } from "@/libs/helpers";
 import { createUserShareLink } from "@/utils/shareLinks";
 import { Guide } from "@/libs/interfaces";
-import { useFormatPrice } from "@/hooks/useFormatPrice";
+import { priceLabel } from "@/constants/payments";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import followService from "@/services/follow.service";
@@ -32,6 +32,8 @@ import FollowButton from "@/components/shared/FollowButton";
 import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 import ImageViewerModal from "@/components/shared/ImageViewerModal";
 import { displayName } from "@/utils/displayName";
+import { isSupportUser } from "@/constants/support";
+import { openSupportChat } from "@/utils/userNavigation";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -47,6 +49,8 @@ interface UserData {
   verified?: boolean;
   vendorId?: string;
   vendorName?: string;
+  /** Set by the server for the official support account, which has no profile. */
+  isSupport?: boolean;
 }
 
 interface UserEvent {
@@ -62,7 +66,6 @@ export default function UserProfileScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { userId } = useLocalSearchParams<{ userId: string }>();
-  const formatPrice = useFormatPrice();
   const [user, setUser] = useState<UserData | null>(null);
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
@@ -89,9 +92,15 @@ export default function UserProfileScreen() {
   }, []);
 
   useEffect(() => {
-    if (userId) {
-      fetchAll();
+    if (!userId) return;
+    // Support has no profile — bounce straight to its conversation. This
+    // catches deep links (/user/<id> redirects here) as well as any caller
+    // that reached this route without going through openUserProfile.
+    if (isSupportUser(userId)) {
+      openSupportChat({ replace: true });
+      return;
     }
+    fetchAll();
   }, [userId]);
 
   const fetchAll = async () => {
@@ -120,6 +129,13 @@ export default function UserProfileScreen() {
       setIsFollowing(statusRes.isFollowing);
       setIsFollowedBy(statusRes.isFollowedBy);
       setIsMutual(statusRes.isMutual);
+
+      // Server-authoritative fallback: if the configured support ID differs
+      // from the one baked into this build, the marker still redirects us.
+      if (userRes?.data?.user?.isSupport) {
+        openSupportChat({ replace: true });
+        return;
+      }
 
       if (userRes?.data?.user) {
         setUser(userRes.data.user);
@@ -339,7 +355,7 @@ export default function UserProfileScreen() {
                 {guide.city}{guide.cityState ? `, ${guide.cityState}` : ""} • {guide.topic}
               </Text>
               <Text style={styles.guidePrice}>
-                {guide.price === 0 ? "FREE" : `$${formatPrice(guide.price)}`}
+                {priceLabel(guide.price, guide.currency)}
               </Text>
             </View>
           </TouchableOpacity>

@@ -1,7 +1,6 @@
 import { City, VendorType, Vendor } from "../models/vendor.model.js";
 import Review from "../models/review.model.js";
-
-const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+import { escapeRegex } from "../utils/escapeRegex.js";
 
 /**
  * Resolve a City document from a picker selection, creating it on first use.
@@ -93,7 +92,9 @@ export async function getVendorById(req, res) {
   try {
     const vendor = await Vendor.findById(req.params.vendorId)
       .populate("city", "name state country")
-      .populate("vendorType", "name icon");
+      .populate("vendorType", "name icon")
+      // Owner account, so the details screen can link through to their profile
+      .populate("user", "username profilePicture businessName");
     if (!vendor) return res.status(404).json({ message: "Vendor not found" });
     res.json(vendor);
   } catch (error) {
@@ -159,29 +160,70 @@ export async function getVendorReviews(req, res) {
   }
 }
 
+/**
+ * Build the Vendor filter for a text search, matching on the vendor's own
+ * fields plus its city and vendor-type names (so "Lagos" or "Photographer"
+ * find vendors, not just literal name matches).
+ *
+ * Shared with the unified /search endpoint. Returns null when `q` is too short,
+ * meaning "no text filter" rather than "no results" — callers decide whether
+ * that's a browse or an empty response.
+ */
+export async function buildVendorSearchQuery({ q, city }) {
+  const vendorQuery = {};
+
+  // Narrow to a city first, the same way browseVendors does.
+  if (city) {
+    const matchingCities = await City.find({
+      name: new RegExp(`^${escapeRegex(city)}$`, "i"),
+    }).select("_id");
+    vendorQuery.city = { $in: matchingCities.map((c) => c._id) };
+  }
+
+  const term = (q || "").trim();
+  if (term.length >= 2) {
+    const safe = escapeRegex(term);
+    const rx = { $regex: safe, $options: "i" };
+    // Resolve name matches on the related collections up front — two small
+    // queries beat an aggregation with $lookup at this scale.
+    const [cityMatches, typeMatches] = await Promise.all([
+      City.find({ name: rx }).select("_id"),
+      VendorType.find({ name: rx }).select("_id"),
+    ]);
+    vendorQuery.$and = [
+      {
+        $or: [
+          { name: rx },
+          { description: rx },
+          { city: { $in: cityMatches.map((c) => c._id) } },
+          { vendorType: { $in: typeMatches.map((t) => t._id) } },
+        ],
+      },
+    ];
+  }
+
+  return vendorQuery;
+}
+
+/**
+ * GET /vendors/search?query=&city=&limit=
+ *
+ * Returns the same populated shape as browseVendors so one row component can
+ * render both. An empty/short `query` is a BROWSE, not an error — home's vendor
+ * carousel calls this with `query=` and relied on that.
+ */
 export async function searchVendors(req, res) {
   try {
-    const { query } = req.query;
-    if (!query || query.trim().length < 2) {
-      return res.json({ vendors: [] });
-    }
-    const results = await Vendor.find({
-      name: { $regex: query.trim(), $options: "i" },
-    })
-      .populate("city", "name")
-      .populate("vendorType", "name")
-      .limit(20);
+    const { query, city } = req.query;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
 
-    const vendors = results.map((v) => ({
-      _id: v._id,
-      name: v.name,
-      vendorType: v.vendorType?.name || "",
-      location: { city: v.city?.name || "" },
-      images: v.images,
-      description: v.description,
-      verified: v.verified,
-      rating: v.rating,
-    }));
+    const vendorQuery = await buildVendorSearchQuery({ q: query, city });
+
+    const vendors = await Vendor.find(vendorQuery)
+      .populate("city", "name state country")
+      .populate("vendorType", "name icon")
+      .sort({ verified: -1, rating: -1 })
+      .limit(limit);
 
     res.json({ vendors });
   } catch (error) {

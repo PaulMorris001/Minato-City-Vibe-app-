@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -15,20 +15,20 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
 import { fetchVendorsBrowse } from "@/libs/api";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { ensureAuth } from "@/utils/requireAuth";
 import { formatLocation } from "@/utils/location";
 import { Fonts } from "@/constants/fonts";
 import BecomeVendorModal from "@/components/client/BecomeVendorModal";
-import { ActiveLocationChip } from "@/components/shared";
+import { ActiveLocationChip, VendorRow } from "@/components/shared";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 import { scaleFontSize } from "@/utils/responsive";
-import { useRefreshOnForeground } from "@/hooks/useRefreshOnForeground";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
+import MediaTile from "@/components/shared/MediaTile";
 interface BrowseVendor {
   _id: string;
   name: string;
@@ -47,8 +47,9 @@ export default function VendorsPage() {
   const [loading, setLoading] = useState(true);
   // The one shared active browsing location (set via Settings' device
   // location, the home feed, or Select Location from any of these screens) —
-  // read fresh on every focus so a change made elsewhere shows up here too.
-  const [activeCity, setActiveCity] = useState<string | null>(null);
+  // updates instantly wherever it's read, so a change made elsewhere shows up
+  // here too even if this screen never lost focus in between.
+  const activeCity = useActiveCity();
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const headerAnim = useRef(new Animated.Value(0)).current;
@@ -92,12 +93,6 @@ export default function VendorsPage() {
       useNativeDriver: true,
     }).start();
   }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      SecureStore.getItemAsync("selectedCity").then((city) => setActiveCity(city || null));
-    }, [])
-  );
 
   useEffect(() => {
     loadVendors(activeCity);
@@ -168,7 +163,7 @@ export default function VendorsPage() {
   const renderVendorCard = (item: BrowseVendor) => (
     <TouchableOpacity style={styles.card} activeOpacity={0.85} onPress={() => openVendor(item)}>
       {item.images && item.images.length > 0 ? (
-        <Image source={{ uri: item.images[0] }} style={styles.cardImage} />
+        <MediaTile uri={item.images[0]} style={styles.cardImage} posterOnly />
       ) : (
         <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
           <Ionicons name="business" size={26} color={colors.textMuted} />
@@ -247,23 +242,7 @@ export default function VendorsPage() {
               data={searchResults}
               keyExtractor={(item) => item._id}
               keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => (
-                <TouchableOpacity style={styles.searchRow} onPress={() => openVendor(item)}>
-                  {item.images && item.images.length > 0 ? (
-                    <Image source={{ uri: item.images[0] }} style={styles.searchRowImage} />
-                  ) : (
-                    <View style={[styles.searchRowImage, styles.cardImagePlaceholder]}>
-                      <Ionicons name="business" size={24} color={colors.textMuted} />
-                    </View>
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cardName}>{item.name}</Text>
-                    <Text style={styles.cardType}>{item.vendorType || "Vendor"}</Text>
-                    {item.location?.city && <Text style={styles.cardLocation}>{item.location.city}</Text>}
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-                </TouchableOpacity>
-              )}
+              renderItem={({ item }) => <VendorRow vendor={item} onPress={openVendor} />}
               showsVerticalScrollIndicator={false}
               contentInsetAdjustmentBehavior="automatic"
               contentContainerStyle={styles.listContent}

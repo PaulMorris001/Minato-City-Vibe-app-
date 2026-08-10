@@ -9,7 +9,9 @@ export function authenticateAdmin(req, res, next) {
 
   const token = authHeader.split(" ")[1];
   try {
-    const decoded = jwt.verify(token, config.jwt.secret);
+    // Verified against the admin-only secret — a user token can't satisfy this
+    // even if it somehow carried an `isAdmin` claim.
+    const decoded = jwt.verify(token, config.jwt.adminSecret);
     if (!decoded.isAdmin) {
       return res.status(403).json({ message: "Forbidden" });
     }

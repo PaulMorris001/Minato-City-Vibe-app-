@@ -6,7 +6,10 @@ import {
   Alert,
   TouchableOpacity,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
@@ -30,11 +33,25 @@ import type { ThemeColors } from "@/constants/theme";
 interface BecomeVendorModalProps {
   visible: boolean;
   onClose: () => void;
+  /**
+   * "sheet" (default) is the upgrade path: an existing client taps "Become a
+   * Vendor" and fills this in over the client tabs.
+   *
+   * "screen" is the signup path — someone who chose a business account at
+   * registration and has no client experience behind them yet. Same fields and
+   * same submit, but presented as a full page with its own header, because
+   * there is nothing underneath for a bottom sheet to sit on.
+   */
+  presentation?: "sheet" | "screen";
+  /** "screen" only: skip setup for now. Omit to hide the escape hatch. */
+  onSkip?: () => void;
 }
 
 export default function BecomeVendorModal({
   visible,
   onClose,
+  presentation = "sheet",
+  onSkip,
 }: BecomeVendorModalProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -63,6 +80,8 @@ export default function BecomeVendorModal({
       loadVendorTypes();
     }
   }, [visible]);
+
+  const isScreen = presentation === "screen";
 
   const loadVendorTypes = async () => {
     try {
@@ -133,6 +152,22 @@ export default function BecomeVendorModal({
         }
       );
 
+      // Keep the cached user in step with the server. Cold-start routing reads
+      // these two fields off SecureStore, so a stale copy would send a
+      // finished vendor straight back into this form on the next launch.
+      try {
+        const raw = await SecureStore.getItemAsync("user");
+        if (raw) {
+          const u = JSON.parse(raw);
+          await SecureStore.setItemAsync(
+            "user",
+            JSON.stringify({ ...u, isVendor: true, vendorSignupPending: false })
+          );
+        }
+      } catch {
+        // Non-fatal: /profile is authoritative and refetched on entry.
+      }
+
       Alert.alert(
         "Success!",
         "Welcome to OurCityvibe vendors! You can now manage your business.",
@@ -165,18 +200,17 @@ export default function BecomeVendorModal({
     setShowTypeDropdown(false);
   };
 
-  return (
-    <BottomSheetModal
-      visible={visible}
-      onClose={onClose}
-      title="Become a Vendor"
-      maxHeight="90%"
-    >
+  const formBody = (
+    <>
       <View style={styles.intro}>
         <Ionicons name="briefcase" size={48} color={Colors.primary} />
-        <Text style={styles.introTitle}>Start Your Business</Text>
+        <Text style={styles.introTitle}>
+          {isScreen ? "Set up your business" : "Start Your Business"}
+        </Text>
         <Text style={styles.introText}>
-          Fill in your business details to join OurCityvibe as a vendor
+          {isScreen
+            ? "These details are what people see when they find you on OurCityvibe. You can change any of them later."
+            : "Fill in your business details to join OurCityvibe as a vendor"}
         </Text>
       </View>
 
@@ -333,16 +367,71 @@ export default function BecomeVendorModal({
       />
 
       <PrimaryButton onPress={handleSubmit} loading={loading}>
-        Become a Vendor
+        {isScreen ? "Create vendor account" : "Become a Vendor"}
       </PrimaryButton>
 
+      {isScreen && onSkip && (
+        <TouchableOpacity onPress={onSkip} style={styles.skipButton} activeOpacity={0.7}>
+          <Text style={styles.skipText}>I&apos;ll do this later</Text>
+        </TouchableOpacity>
+      )}
+
       <View style={styles.bottomPadding} />
+    </>
+  );
+
+  // Signup path: nothing sits behind this, so it owns the whole screen.
+  if (isScreen) {
+    if (!visible) return null;
+    return (
+      <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <ScrollView
+            contentContainerStyle={styles.screenScroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {formBody}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <BottomSheetModal
+      visible={visible}
+      onClose={onClose}
+      title="Become a Vendor"
+      maxHeight="90%"
+    >
+      {formBody}
     </BottomSheetModal>
   );
 }
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: c.background,
+  },
+  screenScroll: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+  },
+  skipButton: {
+    alignItems: "center",
+    paddingVertical: 16,
+  },
+  skipText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: c.textSecondary,
+  },
   intro: {
     alignItems: "center",
     marginBottom: 32,

@@ -35,7 +35,9 @@ import { currencyPrefix } from "@/constants/payments";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
+import EventQRModal from "@/components/shared/EventQRModal";
 import { ImageViewerModal } from "@/components/shared";
+import MediaTile from "@/components/shared/MediaTile";
 import { GlassCard } from "@/components/event-details/GlassCard";
 import { AU } from "@/components/auth/tokens";
 import {
@@ -99,9 +101,16 @@ interface Event {
   ticketPrice?: number;
   ticketTiers?: { _id: string; name: string; price: number }[];
   currency?: string;
+  // Capacity + headcount reach the creator and co-hosts always, and everyone
+  // else only when the organizer flipped `showAttendance` on. The API strips
+  // them otherwise, so treat them as absent by default.
   maxGuests?: number;
   ticketsSold?: number;
   ticketsRemaining?: number;
+  /** Organizer opt-in: publishes the headcount/capacity numbers to all viewers. */
+  showAttendance?: boolean;
+  /** Server-computed, sent to everyone — the CTA needs it without the numbers. */
+  soldOut?: boolean;
   ticketingReady?: boolean;
   userHasPurchased?: boolean;
   approvalStatus?: "pending" | "approved" | "rejected";
@@ -119,8 +128,8 @@ interface Event {
     vendor: EventVendor;
     status: "pending" | "accepted" | "declined";
   }[];
-  rsvpCount: number;
-  rsvpUsers: RsvpUser[];
+  rsvpCount?: number;
+  rsvpUsers?: RsvpUser[];
   userRsvp: boolean;
   friendsGoing?: number;
   groupChatUnread?: number;
@@ -243,6 +252,7 @@ export default function EventDetailsPage() {
   const [refunding, setRefunding] = useState(false);
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
   const [shareSheetVisible, setShareSheetVisible] = useState(false);
+  const [qrVisible, setQrVisible] = useState(false);
   const [isFollowingHost, setIsFollowingHost] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [requestingJoin, setRequestingJoin] = useState(false);
@@ -472,8 +482,17 @@ export default function EventDetailsPage() {
       });
       const data = await res.json();
       if (res.ok) {
+        // rsvpCount only comes back for organizers now — keep the previous
+        // value rather than blanking the stat for a host who just RSVP'd.
         setEvent((prev) =>
-          prev ? { ...prev, userRsvp: status === "going", rsvpCount: data.rsvpCount } : prev
+          prev
+            ? {
+                ...prev,
+                userRsvp: status === "going",
+                rsvpCount:
+                  typeof data.rsvpCount === "number" ? data.rsvpCount : prev.rsvpCount,
+              }
+            : prev
         );
         trackEvent("event_rsvp", { eventId: event._id, status });
       } else {
@@ -865,6 +884,8 @@ export default function EventDetailsPage() {
   const isCancelled = !!event.cancelledAt;
   const isPending = event.approvalStatus === "pending";
   const isRejected = event.approvalStatus === "rejected";
+  // The server computes soldOut for everyone; the numbers behind it only reach
+  // organizers now, so the local fallback is just for older API responses.
   const ticketsRemaining =
     typeof event.ticketsRemaining === "number"
       ? event.ticketsRemaining
@@ -872,12 +893,21 @@ export default function EventDetailsPage() {
         ? Math.max(event.maxGuests - (event.rsvpCount ?? 0), 0)
         : undefined;
   const soldOut =
-    !!event.maxGuests && ticketsRemaining !== undefined && ticketsRemaining <= 0;
+    typeof event.soldOut === "boolean"
+      ? event.soldOut
+      : !!event.maxGuests && ticketsRemaining !== undefined && ticketsRemaining <= 0;
   const userHasTicket = !!event.userHasPurchased;
   const userIsGoing = !!event.userRsvp;
   const userIsInvited = event.userStatus === "accepted" || isCreator;
   const userIsPendingInvite = event.userStatus === "pending";
   const userHasRequested = event.userStatus === "requested";
+
+  // Headcount and capacity are for the people running the event, unless the
+  // organizer opted into publishing them. The API already withholds the numbers
+  // from everyone else (see applyAttendanceVisibility on the server); this gates
+  // the UI that renders them so a guest gets a clean layout instead of zeroes
+  // and empty bars.
+  const canSeeAttendance = isCreatorOrCohost || !!event.showAttendance;
 
   // Capacity numbers shared by the bar + the GOING / CAPACITY stat cards
   const goingCount = event.rsvpCount ?? event.rsvpUsers?.length ?? 0;
@@ -1061,7 +1091,9 @@ export default function EventDetailsPage() {
                   activeOpacity={0.85}
                   onPress={() => { setViewerIndex(i); setViewerVisible(true); }}
                 >
-                  <Image source={{ uri }} style={styles.galleryImage} contentFit="cover" />
+                  {/* Poster-only: a strip of live players is expensive, and
+                      tapping opens the full-screen viewer to actually watch. */}
+                  <MediaTile uri={uri} style={styles.galleryImage} posterOnly />
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -1164,8 +1196,8 @@ export default function EventDetailsPage() {
             </GlassCard>
           )}
 
-          {/* Stats grid */}
-          {!isCancelled && (
+          {/* Stats grid — organizer-only (headcount + capacity) */}
+          {!isCancelled && canSeeAttendance && (
             <View style={styles.statsRow}>
               <GlassCard style={styles.statCard}>
                 <Text style={styles.microLabel}>GOING</Text>
@@ -1197,8 +1229,8 @@ export default function EventDetailsPage() {
             </View>
           )}
 
-          {/* Capacity bar */}
-          {!isCancelled && !!event.maxGuests && (
+          {/* Capacity bar — organizer-only */}
+          {!isCancelled && canSeeAttendance && !!event.maxGuests && (
             <GlassCard>
               <View style={styles.rowBetween}>
                 <Text style={styles.microLabel}>FILLING UP</Text>
@@ -1414,64 +1446,86 @@ export default function EventDetailsPage() {
             </TouchableOpacity>
           )}
 
-          {/* Attendees */}
-          {!isCancelled && event.rsvpUsers && event.rsvpUsers.length > 0 && (
-            <GlassCard style={styles.attendeesCard}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.microLabel}>WHO'S COMING</Text>
-                <Text style={styles.attendeesHeadline}>
-                  {goingCount} going
-                  {(event.friendsGoing ?? 0) > 0 ? (
-                    <>
-                      <Text style={styles.attendeesSep}> · </Text>
-                      <Text style={styles.attendeesFriends}>
-                        {event.friendsGoing} friend{event.friendsGoing === 1 ? "" : "s"}
-                      </Text>
-                    </>
-                  ) : null}
-                </Text>
-              </View>
-              <View style={styles.avatarStack}>
-                {event.rsvpUsers.slice(0, 4).map((u, i) => (
-                  <TouchableOpacity
-                    key={u._id}
-                    activeOpacity={0.7}
-                    onPress={() => openUserProfile(u._id)}
-                    style={[
-                      styles.attendeeAvatarWrap,
-                      i > 0 && { marginLeft: -9 },
-                      { zIndex: 10 - i },
-                    ]}
-                  >
-                    {u.profilePicture ? (
-                      <Image
-                        source={{ uri: u.profilePicture }}
-                        style={styles.attendeeAvatar}
-                      />
-                    ) : (
-                      <View style={styles.attendeeAvatarFallback}>
-                        <Text style={styles.attendeeInitials}>
-                          {initialsOf(u.username)}
+          {/* Attendees — organizer-only; the guest list is other people's data.
+              Paid events come back with an empty rsvpUsers array (the server
+              swaps the RSVP list for a ticket count), so the card keys off the
+              headcount and opens the full roster instead. */}
+          {!isCancelled && canSeeAttendance && (goingCount > 0 || (event.ticketsSold ?? 0) > 0) && (
+            <TouchableOpacity
+              activeOpacity={isCreatorOrCohost ? 0.8 : 1}
+              // The roster endpoint is organizer-only, so a public viewer who
+              // can see the count still has nowhere to drill into.
+              disabled={!isCreatorOrCohost}
+              onPress={() => router.push(`/event-attendees/${event._id}` as any)}
+            >
+              <GlassCard style={styles.attendeesCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.microLabel}>WHO'S COMING</Text>
+                  <Text style={styles.attendeesHeadline}>
+                    {goingCount} going
+                    {(event.friendsGoing ?? 0) > 0 ? (
+                      <>
+                        <Text style={styles.attendeesSep}> · </Text>
+                        <Text style={styles.attendeesFriends}>
+                          {event.friendsGoing} friend{event.friendsGoing === 1 ? "" : "s"}
                         </Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                ))}
-                {event.rsvpUsers.length > 4 && (
-                  <View
-                    style={[
-                      styles.attendeeAvatarWrap,
-                      styles.attendeePlus,
-                      { marginLeft: -9 },
-                    ]}
-                  >
-                    <Text style={styles.attendeePlusText}>
-                      +{event.rsvpUsers.length - 4}
-                    </Text>
-                  </View>
+                      </>
+                    ) : null}
+                  </Text>
+                </View>
+                {/* The guest list is never part of the showAttendance opt-in —
+                    the server withholds rsvpUsers from non-organizers, so this
+                    strip (and its drill-in chevron) is organizer-only. */}
+                {isCreatorOrCohost && (
+                <View style={styles.avatarStack}>
+                  {(event.rsvpUsers ?? []).slice(0, 4).map((u, i) => (
+                    <TouchableOpacity
+                      key={u._id}
+                      activeOpacity={0.7}
+                      onPress={() => openUserProfile(u._id)}
+                      style={[
+                        styles.attendeeAvatarWrap,
+                        i > 0 && { marginLeft: -9 },
+                        { zIndex: 10 - i },
+                      ]}
+                    >
+                      {u.profilePicture ? (
+                        <Image
+                          source={{ uri: u.profilePicture }}
+                          style={styles.attendeeAvatar}
+                        />
+                      ) : (
+                        <View style={styles.attendeeAvatarFallback}>
+                          <Text style={styles.attendeeInitials}>
+                            {initialsOf(u.username)}
+                          </Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                  {(event.rsvpUsers?.length ?? 0) > 4 && (
+                    <View
+                      style={[
+                        styles.attendeeAvatarWrap,
+                        styles.attendeePlus,
+                        { marginLeft: -9 },
+                      ]}
+                    >
+                      <Text style={styles.attendeePlusText}>
+                        +{(event.rsvpUsers?.length ?? 0) - 4}
+                      </Text>
+                    </View>
+                  )}
+                  <Ionicons
+                    name="chevron-forward"
+                    size={18}
+                    color={colors.textMuted}
+                    style={{ marginLeft: 8 }}
+                  />
+                </View>
                 )}
-              </View>
-            </GlassCard>
+              </GlassCard>
+            </TouchableOpacity>
           )}
 
           {/* Co-hosts — creator can view, add, and remove */}
@@ -1686,13 +1740,10 @@ export default function EventDetailsPage() {
             />
             <SheetAction
               icon="qr-code-outline"
-              label="Scan a OurCityvibe code"
+              label="Event QR code"
               onPress={() => {
                 setActionSheetVisible(false);
-                // The scanner reads OurCityvibe event/guide QR codes and opens
-                // them in the app. Lives here (in the event action sheet) so its
-                // purpose is clear, rather than as a stray button on Home.
-                setTimeout(() => router.push("/scan" as any), 320);
+                setTimeout(() => setQrVisible(true), 320);
               }}
             />
             <SheetAction
@@ -1723,7 +1774,7 @@ export default function EventDetailsPage() {
                 invited co-hosts. Plain attendees never see this. */}
             {isCreatorOrCohost && (
               <SheetAction
-                icon="qr-code-outline"
+                icon="scan-outline"
                 label="Check in guests"
                 onPress={() => {
                   setActionSheetVisible(false);
@@ -1797,12 +1848,23 @@ export default function EventDetailsPage() {
         />
       ) : null}
 
-      {/* Share sheet — internal (chat) + external (OS share) */}
+      {/* Share sheet — internal (chat) + external (OS share) + QR */}
       <ShareSheet
         visible={shareSheetVisible}
         onClose={() => setShareSheetVisible(false)}
         target={shareTarget}
+        onShowQR={() => setTimeout(() => setQrVisible(true), 320)}
       />
+
+      {shareTarget && (
+        <EventQRModal
+          visible={qrVisible}
+          onClose={() => setQrVisible(false)}
+          eventId={event._id}
+          title={event.title}
+          fallbackUrl={shareTarget.externalUrl}
+        />
+      )}
 
       <ImageViewerModal
         visible={viewerVisible}

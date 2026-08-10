@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { router, useLocalSearchParams } from "expo-router";
 import { goBack } from "@/utils/navigation";
+import { openUserProfile } from "@/utils/userNavigation";
 import { scaleFontSize } from "@/utils/responsive";
 import { capitalize } from "@/libs/helpers";
 import followService, { FollowUser } from "@/services/follow.service";
@@ -74,12 +75,7 @@ export default function FollowersScreen() {
   const renderUserItem = ({ item }: { item: FollowUser }) => (
     <TouchableOpacity
       style={styles.userItem}
-      onPress={() =>
-        router.push({
-          pathname: "/user-profile",
-          params: { userId: item._id },
-        } as any)
-      }
+      onPress={() => openUserProfile(item._id)}
       activeOpacity={0.7}
     >
       <Avatar uri={item.profilePicture} name={displayName(item)} size={48} />

@@ -8,13 +8,15 @@ import mongoose from "mongoose";
  * and approves — only then does the actual provider transfer run. This is the
  * single gate the "admins approve payouts" flow hinges on.
  *
- * `amount` is stored in MAJOR units of `currency` for both live rails:
- *   - wise     → major USD (source amount; Wise converts on the quote)
+ * `amount` is stored in MAJOR units of `currency` for every live rail:
+ *   - stripe   → major USD (converted to cents at the Transfers API boundary)
  *   - paystack → major NGN (converted to kobo at the API boundary)
- * (Legacy docs may carry provider "stripe" — cents — or "flutterwave" — major;
- * neither can be executed anymore.)
- * `displayAmount`/`displayCurrency` are the human-readable major-unit values for
- * the admin dashboard.
+ * CAUTION: "stripe" docs created BEFORE the Connect rail was reinstated store
+ * CENTS, from the era when Stripe Connect used per-charge destination transfers.
+ * executePayout refuses to run any "stripe" payout predating that cutover — see
+ * the date guard in payout.service.js. "wise" and "flutterwave" are dead rails,
+ * readable but unexecutable. `displayAmount`/`displayCurrency` are the
+ * human-readable major-unit values for the admin dashboard.
  */
 const payoutSchema = new mongoose.Schema(
   {
@@ -24,9 +26,11 @@ const payoutSchema = new mongoose.Schema(
     relatedType: { type: String, enum: ["ticket", "guide", "booking", "order"], required: true },
     relatedId: { type: mongoose.Schema.Types.ObjectId, required: true },
 
-    // Settlement rail used to pay the vendor out. "stripe" and "flutterwave"
-    // are legacy-read-only values (old docs must still save, e.g. on rejection);
-    // executePayout refuses to run them.
+    // Settlement rail used to pay the vendor out. Live rails are "stripe"
+    // (Connect, for the cross-border-payouts footprint) and "paystack" (Nigeria).
+    // "wise" and "flutterwave" are legacy-read-only: the rails are gone, but old
+    // docs must still save — an admin has to be able to reject or annotate them —
+    // so they stay in the enum. executePayout refuses to run either.
     provider: {
       type: String,
       enum: ["wise", "paystack", "stripe", "flutterwave"],

@@ -22,6 +22,8 @@ export interface PublicUser {
   /** Set by /users/:id when the user has a published vendor listing. */
   vendorId?: string;
   vendorName?: string;
+  /** Set by /users/:id for the official support account, which has no profile. */
+  isSupport?: boolean;
 }
 
 export interface EventTier {
@@ -30,8 +32,13 @@ export interface EventTier {
   price: number;
   /** Per-tier ticket allocation (organizer-set). Absent = draws from the shared pool. */
   quantity?: number;
-  /** Tickets still available for this tier — only present when the tier has a quantity. */
+  /**
+   * Tickets still available for this tier — only present when the tier has a
+   * quantity AND the viewer is running the event (creator or co-host).
+   */
   remaining?: number;
+  /** Count-free availability, sent to every viewer. */
+  soldOut?: boolean;
 }
 
 export interface VendorSummary {
@@ -55,7 +62,7 @@ export interface Vendor extends VendorSummary {
     tiktok?: string;
     facebook?: string;
   };
-  user?: string;
+  user?: string | { _id: string; username?: string; profilePicture?: string; businessName?: string };
 }
 
 export interface Review {
@@ -79,14 +86,26 @@ export interface EventItem {
   country?: string;
   image?: string;
   images?: string[];
+  isPublic?: boolean;
   isPaid?: boolean;
   ticketPrice?: number;
   ticketTiers?: EventTier[];
   currency?: string;
   isVirtual?: boolean;
+  /**
+   * Capacity + headcount reach the event's creator and co-hosts always, and
+   * every other viewer only when the organizer turned on `showAttendance`.
+   * Otherwise the API strips maxGuests, ticketsSold, ticketsRemaining,
+   * rsvpCount and friendsGoing, and `soldOut` is the count-free replacement
+   * every viewer gets. `rsvpUsers` — the guest list — is never part of the
+   * opt-in and stays organizer-only.
+   */
   maxGuests?: number;
   ticketsSold?: number;
   ticketsRemaining?: number;
+  soldOut?: boolean;
+  /** Organizer opt-in: publishes the headcount/capacity numbers to all viewers. */
+  showAttendance?: boolean;
   userHasPurchased?: boolean;
   createdBy?: PublicUser;
   cohosts?: PublicUser[];
@@ -115,7 +134,7 @@ export interface EventItem {
 /** Third-party event ingested from Ticketmaster / Bandsintown. */
 export interface ExternalEventItem {
   _id: string;
-  source: "ticketmaster" | "bandsintown";
+  source: "ticketmaster" | "bandsintown" | "eventbrite";
   title: string;
   description?: string;
   image?: string;

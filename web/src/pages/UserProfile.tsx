@@ -21,7 +21,10 @@ export default function UserProfile() {
 
   const [profile, setProfile] = useState<PublicUser | null>(null);
   const [events, setEvents] = useState<EventItem[]>([]);
-  const [counts, setCounts] = useState<{ followers: number; following: number } | null>(null);
+  const [counts, setCounts] = useState<{
+    followersCount: number;
+    followingCount: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -34,7 +37,9 @@ export default function UserProfile() {
     Promise.all([
       api<{ user: PublicUser }>(`/users/${userId}`),
       api<{ events: EventItem[] }>(`/users/${userId}/events`).catch(() => ({ events: [] })),
-      api<{ followers: number; following: number }>(`/follow/${userId}/counts`).catch(() => null),
+      api<{ followersCount: number; followingCount: number }>(
+        `/follow/${userId}/counts`
+      ).catch(() => null),
     ])
       .then(([u, ev, c]) => {
         setProfile(u.user);
@@ -90,6 +95,27 @@ export default function UserProfile() {
     );
   }
 
+  // The official support account has no public profile — the web app has no
+  // chat surface, so point people at the app rather than showing an empty one.
+  if (profile.isSupport) {
+    return (
+      <Layout>
+        <div className="cv-card">
+          <h1>Official Support</h1>
+          <p className="sub">
+            This is the OurCityvibe support account. To reach our team, open the
+            app and tap <strong>Contact Support</strong> in Settings or Messages —
+            we'll reply in that conversation.
+          </p>
+          <Link to="/events" className="cv-link">
+            ← Back to all events
+          </Link>
+        </div>
+        <AppPromo variant="profile" />
+      </Layout>
+    );
+  }
+
   const upcoming = events.filter((e) => +new Date(e.date) >= Date.now());
   const past = events.filter((e) => +new Date(e.date) < Date.now());
 
@@ -117,11 +143,11 @@ export default function UserProfile() {
           {counts && (
             <>
               <div>
-                <div className="cv-stat-n">{counts.followers}</div>
+                <div className="cv-stat-n">{counts.followersCount}</div>
                 <div className="cv-stat-l">Followers</div>
               </div>
               <div>
-                <div className="cv-stat-n">{counts.following}</div>
+                <div className="cv-stat-n">{counts.followingCount}</div>
                 <div className="cv-stat-l">Following</div>
               </div>
             </>

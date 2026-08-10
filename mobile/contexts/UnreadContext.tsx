@@ -6,22 +6,26 @@ import { BASE_URL } from "@/constants/constants";
 import socketService from "@/services/socket.service";
 
 interface UnreadContextType {
-  /** Unread chat messages — drives the chat tab badge. */
+  /** Unread messages in the client inbox — drives the client chat tab badge. */
   totalUnread: number;
+  /** Unread messages in the vendor inbox — drives the vendor chat tab badge. */
+  vendorUnread: number;
   /** Unread in-app notifications — drives the notifications surfaces. */
   notifUnread: number;
-  /** Force a re-fetch of both counts (call after marking things read). */
+  /** Force a re-fetch of all counts (call after marking things read). */
   refreshUnread: () => void;
 }
 
 const UnreadContext = createContext<UnreadContextType>({
   totalUnread: 0,
+  vendorUnread: 0,
   notifUnread: 0,
   refreshUnread: () => {},
 });
 
 export function UnreadProvider({ children }: { children: React.ReactNode }) {
   const [chatUnread, setChatUnread] = useState(0);
+  const [vendorUnread, setVendorUnread] = useState(0);
   const [notifUnread, setNotifUnread] = useState(0);
   const currentUserIdRef = useRef<string | null>(null);
   const chatTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -41,17 +45,27 @@ export function UnreadProvider({ children }: { children: React.ReactNode }) {
     try {
       const auth = await getAuth();
       if (!auth) return;
-      const res = await fetch(`${BASE_URL}/chats`, {
-        headers: { Authorization: `Bearer ${auth.token}` },
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      const chats: any[] = data.chats || [];
-      const total = chats.reduce((sum, chat) => {
-        const unreadObj = (chat.unreadCount as Record<string, number>) || {};
-        return sum + (unreadObj[auth.userId] || 0);
-      }, 0);
-      setChatUnread(total);
+
+      const sumUnread = async (scope: "client" | "vendor") => {
+        const res = await fetch(`${BASE_URL}/chats?scope=${scope}`, {
+          headers: { Authorization: `Bearer ${auth.token}` },
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        const chats: any[] = data.chats || [];
+        return chats.reduce((sum, chat) => {
+          const unreadObj = (chat.unreadCount as Record<string, number>) || {};
+          return sum + (unreadObj[auth.userId] || 0);
+        }, 0);
+      };
+
+      // The two inboxes are separate accounts with separate badges.
+      const [client, vendor] = await Promise.all([
+        sumUnread("client"),
+        sumUnread("vendor"),
+      ]);
+      if (client !== null) setChatUnread(client);
+      if (vendor !== null) setVendorUnread(vendor);
     } catch {}
   }, [getAuth]);
 
@@ -80,11 +94,11 @@ export function UnreadProvider({ children }: { children: React.ReactNode }) {
     chatTimer.current = setTimeout(refreshChats, 600);
   }, [refreshChats]);
 
-  // App icon badge = unread chats + unread notifications. This context is the
-  // single writer so the badge can't be left stale by an individual screen.
+  // App icon badge = unread chats (both inboxes) + unread notifications. This
+  // context is the single writer so the badge can't be left stale by a screen.
   useEffect(() => {
-    Notifications.setBadgeCountAsync(chatUnread + notifUnread).catch(() => {});
-  }, [chatUnread, notifUnread]);
+    Notifications.setBadgeCountAsync(chatUnread + vendorUnread + notifUnread).catch(() => {});
+  }, [chatUnread, vendorUnread, notifUnread]);
 
   useEffect(() => {
     refreshUnread();
@@ -115,7 +129,7 @@ export function UnreadProvider({ children }: { children: React.ReactNode }) {
   }, [refreshUnread, refreshNotifs, scheduleChatRefresh]);
 
   return (
-    <UnreadContext.Provider value={{ totalUnread: chatUnread, notifUnread, refreshUnread }}>
+    <UnreadContext.Provider value={{ totalUnread: chatUnread, vendorUnread, notifUnread, refreshUnread }}>
       {children}
     </UnreadContext.Provider>
   );

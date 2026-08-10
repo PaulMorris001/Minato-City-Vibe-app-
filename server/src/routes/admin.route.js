@@ -1,5 +1,6 @@
 import express from "express";
 import { authenticateAdmin } from "../middleware/admin.middleware.js";
+import { adminLoginLimiter } from "../middleware/rateLimit.middleware.js";
 import {
   adminLogin,
   getStats,
@@ -43,7 +44,7 @@ import {
 
 const router = express.Router();
 
-router.post("/admin/login", adminLogin);
+router.post("/admin/login", adminLoginLimiter, adminLogin);
 
 // All routes below require admin authentication
 router.get("/admin/stats", authenticateAdmin, getStats);

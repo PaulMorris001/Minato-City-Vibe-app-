@@ -37,7 +37,13 @@ import { useStripePayment } from "@/hooks/useStripePayment";
 import { useRefreshOnForeground } from "@/hooks/useRefreshOnForeground";
 import { trackEvent as trackAnalyticsEvent } from "@/utils/analytics";
 import { LocationSelection } from "@/libs/interfaces";
-import { LocationPicker, MultiImagePicker, ActiveLocationChip } from "@/components/shared";
+import { useActiveCity } from "@/hooks/useActiveCity";
+import {
+  LocationPicker,
+  MultiImagePicker,
+  ActiveLocationChip,
+  GlassBackButton,
+} from "@/components/shared";
 import { formatLocation } from "@/utils/location";
 import { resolveImageUrls } from "@/utils/imageUpload";
 
@@ -60,6 +66,8 @@ interface Event {
   shareToken: string;
   isPublic: boolean;
   isPaid: boolean;
+  /** Organizer opt-in: publishes the headcount/capacity numbers to all viewers. */
+  showAttendance?: boolean;
   ticketPrice?: number;
   ticketTiers?: { _id?: string; name: string; price: number; quantity?: number; remaining?: number }[];
   currency?: string;
@@ -101,7 +109,11 @@ export default function EventsPage() {
   const { payForTicket } = useStripePayment();
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"private" | "discover">("private");
+  // Pinned to "private": the Discover half moved to the unified search page.
+  // Kept as state rather than inlined so the large render block below (and its
+  // `activeTab === "discover"` branches) still compiles untouched — that branch
+  // is now dead and can be deleted when the Edit/Invite modals are extracted.
+  const [activeTab] = useState<"private" | "discover">("private");
 
   // Private events state
   const [events, setEvents] = useState<Event[]>([]);
@@ -125,8 +137,16 @@ export default function EventsPage() {
   // External events (Ticketmaster etc) — fetched in parallel with native discover
   // events and merged into a single date-sorted feed below.
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
+  // Set when the searched city's own results are thin — the server's proxy
+  // for "nearby" (events carry no coordinates), see findNearbyCityEvents.
+  const [nearbyDiscover, setNearbyDiscover] = useState<{
+    city: string;
+    state: string | null;
+    country: string | null;
+    events: PublicEvent[];
+  } | null>(null);
   // The one shared active browsing location — see ActiveLocationChip.
-  const [discoverCity, setDiscoverCity] = useState<string | null>(null);
+  const discoverCity = useActiveCity();
   const [discoverOnline, setDiscoverOnline] = useState(false);
   const [inviteTab, setInviteTab] = useState<"people" | "vendors">("people");
   const [respondingInvite, setRespondingInvite] = useState<string | null>(null);
@@ -148,6 +168,7 @@ export default function EventsPage() {
     description: "",
     isPublic: false,
     isPaid: false,
+    showAttendance: false,
     ticketPrice: "",
     maxGuests: "",
     currency: "USD",
@@ -258,6 +279,7 @@ export default function EventsPage() {
         }
         setDiscoverPage(pageNum);
         setDiscoverHasMore(incoming.length === DISCOVER_LIMIT);
+        if (pageNum === 1) setNearbyDiscover(data.nearby || null);
       }
 
       // External events: only refresh on page 1 / refresh; keep cached
@@ -330,18 +352,17 @@ export default function EventsPage() {
   useFocusEffect(
     useCallback(() => {
       fetchEvents(1, true);
-      // Online is an ephemeral view toggle, reset each visit. Location isn't
-      // reset — it's read fresh from the shared active-location key so a
-      // change made on the home feed (or any other screen) shows up here too.
+      // Online is an ephemeral view toggle, reset each visit. Location comes
+      // from the shared active-city store (see useActiveCity), which updates
+      // instantly wherever it's read — including here — the moment it
+      // changes anywhere else (home feed GPS resolution, Select Location),
+      // even if this screen never lost focus in between.
       setDiscoverOnline(false);
-      SecureStore.getItemAsync("selectedCity").then((city) => {
-        const resolved = city || null;
-        setDiscoverCity(resolved);
-        fetchDiscoverEvents(1, resolved, true, false);
-      });
-    }, [])
+      fetchDiscoverEvents(1, discoverCity, true, false);
+    }, [discoverCity])
   );
 
+<<<<<<< HEAD:mobile/app/(tabs)/events.tsx
   // Coming back after the app sat backgrounded for a while — refresh both
   // "My Events" and whatever's currently showing in Discover.
   useRefreshOnForeground(() => {
@@ -351,8 +372,12 @@ export default function EventsPage() {
 
   // Guests can browse Discover but "Private" needs an account — land them on
   // the tab that actually works for them.
+=======
+  // This screen is account-only now that Discover moved to search — a guest has
+  // no events to manage, so send them to log in.
+>>>>>>> e50971ee0bca36ef8b08daca424723a703aeee4a:mobile/app/manage-events.tsx
   useEffect(() => {
-    if (isGuest) setActiveTab("discover");
+    if (isGuest) router.replace("/login");
   }, [isGuest]);
 
   // Who's viewing — needed to show management actions only on own events.
@@ -449,6 +474,7 @@ export default function EventsPage() {
       description: event.description || "",
       isPublic: event.isPublic,
       isPaid: !!event.isPaid,
+      showAttendance: !!event.showAttendance,
       ticketPrice: event.ticketPrice ? String(event.ticketPrice) : "",
       maxGuests: event.maxGuests ? String(event.maxGuests) : "",
       currency: event.currency || "USD",
@@ -726,6 +752,23 @@ export default function EventsPage() {
     router.push(`/event/${eventId}`);
   };
 
+  // Rendered under the Discover list — either after a thin result set or
+  // after the "no public events" empty state.
+  const renderNearbyDiscover = () => {
+    if (!nearbyDiscover || nearbyDiscover.events.length === 0) return null;
+    const label = nearbyDiscover.state ? `${nearbyDiscover.city}, ${nearbyDiscover.state}` : nearbyDiscover.city;
+    return (
+      <View style={{ marginTop: 20 }}>
+        <Text style={styles.discoverNearbyTitle}>Not much happening here — check out {label}</Text>
+        {nearbyDiscover.events.map((ev) => (
+          <View key={`nearby-${ev._id}`} style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+            <PublicEventCard event={ev} onPurchaseTicket={handlePurchaseTicket} onJoinFreeEvent={handleJoinFreeEvent} />
+          </View>
+        ))}
+      </View>
+    );
+  };
+
   // "My Events" surfaces everything you can manage: every event you created
   // (public OR private) plus private events you were invited to. Public events
   // you merely attend stay out of here (they live in Discover).
@@ -809,19 +852,30 @@ export default function EventsPage() {
             </View>
           ) : null}
 
-          <View style={styles.eventDetail}>
-            <Ionicons name={event.isPublic ? "ticket-outline" : "people"} size={16} color={colors.primary} />
-            <Text style={styles.eventDetailText}>
-              {event.isPublic
-                ? // Public events aren't invite-based — you share them to sell tickets.
-                  `${event.rsvpCount ?? event.ticketsSold ?? 0} going` +
-                  (event.isPaid && typeof event.ticketsRemaining === "number"
-                    ? ` · ${event.ticketsRemaining} left`
-                    : "")
-                : `${event.invitedUsers.length} invited` +
-                  (event.pendingInvites.length > 0 ? ` · ${event.pendingInvites.length} pending` : "")}
-            </Text>
-          </View>
+          {/* Headcount + capacity are organizer-only. The API withholds
+              rsvpCount/ticketsSold/ticketsRemaining from guests, so this whole
+              row only has something to say when you're running the event. */}
+          {(event.isPublic
+            ? // Public: the counts themselves are the signal — present only for
+              //   organizers. (Data-driven, so co-hosts keep them too.)
+              typeof event.rsvpCount === "number" || typeof event.ticketsSold === "number"
+            : // Private: the guest list is populated client-side from the
+              //   event doc, so gate it explicitly.
+              isCreator) ? (
+            <View style={styles.eventDetail}>
+              <Ionicons name={event.isPublic ? "ticket-outline" : "people"} size={16} color={colors.primary} />
+              <Text style={styles.eventDetailText}>
+                {event.isPublic
+                  ? // Public events aren't invite-based — you share them to sell tickets.
+                    `${event.rsvpCount ?? event.ticketsSold ?? 0} going` +
+                    (event.isPaid && typeof event.ticketsRemaining === "number"
+                      ? ` · ${event.ticketsRemaining} left`
+                      : "")
+                  : `${event.invitedUsers.length} invited` +
+                    (event.pendingInvites.length > 0 ? ` · ${event.pendingInvites.length} pending` : "")}
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.eventActions}>
             <TouchableOpacity
@@ -881,29 +935,18 @@ export default function EventsPage() {
       <LinearGradient colors={[colors.background, colors.backgroundSecondary]} style={styles.container}>
         {/* Top edge only — content should run under the floating tab bar on iOS. */}
         <SafeAreaView style={styles.safeArea} edges={["top"]}>
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>Events</Text>
+          {/* A stack route now, not a tab — it needs a way back. */}
+          <View style={[styles.header, { flexDirection: "row", alignItems: "center", gap: 12 }]}>
+            <GlassBackButton />
+            <Text style={styles.headerTitle}>Manage Events</Text>
           </View>
 
-          {/* Tab switcher */}
-          <View style={styles.tabRow}>
-            <TouchableOpacity
-              style={[styles.tabBtn, activeTab === "private" && styles.tabBtnActive]}
-              onPress={() => setActiveTab("private")}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="calendar-outline" size={14} color={activeTab === "private" ? "#fff" : colors.textMuted} />
-              <Text style={[styles.tabBtnText, activeTab === "private" && styles.tabBtnTextActive]}>My Events</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tabBtn, activeTab === "discover" && styles.tabBtnActive]}
-              onPress={() => setActiveTab("discover")}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="globe-outline" size={14} color={activeTab === "discover" ? "#fff" : colors.textMuted} />
-              <Text style={[styles.tabBtnText, activeTab === "discover" && styles.tabBtnTextActive]}>Discover</Text>
-            </TouchableOpacity>
-          </View>
+          {/*
+            The Discover switcher that used to sit here is gone — browsing
+            public events now lives on the unified search page. This screen is
+            purely event management: your own events, invites, edit and invite
+            flows. `activeTab` is pinned to "private" below.
+          */}
 
         <ScrollView
           style={styles.scrollView}
@@ -948,6 +991,7 @@ export default function EventsPage() {
                   <Ionicons name="globe-outline" size={64} color={colors.textMuted} />
                   <Text style={styles.emptyStateTitle}>No public events yet</Text>
                   <Text style={styles.emptyStateText}>Check back soon or try a different city</Text>
+                  {renderNearbyDiscover()}
                 </View>
               ) : (
                 <>
@@ -992,6 +1036,7 @@ export default function EventsPage() {
                       {discoverLoadingMore ? <ActivityIndicator size="small" color={colors.primary} /> : <Text style={styles.loadMoreText}>Load More</Text>}
                     </TouchableOpacity>
                   )}
+                  {!discoverHasMore && renderNearbyDiscover()}
                 </>
               )}
             </>
@@ -1270,10 +1315,37 @@ export default function EventsPage() {
                 <MultiImagePicker
                   value={editData.images}
                   onChange={(imgs) => setEditData({ ...editData, images: imgs })}
-                  label="Event photos"
-                  max={6}
+                  label="Event photos & videos"
+                  max={10}
                 />
               </View>
+
+              {/* Headcount is private by default; this publishes it as social
+                  proof. Only a public event has an audience to show it to. */}
+              {editData.isPublic && (
+                <View style={styles.inputGroup}>
+                  <TouchableOpacity
+                    style={styles.attendanceToggle}
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      setEditData({ ...editData, showAttendance: !editData.showAttendance })
+                    }
+                  >
+                    <Ionicons
+                      name={editData.showAttendance ? "checkbox" : "square-outline"}
+                      size={22}
+                      color={editData.showAttendance ? colors.primary : colors.textMuted}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>Show how many are going</Text>
+                      <Text style={styles.attendanceToggleHint}>
+                        Guests see the headcount, capacity and spots left. Your guest
+                        list stays private either way.
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Description</Text>
@@ -1685,6 +1757,13 @@ const createStyles = (c: ThemeColors) =>
     color: c.textSecondary,
     textAlign: "center",
   },
+  discoverNearbyTitle: {
+    fontSize: scaleFontSize(13),
+    fontFamily: Fonts.semiBold,
+    color: c.textSecondary,
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
   guestLoginBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1964,6 +2043,18 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.semiBold,
     color: c.textBody,
     marginBottom: 8,
+  },
+  attendanceToggle: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  attendanceToggleHint: {
+    fontSize: scaleFontSize(12),
+    fontFamily: Fonts.regular,
+    color: c.textMuted,
+    lineHeight: 17,
+    marginTop: -4,
   },
   input: {
     backgroundColor: c.border,

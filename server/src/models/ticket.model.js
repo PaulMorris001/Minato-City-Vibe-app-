@@ -45,10 +45,12 @@ const ticketSchema = mongoose.Schema({
   // Which provider collected this payment. Drives how refunds are issued.
   provider: { type: String, enum: ["stripe", "paystack"], default: "stripe" },
 
-  // Which provider settles the seller's share. Stripe-collected sales settle
-  // via Wise; Paystack collects and settles its own. Drives the payout job's
-  // transfer branch.
-  payoutProvider: { type: String, enum: ["wise", "paystack"], default: "wise" },
+  // Which provider settles the seller's share. Stripe-collected sales settle via
+  // Stripe Connect; Paystack collects and settles its own. Drives the payout
+  // job's transfer branch. No default: an unset value means the seller had no
+  // payout rail at sale time, which must not masquerade as a real one. "wise" is
+  // legacy-readable only (that rail is gone).
+  payoutProvider: { type: String, enum: ["wise", "paystack", "stripe"] },
 
   // Stripe payment tracking
   stripePaymentIntentId: { type: String },

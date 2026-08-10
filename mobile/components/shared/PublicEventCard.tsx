@@ -13,6 +13,7 @@ import { Fonts } from "@/constants/fonts";
 import { currencyPrefix } from "@/constants/payments";
 import { scaleFontSize } from "@/utils/responsive";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
+import { usePosterAspect } from "@/hooks/usePosterAspect";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 
@@ -33,9 +34,17 @@ export interface PublicEvent {
   currency?: string;
   /** Named price tiers; when >1 the card shows "From <cheapest>" and buying routes to the detail screen's tier picker. */
   ticketTiers?: { _id: string; name: string; price: number }[];
+  /**
+   * Capacity + headcount reach the creator and co-hosts always, and other
+   * viewers only when the organizer turned on `showAttendance`. The API strips
+   * maxGuests, ticketsSold, ticketsRemaining and rsvpCount otherwise, so every
+   * card that renders them must tolerate their absence. `soldOut` is sent to
+   * everyone as the count-free replacement.
+   */
   maxGuests?: number;
   ticketsSold?: number;
   ticketsRemaining?: number;
+  soldOut?: boolean;
   userHasPurchased?: boolean;
   isCreator?: boolean;
   isFavorited?: boolean;
@@ -68,6 +77,9 @@ export default function PublicEventCard({
   const formatPrice = useFormatPrice();
   const [favorited, setFavorited] = useState(event.isFavorited ?? false);
   const [togglingFavorite, setTogglingFavorite] = useState(false);
+  // Event posters are flyers — usually portrait, often 4:5 or taller. The card
+  // takes the poster's own shape instead of cropping it into a fixed 400px box.
+  const poster = usePosterAspect();
 
   const toggleFavorite = async () => {
     if (togglingFavorite) return;
@@ -89,13 +101,20 @@ export default function PublicEventCard({
 
   return (
     <TouchableOpacity
-      style={[styles.eventCard, style]}
+      style={[styles.eventCard, style, poster.style]}
       activeOpacity={0.9}
       onPress={() => router.push(`/event/${event._id}` as any)}
     >
       <View style={styles.eventCardInner}>
         {event.image ? (
-          <Image source={{ uri: event.image }} style={styles.eventCardImage} contentFit="cover" cachePolicy="memory-disk" transition={200} />
+          <Image
+            source={{ uri: event.image }}
+            style={styles.eventCardImage}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={200}
+            onLoad={poster.onLoad}
+          />
         ) : (
           <LinearGradient
             colors={["#667eea", "#764ba2"]}
@@ -162,11 +181,15 @@ export default function PublicEventCard({
                     </Text>
                   </LinearGradient>
 
-                  {event.ticketsRemaining !== undefined && (
+                  {/* Guests get the sold-out state without the headcount
+                      behind it; organizers keep the exact remaining count. */}
+                  {event.ticketsRemaining !== undefined ? (
                     <Text style={styles.eventCardTicketsText}>
                       {event.ticketsRemaining} left
                     </Text>
-                  )}
+                  ) : event.soldOut ? (
+                    <Text style={styles.eventCardTicketsText}>Sold out</Text>
+                  ) : null}
                 </View>
 
                 {/* Show Buy Ticket button only if user hasn't purchased and isn't the creator */}

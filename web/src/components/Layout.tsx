@@ -220,6 +220,10 @@ const css = `
     padding: 12px 16px; border-radius: 12px; font-size: 14px; margin-bottom: 18px;
     background: rgba(220,38,38,0.14); border: 1px solid rgba(248,113,113,0.4); color: #fca5a5;
   }
+  .cv-success {
+    padding: 12px 16px; border-radius: 12px; font-size: 14px; margin-bottom: 18px;
+    background: rgba(34,197,94,0.12); border: 1px solid #22c55e; color: #86efac;
+  }
   .cv-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
   /* ── Pills / chips / badges ──────────────────────────── */
@@ -310,6 +314,8 @@ const css = `
   .cv-sticky { position: sticky; top: 90px; }
   .cv-gallery { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
   .cv-gallery img { width: 150px; height: 100px; object-fit: cover; border-radius: 12px; flex: none; border: 1px solid var(--stroke); }
+  /* Video tiles run wider than photos so the native controls aren't cramped. */
+  .cv-gallery video { width: 220px; height: 130px; object-fit: cover; border-radius: 12px; flex: none; border: 1px solid var(--stroke); background: #000; }
   .cv-facts { display: grid; gap: 14px; }
   .cv-fact { display: flex; gap: 12px; align-items: flex-start; }
   .cv-fact-icon {

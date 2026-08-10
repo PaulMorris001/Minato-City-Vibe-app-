@@ -66,11 +66,26 @@ export const config = {
   jwt: {
     secret: process.env.JWT_SECRET,
     expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+
+    // Admin tokens are signed with their OWN secret so they're cryptographically
+    // separate from user tokens: a leaked/forgeable user token can never be
+    // turned into an admin token by adding an `isAdmin` claim, because the
+    // signature won't verify. Falls back to JWT_SECRET (with a boot warning)
+    // so an existing deploy doesn't lock itself out — set ADMIN_JWT_SECRET.
+    adminSecret: process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET,
+    // Short-lived by design: admin sessions are high blast-radius.
+    adminExpiresIn: process.env.ADMIN_JWT_EXPIRES_IN || "8h",
   },
 
-  // CORS Configuration
+  // CORS Configuration. Accepts a comma-separated list so the marketing site and
+  // the admin subdomain can both be allowed without falling back to "*"
+  // (e.g. CORS_ORIGIN="https://www.ourcityvibe.com,https://admin.ourcityvibe.com").
   cors: {
-    origin: process.env.CORS_ORIGIN || "*",
+    origin: process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(",")
+          .map((o) => o.trim())
+          .filter(Boolean)
+      : "*",
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   },
@@ -120,6 +135,29 @@ export const config = {
     ),
   },
 
+  // Official support account — the company-owned user that customers message
+  // for help. It's a normal user document; these behaviours are layered on by
+  // ID (see utils/supportAccount.js). When unset (dev/staging) every support
+  // behaviour is inert and the account acts like any other user.
+  support: {
+    userId: process.env.SUPPORT_USER_ID || "",
+    enabled: !!process.env.SUPPORT_USER_ID,
+  },
+
+  // External event ingestion providers
+  externalEvents: {
+    ticketmasterApiKey: process.env.TICKETMASTER_API_KEY || "",
+
+    // Eventbrite has no public search API (retired Feb 2020); this reads their
+    // undocumented internal endpoint, so it ships default-OFF and can be
+    // killed via env alone if it starts failing or blocking. See
+    // services/eventbrite.service.js for the full caveat.
+    eventbrite: {
+      enabled: process.env.EVENTBRITE_ENABLED === "true",
+      maxPagesPerCity: parseInt(process.env.EVENTBRITE_MAX_PAGES || "10", 10),
+    },
+  },
+
   // Country-State-City API (location data source for pickers)
   csc: {
     apiKey: process.env.CSC_API_KEY || "",
@@ -131,9 +169,14 @@ export const config = {
     secretKey: process.env.STRIPE_SECRET_KEY || "",
     publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || "",
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
+    // Connect events (account.updated for connected accounts) are delivered to a
+    // SEPARATE Stripe webhook endpoint with its OWN signing secret — the account
+    // webhook secret above will NOT verify them.
+    connectWebhookSecret: process.env.STRIPE_CONNECT_WEBHOOK_SECRET || "",
     platformFeePercent: parseFloat(process.env.PLATFORM_FEE_PERCENT || "10"),
     // Public HTTPS base URL of this server — used for provider checkout
-    // return/callback URLs (e.g. the Paystack redirect).
+    // return/callback URLs (e.g. the Paystack redirect) and the Connect
+    // onboarding return/refresh URLs.
     serverUrl: process.env.SERVER_URL || "https://api.ourcityvibe.com",
   },
 
@@ -145,26 +188,32 @@ export const config = {
     publicKey: process.env.PAYSTACK_PUBLIC_KEY || "",
   },
 
-  // Wise (Wise Platform Payouts API) — the settlement rail for every seller who
-  // collects via Stripe (i.e. everyone outside the Paystack footprint). Payout-
-  // only: Stripe collects USD into the platform balance; Wise then settles the
-  // seller's net to a local bank in ~40 currencies.
-  wise: {
-    apiToken: process.env.WISE_API_TOKEN || "",
-    profileId: process.env.WISE_PROFILE_ID || "",
-    // PEM public key from the Wise dashboard, used to verify webhook signatures.
-    webhookPublicKey: process.env.WISE_WEBHOOK_PUBLIC_KEY || "",
-    // Sandbox: https://api.sandbox.transferwise.tech — Prod: https://api.transferwise.com
-    baseUrl: process.env.WISE_BASE_URL || "https://api.sandbox.transferwise.tech",
-    // Currency the platform balance is funded in / quotes source from.
-    sourceCurrency: (process.env.WISE_SOURCE_CURRENCY || "USD").toUpperCase(),
-  },
-
   // Sign in with Apple. For native iOS sign-in, the identity token's `aud`
   // claim is the app's bundle identifier, so that's the expected audience.
   apple: {
     clientId: process.env.APPLE_CLIENT_ID || "com.ourcityvibe.app",
   },
 };
+
+// Boot-time warnings for admin hardening that's configured but not yet migrated.
+// These are warnings rather than hard failures so a deploy can never lock the
+// admin out of the portal — but each one should be resolved in production.
+if (!process.env.ADMIN_JWT_SECRET) {
+  console.warn(
+    "[security] ADMIN_JWT_SECRET is not set — admin tokens are signed with the " +
+      "same secret as user tokens. Set it to a distinct random value."
+  );
+}
+if (!process.env.ADMIN_PASSWORD_HASH && process.env.ADMIN_PASSWORD) {
+  console.warn(
+    "[security] ADMIN_PASSWORD is stored in plaintext — set ADMIN_PASSWORD_HASH " +
+      "to a bcrypt hash instead and remove ADMIN_PASSWORD."
+  );
+}
+if (config.cors.origin === "*") {
+  console.warn(
+    "[security] CORS_ORIGIN is unset — the API accepts requests from any origin."
+  );
+}
 
 export default config;

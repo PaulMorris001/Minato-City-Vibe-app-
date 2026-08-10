@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import User from "../models/user.model.js";
 import Follow from "../models/follow.model.js";
 import Report from "../models/report.model.js";
+import { isSupportUser } from "../utils/supportAccount.js";
 
 export const blockUser = async (req, res) => {
   try {
@@ -11,6 +12,12 @@ export const blockUser = async (req, res) => {
     }
     if (String(userId) === String(req.user.id)) {
       return res.status(400).json({ message: "You cannot block yourself" });
+    }
+    // Blocking the help desk would silently cut the user off from support.
+    if (isSupportUser(userId)) {
+      return res
+        .status(400)
+        .json({ message: "This is the official support account and can't be blocked." });
     }
 
     const target = await User.findById(userId).select("_id username");

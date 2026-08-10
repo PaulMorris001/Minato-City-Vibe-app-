@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { router } from "expo-router";
 import { goBack } from "@/utils/navigation";
+import { openUserProfile } from "@/utils/userNavigation";
 import { BASE_URL } from "@/constants/constants";
 import { scaleFontSize } from "@/utils/responsive";
 import { capitalize } from "@/libs/helpers";
@@ -84,12 +85,7 @@ export default function SearchUsersScreen() {
   const renderUserItem = ({ item }: { item: SearchUser }) => (
     <TouchableOpacity
       style={styles.userItem}
-      onPress={() =>
-        router.push({
-          pathname: "/user-profile",
-          params: { userId: item.id },
-        } as any)
-      }
+      onPress={() => openUserProfile(item.id)}
       activeOpacity={0.7}
     >
       <Avatar uri={item.profilePicture} name={displayName(item)} size={48} />

@@ -195,7 +195,14 @@ export interface GuideSection {
   title: string;
   rank: number;
   description: string;
+  /**
+   * @deprecated Superseded by `media`. Sections held exactly one photo before
+   * galleries and video shipped; guides written then still only have this.
+   * Read through `sectionMedia()` in utils/media.ts, never directly.
+   */
   image?: string;
+  /** Photos and videos for this section, max MAX_MEDIA_ITEMS. */
+  media?: string[];
 }
 
 export interface Guide {
@@ -219,7 +226,14 @@ export interface Guide {
   sections: GuideSection[];
   isDraft: boolean;
   isPurchased: boolean;
-  purchasedBy: string[];
+  /**
+   * Buyer ids. Only sent on endpoints that genuinely need the access-control
+   * list — the seller-facing feeds send `salesCount` instead so one seller's
+   * buyer list never reaches another client.
+   */
+  purchasedBy?: string[];
+  /** Number of purchases. Sent by /guides/top and /guides/my-guides. */
+  salesCount?: number;
   views: number;
   isActive: boolean;
   createdAt: string;

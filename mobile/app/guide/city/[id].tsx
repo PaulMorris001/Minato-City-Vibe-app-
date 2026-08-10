@@ -16,7 +16,7 @@ import { Guide, GUIDE_TOPICS } from "@/libs/interfaces";
 import { Colors } from "@/constants/colors";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
-import { useFormatPrice } from "@/hooks/useFormatPrice";
+import { priceLabel } from "@/constants/payments";
 import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -31,7 +31,6 @@ export default function CityGuidesPage() {
     state?: string;
     country?: string;
   }>();
-  const formatPrice = useFormatPrice();
 
   const [guides, setGuides] = useState<Guide[]>([]);
   const [filteredGuides, setFilteredGuides] = useState<Guide[]>([]);
@@ -138,7 +137,7 @@ export default function CityGuidesPage() {
         <View style={styles.priceContainer}>
           <Text style={styles.priceLabel}>Price</Text>
           <Text style={styles.priceValue}>
-            {item.price === 0 ? "FREE" : `$${formatPrice(item.price)}`}
+            {priceLabel(item.price, item.currency)}
           </Text>
         </View>
       </View>

@@ -31,6 +31,13 @@ interface ShareSheetProps {
   visible: boolean;
   onClose: () => void;
   target: ShareTarget | null;
+  /**
+   * Called when the user picks "Show QR code". The host screen owns the QR
+   * modal so it presents *after* this sheet has finished dismissing — iOS
+   * won't stack a second modal on one that's still transitioning out.
+   * Omit to hide the option.
+   */
+  onShowQR?: () => void;
 }
 
 /**
@@ -45,7 +52,7 @@ interface ShareSheetProps {
  *     event/guide as a chat message of type `event` / `guide`, which
  *     MessageBubble renders as a card.
  */
-export default function ShareSheet({ visible, onClose, target }: ShareSheetProps) {
+export default function ShareSheet({ visible, onClose, target, onShowQR }: ShareSheetProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const [stage, setStage] = useState<"choice" | "picker">("choice");
@@ -203,6 +210,17 @@ export default function ShareSheet({ visible, onClose, target }: ShareSheetProps
                 hint="Share to iMessage, WhatsApp, Instagram…"
                 onPress={handleExternalShare}
               />
+              {onShowQR && target.kind === "event" && (
+                <SheetOption
+                  icon="qr-code-outline"
+                  label="Show QR code"
+                  hint="Scan to open the event — same as the link"
+                  onPress={() => {
+                    onClose();
+                    onShowQR();
+                  }}
+                />
+              )}
               <SheetOption icon="close" label="Cancel" muted onPress={onClose} />
             </>
           ) : (
