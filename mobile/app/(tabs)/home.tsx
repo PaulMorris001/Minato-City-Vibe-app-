@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Alert,
   RefreshControl,
-  AppState,
   FlatList,
   Animated,
   Platform,
@@ -29,6 +28,7 @@ import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useLocation";
+import { useRefreshOnForeground } from "@/hooks/useRefreshOnForeground";
 import { trackEvent } from "@/utils/analytics";
 import { ensureAuth } from "@/utils/requireAuth";
 
@@ -378,6 +378,10 @@ export default function Home() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [username, setUsername] = useState("");
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
+  // True once the saved city has been read from SecureStore (whether or not
+  // one was actually saved) — gates the very first events fetch so it never
+  // goes out unfiltered before we know the user's saved location.
+  const [locationLoaded, setLocationLoaded] = useState(false);
   // Set when the home feed is showing an IP-approximated location rather than
   // a precise device one — surfaces a nudge to grant location permission.
   const [locationBanner, setLocationBanner] = useState<"approximate" | null>(null);
@@ -407,7 +411,10 @@ export default function Home() {
       } else {
         setSelectedCity(null);
       }
-    } catch {}
+    } catch {
+    } finally {
+      setLocationLoaded(true);
+    }
   }, []);
 
   // Persists a detected/selected city as the home feed's default. `source`
@@ -667,6 +674,15 @@ export default function Home() {
       locationInitRef.current = true;
       resolveHomeLocation();
     }
+
+    // Wait for the saved city to finish loading from SecureStore before the
+    // very first events fetch on app launch. Without this, the first fetch
+    // always goes out with city=null (unfiltered) — since loadSelectedCity()
+    // above is async and hasn't resolved yet — and gets immediately redone
+    // once the saved city loads a moment later, flashing unfiltered "All"
+    // events and wasting a request on every cold start.
+    if (!locationLoaded) return;
+
     Promise.all([
       fetchPublicEvents(selectedCity),
       fetchExternalEvents(selectedCity),
@@ -679,18 +695,21 @@ export default function Home() {
       fetchPublicEvents(selectedCity, true);
     }, 30000);
 
-    const subscription = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active") {
-        fetchPublicEvents(selectedCity, true);
-        fetchHighlights(selectedCity);
-      }
-    });
-
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
-      subscription.remove();
     };
-  }, [loadSelectedCity, selectedCity, resolveHomeLocation]);
+  }, [loadSelectedCity, selectedCity, locationLoaded, resolveHomeLocation]);
+
+  // Coming back after the app sat backgrounded for a while means everything
+  // here — events, vendors, guides — has likely gone stale, so refresh the
+  // whole feed rather than just the two pieces the old interval covered.
+  useRefreshOnForeground(() => {
+    fetchPublicEvents(selectedCity, true);
+    fetchExternalEvents(selectedCity);
+    fetchHighlights(selectedCity);
+    fetchVendors();
+    fetchTopGuides(selectedCity);
+  });
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
     if (!(await ensureAuth("buy a ticket"))) return;

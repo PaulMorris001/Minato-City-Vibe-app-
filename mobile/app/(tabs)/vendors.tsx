@@ -25,6 +25,7 @@ import BecomeVendorModal from "@/components/client/BecomeVendorModal";
 import { ActiveLocationChip } from "@/components/shared";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 import { scaleFontSize } from "@/utils/responsive";
+import { useRefreshOnForeground } from "@/hooks/useRefreshOnForeground";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -101,6 +102,10 @@ export default function VendorsPage() {
   useEffect(() => {
     loadVendors(activeCity);
   }, [activeCity]);
+
+  // Coming back after the app sat backgrounded for a while — the vendor list
+  // (ratings, new additions) has likely gone stale.
+  useRefreshOnForeground(() => loadVendors(activeCity));
 
   const checkAuthStatus = async () => {
     const token = await SecureStore.getItemAsync("token");

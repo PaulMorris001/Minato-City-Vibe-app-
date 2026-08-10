@@ -34,6 +34,7 @@ import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { Avatar } from "@/components/shared/Avatar";
 import { useStripePayment } from "@/hooks/useStripePayment";
+import { useRefreshOnForeground } from "@/hooks/useRefreshOnForeground";
 import { trackEvent as trackAnalyticsEvent } from "@/utils/analytics";
 import { LocationSelection } from "@/libs/interfaces";
 import { LocationPicker, MultiImagePicker, ActiveLocationChip } from "@/components/shared";
@@ -340,6 +341,13 @@ export default function EventsPage() {
       });
     }, [])
   );
+
+  // Coming back after the app sat backgrounded for a while — refresh both
+  // "My Events" and whatever's currently showing in Discover.
+  useRefreshOnForeground(() => {
+    fetchEvents(1, true);
+    fetchDiscoverEvents(1, discoverCity, true, discoverOnline);
+  });
 
   // Guests can browse Discover but "Private" needs an account — land them on
   // the tab that actually works for them.

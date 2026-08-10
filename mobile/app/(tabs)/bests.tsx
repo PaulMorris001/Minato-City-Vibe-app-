@@ -20,6 +20,7 @@ import { fetchGuidesAll } from "@/libs/api";
 import { formatLocation } from "@/utils/location";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
+import { useRefreshOnForeground } from "@/hooks/useRefreshOnForeground";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -65,6 +66,10 @@ export default function BestsPage() {
   useEffect(() => {
     loadGuides(activeCity);
   }, [activeCity]);
+
+  // Coming back after the app sat backgrounded for a while — the guide list
+  // has likely gone stale.
+  useRefreshOnForeground(() => loadGuides(activeCity));
 
   const checkAuthStatus = async () => {
     const token = await SecureStore.getItemAsync("token");
