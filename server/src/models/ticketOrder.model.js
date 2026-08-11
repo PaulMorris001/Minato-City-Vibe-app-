@@ -27,8 +27,15 @@ const ticketOrderSchema = mongoose.Schema(
     seller: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true },
 
     currency: { type: String, default: "USD" },
+    // `total` is the DISCOUNTED total actually charged; `subtotal` is the
+    // pre-discount sum of the items. Both major currency units. On orders with
+    // no code, subtotal is unset and total equals the face-price sum.
+    subtotal: { type: Number },
     total: { type: Number, required: true },
-    provider: { type: String, enum: ["stripe", "paystack"], required: true },
+    discountCode: { type: String },
+    discountAmount: { type: Number, default: 0 },
+    // "none" = a fully discounted order — nothing was charged anywhere.
+    provider: { type: String, enum: ["stripe", "paystack", "none"], required: true },
 
     // Stripe PaymentIntent id / Paystack transaction reference. Unique so a
     // duplicate confirm can't double-fulfill.

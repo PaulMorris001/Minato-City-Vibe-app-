@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Event from "../models/event.model.js";
 import User from "../models/user.model.js";
 import Ticket from "../models/ticket.model.js";
+import DiscountCode from "../models/discountCode.model.js";
 import { Vendor } from "../models/vendor.model.js";
 import Chat from "../models/chat.model.js";
 import Follow from "../models/follow.model.js";
@@ -661,6 +662,11 @@ export const getEventById = async (req, res) => {
     if (!event) {
       event = await populateAll(Event.findOne({ shareToken: eventId }));
     }
+    if (!event) {
+      // Human-readable slug links (`/event/lagos-beach-party`) — slugs are
+      // stored lowercase, so lowercase the param before matching.
+      event = await populateAll(Event.findOne({ slug: eventId.toLowerCase() }));
+    }
 
     if (!event) {
       return res.status(404).json({ message: "Event not found" });
@@ -680,8 +686,11 @@ export const getEventById = async (req, res) => {
     const isInvited = !!userId && event.invitedUsers.some(u => u._id.toString() === userId);
     const isPending = !!userId && event.pendingInvites.some(u => u._id.toString() === userId);
     const hasRequested = !!userId && (event.joinRequests || []).some(u => u._id.toString() === userId);
+    // `event._id`, never the raw param: `eventId` may be a shareToken or a slug,
+    // which would either cast-error (slug) or silently match nothing
+    // (shareToken) and wrongly report the viewer as ticketless.
     const userTicket = userId
-      ? await Ticket.findOne({ event: eventId, user: userId, isValid: true })
+      ? await Ticket.findOne({ event: event._id, user: userId, isValid: true })
       : null;
     const hasTicket = !!userTicket;
 
@@ -704,7 +713,7 @@ export const getEventById = async (req, res) => {
     if (userId && !isCreator) {
       const alreadyViewed = (event.viewedBy || []).some((id) => id.toString() === userId);
       if (!alreadyViewed) {
-        await Event.updateOne({ _id: eventId }, { $addToSet: { viewedBy: userId } });
+        await Event.updateOne({ _id: event._id }, { $addToSet: { viewedBy: userId } });
         seenCount += 1;
       }
     }
@@ -724,7 +733,7 @@ export const getEventById = async (req, res) => {
 
     // Surface ticket info for paid events so the client can render the right CTA
     if (event.isPaid) {
-      const ticketsSold = await Ticket.countDocuments({ event: eventId, isValid: true });
+      const ticketsSold = await Ticket.countDocuments({ event: event._id, isValid: true });
       eventObj.ticketsSold = ticketsSold;
       eventObj.ticketsRemaining = Math.max(event.maxGuests - ticketsSold, 0);
       eventObj.userHasPurchased = hasTicket;
@@ -871,6 +880,13 @@ export const getEventByShareToken = async (req, res) => {
       }
     }
 
+    // 3) fall back to slug (`/event/lagos-beach-party`) — stored lowercase.
+    if (!event) {
+      event = await Event.findOne({ slug: shareToken.toLowerCase() })
+        .populate('createdBy', 'username email profilePicture')
+        .populate('invitedUsers', 'username email profilePicture');
+    }
+
     if (!event) {
       return res.status(404).json({ message: "Event not found" });
     }
@@ -913,12 +929,13 @@ export const getEventQr = async (req, res) => {
     const userId = req.user?.id ?? null;
 
     const FIELDS =
-      "title shareToken isPublic isActive isPaid approvalStatus createdBy cohosts invitedUsers pendingInvites rsvpUsers";
+      "title shareToken slug isPublic isActive isPaid approvalStatus createdBy cohosts invitedUsers pendingInvites rsvpUsers";
 
     let event = mongoose.isValidObjectId(eventId)
       ? await Event.findById(eventId).select(FIELDS)
       : null;
     if (!event) event = await Event.findOne({ shareToken: eventId }).select(FIELDS);
+    if (!event) event = await Event.findOne({ slug: eventId.toLowerCase() }).select(FIELDS);
 
     if (!event) return res.status(404).json({ message: "Event not found" });
     if (event.isActive === false) {
@@ -957,12 +974,14 @@ export const getEventQr = async (req, res) => {
       await event.save();
     }
 
-    const url = `${config.stripe.serverUrl}/event/${event.shareToken}`;
+    // Prefer the human-readable slug in the encoded link; shareToken remains
+    // the immutable fallback for events whose title produced no slug.
+    const url = `${config.stripe.serverUrl}/event/${event.slug || event.shareToken}`;
 
     // The PNG is a pure function of the URL, so it's worth caching — but keyed
-    // on the token, not the requested id, so the `_id` and `shareToken` forms
-    // of the same event share one entry.
-    const cacheKey = `event_qr_${event.shareToken}`;
+    // on the token, not the requested id, so the `_id`, `shareToken` and `slug`
+    // forms of the same event share one entry.
+    const cacheKey = `event_qr_${event.slug || event.shareToken}`;
     let qr = getCache(cacheKey);
     if (!qr) {
       qr = await linkQrDataUrl(url);
@@ -1537,6 +1556,10 @@ export const joinEventByShareLink = async (req, res) => {
     if (!event && mongoose.isValidObjectId(shareToken)) {
       event = await Event.findOne({ _id: shareToken });
     }
+    if (!event) {
+      // Slug share links (`/event/lagos-beach-party`) — stored lowercase.
+      event = await Event.findOne({ slug: shareToken.toLowerCase() });
+    }
 
     if (!event) {
       return res.status(404).json({ message: "Event not found" });
@@ -2027,9 +2050,11 @@ export const getEventTicketSales = async (req, res) => {
       maxGuests: event.maxGuests,
       ticketPrice: event.ticketPrice,
       ticketTiers: event.ticketTiers || [],
-      // Sum what each ticket actually sold for — with tiers (and legacy price
-      // edits) tickets in the same event carry different prices.
-      totalRevenue: tickets.reduce((sum, t) => sum + (t.ticketPrice || 0), 0),
+      // Sum what each ticket actually sold for — amountPaid reflects discount
+      // codes; legacy tickets predate it and keep counting face price. With
+      // tiers (and legacy price edits) tickets in the same event carry
+      // different prices.
+      totalRevenue: tickets.reduce((sum, t) => sum + (t.amountPaid ?? t.ticketPrice ?? 0), 0),
       tickets
     });
   } catch (error) {
@@ -2430,5 +2455,79 @@ export const removeCohost = async (req, res) => {
   } catch (error) {
     console.error("Remove cohost error:", error);
     res.status(500).json({ message: "Failed to remove co-host" });
+  }
+};
+
+/**
+ * Resolve an event param that may be an `_id`, a shareToken, or a slug —
+ * the same chain getEventById uses. Returns the event doc or null.
+ */
+const findEventByAnyId = async (eventId) => {
+  let event = mongoose.isValidObjectId(eventId)
+    ? await Event.findById(eventId)
+    : null;
+  if (!event) event = await Event.findOne({ shareToken: eventId });
+  if (!event) event = await Event.findOne({ slug: eventId.toLowerCase() });
+  return event;
+};
+
+// Get an event's discount codes (creator only). Codes are created by CityVibe
+// admins; the creator can only view them and flip `disabledByCreator`.
+export const getEventDiscountCodes = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user.id;
+
+    const event = await findEventByAnyId(eventId);
+    if (!event) {
+      return res.status(404).json({ message: "Event not found" });
+    }
+
+    // Only the creator can view discount codes
+    if (event.createdBy.toString() !== userId) {
+      return res.status(403).json({ message: "You don't have permission to view discount codes" });
+    }
+
+    const codes = await DiscountCode.find({ event: event._id }).sort({ createdAt: -1 });
+
+    res.status(200).json({ codes });
+  } catch (error) {
+    console.error("Get event discount codes error:", error);
+    res.status(500).json({ message: "Error fetching discount codes", error: error.message });
+  }
+};
+
+// Toggle a discount code's `disabledByCreator` flag (creator only). This flag
+// is independent of the admin's `isActive` kill switch — a code is usable only
+// when both allow it — so creators can flip theirs regardless of `isActive`.
+export const toggleEventDiscountCodeByCreator = async (req, res) => {
+  try {
+    const { eventId, codeId } = req.params;
+    const userId = req.user.id;
+
+    const event = await findEventByAnyId(eventId);
+    if (!event) {
+      return res.status(404).json({ message: "Event not found" });
+    }
+
+    // Only the creator can toggle discount codes
+    if (event.createdBy.toString() !== userId) {
+      return res.status(403).json({ message: "You don't have permission to manage discount codes" });
+    }
+
+    const code = mongoose.isValidObjectId(codeId)
+      ? await DiscountCode.findOne({ _id: codeId, event: event._id })
+      : null;
+    if (!code) {
+      return res.status(404).json({ message: "Discount code not found" });
+    }
+
+    code.disabledByCreator = !code.disabledByCreator;
+    await code.save();
+
+    res.status(200).json({ disabledByCreator: code.disabledByCreator });
+  } catch (error) {
+    console.error("Toggle discount code error:", error);
+    res.status(500).json({ message: "Error updating discount code", error: error.message });
   }
 };

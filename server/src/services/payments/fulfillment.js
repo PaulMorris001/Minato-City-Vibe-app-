@@ -32,11 +32,14 @@ import { invalidateCachePattern } from "../../utils/cache.js";
  * @param {object} args
  * @param {string} args.eventId
  * @param {string} args.userId            buyer
- * @param {"stripe"|"paystack"} args.provider
+ * @param {"stripe"|"paystack"|"none"} args.provider  "none" = 100%-off discount
  * @param {string} args.paymentRef        provider charge ref (PaymentIntent id / Paystack reference)
  * @param {string} [args.currency]
  * @param {number} [args.platformFeeCents] platform cut (provider native units)
  * @param {number} [args.sellerNetCents]   seller share  (provider native units)
+ * @param {number} [args.amountPaid]      what was actually charged (major units; absent = face price)
+ * @param {string} [args.discountCode]    applied discount code, if any
+ * @param {number} [args.discountAmount]  discount taken off the face price (major units)
  * @returns {Promise<{ ticket: object, alreadyExisted: boolean }>}
  */
 export async function fulfillTicket({
@@ -49,6 +52,9 @@ export async function fulfillTicket({
   platformFeeCents = 0,
   sellerNetCents = 0,
   tierId,
+  amountPaid,
+  discountCode,
+  discountAmount,
 }) {
   const existing = await Ticket.findOne({ event: eventId, user: userId, isValid: true });
   if (existing) return { ticket: existing, alreadyExisted: true };
@@ -74,9 +80,16 @@ export async function fulfillTicket({
     currency: currency || event.currency || "usd",
     platformFeeCents,
     sellerNetCents,
+    // Discount snapshot: what the buyer actually paid vs. the face price above.
+    // Absent on undiscounted tickets — readers fall back to ticketPrice.
+    ...(amountPaid !== undefined ? { amountPaid } : {}),
+    ...(discountCode ? { discountCode } : {}),
+    ...(discountAmount !== undefined ? { discountAmount } : {}),
   };
   if (provider === "paystack") ticketData.paystackReference = paymentRef;
-  else ticketData.stripePaymentIntentId = paymentRef;
+  else if (provider === "stripe") ticketData.stripePaymentIntentId = paymentRef;
+  // provider "none" (100%-discount): no charge exists; the reference lives on
+  // the DiscountRedemption, so neither provider field gets a fake value.
 
   const ticket = await Ticket.create(ticketData);
 
@@ -134,7 +147,7 @@ export async function fulfillTicket({
  * @param {string} args.recipientUserId     the ticket holder (guest or real user)
  * @param {string} args.buyerUserId         the payer
  * @param {object|null} args.tier           { tierId, name, price } or null (single-price)
- * @param {"stripe"|"paystack"} args.provider
+ * @param {"stripe"|"paystack"|"none"} args.provider  "none" = 100%-off discount
  * @param {"paystack"|"stripe"|null} args.payoutProvider
  * @param {string} args.paymentRef
  * @param {string} args.currency
@@ -142,6 +155,9 @@ export async function fulfillTicket({
  * @param {number} args.sellerNetCents
  * @param {string} args.recipientEmail
  * @param {string} [args.recipientName]
+ * @param {number} [args.amountPaid]        what was actually charged for this ticket (major units)
+ * @param {string} [args.discountCode]      applied discount code, if any
+ * @param {number} [args.discountAmount]    discount taken off the face price (major units)
  * @returns {Promise<object>} the created ticket
  */
 export async function issueRecipientTicket({
@@ -157,6 +173,9 @@ export async function issueRecipientTicket({
   sellerNetCents = 0,
   recipientEmail,
   recipientName,
+  amountPaid,
+  discountCode,
+  discountAmount,
 }) {
   const ticketData = {
     event: event._id,
@@ -171,9 +190,15 @@ export async function issueRecipientTicket({
     currency: currency || event.currency || "usd",
     platformFeeCents,
     sellerNetCents,
+    // Discount snapshot — see fulfillTicket.
+    ...(amountPaid !== undefined ? { amountPaid } : {}),
+    ...(discountCode ? { discountCode } : {}),
+    ...(discountAmount !== undefined ? { discountAmount } : {}),
   };
   if (provider === "paystack") ticketData.paystackReference = paymentRef;
-  else ticketData.stripePaymentIntentId = paymentRef;
+  else if (provider === "stripe") ticketData.stripePaymentIntentId = paymentRef;
+  // provider "none" (100%-discount): no charge exists; the reference lives on
+  // the DiscountRedemption, so neither provider field gets a fake value.
 
   const ticket = await Ticket.create(ticketData);
 

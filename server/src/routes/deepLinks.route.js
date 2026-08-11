@@ -4,6 +4,7 @@ import Event from '../models/event.model.js';
 import Guide from '../models/guide.model.js';
 import User from '../models/user.model.js';
 import { isSupportUser } from '../utils/supportAccount.js';
+import { linkQrDataUrl } from '../utils/qrcode.js';
 
 const router = express.Router();
 
@@ -13,6 +14,11 @@ const HAS_APP_STORE_LISTING = true;
 const APP_STORE = 'https://apps.apple.com/us/app/ourcityvibe/id6787367889';
 const APP_STORE_ID = '6787367889';
 const SITE_BASE = 'https://api.ourcityvibe.com';
+// The public website. Share links are served from the API (they need SSR +
+// database access for link previews), but the site is where someone without
+// the app can actually browse an event, so the landing page offers it as a
+// third option alongside "open in the app" and the stores.
+const WEB_BASE = process.env.PUBLIC_WEB_URL || 'https://www.ourcityvibe.com';
 const BRAND_TAGLINE = 'OurCityvibe — every night out, in one app.';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -154,6 +160,8 @@ function buildLandingPage({
   imageUrl,
   canonicalUrl,
   appDeepLink,
+  /** Optional www URL for the same item — renders a "View on the website" button. */
+  webUrl,
   body,
 }) {
   const t = escapeHtml(title || 'OurCityvibe');
@@ -161,6 +169,7 @@ function buildLandingPage({
   const ogImage = escapeHtml(imageUrl || `${SITE_BASE}/og-default.png`);
   const url = escapeHtml(canonicalUrl);
   const deepLinkEsc = escapeHtml(appDeepLink);
+  const webUrlEsc = webUrl ? escapeHtml(webUrl) : '';
 
   // The body block is already escaped/composed by the caller.
   const bodyHtml = body || '';
@@ -274,6 +283,22 @@ function buildLandingPage({
       margin-bottom: 12px;
       box-shadow: 0 10px 24px rgba(168,85,247,0.4);
     }
+    /* Secondary to "open in the app", but still a primary-weight action for
+       anyone who doesn't want to install anything. */
+    .web-btn {
+      display: block;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(168,85,247,0.45);
+      color: #f4eeff;
+      text-decoration: none;
+      border-radius: 14px;
+      padding: 14px;
+      font-size: 14px;
+      font-weight: 600;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+    .web-btn:hover { background: rgba(168,85,247,0.14); }
     .store-row { display: flex; gap: 10px; }
     .store-btn {
       flex: 1;
@@ -302,11 +327,16 @@ function buildLandingPage({
     <div class="logo">OurCityvibe</div>
     ${bodyHtml}
     <a class="open-btn" href="${deepLinkEsc}">Open in the app</a>
+    ${webUrlEsc ? `<a class="web-btn" href="${webUrlEsc}">View on the website</a>` : ''}
     <div class="store-row">
       ${HAS_APP_STORE_LISTING ? `<a class="store-btn" href="${APP_STORE}">App Store</a>` : ''}
       <a class="store-btn" href="${PLAY_STORE}">Google Play</a>
     </div>
-    <div class="footer-note">Tap the button above to open in OurCityvibe.</div>
+    <div class="footer-note">
+      ${webUrlEsc
+        ? 'Open in the app, or view it in your browser — no app needed.'
+        : 'Tap the button above to open in OurCityvibe.'}
+    </div>
   </div>
   <!--
     Intentionally no JS auto-redirect. iMessage / Apple Link Presentation
@@ -319,12 +349,68 @@ function buildLandingPage({
 </html>`;
 }
 
+/**
+ * The event's QR code as an actual PNG file (not a JSON data-URL).
+ *
+ * `GET /api/events/:id/qr` returns a base64 data URL for in-app display, which
+ * a browser can't be pointed at and the OS can't save. This serves the raw
+ * bytes at a plain https URL, so ANY client can hand it to the system — the app
+ * just opens it with `Linking` (React Native core, present in every build) and
+ * the user long-presses to save. That keeps "download the QR" working without
+ * shipping a native image-saving module.
+ *
+ * Deliberately unauthenticated, exactly like the landing page it sits next to:
+ * the code only ever encodes the public share link, and holding that link is
+ * already the access grant. Soft-deleted events still 404.
+ */
+router.get('/event/:token/qr.png', async (req, res) => {
+  const { token } = req.params;
+  try {
+    let event = await Event.findOne({ shareToken: token }).select('slug shareToken isActive').lean();
+    if (!event && mongoose.isValidObjectId(token)) {
+      event = await Event.findOne({ _id: token }).select('slug shareToken isActive').lean();
+    }
+    if (!event) {
+      event = await Event.findOne({ slug: token.toLowerCase() }).select('slug shareToken isActive').lean();
+    }
+    if (!event || event.isActive === false) {
+      return res.status(404).type('text/plain').send('Event not found');
+    }
+
+    // Encode the canonical share link, matching getEventQr — a printed code and
+    // an in-app one must scan to the same place.
+    const target = `${SITE_BASE}/event/${event.slug || event.shareToken || token}`;
+    const dataUrl = await linkQrDataUrl(target);
+    const png = Buffer.from(dataUrl.split(',')[1], 'base64');
+
+    res.setHeader('Content-Type', 'image/png');
+    // Codes are immutable per event, so let the CDN/browser keep them.
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    // Prompts a real filename when saved from a desktop browser; mobile
+    // long-press "Save Image" ignores it harmlessly.
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="ourcityvibe-${event.slug || 'event'}-qr.png"`
+    );
+    return res.send(png);
+  } catch (err) {
+    console.error('Event QR png error:', err);
+    return res.status(500).type('text/plain').send('Could not render QR code');
+  }
+});
+
 // ─── Event landing page ──────────────────────────────────────────────────────
 
 router.get('/event/:token', async (req, res) => {
   const { token } = req.params;
-  const appDeepLink = `mobile://share/${token}`;
-  const canonicalUrl = `${SITE_BASE}/event/${token}`;
+  // Where "Open in the app" sends the user. Defaults to the share/invite screen,
+  // whose whole purpose is private events: possessing the link IS the access
+  // grant there, so the normal event screen would 403 the recipient. A browsably
+  // public event is the opposite case — anyone may open it, and the real event
+  // screen is the only one with the RSVP and buy-a-ticket flows — so it gets
+  // re-pointed at `mobile://event/…` once we've loaded the doc below.
+  let appDeepLink = `mobile://share/${token}`;
+  let canonicalUrl = `${SITE_BASE}/event/${token}`;
 
   // Look the event up so link previews can render with title, date, venue,
   // and the event's cover image. Fall back to a generic invite card on miss.
@@ -335,6 +421,12 @@ router.get('/event/:token', async (req, res) => {
       .lean();
     if (!event && mongoose.isValidObjectId(token)) {
       event = await Event.findOne({ _id: token })
+        .populate('createdBy', 'username')
+        .lean();
+    }
+    if (!event) {
+      // Human-readable slug links (newest share format).
+      event = await Event.findOne({ slug: token.toLowerCase() })
         .populate('createdBy', 'username')
         .lean();
     }
@@ -366,6 +458,21 @@ router.get('/event/:token', async (req, res) => {
         appDeepLink,
         body,
       }));
+  }
+
+  // Prefer the slug in the canonical URL so re-shares carry the readable
+  // form; the mobile deep link keeps the raw incoming param.
+  canonicalUrl = `${SITE_BASE}/event/${event.slug || event.shareToken || token}`;
+
+  // Public events open on the real event screen. Sending them to the invite
+  // screen instead is what stranded buyers on paid events: that screen's only
+  // action is "Join Event", which the server refuses for a ticketed event
+  // ("get a ticket to join") — and it has no checkout, so there was nothing to
+  // tap. Mirrors the browsable-public rule in getEventById.
+  const opensOnEventScreen =
+    event.isPublic && (!event.isPaid || event.approvalStatus === 'approved');
+  if (opensOnEventScreen) {
+    appDeepLink = `mobile://event/${event.slug || event.shareToken || token}`;
   }
 
   const when = formatEventWhen(event.date);
@@ -410,6 +517,13 @@ router.get('/event/:token', async (req, res) => {
       imageUrl: previewImage,
       canonicalUrl,
       appDeepLink,
+      // The website's event page takes the same param the share link carries —
+      // it hands it straight to GET /api/events/:param, which resolves slug,
+      // shareToken and _id alike. Only offered for events the site can actually
+      // show: a private event would bounce a logged-out visitor.
+      webUrl: opensOnEventScreen
+        ? `${WEB_BASE}/events/${event.slug || event.shareToken || token}`
+        : undefined,
       body,
     }));
 });
@@ -419,13 +533,13 @@ router.get('/event/:token', async (req, res) => {
 router.get('/guide/:id', async (req, res) => {
   const { id } = req.params;
   const appDeepLink = `mobile://guide/${id}`;
-  const canonicalUrl = `${SITE_BASE}/guide/${id}`;
+  let canonicalUrl = `${SITE_BASE}/guide/${id}`;
 
   let guide = null;
   try {
-    if (mongoose.isValidObjectId(id)) {
-      guide = await Guide.findById(id).lean();
-    }
+    guide = mongoose.isValidObjectId(id)
+      ? await Guide.findById(id).lean()
+      : await Guide.findOne({ slug: id.toLowerCase() }).lean();
   } catch (err) {
     console.error('Guide lookup for share landing failed:', err);
   }
@@ -446,6 +560,10 @@ router.get('/guide/:id', async (req, res) => {
         `,
       }));
   }
+
+  // Prefer the slug in the canonical URL so re-shares carry the readable
+  // form; the mobile deep link keeps the raw incoming param.
+  canonicalUrl = `${SITE_BASE}/guide/${guide.slug || guide._id}`;
 
   const cityLine = guide.city
     ? `${guide.city}${guide.cityState ? ', ' + guide.cityState : ''}`
@@ -488,16 +606,26 @@ router.get('/guide/:id', async (req, res) => {
 router.get('/user/:id', async (req, res) => {
   const { id } = req.params;
   const appDeepLink = `mobile://user/${id}`;
-  const canonicalUrl = `${SITE_BASE}/user/${id}`;
+  let canonicalUrl = `${SITE_BASE}/user/${id}`;
 
   let user = null;
   try {
     // The support account has no shareable public profile — fall through to
     // the generic landing page rather than rendering a profile card for it.
-    if (mongoose.isValidObjectId(id) && !isSupportUser(id)) {
-      user = await User.findById(id)
-        .select('username profilePicture bio isVendor businessName verified')
+    if (mongoose.isValidObjectId(id)) {
+      if (!isSupportUser(id)) {
+        user = await User.findById(id)
+          .select('username profilePicture bio isVendor businessName verified slug')
+          .lean();
+      }
+    } else {
+      // Share-slug lookup — old slugs (kept in slugHistory after a username
+      // change) still resolve so previously shared links don't break.
+      const p = id.toLowerCase();
+      user = await User.findOne({ $or: [{ slug: p }, { slugHistory: p }] })
+        .select('username profilePicture bio isVendor businessName verified slug')
         .lean();
+      if (user && isSupportUser(user._id)) user = null;
     }
   } catch (err) {
     console.error('User lookup for share landing failed:', err);
@@ -519,6 +647,10 @@ router.get('/user/:id', async (req, res) => {
         `,
       }));
   }
+
+  // Prefer the slug in the canonical URL so re-shares carry the readable
+  // form; the mobile deep link keeps the raw incoming param.
+  canonicalUrl = `${SITE_BASE}/user/${user.slug || user._id}`;
 
   const displayName = user.isVendor && user.businessName ? user.businessName : user.username;
   const kicker = user.isVendor ? 'Vendor' : 'Profile';

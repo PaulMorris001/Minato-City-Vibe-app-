@@ -16,6 +16,7 @@ import PaidEvents from "./pages/PaidEvents";
 import EventEdits from "./pages/EventEdits";
 import Payouts from "./pages/Payouts";
 import Reports from "./pages/Reports";
+import DiscountCodes from "./pages/DiscountCodes";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
@@ -47,6 +48,7 @@ function AppRoutes() {
                 <Route path="/event-edits" element={<EventEdits />} />
                 <Route path="/payouts" element={<Payouts />} />
                 <Route path="/reports" element={<Reports />} />
+                <Route path="/discount-codes" element={<DiscountCodes />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Layout>

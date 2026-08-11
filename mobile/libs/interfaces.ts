@@ -207,6 +207,8 @@ export interface GuideSection {
 
 export interface Guide {
   _id: string;
+  /** Human-readable share slug (e.g. "top-10-restaurants"); absent on old guides. */
+  slug?: string;
   title: string;
   coverImage?: string;
   author: {

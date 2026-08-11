@@ -1,21 +1,28 @@
 const BASE = 'https://api.ourcityvibe.com';
 
 /**
- * Build a share URL for an event. Prefer the shareToken; fall back to the
- * event _id so older events without a generated shareToken still resolve.
+ * Build a share URL for an event. Callers prefer the human-readable slug
+ * (`/event/lagos-beach-party`), then the shareToken, then the event _id —
+ * the server resolves all three, so older events and already-shared links
+ * still work.
  */
-export function createEventShareLink(shareTokenOrId: string): string {
-  return `${BASE}/event/${shareTokenOrId}`;
+export function createEventShareLink(slugOrTokenOrId: string): string {
+  return `${BASE}/event/${slugOrTokenOrId}`;
 }
 
-export function createGuideShareLink(guideId: string): string {
-  return `${BASE}/guide/${guideId}`;
+/**
+ * Build a share URL for a guide. Callers prefer the slug and fall back to
+ * the guide _id; the server resolves both.
+ */
+export function createGuideShareLink(slugOrId: string): string {
+  return `${BASE}/guide/${slugOrId}`;
 }
 
 /**
  * Build a share URL for a user's public profile. Opens the app straight onto
- * that profile via the `/user/<id>` universal link.
+ * that profile via the `/user/<slug-or-id>` universal link. Callers prefer
+ * the username slug and fall back to the user _id.
  */
-export function createUserShareLink(userId: string): string {
-  return `${BASE}/user/${userId}`;
+export function createUserShareLink(slugOrId: string): string {
+  return `${BASE}/user/${slugOrId}`;
 }

@@ -30,8 +30,10 @@ interface Event {
   image?: string;
   description?: string;
   shareToken: string;
+  slug?: string;
   isPublic: boolean;
   isPaid: boolean;
+  approvalStatus?: "pending" | "approved" | "rejected";
   ticketPrice?: number;
   currency?: string;
   maxGuests?: number;
@@ -61,6 +63,9 @@ export default function ShareEventScreen() {
         : undefined;
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
+  // Set while we hand a public event off to /event/[id]; keeps the spinner up
+  // so the invite UI never flashes on the way out.
+  const [redirecting, setRedirecting] = useState(false);
   const [joining, setJoining] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string>("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -96,7 +101,22 @@ export default function ShareEventScreen() {
       const response = await fetch(`${BASE_URL}/events/share/${token}`);
       const data = await response.json().catch(() => ({}));
       if (response.ok) {
-        setEvent(data.event);
+        const ev: Event | undefined = data.event;
+        // This screen exists for PRIVATE invite links, where holding the link is
+        // the access grant and /event/[id] would 403 the recipient. A public
+        // event belongs on the real event screen — the only one with the RSVP
+        // and buy-a-ticket flows. Without this, a public paid event dead-ended:
+        // the sole button here is "Join Event", which the server refuses for a
+        // ticketed event, with no way to pay. (Newer links skip this screen
+        // entirely — the landing page now deep-links straight to /event/…)
+        const opensOnEventScreen =
+          !!ev?.isPublic && (!ev.isPaid || ev.approvalStatus === "approved");
+        if (opensOnEventScreen && ev) {
+          setRedirecting(true);
+          router.replace(`/event/${ev.slug || ev._id}` as any);
+          return;
+        }
+        setEvent(ev ?? null);
       } else {
         const title = response.status === 410 ? "Unavailable" : "Not Found";
         const fallback =
@@ -168,7 +188,7 @@ export default function ShareEventScreen() {
   const alreadyJoined =
     event?.invitedUsers.some((u) => u._id === currentUserId) || isCreator;
 
-  if (loading) {
+  if (loading || redirecting) {
     return (
       <LinearGradient colors={[colors.background, colors.backgroundSecondary]} style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} style={{ flex: 1 }} />
@@ -258,6 +278,17 @@ export default function ShareEventScreen() {
             <View style={styles.joinedBanner}>
               <Ionicons name="checkmark-circle" size={20} color={colors.success} />
               <Text style={styles.joinedText}>You're already attending this event</Text>
+            </View>
+          ) : event.isPaid ? (
+            // A paid event only lands here when it hasn't been approved yet
+            // (approved ones are handed to /event/[id] above). Joining is
+            // refused server-side for ticketed events and there is nothing to
+            // buy yet, so say so instead of offering a button that can't work.
+            <View style={styles.noticeBanner}>
+              <Ionicons name="time-outline" size={20} color={colors.textSecondary} />
+              <Text style={styles.noticeText}>
+                Tickets for this event aren't on sale yet. Check back soon.
+              </Text>
             </View>
           ) : (
             <TouchableOpacity
@@ -376,6 +407,22 @@ const createStyles = (c: ThemeColors) =>
     borderColor: c.success,
   },
   joinedText: { fontSize: scaleFontSize(14), fontFamily: Fonts.semiBold, color: c.success },
+  noticeBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: c.card,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  noticeText: {
+    fontSize: scaleFontSize(14),
+    fontFamily: Fonts.semiBold,
+    color: c.textSecondary,
+    flex: 1,
+  },
   viewButton: {
     backgroundColor: c.card,
     borderRadius: 14,

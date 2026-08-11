@@ -18,7 +18,7 @@ import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { showError, showInfo, showSuccess } from "@/utils/toast";
-import { shareEventQr } from "@/utils/qrShare";
+import { shareEventQr, openQrForSaving } from "@/utils/qrShare";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 
@@ -114,6 +114,18 @@ export default function EventQRModal({
     }
   };
 
+  // Opens the PNG in the browser so the user can long-press → Save Image.
+  // Uses only Linking + a server-rendered file, so it works on every installed
+  // build regardless of which native modules that binary shipped with.
+  const handleSave = async () => {
+    const opened = await openQrForSaving(url);
+    if (!opened) {
+      showError("Couldn't open the image.");
+      return;
+    }
+    showInfo("Opened the code in your browser — press and hold it to save.");
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} />
@@ -166,6 +178,14 @@ export default function EventQRModal({
             >
               <Ionicons name="copy-outline" size={17} color={colors.textBright} />
               <Text style={styles.actionGhostText}>Copy link</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.action, styles.actionGhost]}
+              onPress={handleSave}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="download-outline" size={17} color={colors.textBright} />
+              <Text style={styles.actionGhostText}>Save</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[

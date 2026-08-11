@@ -5,6 +5,7 @@ import type {
   AdminVendor,
   AdminEvent,
   AdminGuide,
+  AdminDiscountCode,
   City,
   VendorType,
   AnalyticsLog,
@@ -72,6 +73,27 @@ export const adminApi = {
     client.patch<{ isActive: boolean }>(`/admin/guides/${id}/toggle`).then((r) => { bustCache("/admin/guides"); return r; }),
   deleteGuide: (id: string) =>
     client.delete(`/admin/guides/${id}`).then((r) => { bustCache("/admin/guides"); bustCache("/admin/stats"); return r; }),
+
+  // Discount Codes
+  getDiscountCodes: (params?: { search?: string; page?: number; limit?: number; eventId?: string }) =>
+    cachedGet<{ codes: AdminDiscountCode[]; total: number; page: number; limit: number }>(
+      "/admin/discount-codes",
+      { params }
+    ),
+  createDiscountCode: (data: {
+    eventId: string;
+    code: string;
+    type: "percent" | "fixed";
+    value: number;
+    startsAt?: string;
+    endsAt?: string;
+    maxRedemptions?: number;
+  }) =>
+    client.post<AdminDiscountCode>("/admin/discount-codes", data).then((r) => { bustCache("/admin/discount-codes"); return r; }),
+  toggleDiscountCode: (id: string) =>
+    client.patch<{ isActive: boolean }>(`/admin/discount-codes/${id}/toggle`).then((r) => { bustCache("/admin/discount-codes"); return r; }),
+  deleteDiscountCode: (id: string) =>
+    client.delete(`/admin/discount-codes/${id}`).then((r) => { bustCache("/admin/discount-codes"); return r; }),
 
   // Verifications
   getVerifications: (params?: { status?: string; page?: number; limit?: number }) =>

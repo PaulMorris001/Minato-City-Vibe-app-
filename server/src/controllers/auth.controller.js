@@ -1,6 +1,7 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import mongoose from "mongoose";
 import { OAuth2Client } from "google-auth-library";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import config from "../config/env.js";
@@ -22,6 +23,8 @@ import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { validatePassword } from "../utils/passwordPolicy.js";
 import { SUPPORT_USER_ID, isSupportUser } from "../utils/supportAccount.js";
 import { countFollows } from "../utils/followCounts.js";
+import { slugify, generateUniqueSlug } from "../utils/slug.js";
+import { resolveUserId } from "../utils/resolveUser.js";
 import { searchUsersQuery } from "../services/userSearch.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -663,6 +666,24 @@ export async function updateProfilePicture(req, res) {
           .json({ message: "This username is already taken." });
       }
       user.username = normalizedUsername;
+
+      // Regenerate the share slug from the new name. The old slug is parked
+      // in slugHistory (deduped, capped at 10 — oldest dropped) so profile
+      // links that were already shared keep resolving.
+      const newSlug = await generateUniqueSlug(
+        User,
+        slugify(normalizedUsername),
+        { excludeId: user._id, historyField: "slugHistory" }
+      );
+      if (user.slug && user.slug !== newSlug) {
+        user.slugHistory = [
+          ...(user.slugHistory || []).filter((s) => s !== user.slug),
+          user.slug,
+        ].slice(-10);
+      }
+      // undefined (not null) when no slug could be generated — an explicit
+      // null would still be indexed by the sparse unique index and collide.
+      user.slug = newSlug || undefined;
     }
 
     // Only touch the picture when the client actually sends one — otherwise a
@@ -774,9 +795,26 @@ export async function getUserById(req, res) {
       });
     }
 
-    const user = await User.findById(req.params.userId)
-      .select("_id username email profilePicture bio isVendor businessName verified isBanned blockedUsers")
-      .lean();
+    const PUBLIC_PROFILE_FIELDS =
+      "_id username email profilePicture bio isVendor businessName verified isBanned blockedUsers slug";
+    let user;
+    if (mongoose.isValidObjectId(req.params.userId)) {
+      user = await User.findById(req.params.userId)
+        .select(PUBLIC_PROFILE_FIELDS)
+        .lean();
+    } else {
+      // Non-id param → share-slug lookup. Old slugs live in slugHistory after
+      // a username change, so links shared before a rename keep resolving.
+      const p = String(req.params.userId).toLowerCase();
+      user = await User.findOne({ $or: [{ slug: p }, { slugHistory: p }] })
+        .select(PUBLIC_PROFILE_FIELDS)
+        .lean();
+      // The support account is only reachable through the id path above —
+      // its slug must not expose a public profile.
+      if (user && isSupportUser(user._id)) {
+        return res.status(404).json({ message: "User not found" });
+      }
+    }
 
     if (!user || user.isBanned) {
       return res.status(404).json({ message: "User not found" });
@@ -829,19 +867,25 @@ export async function getUserById(req, res) {
 // Get public events created by a user
 export async function getUserEvents(req, res) {
   try {
+    // The param may be a share slug (`/user/setemil`) rather than an _id —
+    // resolve it before it reaches a query, or Mongoose cast-errors.
+    const userId = await resolveUserId(req.params.userId);
+    if (!userId) {
+      return res.json({ events: [] });
+    }
     // The support account has no public profile to hang events off.
-    if (isSupportUser(req.params.userId)) {
+    if (isSupportUser(userId)) {
       return res.json({ events: [] });
     }
     // If the requesting user has blocked (or is blocked by) this user, return empty
     if (req.user?.id) {
       const blockedIds = await getBlockedIds(req.user.id);
-      if (blockedIds.some((id) => String(id) === String(req.params.userId))) {
+      if (blockedIds.some((id) => String(id) === String(userId))) {
         return res.json({ events: [] });
       }
     }
     const events = await Event.find({
-      createdBy: req.params.userId,
+      createdBy: userId,
       isPublic: true,
       isActive: true,
     })

@@ -30,20 +30,25 @@ export function useStripePayment() {
   const pay = async (
     type: PurchaseType,
     id: string,
-    tierId?: string
+    tierId?: string,
+    discountCode?: string
   ): Promise<PaymentResult> => {
     const token = await SecureStore.getItemAsync("token");
     if (!token) return { success: false, error: "Not authenticated" };
 
     // 1. Ask the server how to charge for this item. For tiered events the
     // tierId picks which server-known price applies — the server never trusts
-    // a client-sent amount.
+    // a client-sent amount, and discount codes are validated and priced
+    // server-side too.
     let init: any;
     try {
       const res = await fetch(`${BASE_URL}/payments/init/${type}/${id}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(tierId ? { tierId } : {}),
+        body: JSON.stringify({
+          ...(tierId ? { tierId } : {}),
+          ...(discountCode ? { discountCode } : {}),
+        }),
       });
       init = await res.json();
       if (!res.ok) {
@@ -51,6 +56,17 @@ export function useStripePayment() {
       }
     } catch {
       return { success: false, error: "Network error. Please try again." };
+    }
+
+    // A 100%-off discount code leaves nothing to charge — the server skips
+    // both providers and hands back a free reference. Confirm immediately;
+    // the server verifies the reserved redemption really zeroes the price.
+    if (init.provider === "none" && init.free) {
+      return confirmPurchase(type, id, token, {
+        provider: "none",
+        reference: init.reference,
+        tierId,
+      });
     }
 
     // 2. Run the provider checkout to obtain a payment reference.
@@ -161,7 +177,8 @@ export function useStripePayment() {
     }
   };
 
-  const payForTicket = (eventId: string, tierId?: string) => pay("ticket", eventId, tierId);
+  const payForTicket = (eventId: string, tierId?: string, discountCode?: string) =>
+    pay("ticket", eventId, tierId, discountCode);
   const payForGuide = (guideId: string) => pay("guide", guideId);
   const payForBooking = (bookingId: string) => pay("booking", bookingId);
   const payForOrder = (orderId: string) => pay("order", orderId);

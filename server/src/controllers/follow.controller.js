@@ -5,6 +5,7 @@ import { emitFollowEvent } from "../services/socket.service.js";
 import { sendPushNotification } from "../services/notification.service.js";
 import { isSupportUser } from "../utils/supportAccount.js";
 import { countFollows, supportAudienceFilter } from "../utils/followCounts.js";
+import { resolveUserId } from "../utils/resolveUser.js";
 
 /**
  * Followers/following list for the support account.
@@ -62,7 +63,10 @@ const listSupportAudience = async (req, res, supportId, { asFollowing }) => {
 export const followUser = async (req, res) => {
   try {
     const currentUserId = req.user.id;
-    const targetUserId = req.params.userId;
+    const targetUserId = await resolveUserId(req.params.userId);
+    if (!targetUserId) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     if (currentUserId === targetUserId) {
       return res.status(400).json({ message: "You cannot follow yourself" });
@@ -144,7 +148,10 @@ export const followUser = async (req, res) => {
 export const unfollowUser = async (req, res) => {
   try {
     const currentUserId = req.user.id;
-    const targetUserId = req.params.userId;
+    const targetUserId = await resolveUserId(req.params.userId);
+    if (!targetUserId) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     await Follow.findOneAndDelete({
       follower: currentUserId,
@@ -164,7 +171,10 @@ export const unfollowUser = async (req, res) => {
 // Get followers for a user
 export const getFollowers = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = await resolveUserId(req.params.userId);
+    if (!userId) {
+      return res.status(404).json({ message: "User not found" });
+    }
     const currentUserId = req.user.id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
@@ -212,7 +222,10 @@ export const getFollowers = async (req, res) => {
 // Get following for a user
 export const getFollowing = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = await resolveUserId(req.params.userId);
+    if (!userId) {
+      return res.status(404).json({ message: "User not found" });
+    }
     const currentUserId = req.user.id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
@@ -271,7 +284,12 @@ export const getFollowing = async (req, res) => {
 // Get follower and following counts
 export const getFollowCounts = async (req, res) => {
   try {
-    const { userId } = req.params;
+    // Profile links are slug-based, so this arrives as "setemil" as often as an
+    // _id. Resolve before querying — an unresolved slug used to cast-error.
+    const userId = await resolveUserId(req.params.userId);
+    if (!userId) {
+      return res.status(200).json({ followersCount: 0, followingCount: 0 });
+    }
 
     const { followersCount, followingCount } = await countFollows(userId);
 
@@ -286,7 +304,12 @@ export const getFollowCounts = async (req, res) => {
 export const getFollowStatus = async (req, res) => {
   try {
     const currentUserId = req.user.id;
-    const targetUserId = req.params.userId;
+    const targetUserId = await resolveUserId(req.params.userId);
+    if (!targetUserId) {
+      return res
+        .status(200)
+        .json({ isFollowing: false, isFollowedBy: false, isMutual: false });
+    }
 
     // Support counts everyone as a follower and follows everyone back.
     if (isSupportUser(targetUserId)) {

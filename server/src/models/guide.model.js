@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { mediaArrayLimit } from "../utils/mediaLimit.js";
+import { slugify, generateUniqueSlug } from "../utils/slug.js";
 
 const guideTopics = [
   "Chefs",
@@ -47,6 +48,11 @@ const guideSectionSchema = mongoose.Schema({
 
 const guideSchema = mongoose.Schema({
   title: { type: String, required: true },
+  // Human-readable share slug generated from the title once at creation.
+  // Never regenerated on title edits so already-shared links stay valid.
+  // Unset (sparse) when the title has no latin characters — links fall back
+  // to the _id.
+  slug: { type: String, unique: true, sparse: true },
   coverImage: { type: String, default: "" }, // optional cover photo
   author: {
     type: mongoose.Schema.Types.ObjectId,
@@ -121,6 +127,20 @@ const guideSchema = mongoose.Schema({
 guideSchema.index({ city: 1, topic: 1 });
 guideSchema.index({ author: 1, isDraft: 1 });
 guideSchema.index({ city: 1, price: 1 });
+
+// Generate the share slug before saving. Async hook — mongoose waits on the
+// returned promise, so no next() callback is needed.
+guideSchema.pre('save', async function() {
+  if (!this.slug && this.title) {
+    const base = slugify(this.title);
+    // Only assign when a slug was produced — an explicit null would still be
+    // indexed by the sparse unique index and collide with other null slugs.
+    const slug = await generateUniqueSlug(this.constructor, base, {
+      excludeId: this._id,
+    });
+    if (slug) this.slug = slug;
+  }
+});
 
 export const guideTopicsList = guideTopics;
 export default mongoose.model("guide", guideSchema);

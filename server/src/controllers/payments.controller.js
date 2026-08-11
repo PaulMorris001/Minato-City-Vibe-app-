@@ -12,6 +12,7 @@
  * NGN).
  */
 
+import mongoose from "mongoose";
 import stripe from "../config/stripe.js";
 import config from "../config/env.js";
 import User from "../models/user.model.js";
@@ -32,6 +33,14 @@ import { buildPaystackInit, verifyPaystackCharge } from "./paystack.controller.j
 import { createPayout } from "../services/payments/payout.service.js";
 import { settleStripePurchase } from "../services/payments/settleStripePayment.js";
 import TicketOrder from "../models/ticketOrder.model.js";
+import DiscountRedemption from "../models/discountRedemption.model.js";
+import {
+  computeDiscount,
+  previewDiscount,
+  reserveDiscount,
+  updateRedemptionReference,
+  applyRedemptionByReference,
+} from "../services/payments/discount.service.js";
 import { findOrCreateGuestUser } from "./guestCheckout.controller.js";
 import { sendPushNotification } from "../services/notification.service.js";
 import { invalidateCachePattern } from "../utils/cache.js";
@@ -176,6 +185,79 @@ async function resolvePurchase(type, id, userId, res, tierId) {
   return res.status(400).json({ message: "Unknown purchase type" }) && null;
 }
 
+// ─── Discount preview ────────────────────────────────────────────────────────
+
+/**
+ * POST /payments/discount/preview   body: { eventId, code, tierId?, items? }
+ *
+ * Validate a code against a ticket order before checkout — no side effects.
+ * The subtotal is always re-derived server-side from the event's prices:
+ * `items` (web batch checkout) sums each line's tier price, otherwise a single
+ * ticket via `tierId`. Guest tokens pass `authenticate` by design.
+ */
+export const previewDiscountHandler = async (req, res) => {
+  try {
+    const { eventId, code, tierId, items } = req.body || {};
+    if (!eventId || !code) {
+      return res.status(400).json({ message: "eventId and code are required" });
+    }
+
+    const event = mongoose.isValidObjectId(eventId) ? await Event.findById(eventId) : null;
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    if (!event.isPaid) {
+      return res.status(400).json({ message: "This event does not require payment" });
+    }
+
+    let subtotal = 0;
+    if (Array.isArray(items) && items.length > 0) {
+      for (const item of items) {
+        const { tier, error, code: errCode } = resolveTicketTier(event, item?.tierId);
+        if (error) return res.status(400).json({ message: error, code: errCode });
+        subtotal += tier ? tier.price : event.ticketPrice;
+      }
+    } else if (tierId) {
+      const { tier, error, code: errCode } = resolveTicketTier(event, tierId);
+      if (error) return res.status(400).json({ message: error, code: errCode });
+      subtotal = tier ? tier.price : event.ticketPrice;
+    } else {
+      // No tier chosen yet (mobile shows the code field before tier selection).
+      // Preview against the cheapest tier's price; init re-reserves against the
+      // actual tier's price once one is picked.
+      const tiers = event.ticketTiers || [];
+      subtotal = tiers.length
+        ? Math.min(...tiers.map((t) => t.price || 0))
+        : event.ticketPrice;
+    }
+
+    const currency = event.currency || "USD";
+    const result = await previewDiscount({
+      eventId,
+      code,
+      userId: req.user.id,
+      subtotal,
+      currency,
+    });
+    if (!result.valid) {
+      return res.status(200).json({ valid: false, reason: result.reason, message: result.message });
+    }
+
+    return res.status(200).json({
+      valid: true,
+      code: result.codeDoc.code,
+      type: result.codeDoc.type,
+      value: result.codeDoc.value,
+      currency,
+      subtotal,
+      discountAmount: result.discountAmount,
+      total: result.total,
+      free: result.free,
+    });
+  } catch (error) {
+    console.error("previewDiscountHandler error:", error);
+    res.status(500).json({ message: "Failed to check discount code" });
+  }
+};
+
 // ─── Init ────────────────────────────────────────────────────────────────────
 
 /**
@@ -190,12 +272,46 @@ export const initPayment = async (req, res) => {
     // Tiered ticket purchases carry the chosen tier; the price is always
     // re-derived server-side from the event, never taken from the client.
     const tierId = req.body?.tierId;
+    const discountCode = typeof req.body?.discountCode === "string" && req.body.discountCode.trim();
 
     const purchase = await resolvePurchase(type, id, userId, res, tierId);
     if (!purchase) return; // resolvePurchase already responded
     const { seller, amount, currency, tier } = purchase;
 
     if (!seller) return res.status(400).json({ message: "Seller not found" });
+
+    // Discount codes (tickets only): reserve a redemption slot NOW so a
+    // "first N" cap can't oversell between init and confirm. The discounted
+    // total becomes the charge amount; the reservation is pointed at the
+    // provider reference once it exists.
+    let chargeAmount = amount;
+    let redemption = null;
+    let discountAmount = 0;
+    let appliedCode = null;
+    if (discountCode && type === "ticket") {
+      const reserved = await reserveDiscount({
+        eventId: id,
+        code: discountCode,
+        userId,
+        subtotal: amount,
+        currency,
+      });
+      if (!reserved.ok) {
+        return res.status(400).json({ message: reserved.message, code: "discount_invalid" });
+      }
+      redemption = reserved.redemption;
+      discountAmount = reserved.discountAmount;
+      chargeAmount = reserved.total;
+      appliedCode = reserved.codeDoc.code;
+
+      // 100%-off: nothing to charge, so no provider call. The client goes
+      // straight to confirm with { provider: "none", reference }.
+      if (chargeAmount === 0) {
+        const reference = `free-${redemption._id}`;
+        await updateRedemptionReference(redemption._id, reference);
+        return res.status(200).json({ provider: "none", free: true, reference });
+      }
+    }
 
     const provider = getPayoutProvider(seller);
 
@@ -206,7 +322,8 @@ export const initPayment = async (req, res) => {
         return res.status(409).json({ message: "This seller isn't set up to receive payments yet." });
       }
       const buyer = await User.findById(userId).select("email username");
-      const init = await buildPaystackInit({ type, id, amount, currency, buyer });
+      const init = await buildPaystackInit({ type, id, amount: chargeAmount, currency, buyer });
+      if (redemption) await updateRedemptionReference(redemption._id, init.reference);
       return res.status(200).json(init);
     }
 
@@ -215,7 +332,7 @@ export const initPayment = async (req, res) => {
     // only leave once an admin approves the resulting Payout, which Stripe
     // Connect then transfers to the seller's connected account.
     const settlement = getSettlementProvider(seller);
-    const amountCents = Math.round(amount * 100);
+    const amountCents = Math.round(chargeAmount * 100);
     const feeCents = Math.round(amountCents * (PLATFORM_FEE_PERCENT / 100));
     const sellerNetCents = amountCents - feeCents;
 
@@ -248,8 +365,15 @@ export const initPayment = async (req, res) => {
     } else if (type === "order") {
       params.metadata.orderId = id.toString();
     }
+    if (appliedCode) {
+      // Carried on the PI so the webhook fallback can snapshot the discount and
+      // settle the reservation without a controller round-trip.
+      params.metadata.discountCode = appliedCode;
+      params.metadata.discountAmountCents = String(Math.round(discountAmount * 100));
+    }
 
     const paymentIntent = await stripe.paymentIntents.create(params);
+    if (redemption) await updateRedemptionReference(redemption._id, paymentIntent.id);
     res.status(200).json({ provider: "stripe", clientSecret: paymentIntent.client_secret });
   } catch (error) {
     console.error("initPayment error:", error);
@@ -273,6 +397,10 @@ export const confirmPayment = async (req, res) => {
 
     if (provider === "paystack") {
       return confirmPaystack(type, id, reference, userId, res, req.body?.tierId);
+    }
+    if (provider === "none") {
+      // 100%-off discount purchase — no charge exists to verify.
+      return confirmFreeTicket(type, id, reference, userId, res, req.body?.tierId);
     }
     if (provider && provider !== "stripe") {
       // e.g. a stale client sending the retired "flutterwave" — never let it
@@ -338,6 +466,56 @@ async function confirmStripe(type, id, paymentIntentId, userId, res) {
   return res.status(200).json({ message: "Order paid", order: result.order });
 }
 
+/**
+ * Confirm a 100%-off "purchase". No provider charge exists, so the proof of
+ * entitlement is the pending DiscountRedemption written at init. The zero
+ * total is re-derived server-side from the event price + the reserved code —
+ * the client's claim of "free" is never trusted.
+ */
+async function confirmFreeTicket(type, id, reference, userId, res, tierId) {
+  if (type !== "ticket") {
+    return res.status(400).json({ message: "Unsupported payment provider" });
+  }
+
+  // `event: id` keeps a 100%-percent code reserved on one event from being
+  // confirmed against a different one under the same reference.
+  const redemption = await DiscountRedemption.findOne({
+    reference,
+    user: userId,
+    event: id,
+    status: "pending",
+  }).populate("code");
+  if (!redemption || !redemption.code) {
+    return res.status(400).json({ message: "No pending discount found for this payment" });
+  }
+
+  const purchase = await resolvePurchaseForConfirm(type, id, userId, res, tierId);
+  if (!purchase) return;
+  const { amount, currency } = purchase;
+
+  const { discountAmount, total } = computeDiscount(redemption.code, amount);
+  if (total !== 0) {
+    return res.status(400).json({ message: "This code does not cover the full ticket price" });
+  }
+
+  const { ticket, alreadyExisted } = await fulfillTicket({
+    eventId: id,
+    userId,
+    provider: "none",
+    paymentRef: reference,
+    currency,
+    platformFeeCents: 0,
+    sellerNetCents: 0,
+    tierId,
+    amountPaid: 0,
+    discountCode: redemption.code.code,
+    discountAmount,
+  });
+  await applyRedemptionByReference(reference);
+  // No payout: nothing was collected, so there is nothing to settle.
+  return res.status(alreadyExisted ? 200 : 201).json({ message: "Ticket confirmed", ticket });
+}
+
 async function confirmPaystack(type, id, reference, userId, res, tierId) {
   // Re-derive the expected charge from the item (never trust the client — the
   // tierId only picks WHICH server-known price to verify the charge against).
@@ -345,14 +523,28 @@ async function confirmPaystack(type, id, reference, userId, res, tierId) {
   if (!purchase) return;
   const { seller, amount, currency } = purchase;
 
+  // A discount reserved at init changes the expected charge — recompute it
+  // before verification, or verifyPaystackCharge would hard-reject the
+  // (correctly) discounted amount. No redemption ⇒ face price, as before.
+  let expectedAmount = amount;
+  let discountCode;
+  let discountAmount;
+  if (type === "ticket") {
+    const redemption = await DiscountRedemption.findOne({ reference, user: userId }).populate("code");
+    if (redemption?.code) {
+      ({ discountAmount, total: expectedAmount } = computeDiscount(redemption.code, amount));
+      discountCode = redemption.code.code;
+    }
+  }
+
   await verifyPaystackCharge({
     reference,
-    expectedAmount: amount,
+    expectedAmount,
     expectedCurrency: currency,
     expectedBuyerId: userId,
   });
 
-  const { platformFee, sellerNet } = computeSplit(amount);
+  const { platformFee, sellerNet } = computeSplit(expectedAmount);
 
   if (type === "ticket") {
     const { ticket, alreadyExisted } = await fulfillTicket({
@@ -365,7 +557,11 @@ async function confirmPaystack(type, id, reference, userId, res, tierId) {
       sellerNetCents: sellerNet,
       // Safe to honor: the charge was just verified against this tier's price.
       tierId,
+      ...(discountCode
+        ? { amountPaid: expectedAmount, discountCode, discountAmount }
+        : {}),
     });
+    if (discountCode) await applyRedemptionByReference(reference);
     // Tickets are delay-released by the payout job, so no payout here.
     return res.status(alreadyExisted ? 200 : 201).json({ message: "Ticket confirmed", ticket });
   }
@@ -551,9 +747,34 @@ export const initTicketBatch = async (req, res) => {
       }
     }
 
-    const total = lineItems.reduce((sum, li) => sum + li.price, 0);
+    const subtotal = lineItems.reduce((sum, li) => sum + li.price, 0);
     const currency = event.currency || "USD";
     const provider = getPayoutProvider(seller);
+
+    // Discount codes: reserve a redemption slot before the order is created so
+    // a "first N" cap can't oversell between init and confirm. The order keeps
+    // the face-price `subtotal`; `total` is what actually gets charged.
+    const discountCode = typeof req.body?.discountCode === "string" && req.body.discountCode.trim();
+    let total = subtotal;
+    let redemption = null;
+    let discountAmount = 0;
+    let appliedCode = null;
+    if (discountCode) {
+      const reserved = await reserveDiscount({
+        eventId,
+        code: discountCode,
+        userId: buyerId,
+        subtotal,
+        currency,
+      });
+      if (!reserved.ok) {
+        return res.status(400).json({ message: reserved.message, code: "discount_invalid" });
+      }
+      redemption = reserved.redemption;
+      discountAmount = reserved.discountAmount;
+      total = reserved.total;
+      appliedCode = reserved.codeDoc.code;
+    }
 
     const order = await TicketOrder.create({
       event: event._id,
@@ -561,16 +782,32 @@ export const initTicketBatch = async (req, res) => {
       seller: seller._id,
       currency,
       total,
-      provider,
+      ...(appliedCode ? { subtotal, discountCode: appliedCode, discountAmount } : {}),
+      provider: appliedCode && total === 0 ? "none" : provider,
       items: lineItems,
       status: "pending",
     });
+
+    // 100%-off order: nothing to charge, so no provider call. The client goes
+    // straight to confirm with { provider: "none", reference }.
+    if (redemption && total === 0) {
+      order.reference = `free-${order._id}`;
+      await order.save();
+      await updateRedemptionReference(redemption._id, order.reference);
+      return res.status(200).json({
+        provider: "none",
+        free: true,
+        orderId: order._id,
+        reference: order.reference,
+      });
+    }
 
     if (provider === "paystack") {
       const buyer = await User.findById(buyerId).select("email username");
       const init = await buildPaystackInit({ type: "ticket", id: eventId, amount: total, currency, buyer });
       order.reference = init.reference;
       await order.save();
+      if (redemption) await updateRedemptionReference(redemption._id, init.reference);
       return res.status(200).json({ ...init, orderId: order._id });
     }
 
@@ -588,11 +825,18 @@ export const initTicketBatch = async (req, res) => {
         eventId: eventId.toString(),
         ticketOrderId: order._id.toString(),
         payoutProvider: settlement,
+        ...(appliedCode
+          ? {
+              discountCode: appliedCode,
+              discountAmountCents: String(Math.round(discountAmount * 100)),
+            }
+          : {}),
       },
       transfer_group: `event_${eventId}`,
     });
     order.reference = paymentIntent.id;
     await order.save();
+    if (redemption) await updateRedemptionReference(redemption._id, paymentIntent.id);
     return res.status(200).json({
       provider: "stripe",
       clientSecret: paymentIntent.client_secret,
@@ -629,9 +873,19 @@ export const confirmTicketBatch = async (req, res) => {
       });
     }
 
-    // Verify the charge matches the order total.
+    // Verify the charge matches the order total. A 100%-off order has no
+    // charge at all — its entitlement is the discount reservation made at
+    // init, and `order.total` was computed server-side, so zero is trusted.
     const isPaystack = provider === "paystack";
-    if (isPaystack) {
+    const isFree = provider === "none" && order.total === 0;
+    if (provider === "none" && order.total !== 0) {
+      // A "none" claim against a real balance would otherwise fall into the
+      // Stripe branch and throw on the fake reference.
+      return res.status(400).json({ message: "This order requires payment" });
+    }
+    if (isFree) {
+      // Nothing to verify.
+    } else if (isPaystack) {
       await verifyPaystackCharge({
         reference,
         expectedAmount: order.total,
@@ -658,19 +912,30 @@ export const confirmTicketBatch = async (req, res) => {
     // routing change between init and confirm settles on today's rail.
     const batchSeller = await User.findById(order.seller).select(PAYOUT_ROUTING_FIELDS);
     const payoutProvider = isPaystack ? "paystack" : getSettlementProvider(batchSeller);
+    // Discounted orders spread the charge across items proportionally
+    // (scale = total/subtotal) so per-ticket accounting sums to exactly what
+    // was paid; the rounding remainder lands on the last item. Undiscounted
+    // orders have no `subtotal`, scale 1, and behave as before.
+    const round2 = (n) => Math.round(n * 100) / 100;
+    const scale = order.subtotal ? order.total / order.subtotal : 1;
+    let paidSoFar = 0;
     const ticketIds = [];
-    for (const item of order.items) {
+    for (let i = 0; i < order.items.length; i++) {
+      const item = order.items[i];
+      const isLast = i === order.items.length - 1;
+      const paidForItem = isLast ? round2(order.total - paidSoFar) : round2(item.price * scale);
+      paidSoFar = round2(paidSoFar + paidForItem);
       const recipient = await findOrCreateGuestUser(item.recipientEmail, item.recipientName);
       // Fee accounting mirrors the single-ticket flow: Stripe stores cents,
       // Paystack stores major units (the field name says "Cents"; currency
       // disambiguates — see ticket.model.js).
       let platformFeeCents, sellerNetCents;
-      if (isPaystack) {
-        const split = computeSplit(item.price);
+      if (isPaystack || isFree) {
+        const split = computeSplit(paidForItem);
         platformFeeCents = split.platformFee;
         sellerNetCents = split.sellerNet;
       } else {
-        const cents = Math.round(item.price * 100);
+        const cents = Math.round(paidForItem * 100);
         platformFeeCents = Math.round(cents * (PLATFORM_FEE_PERCENT / 100));
         sellerNetCents = cents - platformFeeCents;
       }
@@ -682,14 +947,21 @@ export const confirmTicketBatch = async (req, res) => {
         recipientUserId: recipient._id,
         buyerUserId: buyerId,
         tier,
-        provider: isPaystack ? "paystack" : "stripe",
+        provider: isFree ? "none" : isPaystack ? "paystack" : "stripe",
         payoutProvider,
         paymentRef: reference,
-        currency: isPaystack ? order.currency : "usd",
+        currency: isPaystack || isFree ? order.currency : "usd",
         platformFeeCents,
         sellerNetCents,
         recipientEmail: item.recipientEmail,
         recipientName: item.recipientName,
+        ...(order.discountCode
+          ? {
+              amountPaid: paidForItem,
+              discountCode: order.discountCode,
+              discountAmount: round2(item.price - paidForItem),
+            }
+          : {}),
       });
       ticketIds.push(ticket._id);
     }
@@ -716,6 +988,9 @@ export const confirmTicketBatch = async (req, res) => {
     order.ticketIds = ticketIds;
     order.paidAt = new Date();
     await order.save();
+
+    // Settle the discount reservation now that the order is fulfilled.
+    if (order.discountCode) await applyRedemptionByReference(order.reference);
 
     return res.status(201).json({
       message: "Tickets confirmed",
@@ -745,4 +1020,11 @@ export const getPaymentsConfig = async (req, res) => {
   });
 };
 
-export default { initPayment, confirmPayment, initTicketBatch, confirmTicketBatch, getPaymentsConfig };
+export default {
+  previewDiscountHandler,
+  initPayment,
+  confirmPayment,
+  initTicketBatch,
+  confirmTicketBatch,
+  getPaymentsConfig,
+};

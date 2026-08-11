@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { mediaArrayLimit } from "../utils/mediaLimit.js";
+import { slugify, generateUniqueSlug } from "../utils/slug.js";
 
 const eventSchema = mongoose.Schema({
   title: { type: String, required: true },
@@ -102,6 +103,12 @@ const eventSchema = mongoose.Schema({
 
   // Shareable link token
   shareToken: { type: String, unique: true, sparse: true },
+
+  // Human-readable share slug generated from the title once at creation.
+  // Never regenerated on title edits so printed QR codes and sent links stay
+  // valid. Unset (sparse) when the title has no latin characters — links fall
+  // back to shareToken/_id.
+  slug: { type: String, unique: true, sparse: true },
 
   // RSVP: users who confirmed attendance
   rsvpUsers: [{
@@ -214,12 +221,21 @@ const eventSchema = mongoose.Schema({
 eventSchema.index({ isPublic: 1, isActive: 1, date: 1 });
 eventSchema.index({ city: 1, date: 1 });
 
-// Generate share token before saving
-eventSchema.pre('save', function(next) {
+// Generate share token + slug before saving. Async hook — mongoose waits on
+// the returned promise, so no next() callback is needed.
+eventSchema.pre('save', async function() {
   if (!this.shareToken) {
     this.shareToken = new mongoose.Types.ObjectId().toString();
   }
-  next();
+  if (!this.slug && this.title) {
+    const base = slugify(this.title);
+    // Only assign when a slug was produced — an explicit null would still be
+    // indexed by the sparse unique index and collide with other null slugs.
+    const slug = await generateUniqueSlug(this.constructor, base, {
+      excludeId: this._id,
+    });
+    if (slug) this.slug = slug;
+  }
 });
 
 export default mongoose.model("event", eventSchema);

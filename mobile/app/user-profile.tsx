@@ -40,6 +40,8 @@ import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 interface UserData {
   _id: string;
+  /** Username slug for share links (e.g. "setemil"); absent on legacy accounts. */
+  slug?: string;
   username: string;
   email: string;
   profilePicture?: string;
@@ -165,7 +167,7 @@ export default function UserProfileScreen() {
   const handleShareProfile = async () => {
     if (!userId) return;
     try {
-      const url = createUserShareLink(userId);
+      const url = createUserShareLink(user?.slug || userId);
       const name = capitalize(displayName(user) || "this profile");
       await Share.share({
         message: `Check out ${name} on OurCityvibe\n${url}`,

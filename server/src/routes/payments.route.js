@@ -1,5 +1,6 @@
 import express from "express";
 import {
+  previewDiscountHandler,
   initPayment,
   confirmPayment,
   initTicketBatch,
@@ -24,6 +25,11 @@ router.get("/payments/paystack/return", paystackReturn);
 // guest token, then buy without an account. Rate-limited like other OTP flows.
 router.post("/payments/guest/start-otp", otpLimiter, startGuestOtp);
 router.post("/payments/guest/verify-otp", otpLimiter, verifyGuestOtp);
+
+// Discount-code preview — validates a code against server-derived prices, no
+// side effects. `authenticate` accepts guest tokens by design. Registered
+// above the parameterized init/confirm routes.
+router.post("/payments/discount/preview", authenticate, previewDiscountHandler);
 
 // Batch ticket purchase (web guest / multi / gift). `authenticate` accepts a
 // guest OR a real token; the ticket endpoints are the only place a guest token

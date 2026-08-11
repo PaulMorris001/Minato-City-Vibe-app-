@@ -11,6 +11,7 @@ import { rejectIfCannotSell } from "../services/payments/sellingEligibility.js";
 import { isSupportUser } from "../utils/supportAccount.js";
 import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { MAX_MEDIA_ITEMS } from "../utils/mediaLimit.js";
+import { resolveUserId } from "../utils/resolveUser.js";
 
 /**
  * Reconcile the two shapes a section's media can arrive in.
@@ -328,7 +329,12 @@ export const getUserGuides = async (req, res) => {
 // Get a specific user's published guides (for their public profile)
 export const getUserPublicGuides = async (req, res) => {
   try {
-    const { userId } = req.params;
+    // The param may be a share slug (`/user/setemil`) rather than an _id —
+    // resolve it before it reaches a query, or Mongoose cast-errors into a 500.
+    const userId = await resolveUserId(req.params.userId);
+    if (!userId) {
+      return res.status(200).json({ guides: [] });
+    }
 
     // The support account has no public profile to hang guides off.
     if (isSupportUser(userId)) {
@@ -364,10 +370,12 @@ export const getGuideById = async (req, res) => {
     const { id } = req.params;
     const userId = req.user?.id;
 
-    const guide = await Guide.findById(id).populate(
-      "author",
-      "username email profilePicture"
-    );
+    // Accept either a Mongo id or a share slug. Routing non-ids to the slug
+    // lookup also fixes the old CastError → 500 on arbitrary params.
+    const guide = await (mongoose.isValidObjectId(id)
+      ? Guide.findById(id)
+      : Guide.findOne({ slug: id.toLowerCase() })
+    ).populate("author", "username email profilePicture");
 
     if (!guide) {
       return res.status(404).json({ message: "Guide not found" });
