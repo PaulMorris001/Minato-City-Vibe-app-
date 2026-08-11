@@ -7,7 +7,6 @@ import {
   StyleSheet,
   SectionList,
   ActivityIndicator,
-  Switch,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -81,7 +80,6 @@ export default function SearchScreen() {
 
   const [query, setQuery] = useState("");
   const [chip, setChip] = useState<Chip>("all");
-  const [online, setOnline] = useState(false);
   const [recents, setRecents] = useState<string[]>([]);
 
   const debouncedQuery = useDebouncedValue(query, 300);
@@ -91,7 +89,7 @@ export default function SearchScreen() {
   const [results, setResults] = useState<SearchResponse>(() => emptySearchResponse());
   const [loading, setLoading] = useState(false);
 
-  const discover = useDiscoverFeed({ city: activeCity, online });
+  const discover = useDiscoverFeed({ city: activeCity });
   const { purchaseTicket, joinFreeEvent } = useEventActions({ onDone: discover.refresh });
 
   // ── Recent searches ────────────────────────────────────────────────────────
@@ -261,16 +259,6 @@ export default function SearchScreen() {
     <View>
       <View style={styles.filterRow}>
         <ActiveLocationChip city={activeCity} />
-        {!isSearching && (
-          <View style={styles.onlineToggle}>
-            <Text style={styles.onlineLabel}>Online</Text>
-            <Switch
-              value={online}
-              onValueChange={setOnline}
-              trackColor={{ false: colors.border, true: colors.primary }}
-            />
-          </View>
-        )}
       </View>
 
       {isSearching && (
@@ -318,8 +306,8 @@ export default function SearchScreen() {
       )}
 
       {!isSearching && !discover.loading && (
-        <Text style={styles.sectionTitle}>
-          {online ? "Online events" : activeCity ? `Happening in ${activeCity}` : "Happening soon"}
+        <Text style={styles.happeningTitle}>
+          {activeCity ? `Happening in ${activeCity}` : "Happening soon"}
         </Text>
       )}
     </View>
@@ -441,6 +429,7 @@ const createStyles = (c: ThemeColors) =>
       alignItems: "center",
       gap: 12,
       paddingHorizontal: 16,
+      paddingTop: 12,
       paddingBottom: 12,
     },
     backButton: {},
@@ -461,11 +450,8 @@ const createStyles = (c: ThemeColors) =>
     filterRow: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
       marginBottom: 12,
     },
-    onlineToggle: { flexDirection: "row", alignItems: "center", gap: 6 },
-    onlineLabel: { fontSize: 13, fontFamily: Fonts.regular, color: c.textSecondary },
     chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
     chip: {
       paddingVertical: 7,
@@ -507,6 +493,12 @@ const createStyles = (c: ThemeColors) =>
       backgroundColor: c.background,
     },
     sectionTitle: { fontSize: 17, fontFamily: Fonts.bold, color: c.text },
+    happeningTitle: {
+      fontSize: 17,
+      fontFamily: Fonts.bold,
+      color: c.text,
+      marginBottom: 12,
+    },
     seeAll: { fontSize: 13, fontFamily: Fonts.semiBold, color: c.primary },
     cardWrap: { marginBottom: 12 },
     rowWrap: { marginBottom: 4 },

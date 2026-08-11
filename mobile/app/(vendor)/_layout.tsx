@@ -1,11 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Modal,
-  Alert,
   Platform,
   StatusBar,
   Image,
@@ -69,7 +68,7 @@ export default function VendorLayout() {
   const [pendingBookingsCount, setPendingBookingsCount] = useState(0);
   const router = useRouter();
 
-  const fetchUserProfile = async () => {
+  const fetchUserProfile = useCallback(async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
       if (token) {
@@ -94,11 +93,11 @@ export default function VendorLayout() {
     } catch (error) {
       console.error("Error fetching user profile:", error);
     }
-  };
+  }, [setActiveAccount, router]);
 
   // Pending-bookings count for the Bookings tab badge (moved here from the
   // old single-screen dashboard so the native tab bar can render it).
-  const fetchPendingCount = async () => {
+  const fetchPendingCount = useCallback(async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
       const res = await fetch(`${BASE_URL}/bookings/vendor?status=pending`, {
@@ -109,7 +108,7 @@ export default function VendorLayout() {
         setPendingBookingsCount(Array.isArray(data) ? data.length : 0);
       }
     } catch {}
-  };
+  }, []);
 
   // Entry into the vendor layout always happens *after* the caller has already
   // set the active account to "vendor" (login role picker, become-vendor,
@@ -121,13 +120,13 @@ export default function VendorLayout() {
     // Post-login entry point for vendor accounts — the root layout only
     // connects the socket on cold start, before a fresh login has a token.
     socketService.connect();
-  }, []);
+  }, [fetchUserProfile, fetchPendingCount]);
 
   useFocusEffect(
     React.useCallback(() => {
       fetchUserProfile();
       fetchPendingCount();
-    }, [])
+    }, [fetchUserProfile, fetchPendingCount])
   );
 
   // NOTE: the old "redirect to /(tabs)/home when activeAccount === client"

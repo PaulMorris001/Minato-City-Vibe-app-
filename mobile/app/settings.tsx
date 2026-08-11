@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -175,12 +175,13 @@ export default function SettingsScreen() {
     }
   };
 
-  useEffect(() => {
-    fetchProfile();
-  }, []);
-
-  // Re-fetch when the screen regains focus so returning from /verify-email
-  // reflects the new state immediately.
+  // Fetches on mount and again every time the screen regains focus (e.g.
+  // returning from /verify-email, /earnings, /blocked-users) so state stays
+  // current. Only the very first fetch shows the full-page loader — a focus
+  // refetch updates state quietly in the background, otherwise the whole
+  // screen blanked to a spinner (losing scroll position) every time you
+  // navigated back here.
+  const hasLoadedOnceRef = useRef(false);
   useFocusEffect(
     useCallback(() => {
       fetchProfile();
@@ -257,7 +258,7 @@ export default function SettingsScreen() {
   };
 
   const fetchProfile = async () => {
-    setLoading(true);
+    if (!hasLoadedOnceRef.current) setLoading(true);
     try {
       const token = await SecureStore.getItemAsync("token");
       const [profileRes, verifRes] = await Promise.all([
@@ -299,6 +300,7 @@ export default function SettingsScreen() {
       showError("Failed to load profile");
     } finally {
       setLoading(false);
+      hasLoadedOnceRef.current = true;
     }
   };
 

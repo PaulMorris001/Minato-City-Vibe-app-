@@ -88,6 +88,10 @@ export const config = {
       : "*",
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    // Lets browser clients read the sliding-session renewal header (see
+    // middleware/auth.middleware.js) — without this, fetch/XHR in a browser
+    // can't see custom response headers even same-origin-adjacent.
+    exposedHeaders: ["X-Refreshed-Token"],
   },
 
   // Socket.IO Configuration

@@ -4,10 +4,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { AU } from "@/components/auth/tokens";
 import { Fonts } from "@/constants/fonts";
 
-import { darkColors, type ThemeColors } from "@/constants/theme";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
+import type { ThemeColors } from "@/constants/theme";
 interface GuestGateProps {
   title?: string;
   subtitle?: string;
@@ -24,12 +24,14 @@ export default function GuestGate({
   subtitle = "Log in or create an account to build your profile, host events, RSVP, buy passes, and chat.",
   icon = "person-circle-outline",
 }: GuestGateProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.container}>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
         <View style={styles.wrap}>
           <View style={styles.icon}>
-            <Ionicons name={icon} size={64} color={AU.purpleSoft} />
+            <Ionicons name={icon} size={64} color={colors.primaryLight} />
           </View>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.subtitle}>{subtitle}</Text>
@@ -39,7 +41,7 @@ export default function GuestGate({
             style={styles.btnWrap}
           >
             <LinearGradient
-              colors={[AU.purple, AU.purpleDeep]}
+              colors={[colors.primary, colors.primaryDark]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.btn}
@@ -65,7 +67,7 @@ export default function GuestGate({
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-  container: { flex: 1, backgroundColor: AU.bg },
+  container: { flex: 1, backgroundColor: c.backgroundDeep },
   wrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
   icon: {
     width: 104,
@@ -79,7 +81,7 @@ const createStyles = (c: ThemeColors) =>
   title: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 24,
-    color: AU.text,
+    color: c.textBright,
     textAlign: "center",
     letterSpacing: -0.6,
     marginBottom: 10,
@@ -87,7 +89,7 @@ const createStyles = (c: ThemeColors) =>
   subtitle: {
     fontFamily: Fonts.medium,
     fontSize: 14,
-    color: AU.textDim,
+    color: c.textDim,
     textAlign: "center",
     lineHeight: 21,
     marginBottom: 28,
@@ -102,8 +104,5 @@ const createStyles = (c: ThemeColors) =>
     borderRadius: 14,
   },
   btnText: { fontFamily: Fonts.bold, fontSize: 15, color: c.white },
-  link: { fontFamily: Fonts.bold, fontSize: 13.5, color: AU.purpleSoft },
+  link: { fontFamily: Fonts.bold, fontSize: 13.5, color: c.primaryLight },
 });
-
-// Auth/poster surface: always renders the dark palette.
-const styles = createStyles(darkColors);
