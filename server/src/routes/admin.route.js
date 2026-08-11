@@ -41,6 +41,12 @@ import {
   approvePayout,
   rejectPayout,
 } from "../controllers/payoutAdmin.controller.js";
+import {
+  getDiscountCodes,
+  createDiscountCode,
+  toggleDiscountCode,
+  deleteDiscountCode,
+} from "../controllers/discountAdmin.controller.js";
 
 const router = express.Router();
 
@@ -101,6 +107,12 @@ router.patch("/admin/paid-events/:id/reject", authenticateAdmin, rejectPaidEvent
 router.get("/admin/event-edits", authenticateAdmin, getPendingEventEdits);
 router.patch("/admin/event-edits/:id/approve", authenticateAdmin, approveEventEdit);
 router.patch("/admin/event-edits/:id/reject", authenticateAdmin, rejectEventEdit);
+
+// Event discount codes (admin-created; creators can only toggle theirs)
+router.get("/admin/discount-codes", authenticateAdmin, getDiscountCodes);
+router.post("/admin/discount-codes", authenticateAdmin, createDiscountCode);
+router.patch("/admin/discount-codes/:id/toggle", authenticateAdmin, toggleDiscountCode);
+router.delete("/admin/discount-codes/:id", authenticateAdmin, deleteDiscountCode);
 
 // Reports (Apple Guideline 1.2 moderation queue)
 router.get("/admin/reports", authenticateAdmin, getReports);

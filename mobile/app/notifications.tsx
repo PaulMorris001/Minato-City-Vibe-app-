@@ -56,6 +56,7 @@ function notifIcon(type: string) {
     case "new_follower": return "person-add";
     case "verification_approved": return "shield-checkmark";
     case "verification_rejected": return "shield-outline";
+    case "discount_code_created": return "pricetag";
     // Money on its way vs money that needs the seller to do something. The
     // second group is deliberately an alert icon — these are the ones a seller
     // must act on to actually get paid.
@@ -144,6 +145,9 @@ export default function NotificationsScreen() {
       case "invite_accepted":
       case "event_update":
       case "ticket_sold":
+      // Admin issued a discount code for the creator's event — the code card
+      // lives on the event screen.
+      case "discount_code_created":
         if (item.data?.eventId) {
           router.push({ pathname: "/event/[id]", params: { id: item.data.eventId } } as any);
         }

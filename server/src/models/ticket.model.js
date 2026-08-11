@@ -36,6 +36,13 @@ const ticketSchema = mongoose.Schema({
   tierId: { type: mongoose.Schema.Types.ObjectId },
   tierName: { type: String },
 
+  // Discount snapshot (same convention as tierName/ticketPrice above): what the
+  // buyer actually paid and which code got them there, frozen at purchase time.
+  // All major currency units. Absent on legacy tickets = face price was paid.
+  amountPaid: { type: Number },
+  discountCode: { type: String },
+  discountAmount: { type: Number },
+
   // Ticket status
   isValid: { type: Boolean, default: true },
 
@@ -43,7 +50,8 @@ const ticketSchema = mongoose.Schema({
   ticketCode: { type: String, unique: true, sparse: true },
 
   // Which provider collected this payment. Drives how refunds are issued.
-  provider: { type: String, enum: ["stripe", "paystack"], default: "stripe" },
+  // "none" = a 100%-discounted ticket — nothing was charged anywhere.
+  provider: { type: String, enum: ["stripe", "paystack", "none"], default: "stripe" },
 
   // Which provider settles the seller's share. Stripe-collected sales settle via
   // Stripe Connect; Paystack collects and settles its own. Drives the payout

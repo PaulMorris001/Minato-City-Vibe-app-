@@ -26,6 +26,7 @@ import {
 } from "./fulfillment.js";
 import { createPayout } from "./payout.service.js";
 import { getSettlementProvider, PAYOUT_ROUTING_FIELDS } from "./resolveProvider.js";
+import { applyRedemptionByReference } from "./discount.service.js";
 
 /**
  * Fulfill a succeeded PaymentIntent and queue the seller's payout.
@@ -102,7 +103,19 @@ export async function settleStripePurchase(paymentIntent) {
       sellerNetCents,
       // Tier chosen at init — the PI was created for that tier's price.
       tierId: meta.tierId,
+      // What was actually charged (discounted when a code applied at init).
+      amountPaid: paymentIntent.amount / 100,
+      ...(meta.discountCode
+        ? {
+            discountCode: meta.discountCode,
+            discountAmount: Number(meta.discountAmountCents || 0) / 100,
+          }
+        : {}),
     });
+    // Settle the discount reservation. Both the app's confirm call and the
+    // webhook fallback funnel through here, and apply is idempotent on the
+    // pending status — so this runs effectively once per flow.
+    if (meta.discountCode) await applyRedemptionByReference(paymentIntent.id);
     // No payout here: ticket money is held until after the event and released in
     // bulk by payoutRelease.job.js, so the organizer can't be paid for an event
     // that hasn't happened.

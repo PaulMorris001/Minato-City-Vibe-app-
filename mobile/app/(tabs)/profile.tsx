@@ -37,6 +37,8 @@ import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 interface UserProfile {
   _id: string;
+  /** Username slug for share links (e.g. "setemil"); absent on legacy accounts. */
+  slug?: string;
   username: string;
   profilePicture?: string;
   bio?: string;
@@ -85,6 +87,9 @@ export default function ProfileScreen() {
       const u = res.data.user;
       setUser({
         _id: u._id,
+        // Needed for the readable share link (/user/setemil). Without it the
+        // Share sheet silently falls back to the raw _id.
+        slug: u.slug,
         username: u.username,
         profilePicture: u.profilePicture || "",
         bio: u.bio || "",
@@ -302,7 +307,7 @@ function Header({
   const handleShareProfile = async () => {
     if (!user?._id) return;
     try {
-      const url = createUserShareLink(user._id);
+      const url = createUserShareLink(user.slug || user._id);
       await Share.share({
         message: `Check out my profile on OurCityvibe\n${url}`,
         url, // iOS uses this for richer share targets; Android ignores it.

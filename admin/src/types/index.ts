@@ -71,6 +71,22 @@ export interface AdminGuide {
   createdAt: string;
 }
 
+export interface AdminDiscountCode {
+  _id: string;
+  code: string;
+  type: "percent" | "fixed";
+  value: number;
+  startsAt: string | null;
+  endsAt: string | null;
+  maxRedemptions: number | null;
+  redemptionCount: number;
+  isActive: boolean;
+  disabledByCreator: boolean;
+  event: { _id: string; title: string; date?: string; currency: string };
+  createdByAdmin: string;
+  createdAt: string;
+}
+
 export interface Stats {
   totalUsers: number;
   totalVendors: number;

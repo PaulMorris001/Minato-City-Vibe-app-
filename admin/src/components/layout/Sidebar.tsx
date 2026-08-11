@@ -15,6 +15,7 @@ const navItems = [
   { to: "/cities", label: "Cities", icon: "📍" },
   { to: "/vendor-types", label: "Vendor Types", icon: "🏷️" },
   { to: "/events", label: "Events", icon: "📅" },
+  { to: "/discount-codes", label: "Discount Codes", icon: "🎟️" },
   { to: "/guides", label: "Guides", icon: "📖" },
   { to: "/analytics", label: "Analytics", icon: "📊" },
 ];

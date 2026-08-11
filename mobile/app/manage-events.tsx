@@ -62,6 +62,7 @@ interface Event {
   image?: string;
   images?: string[];
   description?: string;
+  slug?: string;
   shareToken: string;
   isPublic: boolean;
   isPaid: boolean;
@@ -433,7 +434,7 @@ export default function EventsPage() {
 
   const handleShareEvent = async (event: Event) => {
     try {
-      const link = createEventShareLink(event.shareToken || event._id);
+      const link = createEventShareLink(event.slug || event.shareToken || event._id);
       await Share.share({
         message: `Check out this event on OurCityvibe: ${event.title}\n${link}`,
         title: event.title,

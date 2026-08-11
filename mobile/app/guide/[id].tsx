@@ -213,7 +213,7 @@ export default function GuideDetailPage() {
         kind: "guide",
         guideId: id,
         title: guide.title,
-        externalUrl: createGuideShareLink(id),
+        externalUrl: createGuideShareLink(guide.slug || id),
       }
     : null;
 

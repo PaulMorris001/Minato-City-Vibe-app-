@@ -24,6 +24,8 @@ import {
   getMyVendorEventInvites,
   addCohost,
   removeCohost,
+  getEventDiscountCodes,
+  toggleEventDiscountCodeByCreator,
 } from "../controllers/event.controller.js";
 import { authenticate, optionalAuth, rejectGuest } from "../middleware/auth.middleware.js";
 
@@ -54,6 +56,11 @@ router.post("/events/:eventId/join", authenticate, joinFreePublicEvent);
 
 // Get ticket sales for an event (organizer only)
 router.get("/events/:eventId/tickets", authenticate, getEventTicketSales);
+
+// Discount codes for an event (organizer only) — admins create the codes;
+// the creator can view them and toggle their own disable flag.
+router.get("/events/:eventId/discount-codes", authenticate, getEventDiscountCodes);
+router.patch("/events/:eventId/discount-codes/:codeId/toggle", authenticate, toggleEventDiscountCodeByCreator);
 
 // QR code for an event's share link. optionalAuth for the same reason as the
 // detail route below — a logged-out viewer of a public event can still grab it.
