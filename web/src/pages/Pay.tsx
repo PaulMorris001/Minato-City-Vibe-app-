@@ -172,6 +172,11 @@ export default function Pay() {
 
   const total = useMemo(() => slots.reduce((sum, s) => sum + s.price, 0), [slots]);
 
+  // Share links are slug-shaped (`/events/lagos-beach-party/pay`), so the route
+  // param isn't always an id. Payment endpoints resolve either, but send the
+  // canonical `_id` once the event has loaded.
+  const apiEventId = ev?._id || eventId!;
+
   // The preview endpoint re-derives prices server-side, so it only needs the
   // tier make-up of the cart — not the recipient details.
   function previewItems() {
@@ -190,7 +195,7 @@ export default function Pay() {
     try {
       const res = await api<DiscountPreview>("/payments/discount/preview", {
         method: "POST",
-        body: { eventId, code: trimmed, items: previewItems() },
+        body: { eventId: apiEventId, code: trimmed, items: previewItems() },
         token: guestToken || undefined,
       });
       if (res.valid) {
@@ -232,7 +237,7 @@ export default function Pay() {
     let cancelled = false;
     api<DiscountPreview>("/payments/discount/preview", {
       method: "POST",
-      body: { eventId, code: applied.code, items: previewItems() },
+      body: { eventId: apiEventId, code: applied.code, items: previewItems() },
       token: guestToken || undefined,
     })
       .then((res) => {
@@ -607,7 +612,7 @@ export default function Pay() {
 
             {provider === "stripe" ? (
               <StripeCheckout
-                eventId={eventId!}
+                eventId={apiEventId}
                 publishableKey={config.stripePublishableKey}
                 token={guestToken || undefined}
                 buildItems={buildItems}
@@ -618,7 +623,7 @@ export default function Pay() {
               />
             ) : (
               <PaystackCheckout
-                eventId={eventId!}
+                eventId={apiEventId}
                 token={guestToken || undefined}
                 buildItems={buildItems}
                 discountCode={applied?.code}
