@@ -9,6 +9,7 @@ export interface CalendarEventInput {
   date: string;
   address?: string;
   location?: string;
+  slug?: string;
   shareToken?: string;
 }
 
@@ -66,7 +67,7 @@ export async function addEventToCalendar(
 
     const start = new Date(event.date);
     const end = new Date(start.getTime() + DEFAULT_DURATION_MS);
-    const url = createEventShareLink(event.shareToken || event._id);
+    const url = createEventShareLink(event.slug || event.shareToken || event._id);
     const locationStr =
       [event.address, event.location].filter(Boolean).join(" · ") || event.location || "";
 

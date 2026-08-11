@@ -98,7 +98,7 @@ async function collectSales(sellerId) {
       isValid: true,
       refunded: { $ne: true },
     })
-      .select("event user ticketPrice currency provider sellerNetCents createdAt tierName")
+      .select("event user ticketPrice amountPaid discountCode currency provider sellerNetCents createdAt tierName")
       .populate("user", "username profilePicture")
       .lean();
 
@@ -112,7 +112,10 @@ async function collectSales(sellerId) {
         subtitle: t.tierName || null,
         buyerName: t.user?.username || null,
         buyerAvatar: t.user?.profilePicture || null,
-        gross: Number(t.ticketPrice || 0),
+        // amountPaid is what was actually charged (discount codes); legacy
+        // tickets lack it and fall back to the face price. `??`, not `||` — a
+        // 100%-off ticket's amountPaid of 0 must not fall through.
+        gross: Number(t.amountPaid ?? t.ticketPrice ?? 0),
         net: toMajorNet(t.sellerNetCents, t.provider),
         currency: (t.currency || "USD").toUpperCase(),
         soldAt: t.createdAt,

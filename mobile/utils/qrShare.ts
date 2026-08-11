@@ -1,5 +1,4 @@
-import { Platform, Share } from "react-native";
-import { File, Paths } from "expo-file-system";
+import { Linking, Platform, Share } from "react-native";
 
 export type ShareQrResult =
   | { ok: true; mode: "image" | "link" }
@@ -15,6 +14,22 @@ function loadSharing(): typeof import("expo-sharing") | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require("expo-sharing");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * expo-file-system is native too, and its entry point calls
+ * `requireNativeModule("ExpoFileSystem")` at module scope — which THROWS on a
+ * binary that predates it. A static `import` of it therefore takes down every
+ * screen that (transitively) imports this file, not just the QR sheet. Load it
+ * lazily for the same reason expo-sharing is loaded lazily above.
+ */
+function loadFileSystem(): typeof import("expo-file-system") | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require("expo-file-system");
   } catch {
     return null;
   }
@@ -50,6 +65,27 @@ function slugify(title: string): string {
  * Returns which mode was used so the caller can tell the user when the image
  * itself couldn't be attached.
  */
+/**
+ * Open the QR as a real PNG in the system browser, where the user can
+ * long-press → "Save Image" (iOS) / "Download image" (Android).
+ *
+ * This is the download path that needs NO native module: `Linking` ships with
+ * React Native itself, and the server renders the PNG at a plain https URL
+ * (`<share link>/qr.png`), so it works on binaries built long before any
+ * file-system or sharing module existed — i.e. over the air, no new build.
+ *
+ * @param url the event's share link, e.g. https://api.ourcityvibe.com/event/lagos-beach-party
+ */
+export async function openQrForSaving(url: string): Promise<boolean> {
+  try {
+    // Tolerate a trailing slash so we never produce `…/event/x//qr.png`.
+    await Linking.openURL(`${url.replace(/\/+$/, "")}/qr.png`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function shareEventQr({
   dataUrl,
   title,
@@ -75,9 +111,12 @@ export async function shareEventQr({
   if (!base64) return shareLinkOnly();
 
   // Write the PNG somewhere the share sheet can read it from.
+  const FS = loadFileSystem();
+  if (!FS) return shareLinkOnly();
+
   let fileUri: string;
   try {
-    const file = new File(Paths.cache, `ourcityvibe-${slugify(title)}-qr.png`);
+    const file = new FS.File(FS.Paths.cache, `ourcityvibe-${slugify(title)}-qr.png`);
     // overwrite: re-sharing the same event would otherwise throw on the file
     // left behind by the previous share.
     file.create({ overwrite: true });

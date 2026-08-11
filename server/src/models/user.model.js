@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { slugify, generateUniqueSlug } from "../utils/slug.js";
 
 const userSchema = mongoose.Schema({
   // Display case is preserved (e.g. "JohnDoe"), but uniqueness and lookups are
@@ -8,6 +9,12 @@ const userSchema = mongoose.Schema({
   // enforce at the DB layer, dedupe existing rows then add a unique index with
   // collation { locale: "en", strength: 2 }.
   username: { type: String, required: true, trim: true },
+  // Human-readable share slug generated from the username. Regenerated on
+  // username change (see auth.controller updateProfilePicture), with the old
+  // slug pushed onto slugHistory so already-shared profile links keep
+  // resolving. Unset (sparse) for non-latin usernames.
+  slug: { type: String, unique: true, sparse: true },
+  slugHistory: { type: [String], index: true, default: [] },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: false }, // Optional for OAuth users
 
@@ -141,5 +148,21 @@ const userSchema = mongoose.Schema({
 // `account.updated`, which Stripe emits liberally. Sparse — only Connect
 // vendors carry the field.
 userSchema.index({ stripeAccountId: 1 }, { sparse: true });
+
+// Generate the share slug before saving — covers register, OAuth sign-in and
+// guest-account creation alike. Async hook: mongoose waits on the returned
+// promise, so no next() callback is needed.
+userSchema.pre('save', async function() {
+  if (!this.slug && this.username) {
+    const base = slugify(this.username);
+    // Only assign when a slug was produced — an explicit null would still be
+    // indexed by the sparse unique index and collide with other null slugs.
+    const slug = await generateUniqueSlug(this.constructor, base, {
+      excludeId: this._id,
+      historyField: "slugHistory",
+    });
+    if (slug) this.slug = slug;
+  }
+});
 
 export default mongoose.model("user", userSchema);

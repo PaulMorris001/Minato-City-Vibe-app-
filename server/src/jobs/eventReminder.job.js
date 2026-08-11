@@ -99,7 +99,7 @@ async function collectEmailTargets(event, users) {
 async function sendEmails(targets, event) {
   const eventDateText = formatEventDate(event.date);
   const eventLocation = event.address || event.location || "";
-  const eventUrl = `${SITE_BASE}/event/${event.shareToken || event._id}`;
+  const eventUrl = `${SITE_BASE}/event/${event.slug || event.shareToken || event._id}`;
 
   let sent = 0;
   let failed = 0;

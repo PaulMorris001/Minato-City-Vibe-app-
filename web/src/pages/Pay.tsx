@@ -34,6 +34,30 @@ interface Slot {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Server verdict on a code (POST /payments/discount/preview). Amounts are in
+// the event's currency, major units — the same scale as tier prices.
+type DiscountPreview =
+  | {
+      valid: true;
+      code: string;
+      type: "percent" | "fixed";
+      value: number;
+      currency: string;
+      subtotal: number;
+      discountAmount: number;
+      total: number;
+      free: boolean;
+    }
+  | { valid: false; reason: string; message: string };
+
+// A code the buyer applied, with the server-computed amounts for this cart.
+interface AppliedDiscount {
+  code: string;
+  subtotal: number;
+  discountAmount: number;
+  total: number;
+}
+
 // Mirrors the mobile provider rule: Nigerian sellers price in NGN and collect
 // via Paystack; everyone else charges USD via Stripe.
 function providerFor(currency?: string): "stripe" | "paystack" {
@@ -58,6 +82,12 @@ export default function Pay() {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [guestToken, setGuestToken] = useState<string | null>(null);
   const [buyerEmail, setBuyerEmail] = useState<string>(user?.email || "");
+
+  // Discount code: raw input, the server-validated application, and UI state.
+  const [code, setCode] = useState("");
+  const [applied, setApplied] = useState<AppliedDiscount | null>(null);
+  const [discountError, setDiscountError] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
 
   // Result after a successful purchase.
   const [result, setResult] = useState<{ recipients: string[] } | null>(null);
@@ -141,6 +171,92 @@ export default function Pay() {
   }
 
   const total = useMemo(() => slots.reduce((sum, s) => sum + s.price, 0), [slots]);
+
+  // The preview endpoint re-derives prices server-side, so it only needs the
+  // tier make-up of the cart — not the recipient details.
+  function previewItems() {
+    return slots.map((s) => ({ tierId: s.tierId || undefined }));
+  }
+
+  async function applyCode() {
+    const trimmed = code.trim().toUpperCase();
+    if (!trimmed) return;
+    if (!user && !guestToken) {
+      setDiscountError("Confirm your email above first, then apply your code.");
+      return;
+    }
+    setDiscountError(null);
+    setApplying(true);
+    try {
+      const res = await api<DiscountPreview>("/payments/discount/preview", {
+        method: "POST",
+        body: { eventId, code: trimmed, items: previewItems() },
+        token: guestToken || undefined,
+      });
+      if (res.valid) {
+        setApplied({
+          code: res.code,
+          subtotal: res.subtotal,
+          discountAmount: res.discountAmount,
+          total: res.total,
+        });
+      } else {
+        setDiscountError(res.message || "That code can't be used.");
+      }
+    } catch (err: any) {
+      setDiscountError(err.message || "Couldn't check that code. Please try again.");
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  function removeCode() {
+    setApplied(null);
+    setDiscountError(null);
+  }
+
+  // Init rejected the code (e.g. it hit its cap between preview and pay) —
+  // drop it and let the buyer retry without one.
+  function onDiscountInvalid(message: string) {
+    setApplied(null);
+    setDiscountError(message);
+  }
+
+  // Re-check an applied code whenever the cart's tickets change — the discount
+  // depends on the order subtotal, and the code may stop qualifying (say, a
+  // below-minimum discounted total). Keyed on the tier make-up so typing a
+  // recipient email doesn't re-fire the preview.
+  const cartKey = slots.map((s) => s.tierId).join("|");
+  useEffect(() => {
+    if (!applied || !slots.length) return;
+    let cancelled = false;
+    api<DiscountPreview>("/payments/discount/preview", {
+      method: "POST",
+      body: { eventId, code: applied.code, items: previewItems() },
+      token: guestToken || undefined,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.valid) {
+          setApplied({
+            code: res.code,
+            subtotal: res.subtotal,
+            discountAmount: res.discountAmount,
+            total: res.total,
+          });
+        } else {
+          setApplied(null);
+          setDiscountError(res.message || "That code no longer applies to this order.");
+        }
+      })
+      .catch(() => {
+        // Network hiccup — keep the last amounts; init re-validates server-side.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartKey]);
 
   if (loading) {
     return (
@@ -401,15 +517,87 @@ export default function Pay() {
           </section>
         )}
 
-        {/* 4 — Pay */}
+        {/* 4 — Discount code (optional) */}
         {slots.length > 0 && (
           <section className="cv-card cv-section" style={{ marginLeft: 0 }}>
-            <div className="cv-row" style={{ marginBottom: 16 }}>
-              <span className="cv-muted">
-                Total · {slots.length} ticket{slots.length === 1 ? "" : "s"}
-              </span>
-              <strong style={{ fontSize: 22 }}>{money(total, ev.currency)}</strong>
-            </div>
+            <h3 className="cv-h3" style={{ marginBottom: 12 }}>
+              4. Discount code
+            </h3>
+            {discountError && (
+              <div className="cv-error" style={{ marginBottom: 10 }}>
+                {discountError}
+              </div>
+            )}
+            {applied ? (
+              <div className="cv-row">
+                <span>
+                  <strong>APPLIED: {applied.code}</strong>
+                  <span className="cv-muted" style={{ display: "block", fontSize: 13 }}>
+                    −{money(applied.discountAmount, ev.currency)}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="cv-btn cv-btn-ghost cv-btn-inline"
+                  style={{ minWidth: 40 }}
+                  onClick={removeCode}
+                  aria-label={`Remove discount code ${applied.code}`}
+                >
+                  ×
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  className="cv-input"
+                  placeholder="Enter code"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  style={{ flex: 1, textTransform: "uppercase" }}
+                />
+                <button
+                  type="button"
+                  className="cv-btn cv-btn-inline"
+                  onClick={applyCode}
+                  disabled={applying || !code.trim()}
+                >
+                  {applying ? "Checking…" : "Apply"}
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* 5 — Pay */}
+        {slots.length > 0 && (
+          <section className="cv-card cv-section" style={{ marginLeft: 0 }}>
+            {applied ? (
+              <div style={{ marginBottom: 16 }}>
+                <div className="cv-row" style={{ marginBottom: 6 }}>
+                  <span className="cv-muted">
+                    Subtotal · {slots.length} ticket{slots.length === 1 ? "" : "s"}
+                  </span>
+                  <span className="cv-muted" style={{ textDecoration: "line-through" }}>
+                    {money(applied.subtotal, ev.currency)}
+                  </span>
+                </div>
+                <div className="cv-row" style={{ marginBottom: 6 }}>
+                  <span className="cv-muted">Discount · {applied.code}</span>
+                  <span>−{money(applied.discountAmount, ev.currency)}</span>
+                </div>
+                <div className="cv-row">
+                  <span className="cv-muted">Total</span>
+                  <strong style={{ fontSize: 22 }}>{money(applied.total, ev.currency)}</strong>
+                </div>
+              </div>
+            ) : (
+              <div className="cv-row" style={{ marginBottom: 16 }}>
+                <span className="cv-muted">
+                  Total · {slots.length} ticket{slots.length === 1 ? "" : "s"}
+                </span>
+                <strong style={{ fontSize: 22 }}>{money(total, ev.currency)}</strong>
+              </div>
+            )}
 
             {!buyerReady && (
               <p className="cv-muted" style={{ marginBottom: 12, fontSize: 13 }}>
@@ -423,6 +611,8 @@ export default function Pay() {
                 publishableKey={config.stripePublishableKey}
                 token={guestToken || undefined}
                 buildItems={buildItems}
+                discountCode={applied?.code}
+                onDiscountInvalid={onDiscountInvalid}
                 disabled={!canPay}
                 onPaid={(r) => setResult(r)}
               />
@@ -431,6 +621,8 @@ export default function Pay() {
                 eventId={eventId!}
                 token={guestToken || undefined}
                 buildItems={buildItems}
+                discountCode={applied?.code}
+                onDiscountInvalid={onDiscountInvalid}
                 disabled={!canPay}
                 onPaid={(r) => setResult(r)}
               />
@@ -578,6 +770,8 @@ function StripeCheckout({
   publishableKey,
   token,
   buildItems,
+  discountCode,
+  onDiscountInvalid,
   disabled,
   onPaid,
 }: {
@@ -585,6 +779,8 @@ function StripeCheckout({
   publishableKey: string;
   token?: string;
   buildItems: () => ItemsPayload;
+  discountCode?: string;
+  onDiscountInvalid?: (message: string) => void;
   disabled: boolean;
   onPaid: (r: PaidResult) => void;
 }) {
@@ -597,6 +793,8 @@ function StripeCheckout({
         eventId={eventId}
         token={token}
         buildItems={buildItems}
+        discountCode={discountCode}
+        onDiscountInvalid={onDiscountInvalid}
         disabled={disabled}
         onPaid={onPaid}
       />
@@ -608,12 +806,16 @@ function StripeForm({
   eventId,
   token,
   buildItems,
+  discountCode,
+  onDiscountInvalid,
   disabled,
   onPaid,
 }: {
   eventId: string;
   token?: string;
   buildItems: () => ItemsPayload;
+  discountCode?: string;
+  onDiscountInvalid?: (message: string) => void;
   disabled: boolean;
   onPaid: (r: PaidResult) => void;
 }) {
@@ -628,10 +830,27 @@ function StripeForm({
     setBusy(true);
     try {
       const items = buildItems();
-      const init = await api<{ clientSecret: string }>(
-        `/payments/init/tickets/${eventId}`,
-        { method: "POST", body: { items }, token }
-      );
+      const init = await api<{
+        clientSecret?: string;
+        provider?: string;
+        free?: boolean;
+        reference?: string;
+      }>(`/payments/init/tickets/${eventId}`, {
+        method: "POST",
+        body: { items, discountCode },
+        token,
+      });
+      // A fully discounted order skips Stripe entirely — the server issued no
+      // PaymentIntent, just a reference the confirm endpoint recognises.
+      if (init.provider === "none" && init.free) {
+        const done = await api<{ recipients: string[] }>(
+          `/payments/confirm/tickets/${eventId}`,
+          { method: "POST", body: { provider: "none", reference: init.reference }, token }
+        );
+        onPaid({ recipients: done.recipients || [] });
+        return;
+      }
+      if (!init.clientSecret) throw new Error("Payment could not be started.");
       const card = elements.getElement(CardElement);
       if (!card) throw new Error("Card details are missing.");
       const res = await stripe.confirmCardPayment(init.clientSecret, {
@@ -649,6 +868,11 @@ function StripeForm({
       );
       onPaid({ recipients: done.recipients || [] });
     } catch (err: any) {
+      // The code stopped being usable between preview and init — clear it so
+      // the buyer can retry at full price.
+      if (err?.code === "discount_invalid" && onDiscountInvalid) {
+        onDiscountInvalid(err.message || "That discount code can't be used.");
+      }
       setError(err.message || "Payment failed. Please try again.");
     } finally {
       setBusy(false);
@@ -690,12 +914,16 @@ function PaystackCheckout({
   eventId,
   token,
   buildItems,
+  discountCode,
+  onDiscountInvalid,
   disabled,
   onPaid,
 }: {
   eventId: string;
   token?: string;
   buildItems: () => ItemsPayload;
+  discountCode?: string;
+  onDiscountInvalid?: (message: string) => void;
   disabled: boolean;
   onPaid: (r: PaidResult) => void;
 }) {
@@ -753,10 +981,29 @@ function PaystackCheckout({
     win.document.write("<p style='font-family:sans-serif;padding:24px'>Starting secure checkout…</p>");
     try {
       const items = buildItems();
-      const init = await api<{ reference: string; paymentLink?: string }>(
-        `/payments/init/tickets/${eventId}`,
-        { method: "POST", body: { items }, token }
-      );
+      const init = await api<{
+        reference: string;
+        paymentLink?: string;
+        provider?: string;
+        free?: boolean;
+      }>(`/payments/init/tickets/${eventId}`, {
+        method: "POST",
+        body: { items, discountCode },
+        token,
+      });
+      // A fully discounted order needs no Paystack charge — close the popup
+      // (opened before init to dodge popup blockers) and confirm right away.
+      if (init.provider === "none" && init.free) {
+        try {
+          win.close();
+        } catch {}
+        const done = await api<{ recipients: string[] }>(
+          `/payments/confirm/tickets/${eventId}`,
+          { method: "POST", body: { provider: "none", reference: init.reference }, token }
+        );
+        onPaid({ recipients: done.recipients || [] });
+        return;
+      }
       if (!init.paymentLink) throw new Error("Couldn't start Paystack checkout.");
       win.location.href = init.paymentLink;
       pollConfirm(init.reference, win);
@@ -764,6 +1011,11 @@ function PaystackCheckout({
       try {
         win.close();
       } catch {}
+      // The code stopped being usable between preview and init — clear it so
+      // the buyer can retry at full price.
+      if (err?.code === "discount_invalid" && onDiscountInvalid) {
+        onDiscountInvalid(err.message || "That discount code can't be used.");
+      }
       setError(err.message || "Payment failed. Please try again.");
       setBusy(false);
     }

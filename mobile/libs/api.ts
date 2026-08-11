@@ -119,3 +119,39 @@ export async function fetchVendorCategories(vendorId: string) {
   });
   return res.json();
 }
+
+// ─── Event discount codes ────────────────────────────────────────────────────
+
+// Validate a discount code before checkout. Always resolves with the server's
+// verdict — `{ valid: true, subtotal, discountAmount, total, free, … }` or
+// `{ valid: false, reason, message }` — prices are re-derived server-side.
+export async function previewDiscountCode(body: {
+  eventId: string;
+  code: string;
+  tierId?: string;
+}) {
+  const res = await fetch(`${BASE_URL}/payments/discount/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+// The creator's read-only view of the codes admins issued for their event.
+export async function fetchEventDiscountCodes(eventId: string) {
+  const res = await fetch(`${BASE_URL}/events/${eventId}/discount-codes`, {
+    headers: await authHeaders(),
+  });
+  const data = await res.json();
+  return data.codes || [];
+}
+
+// Creator toggle: flips disabledByCreator — returns { disabledByCreator }.
+export async function toggleEventDiscountCode(eventId: string, codeId: string) {
+  const res = await fetch(
+    `${BASE_URL}/events/${eventId}/discount-codes/${codeId}/toggle`,
+    { method: "PATCH", headers: await authHeaders() }
+  );
+  return res.json();
+}

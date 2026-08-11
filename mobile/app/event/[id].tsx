@@ -13,6 +13,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -32,6 +33,11 @@ import { createEventShareLink } from "@/utils/shareLinks";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { currencyPrefix } from "@/constants/payments";
+import {
+  fetchEventDiscountCodes,
+  previewDiscountCode,
+  toggleEventDiscountCode,
+} from "@/libs/api";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
@@ -95,6 +101,7 @@ interface Event {
   images?: string[];
   description?: string;
   seenCount?: number;
+  slug?: string;
   shareToken: string;
   isPublic: boolean;
   isPaid: boolean;
@@ -147,6 +154,61 @@ interface SearchedUser {
   profilePicture?: string;
   isVendor: boolean;
   businessName?: string;
+}
+
+// Admin-issued discount code as the creator endpoint returns it. The creator
+// can pause a code (disabledByCreator) but only admins create or kill them.
+interface DiscountCode {
+  _id: string;
+  code: string;
+  type: "percent" | "fixed";
+  value: number;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  maxRedemptions?: number | null;
+  redemptionCount: number;
+  isActive: boolean;
+  disabledByCreator: boolean;
+}
+
+// The server's verdict on a previewed code — amounts are all major units.
+// `type`/`value` are kept so each tier row can price ITSELF: the preview is
+// quoted against one tier (the cheapest, when none is chosen yet), so its
+// `total` doesn't describe the other rows.
+interface AppliedDiscount {
+  code: string;
+  type: "percent" | "fixed";
+  value: number;
+  subtotal: number;
+  discountAmount: number;
+  total: number;
+  free: boolean;
+}
+
+/**
+ * What a single ticket at `price` costs with `d` applied. Mirrors
+ * computeDiscount in server/src/services/payments/discount.service.js — percent
+ * off the line, fixed clamped to it — so the row matches what the server will
+ * actually charge when that tier is tapped.
+ */
+function discountedPrice(price: number, d: AppliedDiscount): number {
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  // Round the DISCOUNT first, then subtract — the server's order of operations.
+  // Rounding the final price instead differs by a cent on half-cent cases
+  // (50% of 33.33 → 16.66 there, 16.67 here), which is exactly the kind of
+  // mismatch this row is meant to eliminate.
+  const off = d.type === "percent" ? round2((price * d.value) / 100) : Math.min(d.value, price);
+  return round2(Math.max(0, price - off));
+}
+
+/** "Aug 12 – Aug 30" / "Until Aug 30" / "" — a code's validity window, when set. */
+function discountWindowLabel(dc: { startsAt?: string | null; endsAt?: string | null }) {
+  const fmt = (d: string) =>
+    new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  if (dc.startsAt && dc.endsAt) return `${fmt(dc.startsAt)} – ${fmt(dc.endsAt)}`;
+  if (dc.startsAt) return `From ${fmt(dc.startsAt)}`;
+  if (dc.endsAt) return `Until ${fmt(dc.endsAt)}`;
+  return "";
 }
 
 // Height of the cover image block. The title/meta sit below it in normal
@@ -247,8 +309,16 @@ export default function EventDetailsPage() {
   const [addingVendor, setAddingVendor] = useState<string | null>(null);
   const [reportSheetVisible, setReportSheetVisible] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
-  // Tier chooser shown before checkout when the event has multiple tiers.
+  // Checkout sheet shown before every paid purchase — tier rows (one synthetic
+  // row for single-price events) plus the discount-code entry.
   const [tierPickerVisible, setTierPickerVisible] = useState(false);
+  const [codeInput, setCodeInput] = useState("");
+  const [applyingCode, setApplyingCode] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [appliedDiscount, setAppliedDiscount] = useState<AppliedDiscount | null>(null);
+  // Creator-only: admin-issued codes for this event + per-row toggle busy id.
+  const [discountCodes, setDiscountCodes] = useState<DiscountCode[]>([]);
+  const [togglingCodeId, setTogglingCodeId] = useState<string | null>(null);
   const [refunding, setRefunding] = useState(false);
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
   const [shareSheetVisible, setShareSheetVisible] = useState(false);
@@ -581,6 +651,44 @@ export default function EventDetailsPage() {
   const isCohost = !isCreator && !!event?.cohosts?.some(c => c._id === currentUserId);
   const isCreatorOrCohost = isCreator || isCohost;
 
+  // Creator-only: load the discount codes admins issued for this event. The
+  // endpoint 403s for anyone else, so the fetch is gated on isCreator.
+  useEffect(() => {
+    if (!isCreator || !event?._id || !event.isPaid) return;
+    (async () => {
+      try {
+        const codes = await fetchEventDiscountCodes(event._id);
+        setDiscountCodes(codes);
+      } catch {
+        // Non-fatal — the card just shows its empty state.
+      }
+    })();
+  }, [isCreator, event?._id, event?.isPaid]);
+
+  // Creator kill switch for one code: flips disabledByCreator server-side and
+  // mirrors the answer back into the row. Admin-disabled codes never reach
+  // here — their switch is disabled in the UI.
+  const handleToggleDiscountCode = async (codeId: string) => {
+    if (!event) return;
+    setTogglingCodeId(codeId);
+    try {
+      const data = await toggleEventDiscountCode(event._id, codeId);
+      if (typeof data.disabledByCreator === "boolean") {
+        setDiscountCodes((prev) =>
+          prev.map((c) =>
+            c._id === codeId ? { ...c, disabledByCreator: data.disabledByCreator } : c
+          )
+        );
+      } else {
+        showError(data.message || "Couldn't update the code.");
+      }
+    } catch {
+      showError("Couldn't update the code.");
+    } finally {
+      setTogglingCodeId(null);
+    }
+  };
+
   const handleRefundOwnTicket = async () => {
     if (!event) return;
     if (!requireAuth("refund your ticket")) return;
@@ -633,25 +741,68 @@ export default function EventDetailsPage() {
   const handlePurchaseTicket = async () => {
     if (!event) return;
     if (!requireAuth("purchase a ticket")) return;
-    const tiers = event.ticketTiers || [];
-    if (tiers.length > 1) {
-      // Multiple tiers — the buyer picks one first.
-      setTierPickerVisible(true);
-      return;
-    }
-    // Single tier or legacy single price — charge directly.
-    await purchaseTier(tiers.length === 1 ? tiers[0]._id : undefined);
+    // Every paid purchase goes through the checkout sheet — it hosts the tier
+    // rows (one synthetic row for single-price events) and the discount-code
+    // entry, so it always opens with a clean slate.
+    setCodeInput("");
+    setCodeError(null);
+    setAppliedDiscount(null);
+    setTierPickerVisible(true);
   };
 
-  const purchaseTier = async (tierId?: string) => {
+  // Validate the typed code server-side and keep the verdict for the summary
+  // rows; the code itself is threaded into checkout when a tier is tapped.
+  const handleApplyCode = async () => {
+    if (!event) return;
+    const code = codeInput.trim().toUpperCase();
+    if (!code) return;
+    setApplyingCode(true);
+    setCodeError(null);
+    try {
+      const tiers = event.ticketTiers || [];
+      const data = await previewDiscountCode({
+        eventId: event._id,
+        code,
+        tierId: tiers.length === 1 ? tiers[0]._id : undefined,
+      });
+      if (data.valid) {
+        setAppliedDiscount({
+          code: data.code,
+          type: data.type,
+          value: data.value,
+          subtotal: data.subtotal,
+          discountAmount: data.discountAmount,
+          total: data.total,
+          free: !!data.free,
+        });
+      } else {
+        setAppliedDiscount(null);
+        setCodeError(data.message || "This code can't be applied.");
+      }
+    } catch {
+      setAppliedDiscount(null);
+      setCodeError("Couldn't check that code. Try again.");
+    } finally {
+      setApplyingCode(false);
+    }
+  };
+
+  const purchaseTier = async (tierId?: string, discountCode?: string) => {
     if (!event) return;
     setTierPickerVisible(false);
     setPurchasing(true);
     try {
       // The hook runs the provider checkout AND confirms server-side (issuing
-      // the ticket) before returning, so success here means the ticket is ready.
-      const result = await payForTicket(event._id, tierId);
+      // the ticket) before returning, so success here means the ticket is
+      // ready. 100%-off codes complete inside the hook with no payment sheet.
+      const result = await payForTicket(event._id, tierId, discountCode);
       if (!result.success) {
+        if (result.code === "discount_invalid") {
+          // The code got invalidated between preview and init (expired, cap
+          // reached…) — drop it so the next attempt charges full price.
+          setAppliedDiscount(null);
+          setCodeInput("");
+        }
         if (result.error) showError(result.error, "Payment Failed");
         return;
       }
@@ -667,7 +818,7 @@ export default function EventDetailsPage() {
         kind: "event",
         eventId: event._id,
         title: event.title,
-        externalUrl: createEventShareLink(event.shareToken || event._id),
+        externalUrl: createEventShareLink(event.slug || event.shareToken || event._id),
       }
     : null;
 
@@ -908,6 +1059,14 @@ export default function EventDetailsPage() {
   // the UI that renders them so a guest gets a clean layout instead of zeroes
   // and empty bars.
   const canSeeAttendance = isCreatorOrCohost || !!event.showAttendance;
+
+  // Rows for the checkout sheet — real tiers when the event has them, or one
+  // synthetic row for single-price events (its tierId stays undefined so the
+  // init endpoint falls back to event.ticketPrice, same as before).
+  const checkoutTiers: { _id?: string; name: string; price: number }[] =
+    (event.ticketTiers?.length ?? 0) > 0
+      ? event.ticketTiers!
+      : [{ name: "General admission", price: event.ticketPrice ?? 0 }];
 
   // Capacity numbers shared by the bar + the GOING / CAPACITY stat cards
   const goingCount = event.rsvpCount ?? event.rsvpUsers?.length ?? 0;
@@ -1573,6 +1732,52 @@ export default function EventDetailsPage() {
             </GlassCard>
           )}
 
+          {/* Discount codes — admin-issued; the creator can pause a code but
+              not create one, and can't re-enable a code an admin turned off. */}
+          {isCreator && event.isPaid && (
+            <GlassCard style={styles.pendingCard}>
+              <Text style={styles.microLabel}>DISCOUNT CODES</Text>
+              {discountCodes.map((dc) => {
+                const window = discountWindowLabel(dc);
+                return (
+                  <View
+                    key={dc._id}
+                    style={[styles.pendingRow, !dc.isActive && { opacity: 0.45 }]}
+                  >
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.discountCodeText} numberOfLines={1}>
+                        {dc.code}
+                      </Text>
+                      <Text style={styles.discountCodeMeta}>
+                        {dc.type === "percent"
+                          ? `${dc.value}% off`
+                          : `${currencyPrefix(event.currency)}${dc.value.toLocaleString()} off`}
+                        {" · "}
+                        {dc.redemptionCount}/{dc.maxRedemptions ?? "∞"} used
+                        {window ? ` · ${window}` : ""}
+                      </Text>
+                      {!dc.isActive && (
+                        <Text style={styles.discountCodeAdminOff}>Paused by CityVibe</Text>
+                      )}
+                    </View>
+                    <Switch
+                      value={dc.isActive && !dc.disabledByCreator}
+                      onValueChange={() => handleToggleDiscountCode(dc._id)}
+                      disabled={!dc.isActive || togglingCodeId === dc._id}
+                      trackColor={{ false: colors.borderMuted, true: colors.primary }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                );
+              })}
+              {discountCodes.length === 0 && (
+                <Text style={styles.discountEmptyText}>
+                  No codes yet. Discount codes are issued by CityVibe admins.
+                </Text>
+              )}
+            </GlassCard>
+          )}
+
           {/* Pending invites + pending vendors — organizer view */}
           {isCreator &&
             ((event.pendingInvites && event.pendingInvites.length > 0) ||
@@ -1680,37 +1885,140 @@ export default function EventDetailsPage() {
         </View>
       )}
 
-      {/* ─── TICKET TIER PICKER ────────────────────────────── */}
+      {/* ─── CHECKOUT SHEET — tier rows + discount code ────── */}
       <Modal
         visible={tierPickerVisible}
         transparent
         animationType="slide"
         onRequestClose={() => setTierPickerVisible(false)}
       >
-        <Pressable style={styles.sheetBackdrop} onPress={() => setTierPickerVisible(false)} />
-        <SafeAreaView edges={["bottom"]} style={styles.sheetWrap}>
-          <View style={styles.sheetCard}>
-            <Text style={styles.tierPickerTitle}>Choose your ticket</Text>
-            {(event?.ticketTiers || []).map((tier) => (
-              <TouchableOpacity
-                key={tier._id}
-                style={styles.tierPickerRow}
-                onPress={() => purchaseTier(tier._id)}
-                disabled={purchasing}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.tierPickerName} numberOfLines={1}>
-                  {tier.name}
-                </Text>
-                <Text style={styles.tierPickerPrice}>
-                  {currencyPrefix(event?.currency)}
-                  {tier.price.toLocaleString()}
-                </Text>
-                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </SafeAreaView>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1, justifyContent: "flex-end" }}
+        >
+          <Pressable style={styles.sheetBackdrop} onPress={() => setTierPickerVisible(false)} />
+          <SafeAreaView edges={["bottom"]}>
+            <View style={styles.sheetCard}>
+              <Text style={styles.tierPickerTitle}>Choose your ticket</Text>
+              {checkoutTiers.map((tier) => (
+                <TouchableOpacity
+                  key={tier._id ?? "single"}
+                  style={styles.tierPickerRow}
+                  onPress={() => purchaseTier(tier._id, appliedDiscount?.code)}
+                  disabled={purchasing}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.tierPickerName} numberOfLines={1}>
+                    {tier.name}
+                  </Text>
+                  {appliedDiscount ? (
+                    // Show what this row will actually charge. Previously it
+                    // always rendered the face price, so tapping a tier took a
+                    // different amount than the row advertised.
+                    <View style={styles.tierPickerPriceGroup}>
+                      <Text style={styles.tierPickerPriceStruck}>
+                        {currencyPrefix(event.currency)}
+                        {tier.price.toLocaleString()}
+                      </Text>
+                      <Text style={styles.tierPickerPriceDiscounted}>
+                        {discountedPrice(tier.price, appliedDiscount) === 0
+                          ? "FREE"
+                          : `${currencyPrefix(event.currency)}${discountedPrice(
+                              tier.price,
+                              appliedDiscount
+                            ).toLocaleString()}`}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.tierPickerPrice}>
+                      {currencyPrefix(event.currency)}
+                      {tier.price.toLocaleString()}
+                    </Text>
+                  )}
+                  <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
+              ))}
+
+              {/* Discount code — validated server-side before checkout */}
+              <View style={styles.discountBlock}>
+                <View style={styles.discountInputRow}>
+                  <TextInput
+                    style={styles.discountInput}
+                    placeholder="Discount code"
+                    placeholderTextColor={colors.textFaint}
+                    value={codeInput}
+                    onChangeText={(t) => {
+                      setCodeInput(t);
+                      setCodeError(null);
+                    }}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    editable={!applyingCode && !purchasing}
+                  />
+                  <TouchableOpacity
+                    style={styles.discountApplyBtn}
+                    onPress={handleApplyCode}
+                    disabled={applyingCode || purchasing || !codeInput.trim()}
+                    activeOpacity={0.8}
+                  >
+                    {applyingCode ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Text style={styles.discountApplyText}>Apply</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+                {!!codeError && <Text style={styles.discountError}>{codeError}</Text>}
+                {appliedDiscount && (
+                  <View style={styles.discountSummary}>
+                    {checkoutTiers.length === 1 ? (
+                      // One row to buy — the previewed quote IS that row, so
+                      // show the full breakdown.
+                      <>
+                        <View style={styles.discountSummaryRow}>
+                          <Text style={styles.discountSummaryLabel}>Subtotal</Text>
+                          <Text style={styles.discountSummaryValue}>
+                            {currencyPrefix(event.currency)}
+                            {appliedDiscount.subtotal.toLocaleString()}
+                          </Text>
+                        </View>
+                        <View style={styles.discountSummaryRow}>
+                          <Text style={styles.discountSummaryLabel}>{appliedDiscount.code}</Text>
+                          <Text style={styles.discountSummaryDiscount}>
+                            −{currencyPrefix(event.currency)}
+                            {appliedDiscount.discountAmount.toLocaleString()}
+                          </Text>
+                        </View>
+                        <View style={styles.discountSummaryRow}>
+                          <Text style={styles.discountSummaryTotalLabel}>Total</Text>
+                          <Text style={styles.discountSummaryTotal}>
+                            {appliedDiscount.free
+                              ? "FREE"
+                              : `${currencyPrefix(event.currency)}${appliedDiscount.total.toLocaleString()}`}
+                          </Text>
+                        </View>
+                      </>
+                    ) : (
+                      // Several tiers at different prices — the quote was for
+                      // one of them, so state the rule and let each row show
+                      // its own total rather than claiming a single figure.
+                      <View style={styles.discountSummaryRow}>
+                        <Text style={styles.discountSummaryTotalLabel}>
+                          {appliedDiscount.code} applied
+                        </Text>
+                        <Text style={styles.discountSummaryTotal}>
+                          {appliedDiscount.type === "percent"
+                            ? `${appliedDiscount.value}% off`
+                            : `−${currencyPrefix(event.currency)}${appliedDiscount.value.toLocaleString()}`}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
+            </View>
+          </SafeAreaView>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ─── OVERFLOW ⋯ ACTION SHEET ───────────────────────── */}
@@ -2940,6 +3248,102 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 15,
     fontFamily: Fonts.bold,
     color: c.primaryLight,
+  },
+  // Discounted row: face price struck through, payable price beside it.
+  tierPickerPriceGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  tierPickerPriceStruck: {
+    fontSize: 13,
+    fontFamily: Fonts.regular,
+    color: c.textFaint,
+    textDecorationLine: "line-through",
+  },
+  tierPickerPriceDiscounted: {
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: c.successLight,
+  },
+  // ── Checkout sheet: discount code entry + price summary ──
+  discountBlock: {
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 14,
+    borderTopWidth: 1,
+    borderTopColor: c.glassFill,
+    gap: 8,
+  },
+  discountInputRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  discountInput: {
+    flex: 1,
+    height: 44,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: c.glassFillSubtle,
+    borderWidth: 1,
+    borderColor: c.glassFill,
+    color: c.text,
+    fontFamily: Fonts.semiBold,
+    fontSize: 14,
+    letterSpacing: 1,
+  },
+  discountApplyBtn: {
+    height: 44,
+    minWidth: 74,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: c.primaryBorder,
+    backgroundColor: c.primaryFaded,
+  },
+  discountApplyText: { color: c.primary, fontFamily: Fonts.bold, fontSize: 13 },
+  discountError: {
+    color: c.error,
+    fontFamily: Fonts.regular,
+    fontSize: 12.5,
+  },
+  discountSummary: { marginTop: 2, gap: 6 },
+  discountSummaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  discountSummaryLabel: { color: c.textDim, fontFamily: Fonts.regular, fontSize: 13 },
+  discountSummaryValue: { color: c.textBright, fontFamily: Fonts.semiBold, fontSize: 13 },
+  discountSummaryDiscount: { color: c.successLight, fontFamily: Fonts.semiBold, fontSize: 13 },
+  discountSummaryTotalLabel: { color: c.textBright, fontFamily: Fonts.bold, fontSize: 14 },
+  discountSummaryTotal: { color: c.primaryLight, fontFamily: Fonts.bold, fontSize: 15 },
+
+  // ── Creator discount-codes card ──
+  discountCodeText: {
+    color: c.textBright,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontSize: 14,
+    letterSpacing: 1,
+  },
+  discountCodeMeta: {
+    color: c.textDim,
+    fontFamily: Fonts.regular,
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  discountCodeAdminOff: {
+    color: c.warningLight,
+    fontFamily: Fonts.bold,
+    fontSize: 10.5,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    marginTop: 2,
+  },
+  discountEmptyText: {
+    color: c.textDim,
+    fontFamily: Fonts.regular,
+    fontSize: 12.5,
+    lineHeight: 17,
   },
   sheetGrabber: {
     alignSelf: "center",
