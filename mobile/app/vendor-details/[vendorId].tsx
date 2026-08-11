@@ -276,11 +276,15 @@ export default function VendorDetails() {
   // this vendor), so rows know whether to show + or ✓.
   const cartQtyByService = useMemo(() => {
     const map: Record<string, number> = {};
-    if (cart.vendorId === vId) {
-      for (const it of cart.items) map[it.serviceId] = it.quantity;
+    if (cart.hasVendorItems(vId)) {
+      for (const it of cart.items) {
+        if (it.vendorId === vId) {
+          map[it.serviceId] = it.quantity;
+        }
+      }
     }
     return map;
-  }, [cart.items, cart.vendorId, vId]);
+  }, [cart.items, cart.hasVendorItems, vId]);
 
   const addToCart = (item: Service) => {
     const doAdd = () =>
@@ -295,9 +299,17 @@ export default function VendorDetails() {
       });
 
     if (cart.isDifferentVendor(vId)) {
+      const existingVendors = Array.from(
+        new Set(cart.items.map((it) => it.vendorName || "another vendor"))
+      );
+      const vendorLabel =
+        existingVendors.length === 1
+          ? existingVendors[0]
+          : `${existingVendors.length} vendors`;
+
       Alert.alert(
         "Start a new cart?",
-        `Your cart has items from ${cart.vendorName}. Adding this will clear it and start a cart with ${vName}.`,
+        `Your cart already has items from ${vendorLabel}. Adding this will clear it and start a cart with ${vName}.`,
         [
           { text: "Cancel", style: "cancel" },
           { text: "Start new cart", style: "destructive", onPress: doAdd },

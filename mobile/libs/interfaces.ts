@@ -123,6 +123,8 @@ export interface Service {
 // A single line in the client-side cart. One cart is scoped to one vendor.
 export interface CartItem {
   serviceId: string;
+  vendorId: string;
+  vendorName: string;
   name: string;
   price: number;
   currency: string;

@@ -331,14 +331,14 @@ export default function TabsLayout() {
         style={styles.menuItem}
         onPress={() => {
           setIsProfileModalVisible(false);
-          router.push("/settings");
+          router.push("/cart" as any);
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="settings-outline" size={20} color={colors.primary} />
+          <Ionicons name="cart-outline" size={20} color={colors.primary} />
         </View>
         <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
-          Settings
+          View Cart
         </Text>
         <Ionicons
           name="chevron-forward"
@@ -351,16 +351,14 @@ export default function TabsLayout() {
         style={styles.menuItem}
         onPress={() => {
           setIsProfileModalVisible(false);
-          // Opens the in-app support conversation. This used to show an email
-          // address in an alert, which was a dead end inside a chat app.
-          openSupportChat();
+          router.push("/settings");
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="chatbubble-ellipses-outline" size={20} color={colors.primary} />
+          <Ionicons name="settings-outline" size={20} color={colors.primary} />
         </View>
         <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
-          Help & Support
+          Settings
         </Text>
         <Ionicons
           name="chevron-forward"

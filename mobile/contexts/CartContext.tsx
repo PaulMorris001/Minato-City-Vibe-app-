@@ -17,39 +17,38 @@ const STORAGE_KEY = "cart_v1";
  * prompts the user). Persisted to AsyncStorage so it survives app restarts.
  */
 interface CartState {
-  vendorId: string;
-  vendorName: string;
   items: CartItem[];
 }
 
 interface CartContextType {
-  vendorId: string | null;
-  vendorName: string | null;
   items: CartItem[];
   count: number;
   subtotal: number;
-  /** True when adding this vendor's item would replace a different vendor's cart. */
+  /** True when this vendor has at least one item in the current cart. */
+  hasVendorItems: (vendorId: string) => boolean;
+  /** True when adding this vendor's item would add a different vendor to the cart. */
   isDifferentVendor: (vendorId: string) => boolean;
   addItem: (vendorId: string, vendorName: string, item: CartItem) => void;
   setQuantity: (serviceId: string, quantity: number) => void;
   setNote: (serviceId: string, note: string) => void;
   removeItem: (serviceId: string) => void;
+  removeItems: (serviceIds: string[]) => void;
   clear: () => void;
 }
 
-const emptyState: CartState = { vendorId: "", vendorName: "", items: [] };
+const emptyState: CartState = { items: [] };
 
 const CartContext = createContext<CartContextType>({
-  vendorId: null,
-  vendorName: null,
   items: [],
   count: 0,
   subtotal: 0,
+  hasVendorItems: () => false,
   isDifferentVendor: () => false,
   addItem: () => {},
   setQuantity: () => {},
   setNote: () => {},
   removeItem: () => {},
+  removeItems: () => {},
   clear: () => {},
 });
 
@@ -78,31 +77,31 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state, hydrated]);
 
+  const hasVendorItems = useCallback(
+    (vendorId: string) => state.items.some((item) => item.vendorId === vendorId),
+    [state.items]
+  );
+
   const isDifferentVendor = useCallback(
     (vendorId: string) =>
-      state.items.length > 0 && !!state.vendorId && state.vendorId !== vendorId,
-    [state.items.length, state.vendorId]
+      state.items.length > 0 && !state.items.every((item) => item.vendorId === vendorId),
+    [state.items]
   );
 
   const addItem = useCallback(
     (vendorId: string, vendorName: string, item: CartItem) => {
       setState((prev) => {
-        // Switching vendors starts a fresh cart.
-        const base =
-          prev.vendorId && prev.vendorId !== vendorId
-            ? { vendorId, vendorName, items: [] as CartItem[] }
-            : { vendorId, vendorName, items: [...prev.items] };
-
-        const idx = base.items.findIndex((i) => i.serviceId === item.serviceId);
+        const items = [...prev.items];
+        const idx = items.findIndex((i) => i.serviceId === item.serviceId);
         if (idx >= 0) {
-          base.items[idx] = {
-            ...base.items[idx],
-            quantity: base.items[idx].quantity + item.quantity,
+          items[idx] = {
+            ...items[idx],
+            quantity: items[idx].quantity + item.quantity,
           };
         } else {
-          base.items.push(item);
+          items.push({ ...item, vendorId, vendorName });
         }
-        return base;
+        return { items };
       });
     },
     []
@@ -139,6 +138,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const removeItems = useCallback((serviceIds: string[]) => {
+    if (!serviceIds.length) return;
+    setState((prev) => {
+      const items = prev.items.filter((i) => !serviceIds.includes(i.serviceId));
+      return items.length ? { ...prev, items } : emptyState;
+    });
+  }, []);
+
   const clear = useCallback(() => setState(emptyState), []);
 
   const count = useMemo(
@@ -151,16 +158,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value: CartContextType = {
-    vendorId: state.vendorId || null,
-    vendorName: state.vendorName || null,
     items: state.items,
     count,
     subtotal,
+    hasVendorItems,
     isDifferentVendor,
     addItem,
     setQuantity,
     setNote,
     removeItem,
+    removeItems,
     clear,
   };
 

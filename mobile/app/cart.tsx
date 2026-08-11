@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -34,10 +34,26 @@ export default function CartScreen() {
   const formatPrice = useFormatPrice();
   const [submitting, setSubmitting] = useState(false);
 
-  const prefix = currencyPrefix(cart.items[0]?.currency);
+    const vendorGroups = useMemo(() => {
+    const groups: Record<string, { vendorName: string; items: typeof cart.items }> = {};
+    for (const item of cart.items) {
+      const key = item.vendorId || "unknown";
+      if (!groups[key]) {
+        groups[key] = { vendorName: item.vendorName || "Vendor", items: [] };
+      }
+      groups[key].items.push(item);
+    }
+    return Object.entries(groups).map(([vendorId, group]) => ({
+      vendorId,
+      vendorName: group.vendorName,
+      items: group.items,
+    }));
+  }, [cart.items]);
+
+  const singleVendorGroup = vendorGroups.length === 1 ? vendorGroups[0] : null;
 
   const handleCheckout = async () => {
-    if (!cart.vendorId || cart.items.length === 0) return;
+    if (!singleVendorGroup) return;
     setSubmitting(true);
     try {
       const token = await SecureStore.getItemAsync("token");
@@ -48,8 +64,8 @@ export default function CartScreen() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          vendorId: cart.vendorId,
-          items: cart.items.map((i) => ({
+          vendorId: singleVendorGroup.vendorId,
+          items: singleVendorGroup.items.map((i) => ({
             serviceId: i.serviceId,
             quantity: i.quantity,
             note: i.note || "",
@@ -71,61 +87,6 @@ export default function CartScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: CartItem }) => (
-    <View style={styles.card}>
-      {item.image ? (
-        <Image source={{ uri: item.image }} style={styles.thumb} />
-      ) : (
-        <View style={[styles.thumb, styles.thumbPlaceholder]}>
-          <Ionicons name="fast-food-outline" size={24} color={colors.textMuted} />
-        </View>
-      )}
-      <View style={{ flex: 1 }}>
-        <View style={styles.cardTopRow}>
-          <Text style={styles.itemName} numberOfLines={2}>
-            {item.name}
-          </Text>
-          <TouchableOpacity onPress={() => cart.removeItem(item.serviceId)} hitSlop={8}>
-            <Ionicons name="close" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.itemPrice}>
-          {prefix}
-          {formatPrice(item.price)}
-        </Text>
-
-        <TextInput
-          style={styles.noteInput}
-          placeholder="Add a note (optional)"
-          placeholderTextColor={colors.textMuted}
-          value={item.note}
-          onChangeText={(t) => cart.setNote(item.serviceId, t)}
-        />
-
-        <View style={styles.stepperRow}>
-          <TouchableOpacity
-            style={styles.stepperBtn}
-            onPress={() => cart.setQuantity(item.serviceId, item.quantity - 1)}
-          >
-            <Ionicons name="remove" size={18} color={colors.primary} />
-          </TouchableOpacity>
-          <Text style={styles.stepperQty}>{item.quantity}</Text>
-          <TouchableOpacity
-            style={styles.stepperBtn}
-            onPress={() => cart.setQuantity(item.serviceId, item.quantity + 1)}
-          >
-            <Ionicons name="add" size={18} color={colors.primary} />
-          </TouchableOpacity>
-
-          <Text style={styles.lineTotal}>
-            {prefix}
-            {formatPrice(item.price * item.quantity)}
-          </Text>
-        </View>
-      </View>
-    </View>
-  );
 
   return (
     <View style={styles.container}>
@@ -137,9 +98,11 @@ export default function CartScreen() {
           <GlassBackButton style={styles.backButton} />
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Your cart</Text>
-            {!!cart.vendorName && (
-              <Text style={styles.subtitle}>{cart.vendorName}</Text>
-            )}
+            {vendorGroups.length > 1 ? (
+              <Text style={styles.subtitle}>{vendorGroups.length} vendors</Text>
+            ) : singleVendorGroup ? (
+              <Text style={styles.subtitle}>{singleVendorGroup.vendorName}</Text>
+            ) : null}
           </View>
         </View>
       </LinearGradient>
@@ -155,9 +118,71 @@ export default function CartScreen() {
       ) : (
         <>
           <FlatList
-            data={cart.items}
-            keyExtractor={(i) => i.serviceId}
-            renderItem={renderItem}
+            data={vendorGroups}
+            keyExtractor={(group) => group.vendorId}
+            renderItem={({ item: group }) => (
+              <View style={styles.vendorGroup}>
+                <View style={styles.vendorHeader}>
+                  <Text style={styles.vendorName}>{group.vendorName}</Text>
+                  <Text style={styles.vendorCount}>
+                    {group.items.length} {group.items.length === 1 ? "item" : "items"}
+                  </Text>
+                </View>
+                {group.items.map((item) => (
+                  <View key={item.serviceId} style={styles.card}>
+                    {item.image ? (
+                      <Image source={{ uri: item.image }} style={styles.thumb} />
+                    ) : (
+                      <View style={[styles.thumb, styles.thumbPlaceholder]}>
+                        <Ionicons name="fast-food-outline" size={24} color={colors.textMuted} />
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.cardTopRow}>
+                        <Text style={styles.itemName} numberOfLines={2}>
+                          {item.name}
+                        </Text>
+                        <TouchableOpacity onPress={() => cart.removeItem(item.serviceId)} hitSlop={8}>
+                          <Ionicons name="close" size={20} color={colors.textMuted} />
+                        </TouchableOpacity>
+                      </View>
+
+                      <Text style={styles.itemPrice}>
+                        {currencyPrefix(item.currency)}{formatPrice(item.price)}
+                      </Text>
+
+                      <TextInput
+                        style={styles.noteInput}
+                        placeholder="Add a note (optional)"
+                        placeholderTextColor={colors.textMuted}
+                        value={item.note}
+                        onChangeText={(t) => cart.setNote(item.serviceId, t)}
+                      />
+
+                      <View style={styles.stepperRow}>
+                        <TouchableOpacity
+                          style={styles.stepperBtn}
+                          onPress={() => cart.setQuantity(item.serviceId, item.quantity - 1)}
+                        >
+                          <Ionicons name="remove" size={18} color={colors.primary} />
+                        </TouchableOpacity>
+                        <Text style={styles.stepperQty}>{item.quantity}</Text>
+                        <TouchableOpacity
+                          style={styles.stepperBtn}
+                          onPress={() => cart.setQuantity(item.serviceId, item.quantity + 1)}
+                        >
+                          <Ionicons name="add" size={18} color={colors.primary} />
+                        </TouchableOpacity>
+
+                        <Text style={styles.lineTotal}>
+                          {currencyPrefix(item.currency)}{formatPrice(item.price * item.quantity)}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             ListFooterComponent={
@@ -165,14 +190,19 @@ export default function CartScreen() {
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Subtotal</Text>
                   <Text style={styles.summaryValue}>
-                    {prefix}
-                    {formatPrice(cart.subtotal)}
+                    {currencyPrefix(cart.items[0]?.currency)}{formatPrice(cart.subtotal)}
                   </Text>
                 </View>
                 <Text style={styles.summaryNote}>
                   The vendor may add delivery or other fees before sending your
                   final invoice to pay.
                 </Text>
+                {vendorGroups.length > 1 && (
+                  <Text style={styles.multipleVendorsNote}>
+                    You have items from multiple vendors. Checkout is available per
+                    vendor from the vendor detail page.
+                  </Text>
+                )}
               </View>
             }
           />
@@ -181,7 +211,7 @@ export default function CartScreen() {
             <TouchableOpacity
               activeOpacity={0.9}
               onPress={handleCheckout}
-              disabled={submitting}
+              disabled={submitting || !singleVendorGroup}
             >
               <LinearGradient
                 colors={[colors.primary, colors.primaryDark]}
@@ -194,7 +224,9 @@ export default function CartScreen() {
                 ) : (
                   <>
                     <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.white} />
-                    <Text style={styles.checkoutText}>Send order to vendor</Text>
+                    <Text style={styles.checkoutText}>
+                      {singleVendorGroup ? "Send order to vendor" : "Checkout not available"}
+                    </Text>
                   </>
                 )}
               </LinearGradient>
@@ -262,6 +294,22 @@ const createStyles = (c: ThemeColors) =>
       borderWidth: 1,
       borderColor: c.border,
       marginTop: 4,
+    },
+    vendorGroup: { marginBottom: 24 },
+    vendorHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 12,
+    },
+    vendorName: { fontSize: 16, fontFamily: Fonts.semiBold, color: c.text },
+    vendorCount: { fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary },
+    multipleVendorsNote: {
+      marginTop: 12,
+      fontSize: 13,
+      fontFamily: Fonts.regular,
+      color: c.textSecondary,
+      lineHeight: 18,
     },
     summaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
     summaryLabel: { fontSize: 16, fontFamily: Fonts.semiBold, color: c.text },
