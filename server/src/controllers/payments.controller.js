@@ -12,7 +12,6 @@
  * NGN).
  */
 
-import mongoose from "mongoose";
 import stripe from "../config/stripe.js";
 import config from "../config/env.js";
 import User from "../models/user.model.js";
@@ -44,6 +43,7 @@ import {
 import { findOrCreateGuestUser } from "./guestCheckout.controller.js";
 import { sendPushNotification } from "../services/notification.service.js";
 import { invalidateCachePattern } from "../utils/cache.js";
+import { findEventByAnyId } from "../utils/resolveEvent.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -202,7 +202,10 @@ export const previewDiscountHandler = async (req, res) => {
       return res.status(400).json({ message: "eventId and code are required" });
     }
 
-    const event = mongoose.isValidObjectId(eventId) ? await Event.findById(eventId) : null;
+    // The website carries whatever param the share link used (slug, shareToken
+    // or _id) through to checkout, so resolve all three — an `_id`-only lookup
+    // answered "Event not found" for every buyer who arrived from a share link.
+    const event = await findEventByAnyId(eventId);
     if (!event) return res.status(404).json({ message: "Event not found" });
     if (!event.isPaid) {
       return res.status(400).json({ message: "This event does not require payment" });
@@ -231,7 +234,7 @@ export const previewDiscountHandler = async (req, res) => {
 
     const currency = event.currency || "USD";
     const result = await previewDiscount({
-      eventId,
+      eventId: event._id,
       code,
       userId: req.user.id,
       subtotal,
@@ -698,8 +701,12 @@ export const initTicketBatch = async (req, res) => {
       return res.status(400).json({ message: "You can buy up to 20 tickets at once." });
     }
 
-    const event = await Event.findById(eventId).populate("createdBy");
+    // `eventId` may be a slug or shareToken (website share links) — resolve it
+    // once and use the canonical `_id` for every query, reference and metadata
+    // field below, so init and confirm always agree on the same key.
+    const event = await findEventByAnyId(eventId, "createdBy");
     if (!event) return res.status(404).json({ message: "Event not found" });
+    const eventKey = event._id;
     if (!event.isPublic || !event.isPaid) {
       return res.status(400).json({ message: "This event does not require payment" });
     }
@@ -761,7 +768,7 @@ export const initTicketBatch = async (req, res) => {
     let appliedCode = null;
     if (discountCode) {
       const reserved = await reserveDiscount({
-        eventId,
+        eventId: eventKey,
         code: discountCode,
         userId: buyerId,
         subtotal,
@@ -804,7 +811,7 @@ export const initTicketBatch = async (req, res) => {
 
     if (provider === "paystack") {
       const buyer = await User.findById(buyerId).select("email username");
-      const init = await buildPaystackInit({ type: "ticket", id: eventId, amount: total, currency, buyer });
+      const init = await buildPaystackInit({ type: "ticket", id: eventKey, amount: total, currency, buyer });
       order.reference = init.reference;
       await order.save();
       if (redemption) await updateRedemptionReference(redemption._id, init.reference);
@@ -822,7 +829,7 @@ export const initTicketBatch = async (req, res) => {
         type: "ticket_batch",
         buyerId: buyerId.toString(),
         sellerId: seller._id.toString(),
-        eventId: eventId.toString(),
+        eventId: eventKey.toString(),
         ticketOrderId: order._id.toString(),
         payoutProvider: settlement,
         ...(appliedCode
@@ -832,7 +839,7 @@ export const initTicketBatch = async (req, res) => {
             }
           : {}),
       },
-      transfer_group: `event_${eventId}`,
+      transfer_group: `event_${eventKey}`,
     });
     order.reference = paymentIntent.id;
     await order.save();
@@ -860,7 +867,13 @@ export const confirmTicketBatch = async (req, res) => {
     const { provider, reference } = req.body || {};
     if (!reference) return res.status(400).json({ message: "reference is required" });
 
-    const order = await TicketOrder.findOne({ reference, event: eventId });
+    // Resolved before the order lookup: `eventId` may be a slug/shareToken, and
+    // orders are keyed by the event's `_id`.
+    const event = await findEventByAnyId(eventId);
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    const eventKey = event._id;
+
+    const order = await TicketOrder.findOne({ reference, event: eventKey });
     if (!order) return res.status(404).json({ message: "Order not found" });
     if (order.buyer.toString() !== buyerId) {
       return res.status(403).json({ message: "This purchase isn't yours" });
@@ -904,9 +917,6 @@ export const confirmTicketBatch = async (req, res) => {
         return res.status(400).json({ message: "Payment amount mismatch" });
       }
     }
-
-    const event = await Event.findById(eventId);
-    if (!event) return res.status(404).json({ message: "Event not found" });
 
     // Re-derived from the seller rather than read back from the order/PI, so a
     // routing change between init and confirm settles on today's rail.
@@ -972,7 +982,12 @@ export const confirmTicketBatch = async (req, res) => {
     // several is counted correctly), and dropping them keeps auto-created guest /
     // gift-recipient accounts out of the public "who's coming" list.
 
-    invalidateCachePattern(`event_detail_${eventId}_`);
+    // Event detail is cached under whichever param the caller used, so drop the
+    // `_id`, slug and shareToken keys — otherwise a slug-fetched page keeps
+    // serving stale ticket counts after a sale.
+    for (const key of [eventKey, event.slug, event.shareToken].filter(Boolean)) {
+      invalidateCachePattern(`event_detail_${key}_`);
+    }
     invalidateCachePattern("public_events_");
     invalidateCachePattern("event_highlights_");
 
@@ -981,7 +996,7 @@ export const confirmTicketBatch = async (req, res) => {
       creator?.fcmToken,
       "🎟️ Tickets sold!",
       `${order.items.length} ticket${order.items.length === 1 ? "" : "s"} just sold for "${event.title}"`,
-      { type: "ticket_sold", eventId: eventId.toString() }
+      { type: "ticket_sold", eventId: eventKey.toString() }
     );
 
     order.status = "paid";
