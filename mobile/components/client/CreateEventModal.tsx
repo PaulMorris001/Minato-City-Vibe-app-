@@ -256,11 +256,16 @@ export default function CreateEventModal({
         venueProofImage: venueProofUrl,
       };
 
-      await axios.post(`${BASE_URL}/events`, eventData, {
+      const { data } = await axios.post(`${BASE_URL}/events`, eventData, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      Alert.alert("Success", "Event created successfully!");
+      // Every paid event waits on admin review before it can sell tickets, so
+      // trust the server's wording rather than always claiming it's live.
+      Alert.alert(
+        data?.pendingApproval ? "Submitted for review" : "Success",
+        data?.message || "Event created successfully!"
+      );
 
       // Reset form
       setFormData({
@@ -592,6 +597,14 @@ export default function CreateEventModal({
 
                   {formData.isPaid && (
                     <>
+                      {/* No price or capacity ceiling is enforced — an admin
+                          reviews every paid event before it can sell instead. */}
+                      <Text style={styles.tierHint}>
+                        Price it and size it however you like — there are no limits.
+                        Every paid event is reviewed by our team before tickets go on
+                        sale, and we'll notify you the moment it's approved.
+                      </Text>
+
                       {tiers.length === 0 ? (
                         <>
                           <Text style={styles.label}>

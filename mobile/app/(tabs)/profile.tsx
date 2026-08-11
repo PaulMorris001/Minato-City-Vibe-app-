@@ -647,14 +647,26 @@ function GuidesSection({ guides }: { guides: Guide[] }) {
     <View style={styles.guidesSection}>
       <View style={styles.guidesHeader}>
         <Text style={styles.sectionTitle}>Guides</Text>
-        <TouchableOpacity
-          onPress={() => router.push("/my-guides" as any)}
-          activeOpacity={0.7}
-          style={styles.manageBtn}
-        >
-          <Ionicons name="add" size={14} color={colors.primaryLight} />
-          <Text style={styles.manageText}>Manage</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {/* Guide sellers aren't vendors and never see the vendor dashboard,
+              so this is their route to what they've earned. */}
+          <TouchableOpacity
+            onPress={() => router.push("/earnings" as any)}
+            activeOpacity={0.7}
+            style={styles.manageBtn}
+          >
+            <Ionicons name="cash-outline" size={14} color={colors.primaryLight} />
+            <Text style={styles.manageText}>Earnings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push("/my-guides" as any)}
+            activeOpacity={0.7}
+            style={styles.manageBtn}
+          >
+            <Ionicons name="add" size={14} color={colors.primaryLight} />
+            <Text style={styles.manageText}>Manage</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {guides.length === 0 ? (

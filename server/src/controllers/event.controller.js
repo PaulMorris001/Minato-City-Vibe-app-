@@ -237,7 +237,7 @@ export const createEvent = async (req, res) => {
         return res.status(400).json({ message: "Max guests must be specified for paid events" });
       }
       // Virtual events have no venue to prove; they still pass through the
-      // first-paid-event admin approval queue below.
+      // admin approval queue below like every other paid event.
       if (!venueProofImage && !virtual) {
         return res.status(400).json({
           message: "A photo of your venue booking (confirmation, contract, or reservation) is required for paid events.",
@@ -249,7 +249,7 @@ export const createEvent = async (req, res) => {
       // (Paystack or Stripe Connect). Without this gate, the failure surfaces to
       // the *buyer* at checkout — the wrong layer.
       const organizer = await User.findById(userId).select(
-        `verified paidEventsApproved paidEventsCount emailVerifiedAt ${PAYOUT_ROUTING_FIELDS}`
+        `verified emailVerifiedAt ${PAYOUT_ROUTING_FIELDS}`
       );
       if (!organizer?.emailVerifiedAt) {
         return res.status(403).json({
@@ -276,32 +276,11 @@ export const createEvent = async (req, res) => {
         });
       }
 
-      // New-organizer caps — until the user has had `newOrganizerThreshold`
-      // approved paid events, ticket price and guest count are capped.
-      const isNewOrganizer =
-        (organizer.paidEventsCount || 0) < config.trust.newOrganizerThreshold;
-      if (isNewOrganizer) {
-        const maxTicketPrice =
-          config.trust.newOrganizerMaxTicketPriceByCurrency[ticketCurrency] ??
-          config.trust.newOrganizerMaxTicketPriceUsd;
-        const highestPrice = tiers.length
-          ? Math.max(...tiers.map((t) => t.price))
-          : ticketPrice;
-        if (highestPrice > maxTicketPrice) {
-          const capLabel =
-            ticketCurrency === "USD"
-              ? `$${maxTicketPrice}`
-              : `${maxTicketPrice.toLocaleString()} ${ticketCurrency}`;
-          return res.status(400).json({
-            message: `New organizers can charge up to ${capLabel} per ticket. This cap is removed after ${config.trust.newOrganizerThreshold} successful paid events.`,
-          });
-        }
-        if (maxGuests > config.trust.newOrganizerMaxGuests) {
-          return res.status(400).json({
-            message: `New organizers can host up to ${config.trust.newOrganizerMaxGuests} ticketed guests per event. This cap is removed after ${config.trust.newOrganizerThreshold} successful paid events.`,
-          });
-        }
-      }
+      // No ticket-price or capacity ceiling is applied here, for new organizers
+      // or anyone else: an organizer may charge what they like and size the room
+      // how they like. Every public paid event is held for admin review below
+      // instead, so an implausible price or headcount is caught by a human who
+      // can also see the venue proof — not rejected by an arbitrary number.
     }
 
     // Handle event image upload
@@ -329,18 +308,12 @@ export const createEvent = async (req, res) => {
     }
     const eventImageUrl = gallery[0] || "";
 
-    // Paid-event approval gate (Model C): every organizer's first paid event
-    // still goes through the admin queue, even if they're identity-verified.
-    // The verification gate above ensures only verified users can submit;
-    // this gate ensures the actual event content is reviewed once before
-    // any tickets sell.
-    let approvalStatus = "approved";
-    if (isPublic && isPaid) {
-      const organizer = await User.findById(userId).select("paidEventsApproved");
-      if (!organizer?.paidEventsApproved) {
-        approvalStatus = "pending";
-      }
-    }
+    // Paid-event approval gate: EVERY public paid event goes through the admin
+    // queue, every time — not just an organizer's first. Since price and
+    // capacity are uncapped, review is the only thing between an organizer and
+    // buyers' money, and a previously-approved organizer is no guarantee about
+    // *this* event. Free and private events never enter the queue.
+    const approvalStatus = isPublic && isPaid ? "pending" : "approved";
 
     // Upload venue proof image for paid events
     let venueProofUrl = "";
@@ -403,7 +376,11 @@ export const createEvent = async (req, res) => {
     invalidateCachePattern('public_events_');
     invalidateCachePattern('event_highlights_');
     res.status(201).json({
-      message: "Event created successfully",
+      message:
+        approvalStatus === "pending"
+          ? "Event created. Paid events go live once an admin has reviewed them — we'll notify you as soon as it's approved."
+          : "Event created successfully",
+      pendingApproval: approvalStatus === "pending",
       event: populatedEvent
     });
   } catch (error) {

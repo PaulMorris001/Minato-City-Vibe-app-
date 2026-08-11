@@ -22,7 +22,7 @@
 import mongoose from "mongoose";
 import config from "../config/env.js";
 import Chat from "../models/chat.model.js";
-import Order from "../models/order.model.js";
+import { Order } from "../models/order.model.js";
 
 async function main() {
   await mongoose.connect(config.database.uri, config.database.options);

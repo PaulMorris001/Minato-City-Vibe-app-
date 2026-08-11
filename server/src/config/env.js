@@ -98,26 +98,14 @@ export const config = {
     },
   },
 
-  // Trust / safety system — caps and policy windows for paid events
+  // Trust / safety system — policy windows for paid events.
+  //
+  // There are deliberately NO automatic ticket-price or capacity caps here.
+  // Organizers may price and size an event however they like; every public paid
+  // event instead goes through the admin approval queue before it can sell a
+  // single ticket (see createEvent in controllers/event.controller.js), so the
+  // ceiling is a reviewer's judgement rather than a number in config.
   trust: {
-    // Until an organizer has had this many approved paid events, they're
-    // considered "new" and subject to per-event caps below.
-    newOrganizerThreshold: parseInt(process.env.NEW_ORGANIZER_THRESHOLD || "3", 10),
-    // Caps applied to a new organizer's paid events
-    newOrganizerMaxTicketPriceUsd: parseFloat(
-      process.env.NEW_ORGANIZER_MAX_TICKET_PRICE_USD || "50"
-    ),
-    // Local-currency equivalents of the USD cap, for sellers who price in
-    // their own currency (see currencyForUser). Rough conversions — they gate
-    // trust, not accounting, so precision doesn't matter.
-    newOrganizerMaxTicketPriceByCurrency: {
-      USD: parseFloat(process.env.NEW_ORGANIZER_MAX_TICKET_PRICE_USD || "50"),
-      NGN: parseFloat(process.env.NEW_ORGANIZER_MAX_TICKET_PRICE_NGN || "75000"),
-    },
-    newOrganizerMaxGuests: parseInt(
-      process.env.NEW_ORGANIZER_MAX_GUESTS || "50",
-      10
-    ),
     // Buyer self-refund window (hours since purchase) AND must be at least
     // this many hours before the event date.
     buyerRefundWindowHours: parseInt(
