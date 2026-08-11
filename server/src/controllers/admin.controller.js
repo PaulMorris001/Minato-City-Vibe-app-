@@ -590,8 +590,9 @@ export async function approvePaidEvent(req, res) {
     event.approvalRejectReason = undefined;
     await event.save();
 
-    // Promote organizer so future paid events skip the queue,
-    // and increment their lifetime approved count (drives caps).
+    // Track the organizer's history. Neither field skips the queue any more —
+    // every paid event is reviewed, every time — but they tell the next
+    // reviewer whether this is a first-timer or someone with a track record.
     await User.findByIdAndUpdate(event.createdBy._id, {
       paidEventsApproved: true,
       $inc: { paidEventsCount: 1 },

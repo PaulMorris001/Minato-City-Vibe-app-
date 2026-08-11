@@ -143,8 +143,10 @@ const eventSchema = mongoose.Schema({
   // Prevents the 24-hour reminder from firing more than once
   reminderSent: { type: Boolean, default: false },
 
-  // Approval queue for paid events. Free events default to "approved" and never
-  // hit the queue. Paid events from an unapproved organizer start as "pending".
+  // Approval queue for paid events. Free and private events default to
+  // "approved" and never hit the queue. EVERY public paid event starts as
+  // "pending" — no matter how many the organizer has run before — because
+  // ticket price and capacity are uncapped and review is what replaces them.
   approvalStatus: {
     type: String,
     enum: ["pending", "approved", "rejected"],

@@ -15,6 +15,10 @@ interface PaidEvent {
   image?: string;
   venueProofImage?: string;
   ticketPrice: number;
+  /** Currency the organizer prices in — USD for Stripe sellers, NGN for Paystack. */
+  currency?: string;
+  /** Named price tiers, when the organizer used them. `ticketPrice` is then the cheapest. */
+  ticketTiers?: { _id?: string; name: string; price: number; quantity?: number }[];
   maxGuests: number;
   approvalStatus: "pending" | "approved" | "rejected";
   approvalReviewedAt?: string;
@@ -43,6 +47,22 @@ const statusColor: Record<string, string> = {
   pending: "#f59e0b",
   approved: "#22c55e",
   rejected: "#ef4444",
+};
+
+// Prices are not all dollars — Paystack sellers price in NGN — and with caps
+// gone this queue is the only place a price gets sanity-checked, so it has to
+// show the currency the buyer will actually be charged in.
+const formatMoney = (amount: number, currency?: string) => {
+  const code = currency || "USD";
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${code}`;
+  }
 };
 
 const payoutColor: Record<string, string> = {
@@ -151,6 +171,18 @@ export default function PaidEvents() {
         <div style={styles.cardGrid}>
           {events.map((e) => {
             const isFirstEvent = !e.createdBy?.paidEventsApproved;
+            const tiers = e.ticketTiers ?? [];
+            // Per-tier allocations are all-or-nothing (see event.controller.js).
+            const tiersHaveQty =
+              tiers.length > 0 && tiers.every((t) => typeof t.quantity === "number");
+            const priciestTier = tiers.length
+              ? Math.max(...tiers.map((t) => t.price))
+              : e.ticketPrice;
+            // Worst case for a buyer-funds-at-risk decision: every seat sold at
+            // the highest price the organizer can charge for it.
+            const potentialRevenue = tiersHaveQty
+              ? tiers.reduce((sum, t) => sum + t.price * (t.quantity ?? 0), 0)
+              : priciestTier * e.maxGuests;
             return (
               <div key={e._id} style={styles.card}>
                 <div style={styles.cardHeader}>
@@ -194,11 +226,18 @@ export default function PaidEvents() {
                 )}
 
                 <div style={styles.statRow}>
-                  <Stat label="Ticket price" value={`$${e.ticketPrice.toFixed(2)}`} />
-                  <Stat label="Max guests" value={String(e.maxGuests)} />
+                  <Stat
+                    label={tiers.length > 1 ? "Ticket price (range)" : "Ticket price"}
+                    value={
+                      tiers.length > 1
+                        ? `${formatMoney(e.ticketPrice, e.currency)} – ${formatMoney(priciestTier, e.currency)}`
+                        : formatMoney(e.ticketPrice, e.currency)
+                    }
+                  />
+                  <Stat label="Max guests" value={e.maxGuests.toLocaleString()} />
                   <Stat
                     label="Potential revenue"
-                    value={`$${(e.ticketPrice * e.maxGuests).toFixed(2)}`}
+                    value={formatMoney(potentialRevenue, e.currency)}
                   />
                   <Stat
                     label="Payout"
@@ -206,6 +245,21 @@ export default function PaidEvents() {
                     color={payoutColor[e.payoutStatus ?? "none"]}
                   />
                 </div>
+
+                {tiers.length > 0 && (
+                  <div style={styles.tierBlock}>
+                    <div style={styles.tierLabel}>Ticket tiers</div>
+                    {tiers.map((t, i) => (
+                      <div key={t._id ?? `${t.name}-${i}`} style={styles.tierRow}>
+                        <span style={styles.tierName}>{t.name}</span>
+                        <span style={styles.tierPrice}>
+                          {formatMoney(t.price, e.currency)}
+                          {typeof t.quantity === "number" ? ` × ${t.quantity}` : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <div style={styles.organizerBlock}>
                   <div style={styles.organizerHeader}>
@@ -510,6 +564,23 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: 0.5,
   },
   statValue: { fontSize: 15, fontWeight: 700 },
+  tierBlock: { display: "flex", flexDirection: "column", gap: 4 },
+  tierLabel: {
+    fontSize: 11,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    fontWeight: 600,
+  },
+  tierRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    fontSize: 13,
+    color: colors.text,
+  },
+  tierName: { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  tierPrice: { fontWeight: 600, whiteSpace: "nowrap" },
   organizerBlock: { display: "flex", flexDirection: "column", gap: 10 },
   organizerHeader: { display: "flex", alignItems: "center", gap: 12 },
   avatar: { width: 38, height: 38, borderRadius: "50%", objectFit: "cover" },

@@ -92,11 +92,13 @@ const userSchema = mongoose.Schema({
   // it's surfaced in the UI rather than gating onboarding.
   stripePayoutsEnabled: { type: Boolean, default: false },
 
-  // Paid-event organizer trust: false until an admin approves their first paid event.
-  // After approval, subsequent paid events skip the approval queue.
+  // Paid-event organizer history. Neither field gates anything: every public
+  // paid event goes through the admin approval queue, every time, and there are
+  // no price/capacity caps. They exist so a reviewer can tell a first-timer
+  // apart from an organizer with a track record (see admin PaidEvents).
+  // True once an admin has approved any paid event of theirs.
   paidEventsApproved: { type: Boolean, default: false },
-  // Lifetime count of approved paid events. Drives the "new organizer" caps —
-  // until this passes a threshold, ticket price and quantity are capped.
+  // Lifetime count of approved paid events.
   paidEventsCount: { type: Number, default: 0 },
 
   // Email verification (OTP at signup). Required to create paid events.

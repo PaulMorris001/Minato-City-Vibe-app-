@@ -187,9 +187,19 @@ export default function MyGuidesPage() {
             {guides.length} {guides.length === 1 ? "guide" : "guides"}
           </Text>
         </View>
+        {/* Guide sellers are not vendors, so they never see the vendor
+            dashboard — this is their way into earnings and payout setup. */}
+        <TouchableOpacity
+          style={styles.createButton}
+          onPress={() => router.push("/earnings" as any)}
+          accessibilityLabel="Earnings and payouts"
+        >
+          <Ionicons name="cash-outline" size={24} color={Colors.primary} />
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.createButton}
           onPress={() => router.push("/guide/create" as any)}
+          accessibilityLabel="Create a guide"
         >
           <Ionicons name="add-circle-outline" size={24} color={Colors.primary} />
         </TouchableOpacity>
