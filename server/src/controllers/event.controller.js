@@ -21,6 +21,7 @@ import {
 } from "../services/payments/resolveProvider.js";
 import { rejectIfCannotSell } from "../services/payments/sellingEligibility.js";
 import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
+import { findEventByAnyId } from "../utils/resolveEvent.js";
 import { issueEventPass } from "../services/pass.service.js";
 import { linkQrDataUrl } from "../utils/qrcode.js";
 import config from "../config/env.js";
@@ -1653,7 +1654,10 @@ export const joinFreePublicEvent = async (req, res) => {
     const { eventId } = req.params;
     const userId = req.user.id;
 
-    const event = await Event.findById(eventId);
+    // Share links are slug-shaped, and the website hands that param straight to
+    // this endpoint — an `_id`-only lookup cast-errored into a 500 for anyone
+    // who arrived from a shared link.
+    const event = await findEventByAnyId(eventId);
 
     if (!event) {
       return res.status(404).json({ message: "Event not found" });
@@ -1684,11 +1688,14 @@ export const joinFreePublicEvent = async (req, res) => {
     await event.save();
 
     // Joining a free public event is an RSVP — issue the entry pass + email QR.
-    issueEventPass({ userId, eventId, type: "rsvp" }).catch((e) =>
+    // Keyed on the resolved `_id`, never the raw param (which may be a slug).
+    issueEventPass({ userId, eventId: event._id, type: "rsvp" }).catch((e) =>
       console.error("issueEventPass (joinFreePublicEvent) failed:", e)
     );
 
-    invalidateCachePattern(`event_detail_${eventId}_`);
+    for (const key of [event._id, event.slug, event.shareToken].filter(Boolean)) {
+      invalidateCachePattern(`event_detail_${key}_`);
+    }
     invalidateCachePattern('public_events_');
     invalidateCachePattern('event_highlights_');
     res.status(200).json({ message: "Successfully joined the event" });
@@ -2456,19 +2463,6 @@ export const removeCohost = async (req, res) => {
     console.error("Remove cohost error:", error);
     res.status(500).json({ message: "Failed to remove co-host" });
   }
-};
-
-/**
- * Resolve an event param that may be an `_id`, a shareToken, or a slug —
- * the same chain getEventById uses. Returns the event doc or null.
- */
-const findEventByAnyId = async (eventId) => {
-  let event = mongoose.isValidObjectId(eventId)
-    ? await Event.findById(eventId)
-    : null;
-  if (!event) event = await Event.findOne({ shareToken: eventId });
-  if (!event) event = await Event.findOne({ slug: eventId.toLowerCase() });
-  return event;
 };
 
 // Get an event's discount codes (creator only). Codes are created by CityVibe
