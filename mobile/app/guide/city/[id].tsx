@@ -57,10 +57,6 @@ export default function CityGuidesPage() {
       const headers: Record<string, string> = {};
       if (token) {
         headers.Authorization = `Bearer ${token}`;
-      } else {
-        console.warn(
-          "⚠️ debug: No token found, making unauthenticated request"
-        );
       }
 
       const response = await fetch(url, {
@@ -68,14 +64,6 @@ export default function CityGuidesPage() {
       });
 
       const data = await response.json();
-
-      if (response.status === 401) {
-        console.warn(
-          "⛔️ debug: 401 Unauthorized received. Redirecting to login..."
-        );
-        router.push("/login"); // or whatever your login route is, assume /login based on context
-        return;
-      }
 
       if (response.ok) {
         setGuides(data.guides || []);
@@ -85,7 +73,7 @@ export default function CityGuidesPage() {
     } finally {
       setLoading(false);
     }
-  }, [cityName, state, country, router]);
+  }, [cityName, state, country]);
 
   const filterGuides = useCallback(() => {
     let filtered = [...guides];

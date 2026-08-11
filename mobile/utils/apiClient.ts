@@ -1,4 +1,5 @@
-import axios, { AxiosError, AxiosRequestConfig } from "axios";
+import axios, { AxiosError, AxiosRequestConfig, AxiosResponse } from "axios";
+import * as SecureStore from "expo-secure-store";
 
 import { remoteLog } from "@/utils/remoteLog";
 
@@ -58,6 +59,21 @@ function shortId() {
   return Math.random().toString(36).slice(2, 8);
 }
 
+// The auth middleware silently reissues a token (past a certain age) on any
+// request that verifies fine, so an actively-used app never hits the flat
+// server-side expiry mid-session — see server/src/middleware/auth.middleware.js.
+// This is the client half: persist whatever comes back so the next request
+// authenticates with the renewed token instead of the aging one.
+async function applyRefreshedToken(response: AxiosResponse) {
+  const refreshed = response.headers?.["x-refreshed-token"];
+  if (typeof refreshed !== "string" || !refreshed) return;
+  try {
+    await SecureStore.setItemAsync("token", refreshed);
+  } catch {
+    // Best-effort — a failed write just means the next renewed request tries again.
+  }
+}
+
 function shouldRetry(error: AxiosError, config: RetryConfig): boolean {
   const url = (config.url || "").toString();
   if (NEVER_RETRY.some((p) => url.includes(p))) return false;
@@ -96,7 +112,10 @@ export function setupApiClient() {
   });
 
   axios.interceptors.response.use(
-    (response) => response,
+    async (response) => {
+      await applyRefreshedToken(response);
+      return response;
+    },
     async (error: AxiosError) => {
       const config = (error.config || {}) as RetryConfig;
       const url = (config.url || "").toString();

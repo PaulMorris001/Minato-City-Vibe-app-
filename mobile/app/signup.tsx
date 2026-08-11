@@ -183,7 +183,7 @@ export default function Signup() {
     const key = current.key;
     if (key !== "username" && key !== "email") return;
 
-    const raw = values[key].trim();
+    const raw = (key === "username" ? values.username : values.email).trim();
     const validLocal =
       key === "username" ? USERNAME_RE.test(raw) : EMAIL_RE.test(raw);
     if (!validLocal) {

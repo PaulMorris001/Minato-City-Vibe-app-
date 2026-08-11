@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   Platform,
   StatusBar,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { Image } from "expo-image";
 import { Tabs, useRouter, useSegments } from "expo-router";
@@ -114,7 +113,7 @@ export default function TabsLayout() {
     checkAuth();
   }, []);
 
-  const fetchUserProfile = async () => {
+  const fetchUserProfile = useCallback(async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
       if (token) {
@@ -168,13 +167,13 @@ export default function TabsLayout() {
         console.error("Failed to hydrate cached user:", e);
       }
     }
-  };
+  }, [router]);
 
   useEffect(() => {
     if (!isCheckingAuth) {
       fetchUserProfile();
     }
-  }, [isCheckingAuth]);
+  }, [isCheckingAuth, fetchUserProfile]);
 
   // Check if we should redirect to vendor dashboard only on mount and account changes
   useEffect(() => {

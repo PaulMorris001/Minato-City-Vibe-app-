@@ -24,7 +24,7 @@ const router = express.Router();
 router.get("/guides/topics", getTopics);
 router.get("/guides/all", optionalAuth, getGuides);
 router.get("/guides/top", optionalAuth, getTopGuides);
-router.get("/guide/by-city", authenticate, getGuidesByCity);
+router.get("/guide/by-city", optionalAuth, getGuidesByCity);
 router.get("/guide/locations", optionalAuth, getGuideLocations);
 
 // Protected user routes - MUST come before /guides/:id to avoid route conflicts
