@@ -449,7 +449,7 @@ export default function Home() {
   // once they've explicitly picked a city via Select Location, that manual
   // pick is treated as their standing default and is never silently
   // overwritten by a fresh IP guess on a later cold start.
-  const resolveHomeLocation = useCallback(async () => {
+  const resolveHomeLocation = useCallback(async (): Promise<string | null> => {
     try {
       const { status } = await Location.getForegroundPermissionsAsync();
 
@@ -458,7 +458,7 @@ export default function Home() {
         if (city) {
           setLocationBanner(null);
           await applyCity(city, "auto");
-          return;
+          return city;
         }
       } else if (status === Location.PermissionStatus.UNDETERMINED) {
         const alreadyPrompted = await SecureStore.getItemAsync("locationPromptSeen");
@@ -481,7 +481,7 @@ export default function Home() {
               if (city) {
                 setLocationBanner(null);
                 await applyCity(city, "auto");
-                return;
+                return city;
               }
             }
           }
@@ -494,11 +494,11 @@ export default function Home() {
       // rather than re-hitting the IP lookup on every cold start.
       const citySource = await SecureStore.getItemAsync("citySource");
       if (citySource === "manual") {
-        return;
+        return null;
       }
       if (citySource === "auto") {
         setLocationBanner("approximate");
-        return;
+        return null;
       }
 
       // No location on record yet — true first visit. Approximate from IP
@@ -507,6 +507,7 @@ export default function Home() {
       if (approx?.city) {
         setLocationBanner("approximate");
         await applyCity(approx.city, "auto");
+        return approx.city;
       }
     } catch {}
   }, [applyCity]);
@@ -667,36 +668,61 @@ export default function Home() {
   };
 
   useEffect(() => {
-    fetchUsername();
-    // Only resolve device/IP location once per app session — after that,
-    // the shared active-city store (see useActiveCity) reflects whatever the
-    // user picks manually via the Select Location screen.
-    if (!locationInitRef.current) {
-      locationInitRef.current = true;
-      resolveHomeLocation();
-    }
-    Promise.all([
-      fetchPublicEvents(selectedCity),
-      fetchExternalEvents(selectedCity),
-      fetchHighlights(selectedCity),
-      fetchVendors(),
-      fetchTopGuides(selectedCity),
-    ]).finally(() => setInitialLoading(false));
+    // Initialize and ensure location is resolved before the first fetch.
+    let cancelled = false;
 
-    intervalRef.current = setInterval(() => {
-      fetchPublicEvents(selectedCity, true);
-    }, 30000);
+    const init = async () => {
+      fetchUsername();
 
-    const subscription = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active") {
-        fetchPublicEvents(selectedCity, true);
-        fetchHighlights(selectedCity);
+      // Only resolve device/IP location once per app session — after that,
+      // the shared active-city store (see useActiveCity) reflects whatever the
+      // user picks manually via the Select Location screen.
+      let appliedCity: string | null = null;
+      if (!locationInitRef.current) {
+        locationInitRef.current = true;
+        try {
+          appliedCity = await resolveHomeLocation();
+        } catch {}
       }
-    });
+
+      const cityToUse = appliedCity ?? selectedCity;
+
+      await Promise.all([
+        fetchPublicEvents(cityToUse),
+        fetchExternalEvents(cityToUse),
+        fetchHighlights(cityToUse),
+        fetchVendors(),
+        fetchTopGuides(cityToUse),
+      ]).finally(() => {
+        if (!cancelled) setInitialLoading(false);
+      });
+
+      intervalRef.current = setInterval(() => {
+        fetchPublicEvents(selectedCity, true);
+      }, 30000);
+
+      const subscription = AppState.addEventListener("change", (nextState) => {
+        if (nextState === "active") {
+          fetchPublicEvents(selectedCity, true);
+          fetchHighlights(selectedCity);
+        }
+      });
+
+      // Cleanup handler for subscription and interval
+      return () => {
+        cancelled = true;
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        subscription.remove();
+      };
+    };
+
+    const cleanupPromise = init();
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      subscription.remove();
+      // If init returned a cleanup function, call it when ready.
+      cleanupPromise.then((maybeCleanup) => {
+        if (typeof maybeCleanup === "function") maybeCleanup();
+      });
     };
   }, [selectedCity, resolveHomeLocation]);
 

@@ -2,6 +2,7 @@ import admin from "firebase-admin";
 import { createRequire } from "module";
 import Notification from "../models/notification.model.js";
 import User from "../models/user.model.js";
+import { getSocketInstance } from "../services/socket.service.js";
 
 // Lazy-init so the app doesn't crash if credentials are missing
 export function getFirebaseApp() {
@@ -89,6 +90,15 @@ export async function notifyUser(userId, { type, title, body, data = {}, push = 
     notification = await Notification.create({ user: userId, type, title, body, data });
   } catch (err) {
     console.error(`[notifyUser] Failed to persist "${type}" for ${userId}:`, err?.message ?? err);
+  }
+
+  if (notification) {
+    try {
+      const socketInstance = getSocketInstance();
+      socketInstance?.to(`user:${userId.toString()}`).emit("notification:new", notification);
+    } catch (err) {
+      console.error(`[notifyUser] Socket emit failed for "${type}" → ${userId}:`, err?.message ?? err);
+    }
   }
 
   if (push) {

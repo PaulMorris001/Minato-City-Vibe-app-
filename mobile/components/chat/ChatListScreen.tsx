@@ -143,9 +143,11 @@ export default function ChatListScreen({
         fetchChats(true);
       },
       onNewMessage: (message) => {
-        setChats((prev) =>
-          prev.map((chat) => {
+        setChats((prev) => {
+          let found = false;
+          const next = prev.map((chat) => {
             if (chat._id !== message.chat) return chat;
+            found = true;
             const isFromCurrentUser = message.sender._id === currentUserId;
             const unreadObj = (chat.unreadCount as unknown as Record<string, number>) || {};
             const currentUnread = unreadObj[currentUserId] || 0;
@@ -156,8 +158,13 @@ export default function ChatListScreen({
                 ? chat.unreadCount
                 : ({ ...unreadObj, [currentUserId]: currentUnread + 1 } as unknown as Map<string, number>),
             };
-          })
-        );
+          });
+          if (!found) {
+            fetchChats(true);
+            return prev;
+          }
+          return next;
+        });
       },
 
       onMessageRead: ({ chatId }) => {

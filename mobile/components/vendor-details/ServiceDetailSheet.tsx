@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import { Fonts } from "@/constants/fonts";
 import { Service } from "@/libs/interfaces";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
@@ -66,6 +67,7 @@ export default function ServiceDetailSheet({
   onClose,
   onToggleCart,
 }: ServiceDetailSheetProps) {
+  const router = useRouter();
   const t = useServicesTokens();
   const styles = React.useMemo(() => createStyles(t), [t]);
   const formatPrice = useFormatPrice();
@@ -170,16 +172,27 @@ export default function ServiceDetailSheet({
             </View>
 
             {shown.availability === "available" && (
-              <PressScale style={styles.cta} onPress={onToggleCart} accessibilityRole="button">
-                <LinearGradient
-                  colors={[...Brand.gradient]}
-                  start={Brand.gradientStart}
-                  end={Brand.gradientEnd}
-                  style={styles.ctaInner}
-                >
-                  <Text style={styles.ctaText}>{inCart ? "Added to cart" : "Add to cart"}</Text>
-                </LinearGradient>
-              </PressScale>
+              <>
+                <PressScale style={styles.cta} onPress={onToggleCart} accessibilityRole="button">
+                  <LinearGradient
+                    colors={[...Brand.gradient]}
+                    start={Brand.gradientStart}
+                    end={Brand.gradientEnd}
+                    style={styles.ctaInner}
+                  >
+                    <Text style={styles.ctaText}>{inCart ? "Added to cart" : "Add to cart"}</Text>
+                  </LinearGradient>
+                </PressScale>
+                {inCart && (
+                  <PressScale
+                    style={styles.checkoutBtn}
+                    onPress={() => router.push("/cart" as any)}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.checkoutText}>Go to cart</Text>
+                  </PressScale>
+                )}
+              </>
             )}
           </ScrollView>
         </Animated.View>
@@ -315,6 +328,25 @@ const createStyles = (t: ServicesTokens) =>
       shadowOpacity: 0.4,
       shadowRadius: 28,
       elevation: 8,
+    },
+    checkoutBtn: {
+      marginTop: 12,
+      height: 52,
+      borderRadius: 16,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: Brand.violet,
+      shadowColor: Brand.violet,
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.18,
+      shadowRadius: 20,
+      elevation: 6,
+    },
+    checkoutText: {
+      fontSize: 15,
+      fontFamily: Fonts.semiBold,
+      color: "#ffffff",
+      letterSpacing: 0.15,
     },
     ctaInner: {
       flex: 1,

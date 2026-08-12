@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import { Fonts } from "@/constants/fonts";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import NotificationItemSkeleton from "@/components/skeletons/NotificationItemSkeleton";
 import { useUnread } from "@/contexts/UnreadContext";
+import socketService from "@/services/socket.service";
 
 import type { ThemeColors } from "@/constants/theme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -79,7 +80,7 @@ export default function NotificationsScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     try {
       setLoading(true);
       const token = await SecureStore.getItemAsync("token");
@@ -95,7 +96,15 @@ export default function NotificationsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [router]);
+
+  useEffect(() => {
+    socketService.on("notifications-screen", {
+      onConnected: fetchNotifications,
+      onNotificationNew: fetchNotifications,
+    });
+    return () => socketService.off("notifications-screen");
+  }, [fetchNotifications]);
 
   const markAllRead = async () => {
     try {

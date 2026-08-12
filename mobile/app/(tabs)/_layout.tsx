@@ -32,7 +32,6 @@ import { getCircularAvatarUrl } from "@/utils/imageUpload";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
-import { openSupportChat } from "@/utils/userNavigation";
 // Circular navbar action surface. On iOS 26 this is real Liquid Glass;
 // everywhere else it keeps the original gradient fill.
 function PillSurface({

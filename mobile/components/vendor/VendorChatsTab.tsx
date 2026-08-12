@@ -83,9 +83,11 @@ export default function VendorChatsTab() {
         fetchChats();
       },
       onNewMessage: (message) => {
-        setChats((prev) =>
-          prev.map((chat) => {
+        setChats((prev) => {
+          let found = false;
+          const next = prev.map((chat) => {
             if (chat._id !== message.chat) return chat;
+            found = true;
 
             const isFromCurrentUser = message.sender._id === currentUserId;
             const unreadObj =
@@ -102,8 +104,13 @@ export default function VendorChatsTab() {
                     [currentUserId]: currentUnread + 1,
                   } as unknown as Map<string, number>),
             };
-          })
-        );
+          });
+          if (!found) {
+            fetchChats();
+            return prev;
+          }
+          return next;
+        });
       },
 
       onMessageRead: ({ chatId }) => {

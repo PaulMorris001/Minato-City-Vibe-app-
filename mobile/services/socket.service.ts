@@ -18,6 +18,7 @@ interface SocketEvents {
   onChatPinned?: (data: { chatId: string; pinned: boolean }) => void;
   onChatPinnedMessage?: (data: { chatId: string; pinnedMessage: any | null }) => void;
   onChatMuted?: (data: { chatId: string; muted: boolean }) => void;
+  onNotificationNew?: (notification: any) => void;
   onTypingStart?: (data: any) => void;
   onTypingStop?: (data: any) => void;
   onUserOnline?: (userId: string) => void;
@@ -194,6 +195,10 @@ class SocketService {
 
       this.socket.on("follow:new", (data) => {
         this.notify("onFollowNew", data);
+      });
+
+      this.socket.on("notification:new", (notification) => {
+        this.notify("onNotificationNew", notification);
       });
     } catch (error) {
       console.error("Socket connection error:", error);

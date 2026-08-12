@@ -107,12 +107,14 @@ export function UnreadProvider({ children }: { children: React.ReactNode }) {
     // passed a bare function, so the listeners never fired and the chat badge
     // froze at its launch value.
     socketService.on("unread-context", {
+      onConnected: () => refreshUnread(),
       onNewMessage: (message: any) => {
         if (message?.sender?._id !== currentUserIdRef.current) scheduleChatRefresh();
       },
       onMessageRead: () => scheduleChatRefresh(),
       onEventInvite: () => refreshNotifs(),
       onFollowNew: () => refreshNotifs(),
+      onNotificationNew: () => refreshNotifs(),
     });
 
     // Reconcile whenever the app returns to the foreground (covers pushes that

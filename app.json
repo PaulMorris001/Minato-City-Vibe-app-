@@ -1,3 +1,7 @@
 {
-  "expo": {}
+  "expo": {
+    "ios": {
+      "googleServicesFile": "./GoogleService-Info.plist"
+    }
+  }
 }
