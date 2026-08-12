@@ -16,7 +16,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { goBack } from "@/utils/navigation";
 import * as SecureStore from "expo-secure-store";
 import * as Haptics from "expo-haptics";
 import { BASE_URL } from "@/constants/constants";
@@ -27,7 +26,7 @@ import { externalEventService, ExternalEvent } from "@/services/externalEvent.se
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { currencyPrefix } from "@/constants/payments";
 import { heroEmojiFor } from "@/utils/eventDetails";
-import { AU, AU_FONT } from "@/components/auth/tokens";
+import { AU_FONT } from "@/components/auth/tokens";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";

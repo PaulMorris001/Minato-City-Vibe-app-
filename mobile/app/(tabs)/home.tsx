@@ -510,7 +510,8 @@ export default function Home() {
         return approx.city;
       }
     } catch {}
-  }, [applyCity]);
+    return null;
+  }, [applyCity, detectCityFromGPS]);
 
   const enableLocation = async () => {
     if (requestingLocation) return;
