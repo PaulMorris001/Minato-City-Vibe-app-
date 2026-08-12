@@ -412,6 +412,11 @@ export default function Home() {
   const [requestingLocation, setRequestingLocation] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationInitRef = useRef(false);
+  // The city the most recent fetch cycle was issued for. Location-scoped
+  // fetches below check this before writing their response into state, so a
+  // slower response for a city the user has since navigated away from can
+  // never clobber a faster, newer response for the current city.
+  const activeCityRef = useRef<string | null | undefined>(undefined);
 
   const getGreeting = () => {
     const h = new Date().getHours();
@@ -573,7 +578,7 @@ export default function Home() {
         headers,
       });
       const data = await response.json();
-      if (response.ok) {
+      if (response.ok && activeCityRef.current === (city ?? null)) {
         setPublicEvents(data.events || []);
       }
     } catch {}
@@ -590,10 +595,14 @@ export default function Home() {
         city: city || undefined,
         limit: 10,
       });
-      setExternalEvents(res.events || []);
+      if (activeCityRef.current === (city ?? null)) {
+        setExternalEvents(res.events || []);
+      }
     } catch (err) {
       console.warn("[Home] external events fetch failed:", err);
-      setExternalEvents([]);
+      if (activeCityRef.current === (city ?? null)) {
+        setExternalEvents([]);
+      }
     }
   };
 
@@ -607,7 +616,7 @@ export default function Home() {
         headers,
       });
       const data = await response.json();
-      if (response.ok) {
+      if (response.ok && activeCityRef.current === (city ?? null)) {
         setHighlights({
           trending: data.trending || [],
           upcoming: data.upcoming || [],
@@ -640,7 +649,7 @@ export default function Home() {
       const cityParam = city ? `&city=${encodeURIComponent(city)}` : "";
       const response = await fetch(`${BASE_URL}/guides/top?limit=10${cityParam}`, { headers });
       const data = await response.json();
-      if (response.ok) setTopGuides(data.guides || []);
+      if (response.ok && activeCityRef.current === (city ?? null)) setTopGuides(data.guides || []);
     } catch {}
   };
 
@@ -667,6 +676,7 @@ export default function Home() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    activeCityRef.current = selectedCity ?? null;
     await Promise.all([
       fetchPublicEvents(selectedCity, true),
       fetchExternalEvents(selectedCity),
@@ -682,6 +692,13 @@ export default function Home() {
     let cancelled = false;
 
     const init = async () => {
+      // Re-shows the skeletons for this fetch cycle — covers both the very
+      // first mount and any later run of this effect (selectedCity changed,
+      // e.g. GPS resolving after the IP fallback, or a manual city pick from
+      // Select Location). Content sections are gated on `initialLoading`, so
+      // this guarantees the previous city's cards are never left on screen
+      // while the new city's data is still in flight.
+      setInitialLoading(true);
       fetchUsername();
 
       // Only resolve device/IP location once per app session — after that,
@@ -696,6 +713,7 @@ export default function Home() {
       }
 
       const cityToUse = appliedCity ?? selectedCity;
+      activeCityRef.current = cityToUse ?? null;
 
       await Promise.all([
         fetchPublicEvents(cityToUse),
@@ -706,6 +724,11 @@ export default function Home() {
       ]).finally(() => {
         if (!cancelled) setInitialLoading(false);
       });
+
+      // A newer run (selectedCity changed again) already superseded this one
+      // while the fetches above were in flight — don't stand up polling/
+      // AppState handles for a cycle that's already torn down.
+      if (cancelled) return;
 
       intervalRef.current = setInterval(() => {
         fetchPublicEvents(selectedCity, true);
@@ -720,7 +743,6 @@ export default function Home() {
 
       // Cleanup handler for subscription and interval
       return () => {
-        cancelled = true;
         if (intervalRef.current) clearInterval(intervalRef.current);
         subscription.remove();
       };
@@ -729,7 +751,15 @@ export default function Home() {
     const cleanupPromise = init();
 
     return () => {
-      // If init returned a cleanup function, call it when ready.
+      // Flips synchronously the instant React tears this effect down (e.g.
+      // selectedCity changed again before the fetches above resolved) —
+      // NOT deferred until init()'s promise settles. Deferring it (as the
+      // old code did, by only setting `cancelled` inside the cleanup
+      // returned from init()) meant an outgoing cycle's `.finally` above
+      // always ran with cancelled still false, so it could flip
+      // initialLoading back to false — or, combined with the per-fetch
+      // activeCityRef checks, simply race a newer cycle's results.
+      cancelled = true;
       cleanupPromise.then((maybeCleanup) => {
         if (typeof maybeCleanup === "function") maybeCleanup();
       });
