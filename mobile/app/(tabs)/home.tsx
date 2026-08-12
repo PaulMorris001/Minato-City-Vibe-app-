@@ -492,13 +492,22 @@ export default function Home() {
       // "Anywhere", which clears the city) is the user's explicit choice and
       // is never overwritten. A prior auto/IP result is also left as-is
       // rather than re-hitting the IP lookup on every cold start.
+      //
+      // Read the persisted city straight from SecureStore rather than
+      // returning null and letting the caller fall back to the `selectedCity`
+      // React state: that state comes from useActiveCity's module-level store,
+      // which hydrates from SecureStore asynchronously and may still be null
+      // on a cold start. Falling back to it here raced the very first fetch,
+      // which went out with no city filter at all — the follow-up fetch once
+      // state caught up sometimes lost the race and got clobbered by the
+      // unfiltered response, leaving the feed looking unfiltered.
       const citySource = await SecureStore.getItemAsync("citySource");
       if (citySource === "manual") {
-        return null;
+        return await SecureStore.getItemAsync("selectedCity");
       }
       if (citySource === "auto") {
         setLocationBanner("approximate");
-        return null;
+        return await SecureStore.getItemAsync("selectedCity");
       }
 
       // No location on record yet — true first visit. Approximate from IP
