@@ -130,6 +130,7 @@ const EVENT_PUSH_TYPES = new Set([
   "event",
   "event_reminder",
   "ticket_sold",
+  "ticket_purchased",
   "ticket_refunded",
   "paid_event_approved",
   "paid_event_rejected",
@@ -137,7 +138,12 @@ const EVENT_PUSH_TYPES = new Set([
 
 // Push notification `type` values that should deep-link to a guide. Payload
 // carries `guideId`.
-const GUIDE_PUSH_TYPES = new Set(["guide", "guide_sold"]);
+const GUIDE_PUSH_TYPES = new Set(["guide", "guide_sold", "guide_purchased"]);
+
+// Order lifecycle pushes land in the chat where the order/invoice card lives
+// (Pay button for the client, paid state for the vendor). Payload carries
+// `chatId` alongside `orderId`.
+const ORDER_CHAT_PUSH_TYPES = new Set(["order_quoted", "order_purchased", "order_paid"]);
 
 export default Sentry.wrap(function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -233,6 +239,10 @@ export default Sentry.wrap(function RootLayout() {
         d.guideId
       ) {
         return { kind: "guide", token: d.guideId };
+      }
+      // Order lifecycle pushes — reuse the chat deep link.
+      if (ORDER_CHAT_PUSH_TYPES.has(type ?? "") && looksLikeObjectId(d.chatId)) {
+        return { kind: "chat", chatId: d.chatId };
       }
       console.warn("[PushNotif] payload was not routable:", type, d);
       return null;

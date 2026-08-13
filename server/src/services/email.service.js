@@ -655,3 +655,163 @@ The OurCityvibe Team
     return { success: false };
   }
 };
+
+/** Two-column details table shared by the sale / receipt emails. */
+const purchaseRowsHtml = (rows) =>
+  rows
+    .map(
+      ([label, value]) => `
+                  <tr>
+                    <td style="padding: 8px 12px; color: #6b7280; font-size: 14px;">${label}</td>
+                    <td style="padding: 8px 12px; color: #111827; font-size: 14px; font-weight: bold; text-align: right;">${value}</td>
+                  </tr>`
+    )
+    .join("");
+
+/**
+ * Seller-side "you made a sale" email — sent to the owner of a ticket, guide
+ * or chat order when a buyer completes payment. The caller preformats
+ * `amountText` ("USD 25.00", "Free") so this stays currency-agnostic.
+ * Never throws.
+ */
+export const sendSaleEmail = async (
+  email,
+  { sellerName, buyerName, itemLabel, itemTitle, amountText, quantity }
+) => {
+  try {
+    const transporter = createTransporter();
+
+    const rows = [
+      [itemLabel || "Item", itemTitle || ""],
+      ...(quantity && quantity > 1 ? [["Quantity", String(quantity)]] : []),
+      ["Buyer", buyerName || "Someone"],
+      ["Amount", amountText || ""],
+    ];
+
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
+      to: email,
+      subject: `You made a sale — ${itemTitle}`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+            .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+            .sale-card { background: white; border: 1px solid #e5e7eb; border-radius: 8px; margin: 20px 0; }
+            .sale-card table { width: 100%; border-collapse: collapse; }
+            .footer { text-align: center; margin-top: 20px; color: #6b7280; font-size: 13px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🌙 OurCityvibe</h1>
+            </div>
+            <div class="content">
+              <h2 style="text-align: center; color: #10b981;">You made a sale! 🎉</h2>
+              <p>Hello ${sellerName || "there"},</p>
+              <p>${buyerName || "Someone"} just bought your ${String(itemLabel || "item").toLowerCase()} on OurCityvibe.</p>
+              <div class="sale-card">
+                <table>${purchaseRowsHtml(rows)}
+                </table>
+              </div>
+              <p>Your earnings will show up on your Earnings screen once the payout is processed.</p>
+              <p>Best regards,<br>The OurCityvibe Team</p>
+            </div>
+            <div class="footer">
+              <p>Need help? <a href="mailto:Support@nvibez.com">Support@nvibez.com</a></p>
+              <p>© ${new Date().getFullYear()} OurCityvibe. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `You made a sale!\n\n${rows.map(([label, value]) => `${label}: ${value}`).join("\n")}\n\nYour earnings will show up on your Earnings screen once the payout is processed.\n\n— The OurCityvibe Team`,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error(`❌ Error sending sale email to ${email}:`, error?.message ?? error);
+    return { success: false };
+  }
+};
+
+/**
+ * Buyer-side purchase receipt — sent for guide, chat-order and batch-ticket
+ * purchases. (Single-ticket buyers get the QR pass email instead — callers
+ * must not send both.) `amountText` is preformatted by the caller.
+ * Never throws.
+ */
+export const sendPurchaseReceiptEmail = async (
+  email,
+  { buyerName, sellerName, itemLabel, itemTitle, amountText, quantity }
+) => {
+  try {
+    const transporter = createTransporter();
+
+    const rows = [
+      [itemLabel || "Item", itemTitle || ""],
+      ...(quantity && quantity > 1 ? [["Quantity", String(quantity)]] : []),
+      ...(sellerName ? [["Sold by", sellerName]] : []),
+      ["Amount paid", amountText || ""],
+    ];
+
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
+      to: email,
+      subject: `Your purchase receipt — ${itemTitle}`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+            .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+            .sale-card { background: white; border: 1px solid #e5e7eb; border-radius: 8px; margin: 20px 0; }
+            .sale-card table { width: 100%; border-collapse: collapse; }
+            .footer { text-align: center; margin-top: 20px; color: #6b7280; font-size: 13px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🌙 OurCityvibe</h1>
+            </div>
+            <div class="content">
+              <h2 style="text-align: center; color: #10b981;">Purchase confirmed ✓</h2>
+              <p>Hello ${buyerName || "there"},</p>
+              <p>Thanks for your purchase! Here's your receipt.</p>
+              <div class="sale-card">
+                <table>${purchaseRowsHtml(rows)}
+                </table>
+              </div>
+              <p>Keep this email for your records.</p>
+              <p>Best regards,<br>The OurCityvibe Team</p>
+            </div>
+            <div class="footer">
+              <p>Need help? <a href="mailto:Support@nvibez.com">Support@nvibez.com</a></p>
+              <p>© ${new Date().getFullYear()} OurCityvibe. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `Purchase confirmed ✓\n\n${rows.map(([label, value]) => `${label}: ${value}`).join("\n")}\n\nKeep this email for your records.\n\n— The OurCityvibe Team`,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error(`❌ Error sending receipt email to ${email}:`, error?.message ?? error);
+    return { success: false };
+  }
+};

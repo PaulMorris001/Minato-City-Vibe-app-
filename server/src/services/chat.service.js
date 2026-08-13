@@ -311,7 +311,12 @@ class ChatService {
     const senderName = message.sender.username;
     const isGroup = chat.type === 'group';
     const notificationTitle = isGroup && chat.name ? chat.name : senderName;
-    const rawContent = message.type === "image" ? "📷 Photo" : (message.content || "");
+    // Order cards have no text content — without a label their push body is
+    // empty and the recipient sees just the sender's name.
+    const rawContent =
+      message.type === "image" ? "📷 Photo"
+      : message.type === "order" ? "🧾 Order update"
+      : (message.content || "");
 
     const mentionedIds = new Set(mentions.map((id) => id.toString()));
 

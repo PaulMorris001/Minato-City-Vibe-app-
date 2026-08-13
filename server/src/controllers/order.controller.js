@@ -5,6 +5,8 @@ import User from "../models/user.model.js";
 import Chat from "../models/chat.model.js";
 import chatService from "../services/chat.service.js";
 import { currencyForUser } from "../services/payments/resolveProvider.js";
+import { notifyUser } from "../services/notification.service.js";
+import { formatAmountText } from "../services/payments/fulfillment.js";
 
 /** Recompute server-authoritative totals from the item snapshots + vendor fees. */
 function computeTotals(order) {
@@ -133,7 +135,13 @@ export async function getClientOrders(req, res) {
 export async function getVendorOrders(req, res) {
   try {
     const filter = { vendor: req.user.id };
-    if (req.query.status) filter.status = req.query.status;
+    if (req.query.status) {
+      // Accepts a single status or a comma-separated list (?status=quoted,paid)
+      // so the vendor Bookings tab can show pending + completed in one call.
+      const statuses = String(req.query.status).split(",").map((s) => s.trim()).filter(Boolean);
+      if (statuses.length === 1) filter.status = statuses[0];
+      else if (statuses.length > 1) filter.status = { $in: statuses };
+    }
     const orders = await Order.find(filter)
       .populate(ITEM_POPULATE)
       .populate("client", "username profilePicture")
@@ -221,6 +229,15 @@ export async function quoteOrder(req, res) {
     });
     order.invoiceMessage = message._id;
     await order.save();
+
+    // Nudge the client — the invoice is waiting for their payment.
+    const vendorUser = await User.findById(req.user.id).select("username businessName");
+    await notifyUser(order.client, {
+      type: "order_quoted",
+      title: "🧾 Invoice Received",
+      body: `${vendorUser?.businessName || vendorUser?.username || "The vendor"} sent an invoice — ${formatAmountText(order.total, order.currency)}`,
+      data: { orderId: order._id.toString(), chatId: order.chat?.toString() || "" },
+    });
 
     await populateOrder(order);
     res.status(200).json({ message: "Invoice sent", order });

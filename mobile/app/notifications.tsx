@@ -48,9 +48,13 @@ function timeAgo(dateStr: string) {
 function notifIcon(type: string) {
   switch (type) {
     case "ticket_sold": return "ticket";
+    case "ticket_purchased": return "ticket";
     case "guide_sold": return "book";
+    case "guide_purchased": return "book";
     case "booking_paid": return "calendar";
     case "order_paid": return "receipt";
+    case "order_quoted": return "receipt";
+    case "order_purchased": return "checkmark-circle";
     case "event_invite": return "mail";
     case "invite_accepted": return "checkmark-circle";
     case "event_update": return "calendar";
@@ -154,6 +158,7 @@ export default function NotificationsScreen() {
       case "invite_accepted":
       case "event_update":
       case "ticket_sold":
+      case "ticket_purchased":
       // Admin issued a discount code for the creator's event — the code card
       // lives on the event screen.
       case "discount_code_created":
@@ -162,6 +167,7 @@ export default function NotificationsScreen() {
         }
         break;
       case "guide_sold":
+      case "guide_purchased":
         if (item.data?.guideId) {
           router.push({ pathname: "/guide/[id]", params: { id: item.data.guideId } } as any);
         }
@@ -170,7 +176,20 @@ export default function NotificationsScreen() {
         router.push("/bookings" as any);
         break;
       case "order_paid":
+      // Client tapped "invoice received" — land directly on the pay screen.
+      case "order_quoted":
         if (item.data?.orderId) {
+          router.push({
+            pathname: "/order-confirm/[orderId]",
+            params: { orderId: item.data.orderId },
+          } as any);
+        }
+        break;
+      // Client's payment confirmation — the paid invoice card lives in chat.
+      case "order_purchased":
+        if (item.data?.chatId) {
+          router.push(`/chat/${item.data.chatId}` as any);
+        } else if (item.data?.orderId) {
           router.push({
             pathname: "/order-confirm/[orderId]",
             params: { orderId: item.data.orderId },

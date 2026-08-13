@@ -26,7 +26,7 @@ import {
   hasPayoutOnboarding,
   PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
-import { fulfillTicket, issueRecipientTicket, fulfillGuide, fulfillBooking, fulfillOrder } from "../services/payments/fulfillment.js";
+import { fulfillTicket, issueRecipientTicket, fulfillGuide, fulfillBooking, fulfillOrder, formatAmountText } from "../services/payments/fulfillment.js";
 import { computeSplit } from "../services/payments/split.js";
 import { buildPaystackInit, verifyPaystackCharge } from "./paystack.controller.js";
 import { createPayout } from "../services/payments/payout.service.js";
@@ -41,7 +41,8 @@ import {
   applyRedemptionByReference,
 } from "../services/payments/discount.service.js";
 import { findOrCreateGuestUser } from "./guestCheckout.controller.js";
-import { sendPushNotification } from "../services/notification.service.js";
+import { notifyUser } from "../services/notification.service.js";
+import { sendSaleEmail, sendPurchaseReceiptEmail } from "../services/email.service.js";
 import { invalidateCachePattern } from "../utils/cache.js";
 import { findEventByAnyId } from "../utils/resolveEvent.js";
 
@@ -991,13 +992,47 @@ export const confirmTicketBatch = async (req, res) => {
     invalidateCachePattern("public_events_");
     invalidateCachePattern("event_highlights_");
 
-    const creator = await User.findById(event.createdBy).select("fcmToken");
-    await sendPushNotification(
-      creator?.fcmToken,
-      "🎟️ Tickets sold!",
-      `${order.items.length} ticket${order.items.length === 1 ? "" : "s"} just sold for "${event.title}"`,
-      { type: "ticket_sold", eventId: eventKey.toString() }
-    );
+    // Notify + email both parties. notifyUser writes the durable Notification
+    // doc — the old bare push left the seller with no in-app record of the sale.
+    const [batchBuyer, batchSellerUser] = await Promise.all([
+      User.findById(buyerId).select("username email"),
+      User.findById(event.createdBy).select("username email"),
+    ]);
+    const ticketCount = order.items.length;
+    const ticketLabel = ticketCount === 1 ? "Ticket" : "Tickets";
+    const batchAmountText = formatAmountText(order.total, order.currency || "usd");
+    await notifyUser(event.createdBy, {
+      type: "ticket_sold",
+      title: "🎟️ Tickets sold!",
+      body: `${ticketCount} ticket${ticketCount === 1 ? "" : "s"} just sold for "${event.title}"`,
+      data: { eventId: eventKey.toString() },
+    });
+    await notifyUser(buyerId, {
+      type: "ticket_purchased",
+      title: "🎟️ Tickets Confirmed",
+      body: `${ticketCount} ticket${ticketCount === 1 ? "" : "s"} for "${event.title}" — passes emailed to each recipient`,
+      data: { eventId: eventKey.toString() },
+    });
+    if (batchSellerUser?.email) {
+      sendSaleEmail(batchSellerUser.email, {
+        sellerName: batchSellerUser.username,
+        buyerName: batchBuyer?.username,
+        itemLabel: ticketLabel,
+        itemTitle: event.title,
+        amountText: batchAmountText,
+        quantity: ticketCount,
+      }).catch((e) => console.error("sendSaleEmail (confirmTicketBatch) failed:", e));
+    }
+    if (batchBuyer?.email) {
+      sendPurchaseReceiptEmail(batchBuyer.email, {
+        buyerName: batchBuyer.username,
+        sellerName: batchSellerUser?.username,
+        itemLabel: ticketLabel,
+        itemTitle: event.title,
+        amountText: batchAmountText,
+        quantity: ticketCount,
+      }).catch((e) => console.error("sendPurchaseReceiptEmail (confirmTicketBatch) failed:", e));
+    }
 
     order.status = "paid";
     order.ticketIds = ticketIds;
