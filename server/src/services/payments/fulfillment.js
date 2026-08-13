@@ -22,9 +22,19 @@ import { Order } from "../../models/order.model.js";
 import Chat from "../../models/chat.model.js";
 import chatService from "../chat.service.js";
 import { notifyUser } from "../notification.service.js";
+import { sendSaleEmail, sendPurchaseReceiptEmail } from "../email.service.js";
 import { computeSplit } from "./split.js";
 import { issueEventPass } from "../pass.service.js";
 import { invalidateCachePattern } from "../../utils/cache.js";
+
+/** "USD 25.00" / "NGN 4,000.00" — or "Free" for zero-amount purchases. */
+export function formatAmountText(amount, currency) {
+  if (!amount || amount <= 0) return "Free";
+  return `${String(currency || "USD").toUpperCase()} ${Number(amount).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
 
 /**
  * Grant a ticket after a verified payment. Idempotent on (event, user).
@@ -119,15 +129,39 @@ export async function fulfillTicket({
     .populate("event", "title date location image")
     .populate("user", "username email profilePicture");
 
-  // Notify the event creator. Inside the non-early-return branch, so a confirm
+  // Notify both parties. Inside the non-early-return branch, so a confirm
   // and a webhook racing the same payment can't notify twice.
-  const buyer = await User.findById(userId).select("username");
+  const [buyer, seller] = await Promise.all([
+    User.findById(userId).select("username email"),
+    User.findById(event.createdBy).select("username email"),
+  ]);
   await notifyUser(event.createdBy, {
     type: "ticket_sold",
     title: "🎟️ New Ticket Sold!",
     body: `${buyer?.username || "Someone"} just bought a ticket to "${event.title}"`,
     data: { eventId: eventId.toString() },
   });
+  await notifyUser(userId, {
+    type: "ticket_purchased",
+    title: "🎟️ Ticket Confirmed",
+    body: `You're going to "${event.title}"! Your QR pass is in your email.`,
+    data: { eventId: eventId.toString() },
+  });
+
+  // Seller sale email, fire-and-forget so the confirm response isn't held up.
+  // The buyer's email is the QR pass sent above — no separate receipt.
+  if (seller?.email) {
+    sendSaleEmail(seller.email, {
+      sellerName: seller.username,
+      buyerName: buyer?.username,
+      itemLabel: "Ticket",
+      itemTitle: event.title,
+      amountText: formatAmountText(
+        amountPaid !== undefined ? amountPaid : ticketData.ticketPrice,
+        ticketData.currency
+      ),
+    }).catch((e) => console.error("sendSaleEmail (fulfillTicket) failed:", e));
+  }
 
   return { ticket: populated, alreadyExisted: false };
 }
@@ -248,13 +282,43 @@ export async function fulfillGuide({ guideId, userId }) {
   // now-deprecated client-called /notifications/sold endpoint used `createdBy`,
   // so it wrote `{ user: undefined }`, failed validation, and had its error
   // swallowed: guide sellers never once received an in-app sale notification.
-  const buyer = await User.findById(userId).select("username");
+  const [buyer, author] = await Promise.all([
+    User.findById(userId).select("username email"),
+    User.findById(guide.author).select("username email"),
+  ]);
   await notifyUser(guide.author, {
     type: "guide_sold",
     title: "📖 Guide Purchased!",
     body: `${buyer?.username || "Someone"} just bought your guide "${guide.title}"`,
     data: { guideId: guideId.toString() },
   });
+  await notifyUser(userId, {
+    type: "guide_purchased",
+    title: "📖 Guide Unlocked",
+    body: `You now have full access to "${guide.title}"`,
+    data: { guideId: guideId.toString() },
+  });
+
+  // Emails to both parties, fire-and-forget.
+  const amountText = formatAmountText(guide.price || 0, guide.currency || "USD");
+  if (buyer?.email) {
+    sendPurchaseReceiptEmail(buyer.email, {
+      buyerName: buyer.username,
+      sellerName: author?.username,
+      itemLabel: "Guide",
+      itemTitle: guide.title,
+      amountText,
+    }).catch((e) => console.error("sendPurchaseReceiptEmail (fulfillGuide) failed:", e));
+  }
+  if (author?.email) {
+    sendSaleEmail(author.email, {
+      sellerName: author.username,
+      buyerName: buyer?.username,
+      itemLabel: "Guide",
+      itemTitle: guide.title,
+      amountText,
+    }).catch((e) => console.error("sendSaleEmail (fulfillGuide) failed:", e));
+  }
 
   return { alreadyPurchased: false };
 }
@@ -350,14 +414,53 @@ export async function fulfillOrder({
     }
   }
 
-  // Notify the vendor that the client has paid.
-  const client = await User.findById(order.client).select("username");
+  // Notify both parties that the payment went through.
+  const [client, vendor] = await Promise.all([
+    User.findById(order.client).select("username email"),
+    User.findById(order.vendor).select("username email businessName"),
+  ]);
+  const chatId = order.chat?.toString() || "";
+  const vendorName = vendor?.businessName || vendor?.username;
+  const amountText = formatAmountText(order.total, order.currency);
   await notifyUser(order.vendor, {
     type: "order_paid",
     title: "💳 Order Paid",
     body: `${client?.username || "A client"} just paid for their order`,
-    data: { orderId: orderId.toString() },
+    data: { orderId: orderId.toString(), chatId },
   });
+  await notifyUser(order.client, {
+    type: "order_purchased",
+    title: "✅ Payment Confirmed",
+    body: `Your order with ${vendorName || "the vendor"} is paid (${amountText})`,
+    data: { orderId: orderId.toString(), chatId },
+  });
+
+  // Emails to both parties, fire-and-forget.
+  const itemTitle =
+    order.items.length === 1
+      ? order.items[0].name
+      : `${order.items[0].name} + ${order.items.length - 1} more`;
+  const quantity = order.items.reduce((sum, it) => sum + (it.quantity || 1), 0);
+  if (client?.email) {
+    sendPurchaseReceiptEmail(client.email, {
+      buyerName: client.username,
+      sellerName: vendorName,
+      itemLabel: "Order",
+      itemTitle,
+      amountText,
+      quantity,
+    }).catch((e) => console.error("sendPurchaseReceiptEmail (fulfillOrder) failed:", e));
+  }
+  if (vendor?.email) {
+    sendSaleEmail(vendor.email, {
+      sellerName: vendorName,
+      buyerName: client?.username,
+      itemLabel: "Order",
+      itemTitle,
+      amountText,
+      quantity,
+    }).catch((e) => console.error("sendSaleEmail (fulfillOrder) failed:", e));
+  }
 
   return { order, alreadyPaid: false };
 }

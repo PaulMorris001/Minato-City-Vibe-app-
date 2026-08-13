@@ -95,12 +95,12 @@ export default function VendorLayout() {
     }
   }, [setActiveAccount, router]);
 
-  // Pending-bookings count for the Bookings tab badge (moved here from the
-  // old single-screen dashboard so the native tab bar can render it).
+  // Pending count for the Bookings tab badge — quoted orders, i.e. invoices
+  // sent and awaiting the client's payment (what the tab shows as "Pending").
   const fetchPendingCount = useCallback(async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      const res = await fetch(`${BASE_URL}/bookings/vendor?status=pending`, {
+      const res = await fetch(`${BASE_URL}/orders/vendor?status=quoted`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {

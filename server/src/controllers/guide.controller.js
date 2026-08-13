@@ -8,6 +8,7 @@ import {
   PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
 import { rejectIfCannotSell } from "../services/payments/sellingEligibility.js";
+import { fulfillGuide } from "../services/payments/fulfillment.js";
 import { isSupportUser } from "../utils/supportAccount.js";
 import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { MAX_MEDIA_ITEMS } from "../utils/mediaLimit.js";
@@ -593,21 +594,14 @@ export const purchaseGuide = async (req, res) => {
       });
     }
 
-    // Free guide — grant access directly. Still recorded in the sales ledger
-    // (gross 0) so the author's "unlocks" count is complete.
-    guide.purchasedBy.push(userId);
-    guide.sales.push({
-      user: userId,
-      purchasedAt: new Date(),
-      gross: 0,
-      net: 0,
-      currency: guide.currency || "USD",
-    });
-    await guide.save();
+    // Free guide — same fulfillment path as paid purchases (ledger entry with
+    // gross 0, plus both-party notifications and emails rendering "Free").
+    await fulfillGuide({ guideId: id, userId });
 
+    const updated = await Guide.findById(id);
     res.status(200).json({
       message: "Guide accessed successfully",
-      guide,
+      guide: updated,
     });
   } catch (error) {
     console.error("Purchase guide error:", error);

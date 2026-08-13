@@ -8,59 +8,58 @@ import {
   RefreshControl,
   ActivityIndicator,
   Image,
-  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
-import { useRouter } from "expo-router";
-import { Colors } from "@/constants/colors";
+import { useRouter, useFocusEffect } from "expo-router";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
-import chatService from "@/services/chat.service";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
-type BookingStatus = "all" | "pending" | "confirmed" | "rejected" | "cancelled";
 
-interface BookingClient {
+// The tab lists chat orders, not legacy Booking docs: an order becomes visible
+// here once the vendor sends the invoice ("quoted" → shown as Pending) and
+// flips to Completed when the client pays ("paid"). "requested" orders stay in
+// chat until the vendor invoices them.
+type OrderFilter = "all" | "quoted" | "paid";
+
+interface OrderClient {
   _id: string;
   username: string;
   profilePicture?: string;
-  email?: string;
 }
 
-interface BookingService {
-  _id: string;
+interface OrderItem {
   name: string;
-  category?: string;
-  images?: string[];
-  price?: number;
-  currency?: string;
-}
-
-interface Booking {
-  _id: string;
-  client: BookingClient;
-  service: BookingService;
-  preferredDate: string;
-  message?: string;
-  status: "pending" | "confirmed" | "rejected" | "cancelled";
+  quantity: number;
   priceSnapshot?: { amount: number; currency: string };
-  createdAt: string;
+  service?: { _id: string; name: string; images?: string[] };
 }
 
-const STATUS_FILTERS: { label: string; value: BookingStatus }[] = [
+interface VendorOrder {
+  _id: string;
+  client: OrderClient;
+  items: OrderItem[];
+  itemsSubtotal: number;
+  additionalFees: { label: string; amount: number }[];
+  total: number;
+  currency: string;
+  status: "quoted" | "paid";
+  chat?: string;
+  createdAt: string;
+  paidAt?: string;
+}
+
+const STATUS_FILTERS: { label: string; value: OrderFilter }[] = [
   { label: "All", value: "all" },
-  { label: "Pending", value: "pending" },
-  { label: "Confirmed", value: "confirmed" },
-  { label: "Rejected", value: "rejected" },
+  { label: "Pending", value: "quoted" },
+  { label: "Completed", value: "paid" },
 ];
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "#f59e0b",
-  confirmed: "#22c55e",
-  rejected: "#ef4444",
-  cancelled: "#6b7280",
+const STATUS_META: Record<string, { label: string; color: string }> = {
+  quoted: { label: "Pending", color: "#f59e0b" },
+  paid: { label: "Completed", color: "#22c55e" },
 };
 
 function formatDate(iso: string) {
@@ -79,135 +78,79 @@ export default function BookingsTab() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [orders, setOrders] = useState<VendorOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<BookingStatus>("all");
-  const [updating, setUpdating] = useState<string | null>(null);
-  const [chattingWith, setChattingWith] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<OrderFilter>("all");
 
-  const fetchBookings = useCallback(async (status: BookingStatus = activeFilter) => {
+  const fetchOrders = useCallback(async (filter: OrderFilter = activeFilter) => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      const query = status !== "all" ? `?status=${status}` : "";
-      const res = await fetch(`${BASE_URL}/bookings/vendor${query}`, {
+      const status = filter === "all" ? "quoted,paid" : filter;
+      const res = await fetch(`${BASE_URL}/orders/vendor?status=${status}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
         const data = await res.json();
-        setBookings(data);
+        setOrders(Array.isArray(data) ? data : []);
       }
     } catch (error) {
-      console.error("Error fetching bookings:", error);
+      console.error("Error fetching orders:", error);
     }
   }, [activeFilter]);
 
   useEffect(() => {
     setLoading(true);
-    fetchBookings(activeFilter).finally(() => setLoading(false));
+    fetchOrders(activeFilter).finally(() => setLoading(false));
   }, [activeFilter]);
+
+  // A quoted order flips to paid while the vendor is elsewhere (chat, another
+  // tab) — refresh on every focus so the states stay honest.
+  useFocusEffect(
+    useCallback(() => {
+      fetchOrders(activeFilter);
+    }, [fetchOrders, activeFilter])
+  );
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchBookings(activeFilter);
+    await fetchOrders(activeFilter);
     setRefreshing(false);
   };
 
-  const handleUpdateStatus = async (bookingId: string, status: "confirmed" | "rejected") => {
-    const label = status === "confirmed" ? "Confirm" : "Reject";
-    Alert.alert(
-      `${label} Booking`,
-      `Are you sure you want to ${label.toLowerCase()} this booking?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: label,
-          style: status === "rejected" ? "destructive" : "default",
-          onPress: async () => {
-            setUpdating(bookingId);
-            try {
-              const token = await SecureStore.getItemAsync("token");
-              const res = await fetch(`${BASE_URL}/bookings/${bookingId}/status`, {
-                method: "PATCH",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ status }),
-              });
-              const data = await res.json();
-              if (res.ok) {
-                setBookings((prev) =>
-                  prev.map((b) => (b._id === bookingId ? { ...b, status } : b))
-                );
-              } else {
-                Alert.alert("Error", data.message || "Failed to update booking");
-              }
-            } catch {
-              Alert.alert("Error", "Failed to update booking");
-            } finally {
-              setUpdating(null);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleChatWithClient = async (clientId: string, bookingId: string) => {
-    setChattingWith(bookingId);
-    try {
-      // Vendor reaching out about a booking — a business thread with the
-      // current user as the vendor, separate from any personal chat.
-      const userJson = await SecureStore.getItemAsync("user");
-      const vendorUserId = userJson ? JSON.parse(userJson).id : null;
-      const chat = await chatService.getOrCreateDirectChat(
-        clientId,
-        vendorUserId ? { context: "vendor", vendorUserId } : undefined
-      );
-      router.push(`/chat/${chat._id}` as any);
-    } catch {
-      Alert.alert("Error", "Could not open chat");
-    } finally {
-      setChattingWith(null);
-    }
-  };
-
-  const renderBookingCard = ({ item }: { item: Booking }) => {
-    const isPending = item.status === "pending";
-    const isUpdating = updating === item._id;
-    const serviceImage = item.service?.images?.[0];
-    const price = item.priceSnapshot?.amount ?? item.service?.price;
-    const currency = item.priceSnapshot?.currency ?? item.service?.currency ?? "USD";
+  const renderOrderCard = ({ item }: { item: VendorOrder }) => {
+    const meta = STATUS_META[item.status] ?? { label: item.status, color: "#6b7280" };
+    const thumbnail = item.items?.[0]?.service?.images?.[0];
+    const itemsSummary = (item.items || [])
+      .map((it) => `${it.name} × ${it.quantity || 1}`)
+      .join(", ");
 
     return (
       <View style={styles.card}>
-        {/* Service info row */}
+        {/* Items row */}
         <View style={styles.serviceRow}>
-          {serviceImage ? (
-            <Image source={{ uri: serviceImage }} style={styles.serviceImage} />
+          {thumbnail ? (
+            <Image source={{ uri: thumbnail }} style={styles.serviceImage} />
           ) : (
             <View style={styles.serviceImagePlaceholder}>
-              <Ionicons name="briefcase-outline" size={20} color={colors.textMuted} />
+              <Ionicons name="receipt-outline" size={20} color={colors.textMuted} />
             </View>
           )}
           <View style={styles.serviceInfo}>
-            <Text style={styles.serviceName} numberOfLines={1}>
-              {item.service?.name || "Unknown Service"}
+            <Text style={styles.serviceName} numberOfLines={2}>
+              {itemsSummary || "Order"}
             </Text>
-            {item.service?.category && (
-              <Text style={styles.serviceCategory}>{item.service.category}</Text>
-            )}
+            <Text style={styles.serviceCategory}>
+              {item.items?.length || 0} {item.items?.length === 1 ? "item" : "items"}
+            </Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: `${STATUS_COLORS[item.status]}20` }]}>
-            <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[item.status] }]} />
-            <Text style={[styles.statusText, { color: STATUS_COLORS[item.status] }]}>
-              {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-            </Text>
+          <View style={[styles.statusBadge, { backgroundColor: `${meta.color}20` }]}>
+            <View style={[styles.statusDot, { backgroundColor: meta.color }]} />
+            <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
           </View>
         </View>
 
-        {/* Client info */}
+        {/* Client + total */}
         <View style={styles.clientRow}>
           {item.client?.profilePicture ? (
             <Image source={{ uri: item.client.profilePicture }} style={styles.avatar} />
@@ -220,88 +163,43 @@ export default function BookingsTab() {
           )}
           <View style={styles.clientInfo}>
             <Text style={styles.clientName}>{item.client?.username || "Unknown Client"}</Text>
-            {item.client?.email && (
-              <Text style={styles.clientEmail}>{item.client.email}</Text>
-            )}
           </View>
-          {price != null && (
-            <Text style={styles.price}>
-              {currency} {price.toLocaleString()}
-            </Text>
-          )}
+          <Text style={styles.price}>
+            {(item.currency || "USD").toUpperCase()} {(item.total ?? 0).toLocaleString()}
+          </Text>
         </View>
 
-        {/* Date */}
+        {/* Dates */}
         <View style={styles.detailRow}>
           <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
-          <Text style={styles.detailText}>{formatDate(item.preferredDate)}</Text>
+          <Text style={styles.detailText}>
+            {item.status === "paid" && item.paidAt
+              ? `Paid ${formatDate(item.paidAt)}`
+              : `Invoiced ${formatDate(item.createdAt)}`}
+          </Text>
         </View>
 
-        {/* Message */}
-        {!!item.message && (
-          <View style={styles.messageBox}>
-            <Ionicons name="chatbubble-outline" size={13} color={colors.textMuted} />
-            <Text style={styles.messageText} numberOfLines={3}>{item.message}</Text>
-          </View>
-        )}
-
-        {/* Chat with client button for confirmed bookings */}
-        {item.status === "confirmed" && (
+        {/* Open the chat where the order/invoice card lives */}
+        {!!item.chat && (
           <TouchableOpacity
             style={styles.chatButton}
-            onPress={() => handleChatWithClient(item.client._id, item._id)}
-            disabled={chattingWith === item._id}
+            onPress={() => router.push(`/chat/${item.chat}` as any)}
             activeOpacity={0.8}
           >
-            {chattingWith === item._id ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <>
-                <Ionicons name="chatbubbles-outline" size={16} color={colors.primary} />
-                <Text style={styles.chatButtonText}>Message Client</Text>
-              </>
-            )}
+            <Ionicons name="chatbubbles-outline" size={16} color={colors.primary} />
+            <Text style={styles.chatButtonText}>Open Chat</Text>
           </TouchableOpacity>
-        )}
-
-        {/* Actions */}
-        {isPending && (
-          <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.rejectButton]}
-              onPress={() => handleUpdateStatus(item._id, "rejected")}
-              disabled={isUpdating}
-              activeOpacity={0.8}
-            >
-              {isUpdating ? (
-                <ActivityIndicator size="small" color={colors.error} />
-              ) : (
-                <>
-                  <Ionicons name="close-outline" size={16} color={colors.error} />
-                  <Text style={[styles.actionText, { color: colors.error }]}>Reject</Text>
-                </>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.confirmButton]}
-              onPress={() => handleUpdateStatus(item._id, "confirmed")}
-              disabled={isUpdating}
-              activeOpacity={0.8}
-            >
-              {isUpdating ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-outline" size={16} color="#fff" />
-                  <Text style={[styles.actionText, { color: "#fff" }]}>Confirm</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
         )}
       </View>
     );
   };
+
+  const emptyText =
+    activeFilter === "all"
+      ? "Orders appear here once you send an invoice from chat."
+      : activeFilter === "quoted"
+        ? "No pending orders — invoices you send from chat show up here until the client pays."
+        : "No completed orders yet.";
 
   return (
     <View style={styles.container}>
@@ -309,7 +207,7 @@ export default function BookingsTab() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Bookings</Text>
         <Text style={styles.headerSubtitle}>
-          {bookings.length} {bookings.length === 1 ? "request" : "requests"}
+          {orders.length} {orders.length === 1 ? "order" : "orders"}
         </Text>
       </View>
 
@@ -333,13 +231,13 @@ export default function BookingsTab() {
 
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
         <FlatList
-          data={bookings}
+          data={orders}
           keyExtractor={(item) => item._id}
-          renderItem={renderBookingCard}
+          renderItem={renderOrderCard}
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
@@ -347,18 +245,14 @@ export default function BookingsTab() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              tintColor={Colors.primary}
+              tintColor={colors.primary}
             />
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="calendar-outline" size={52} color={colors.border} />
+              <Ionicons name="receipt-outline" size={52} color={colors.border} />
               <Text style={styles.emptyTitle}>No Bookings</Text>
-              <Text style={styles.emptyText}>
-                {activeFilter === "all"
-                  ? "You haven't received any booking requests yet."
-                  : `No ${activeFilter} bookings.`}
-              </Text>
+              <Text style={styles.emptyText}>{emptyText}</Text>
             </View>
           }
         />
@@ -404,8 +298,8 @@ const createStyles = (c: ThemeColors) =>
     borderColor: c.border,
   },
   filterChipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: c.primary,
+    borderColor: c.primary,
   },
   filterChipText: {
     fontSize: 13,
@@ -449,6 +343,7 @@ const createStyles = (c: ThemeColors) =>
   serviceInfo: {
     flex: 1,
     marginLeft: 10,
+    marginRight: 8,
   },
   serviceName: {
     fontSize: 15,
@@ -511,15 +406,10 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.semiBold,
     color: c.textBody,
   },
-  clientEmail: {
-    fontSize: 11,
-    fontFamily: Fonts.regular,
-    color: c.textMuted,
-  },
   price: {
     fontSize: 15,
     fontFamily: Fonts.bold,
-    color: Colors.primary,
+    color: c.primary,
   },
   detailRow: {
     flexDirection: "row",
@@ -531,48 +421,6 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 13,
     fontFamily: Fonts.regular,
     color: c.textSecondary,
-  },
-  messageBox: {
-    flexDirection: "row",
-    gap: 6,
-    backgroundColor: c.background,
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 12,
-    alignItems: "flex-start",
-  },
-  messageText: {
-    flex: 1,
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: c.textSecondary,
-    lineHeight: 18,
-  },
-  actions: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 4,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    borderRadius: 10,
-    gap: 6,
-  },
-  rejectButton: {
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.3)",
-  },
-  confirmButton: {
-    backgroundColor: Colors.primary,
-  },
-  actionText: {
-    fontSize: 14,
-    fontFamily: Fonts.semiBold,
   },
   chatButton: {
     flexDirection: "row",
