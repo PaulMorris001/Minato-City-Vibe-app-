@@ -124,6 +124,14 @@ export default function Signup() {
     confirm: "",
   });
   const [submitting, setSubmitting] = useState(false);
+  // The username/email steps await a network check before advancing, and the
+  // CTA stays on screen for the whole round trip. Without this guard every
+  // extra tap queued another advance off a stale `step`, so a few impatient
+  // taps on a slow connection ran past the end of STEPS and crashed the
+  // screen on `current.key`. The ref (not state) is what gates re-entry —
+  // it's set synchronously, before React can re-render.
+  const advancing = useRef(false);
+  const [checkingAvail, setCheckingAvail] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   // Explicit terms/EULA consent — required before an account can be created
   // (Apple Guideline 1.2). Gates both email signup and the social buttons.
@@ -318,52 +326,67 @@ export default function Signup() {
   };
 
   const handleNext = async () => {
-    const err = validateCurrent();
-    if (err) {
-      Alert.alert("Hold up", err);
-      return;
-    }
-
-    if (step === 0 && !agreedTerms) {
-      Alert.alert(
-        "One more thing",
-        "Please agree to the Terms of Service and Privacy Policy to create an account."
-      );
-      return;
-    }
-
-    // Block advancing past a username/email that's already taken. If the
-    // debounce hasn't settled yet, run a blocking check now so the user never
-    // reaches the next step on a stale/unknown value.
-    const key = current.key;
-    if (key === "username" || key === "email") {
-      const raw = values[key].trim();
-      let status = avail[key];
-      if (status === "idle" || status === "checking") {
-        setAvail((a) => ({ ...a, [key]: "checking" }));
-        status = await runAvailabilityCheck(key, raw);
-        setAvail((a) => ({ ...a, [key]: status }));
+    // Both the CTA and the keyboard's return key call this, and the body
+    // awaits — one advance at a time, always.
+    if (advancing.current) return;
+    advancing.current = true;
+    try {
+      const err = validateCurrent();
+      if (err) {
+        Alert.alert("Hold up", err);
+        return;
       }
-      if (status === "taken") {
+
+      if (step === 0 && !agreedTerms) {
         Alert.alert(
-          "Hold up",
-          key === "username"
-            ? "That username is already taken. Please choose another."
-            : "An account with that email already exists. Try logging in."
+          "One more thing",
+          "Please agree to the Terms of Service and Privacy Policy to create an account."
         );
         return;
       }
-    }
 
-    if (step < STEPS.length - 1) {
-      setStep((s) => s + 1);
-    } else {
-      submitRegister();
+      // Block advancing past a username/email that's already taken. If the
+      // debounce hasn't settled yet, run a blocking check now so the user never
+      // reaches the next step on a stale/unknown value.
+      const key = current.key;
+      if (key === "username" || key === "email") {
+        const raw = values[key].trim();
+        let status = avail[key];
+        if (status === "idle" || status === "checking") {
+          setAvail((a) => ({ ...a, [key]: "checking" }));
+          setCheckingAvail(true);
+          try {
+            status = await runAvailabilityCheck(key, raw);
+          } finally {
+            setCheckingAvail(false);
+          }
+          setAvail((a) => ({ ...a, [key]: status }));
+        }
+        if (status === "taken") {
+          Alert.alert(
+            "Hold up",
+            key === "username"
+              ? "That username is already taken. Please choose another."
+              : "An account with that email already exists. Try logging in."
+          );
+          return;
+        }
+      }
+
+      if (step < STEPS.length - 1) {
+        // Clamped as well as guarded: `current` must never be undefined, and
+        // this render crashes hard if it is.
+        setStep((s) => Math.min(s + 1, STEPS.length - 1));
+      } else {
+        await submitRegister();
+      }
+    } finally {
+      advancing.current = false;
     }
   };
 
   const handleBack = () => {
-    if (step > 0) setStep((s) => s - 1);
+    if (step > 0) setStep((s) => Math.max(s - 1, 0));
     else setAccountType(null); // back out of the wizard to the account chooser
   };
 
@@ -570,7 +593,10 @@ export default function Signup() {
                 label={ctaLabel}
                 onPress={handleNext}
                 variant={ctaVariant}
-                loading={submitting}
+                // Also busy while the username/email check is in flight — that
+                // request can take seconds on a bad connection, and a CTA that
+                // looks idle is what got tapped repeatedly.
+                loading={submitting || checkingAvail}
               />
 
               <View style={styles.dotsRow}>
