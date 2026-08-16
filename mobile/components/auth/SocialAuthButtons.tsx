@@ -83,7 +83,7 @@ export function SocialAuthButtons({ accountType }: SocialAuthButtonsProps = {}) 
     }
   }, []);
 
-  const finishAuth = async (user: any, token: string) => {
+  const finishAuth = async (user: any, token: string, isNewUser = false) => {
     await SecureStore.setItemAsync("token", token);
     await SecureStore.setItemAsync("user", JSON.stringify(user));
     registerForPushNotifications();
@@ -122,7 +122,11 @@ export function SocialAuthButtons({ accountType }: SocialAuthButtonsProps = {}) 
     }
 
     await setActiveAccount("client");
-    router.replace("/(tabs)/home");
+    // Social sign-in asks for nothing, so a new account lands with no location
+    // — and payout routing keys off location.country, which left these accounts
+    // reading as "payouts aren't available in your country". Send new accounts
+    // through the same interests/location step the email signup flow uses.
+    router.replace((isNewUser ? "/interests" : "/(tabs)/home") as any);
   };
 
   const selectRole = async (role: "client" | "vendor") => {
@@ -146,13 +150,13 @@ export function SocialAuthButtons({ accountType }: SocialAuthButtonsProps = {}) 
       // Replaces the native GoogleSignin SDK call that's broken in the
       // shipped binary (placeholder iOS URL scheme + missing Android OAuth
       // client). The server returns our JWT + user in the deep-link params.
-      const { token, user } = await signInWithGoogleWeb();
+      const { token, user, isNewUser } = await signInWithGoogleWeb();
       remoteLog("info", "google.handler success", {
         userId: user.id,
         isVendor: user.isVendor,
         elapsedMs: Date.now() - startedAt,
       });
-      await finishAuth(user, token);
+      await finishAuth(user, token, isNewUser);
     } catch (error: any) {
       if (isExpectedAuthError(error)) {
         // User cancel or known server-side rejection — log and move on.
@@ -251,7 +255,7 @@ export function SocialAuthButtons({ accountType }: SocialAuthButtonsProps = {}) 
         isVendor: res.data?.user?.isVendor,
         elapsedMs: Date.now() - startedAt,
       });
-      await finishAuth(res.data.user, res.data.token);
+      await finishAuth(res.data.user, res.data.token, !!res.data.isNewUser);
     } catch (error: any) {
       // Apple throws ERR_REQUEST_CANCELED when the user dismisses the sheet —
       // silent (already logged at info level inside signInWithApple).

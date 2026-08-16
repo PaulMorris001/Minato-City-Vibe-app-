@@ -55,6 +55,7 @@ interface EarningsSummary {
   currency: string;
   payoutRail: "paystack" | "stripe" | null;
   payoutSupported: boolean;
+  payoutCountryKnown: boolean;
   payoutOnboarded: boolean;
   country: string | null;
   totals: {
@@ -239,9 +240,21 @@ export default function EarningsScreen() {
           currency={currency}
         />
 
-        {/* Payout rail state. Three cases, and only one of them has a CTA —
-            a seller in an unsupported country has nothing to act on. */}
-        {summary && !summary.payoutSupported ? (
+        {/* Payout rail state. Four cases; only the seller in a genuinely
+            unsupported country has nothing to act on. An unknown country looks
+            identical to the server (both leave payoutSupported false) but is
+            fixable, so it gets its own branch with a CTA. */}
+        {summary && !summary.payoutCountryKnown ? (
+          <TouchableOpacity
+            style={[styles.banner, { borderColor: VN.pink + "55" }]}
+            onPress={() => router.push("/settings" as any)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="location-outline" size={18} color={VN.pink} />
+            <Text style={styles.bannerText}>{payoutUnavailableMessage()}</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        ) : summary && !summary.payoutSupported ? (
           <View style={[styles.banner, { borderColor: VN.amber + "55" }]}>
             <Ionicons name="information-circle" size={18} color={VN.amber} />
             <Text style={styles.bannerText}>

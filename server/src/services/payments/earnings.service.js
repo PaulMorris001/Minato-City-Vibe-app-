@@ -33,6 +33,7 @@ import { Order } from "../../models/order.model.js";
 import {
   getSettlementProvider,
   payoutSupported,
+  payoutCountryKnown,
   hasPayoutOnboarding,
   currencyForUser,
   PAYOUT_ROUTING_FIELDS,
@@ -301,6 +302,10 @@ export async function getEarningsSummary(sellerId) {
     currency,
     payoutRail: getSettlementProvider(seller),
     payoutSupported: railSupported,
+    // Tells the "we don't know your country" banner (fixable, has a CTA) apart
+    // from "no rail reaches your country" (permanent). Both leave
+    // payoutSupported false, so the client cannot infer it from that alone.
+    payoutCountryKnown: payoutCountryKnown(seller),
     payoutOnboarded: hasPayoutOnboarding(seller),
     country: seller?.location?.country || null,
     totals: Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, round2(v)])),

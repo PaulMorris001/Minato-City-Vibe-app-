@@ -163,6 +163,10 @@ export const signOutFromGoogle = async () => {
 
 export interface GoogleWebSignInResult {
   token: string;
+  // Whether this sign-in created the account. Social sign-in collects no
+  // location, so new accounts have to be sent through the interests/location
+  // step — location.country is what payout routing keys off.
+  isNewUser: boolean;
   user: {
     id: string;
     username: string;
@@ -302,5 +306,5 @@ export const signInWithGoogleWeb = async (): Promise<GoogleWebSignInResult> => {
     elapsedMs: Date.now() - startedAt,
   });
 
-  return { token: params.token, user };
+  return { token: params.token, isNewUser: params.isNewUser === "1", user };
 };

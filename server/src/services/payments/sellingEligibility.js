@@ -6,14 +6,23 @@
  * the problem when a buyer's checkout failed — the wrong person, at the wrong
  * moment. This puts the check in one place so all three behave identically.
  *
- * Two distinct failures, deliberately kept apart:
+ * Three distinct failures, deliberately kept apart:
+ *   - `payout_country_missing` — we don't know where they are. Also fixable, and
+ *     the common case: nothing in the social sign-in flow ever asks for a
+ *     country, so most accounts have none. Folding it into "unsupported" (which
+ *     is what an empty country used to do) tells a Nigerian or American seller
+ *     their country will never be supported, and offers them no way out.
  *   - `payout_country_unsupported` — no rail reaches their country. Permanent,
  *     nothing they can do, so the copy must not send them to a setup screen.
  *   - `payout_setup_required` — a rail exists, they just haven't finished
  *     onboarding. Fixable, so the copy points at it.
  */
 
-import { payoutSupported, hasPayoutOnboarding } from "./resolveProvider.js";
+import {
+  payoutSupported,
+  payoutCountryKnown,
+  hasPayoutOnboarding,
+} from "./resolveProvider.js";
 
 /**
  * Check whether a seller may list something paid.
@@ -25,6 +34,17 @@ import { payoutSupported, hasPayoutOnboarding } from "./resolveProvider.js";
  * @returns {{status: number, body: object} | null} null when they may sell
  */
 export function checkPayoutEligibility(user) {
+  if (!payoutCountryKnown(user)) {
+    return {
+      status: 403,
+      body: {
+        code: "payout_country_missing",
+        message:
+          "Set your location in Settings so we know how to pay you, then try again.",
+      },
+    };
+  }
+
   if (!payoutSupported(user)) {
     const country = user?.location?.country;
     return {
