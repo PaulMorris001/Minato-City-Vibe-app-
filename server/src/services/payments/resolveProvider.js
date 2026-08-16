@@ -176,6 +176,23 @@ export function payoutSupported(user) {
 }
 
 /**
+ * Whether we know where this seller is at all.
+ *
+ * Every function above keys off `location.country`, and an empty one falls into
+ * the same `null` bucket as a genuinely unsupported country — which told the
+ * majority of accounts (nobody is asked for a country on social sign-in) that
+ * payouts would never reach them, with no way to act on it. Callers MUST check
+ * this before showing "not in your country": unknown is fixable, unsupported is
+ * not, and only one of them gets a CTA.
+ *
+ * @param {object} user
+ * @returns {boolean}
+ */
+export function payoutCountryKnown(user) {
+  return !!(user?.location?.country || "").trim();
+}
+
+/**
  * Whether a seller has completed onboarding for the provider that settles them.
  * False when no rail reaches them — there is nothing to complete.
  *
@@ -246,6 +263,7 @@ export default {
   getPayoutProvider,
   getSettlementProvider,
   payoutSupported,
+  payoutCountryKnown,
   hasPayoutOnboarding,
   connectCountryCode,
   currencyForUser,

@@ -80,6 +80,18 @@ export function payoutSupportedForCountry(country?: string): boolean {
   return payoutProviderForCountry(country) !== null;
 }
 
+/**
+ * Whether we know where this user is. An account with no country falls into the
+ * same `null` provider bucket as a genuinely unsupported one, and most accounts
+ * have no country — social sign-in never asks, and Settings only writes one
+ * after a successful GPS reverse-geocode. Screens MUST branch on this before
+ * showing "payouts aren't available in your country": unknown is fixable and
+ * gets a CTA, unsupported is permanent and doesn't.
+ */
+export function payoutCountryKnown(country?: string): boolean {
+  return !!(country || "").trim();
+}
+
 // Country (lowercased) → local selling currency, mirroring the server's
 // COUNTRY_CURRENCY. Only launch-scope countries ever reach this map.
 const COUNTRY_CURRENCY: Record<string, string> = {
@@ -124,7 +136,11 @@ export function payoutOnboardingRoute(country?: string): string | null {
  * stays identical everywhere it surfaces.
  */
 export function payoutUnavailableMessage(country?: string): string {
-  return `Payouts aren't available in ${country?.trim() || "your country"} yet. ` +
+  if (!payoutCountryKnown(country)) {
+    return `Set your location so we can send you your money — tap here, then ` +
+      `"Use my current location" in Settings.`;
+  }
+  return `Payouts aren't available in ${(country || "").trim()} yet. ` +
     `You can still publish free events and guides — we'll let you know the moment ` +
     `payouts launch where you are.`;
 }

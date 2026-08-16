@@ -5,6 +5,7 @@ import {
   getSettlementProvider,
   hasPayoutOnboarding,
   payoutSupported,
+  payoutCountryKnown,
   PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
 import { createPayout } from "../services/payments/payout.service.js";
@@ -70,20 +71,28 @@ async function releaseDuePayouts() {
       const wasPending = evt.payoutStatus === "pending";
 
       if (!payoutSupported(seller)) {
+        // An organizer with no country on file is not the same as one in an
+        // unsupported country: the first can fix it in Settings, the second
+        // can't do anything. Both land here, so the copy has to split.
+        const countryKnown = payoutCountryKnown(seller);
         await Event.updateOne(
           { _id: evt._id },
           {
             payoutStatus: "failed",
-            payoutError: "No payout rail is available in the organizer's country",
+            payoutError: countryKnown
+              ? "No payout rail is available in the organizer's country"
+              : "The organizer has no location set, so we can't pick a payout rail",
           }
         );
         if (wasPending) {
           notifyUser(seller?._id, {
             type: "payout_blocked",
             title: "We can't release your payout yet",
-            body:
-              `Payouts aren't available in your country yet, so the money from ` +
-              `"${evt.title}" is being held safely. We'll release it as soon as we can pay you.`,
+            body: countryKnown
+              ? `Payouts aren't available in your country yet, so the money from ` +
+                `"${evt.title}" is being held safely. We'll release it as soon as we can pay you.`
+              : `Set your location in Settings so we can pay you — the money from ` +
+                `"${evt.title}" is being held safely until then.`,
             data: { eventId: String(evt._id) },
           });
         }

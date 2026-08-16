@@ -20,7 +20,11 @@ import axios from "axios";
 import { useRouter } from "expo-router";
 import socketService from "@/services/socket.service";
 import { BASE_URL } from "@/constants/constants";
-import { payoutProviderForCountry, PAYOUT_STATUS_ENDPOINTS } from "@/constants/payments";
+import {
+  payoutCountryKnown,
+  payoutProviderForCountry,
+  PAYOUT_STATUS_ENDPOINTS,
+} from "@/constants/payments";
 import { fetchVendorTypes } from "@/libs/api";
 import { VendorType, LocationSelection } from "@/libs/interfaces";
 import { LocationPicker, ImagePickerButton } from "@/components/shared";
@@ -77,6 +81,10 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
     facebook: "",
     verified: false,
   });
+
+  // A vendor with no country reads as "unsupported" everywhere payout state is
+  // derived from the country alone, so keep the two apart — this one is fixable.
+  const countryKnown = payoutCountryKnown(profile.country);
 
   useEffect(() => {
     fetchProfile();
@@ -370,16 +378,19 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
                 tone={payoutSupported && payoutOnboardingComplete ? "green" : "amber"}
                 icon="cash-outline"
                 label={
-                  !payoutSupported
-                    ? "Payouts not in your country yet"
-                    : payoutOnboardingComplete
-                      ? "Payouts active"
-                      : "Set up payouts →"
+                  !countryKnown
+                    ? "Set your location →"
+                    : !payoutSupported
+                      ? "Payouts not in your country yet"
+                      : payoutOnboardingComplete
+                        ? "Payouts active"
+                        : "Set up payouts →"
                 }
                 // No tap target when it's unsupported — there is nothing for the
                 // vendor to do, and a CTA that leads nowhere is worse than none.
+                // A missing country is the opposite: it's the vendor's to fix.
                 onPress={
-                  payoutSupported && !payoutOnboardingComplete
+                  !countryKnown || (payoutSupported && !payoutOnboardingComplete)
                     ? () => router.push("/settings")
                     : undefined
                 }

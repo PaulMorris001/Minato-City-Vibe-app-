@@ -1011,6 +1011,12 @@ export async function googleAuth(req, res) {
       ]
     });
 
+    // Social sign-in has no signup form, so a brand-new account has no location
+    // — and location.country is what payout routing keys off. The client sends
+    // new accounts through the interests/location step instead of straight to
+    // the feed; without this flag it can't tell a first sign-in from the tenth.
+    const isNewUser = !user;
+
     if (user) {
       console.log(
         `[google-auth ${reqId}] existing user found id=${user._id} email=${user.email} ` +
@@ -1070,6 +1076,7 @@ export async function googleAuth(req, res) {
     res.json({
       message: "Google authentication successful",
       token,
+      isNewUser,
       user: {
         id: user._id,
         username: user.username,
@@ -1330,6 +1337,10 @@ export async function googleWebCallback(req, res) {
       $or: [{ googleId }, { email: normalizedEmail }],
     });
 
+    // See /google-auth: new social accounts have no location, so the app needs
+    // to route them through the interests/location step.
+    const isNewUser = !user;
+
     if (user) {
       if (user.isBanned) {
         console.warn(`[google-web-callback ${reqId}] ✗ user is banned id=${user._id}`);
@@ -1394,7 +1405,11 @@ export async function googleWebCallback(req, res) {
     res
       .status(200)
       .send(
-        buildAppReturnHtml({ token, user: JSON.stringify(userPayload) })
+        buildAppReturnHtml({
+          token,
+          user: JSON.stringify(userPayload),
+          isNewUser: isNewUser ? "1" : "0",
+        })
       );
   } catch (err) {
     console.error(
@@ -1460,6 +1475,10 @@ export async function appleAuth(req, res) {
       ],
     });
 
+    // See /google-auth: new social accounts have no location, so the app needs
+    // to route them through the interests/location step.
+    const isNewUser = !user;
+
     if (user) {
       if (user.isBanned) {
         return res.status(403).json({
@@ -1515,6 +1534,7 @@ export async function appleAuth(req, res) {
     res.json({
       message: "Apple authentication successful",
       token,
+      isNewUser,
       user: {
         id: user._id,
         username: user.username,

@@ -21,6 +21,7 @@ import {
   getPayoutProvider,
   getSettlementProvider,
   payoutSupported,
+  payoutCountryKnown,
   hasPayoutOnboarding,
   connectCountryCode,
   currencyForUser,
@@ -148,6 +149,30 @@ check("independent of whether the seller has onboarded", () => {
   // seller, unsupported is not. The two must never collapse into one flag.
   assert.equal(payoutSupported(user("Germany")), true);
   assert.equal(hasPayoutOnboarding(user("Germany")), false);
+});
+
+console.log("\npayoutCountryKnown (unknown country ≠ unsupported country):");
+check("false when the account has no country", () => {
+  // The common case, not an edge one: social sign-in collects no location, so
+  // most accounts arrive here. Reporting these as "unsupported" told sellers in
+  // Lagos and Houston alike that payouts would never reach them.
+  assert.equal(payoutCountryKnown({}), false);
+  assert.equal(payoutCountryKnown({ location: {} }), false);
+  assert.equal(payoutCountryKnown(user("")), false);
+  assert.equal(payoutCountryKnown(user("   ")), false);
+});
+check("true whenever a country is set, supported or not", () => {
+  assert.equal(payoutCountryKnown(user("Nigeria")), true);
+  assert.equal(payoutCountryKnown(user("Japan")), true);
+});
+check("splits the two false cases of payoutSupported apart", () => {
+  const unknown = {};
+  const unsupported = user("Japan");
+  assert.equal(payoutSupported(unknown), false);
+  assert.equal(payoutSupported(unsupported), false);
+  // Same payoutSupported, different remedy — only one of them has a CTA.
+  assert.equal(payoutCountryKnown(unknown), false);
+  assert.equal(payoutCountryKnown(unsupported), true);
 });
 
 console.log("\nconnectCountryCode (the ISO2 accounts.create opens the account in):");

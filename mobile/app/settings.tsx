@@ -22,7 +22,11 @@ import * as Location from "expo-location";
 import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
-import { payoutOnboardingRoute, payoutUnavailableMessage } from "@/constants/payments";
+import {
+  payoutCountryKnown,
+  payoutOnboardingRoute,
+  payoutUnavailableMessage,
+} from "@/constants/payments";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { ImagePickerButton } from "@/components/shared";
 import { getAddressFromCurrentPosition } from "@/hooks/useLocation";
@@ -734,6 +738,28 @@ export default function SettingsScreen() {
             <View style={styles.preferenceLeft}>
               <Ionicons name="cash-outline" size={22} color={Colors.primary} />
               <Text style={styles.preferenceText}>Payout Setup</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+        ) : !payoutCountryKnown(user.country) ? (
+          /* We don't know where they are yet, so we can't pick a rail. Fixable,
+             and the fix is on this very screen — so run the detection from here
+             rather than pointing at another control. */
+          <TouchableOpacity
+            style={styles.preferenceItem}
+            onPress={handleUseCurrentLocation}
+            disabled={detectingLocation}
+          >
+            <View style={[styles.preferenceLeft, { flex: 1, paddingRight: 12 }]}>
+              <Ionicons name="location-outline" size={22} color={Colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.preferenceText}>Payout Setup</Text>
+                <Text style={styles.reminderHint}>
+                  {detectingLocation
+                    ? "Finding your location…"
+                    : "Set your location first so we know how to pay you. Tap to use your current location."}
+                </Text>
+              </View>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
           </TouchableOpacity>
