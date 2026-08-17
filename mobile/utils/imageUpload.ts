@@ -4,7 +4,9 @@
  */
 
 import * as ImagePicker from 'expo-image-picker';
+import { Alert } from 'react-native';
 import { BASE_URL } from '../constants/constants';
+import { isVideoUrl } from './media';
 
 export interface ImageUploadResult {
   url: string;
@@ -59,24 +61,31 @@ function mimeFromExtension(filename: string): string {
  * Without this, `response.json()` throws `Unexpected character: <` and the
  * caller sees an opaque parse error instead of the actual upload failure.
  */
+export function parseUploadError(status: number, text: string, fallback: string): string {
+  if (!text) return statusHint(status) ?? fallback;
+  if (text.trim().startsWith("{")) {
+    try {
+      const data = JSON.parse(text);
+      return data.message || statusHint(status) || fallback;
+    } catch {
+      return statusHint(status) ?? fallback;
+    }
+  }
+  // HTML or plain text — don't surface the markup, just hint at the cause.
+  return statusHint(status) ?? fallback;
+}
+
+function statusHint(status: number): string | null {
+  if (status === 413)
+    return `That file is too large. Photos must be under ${mb(MAX_IMAGE_BYTES)} MB and videos under ${mb(MAX_VIDEO_BYTES)} MB.`;
+  if (status === 415)
+    return "Unsupported format. Try JPEG, PNG or HEIC photos, or MP4/MOV video.";
+  return null;
+}
+
 async function readErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
-    const text = await response.text();
-    if (!text) return fallback;
-    if (text.trim().startsWith("{")) {
-      try {
-        const data = JSON.parse(text);
-        return data.message || fallback;
-      } catch {
-        return fallback;
-      }
-    }
-    // HTML or plain text — don't surface the markup, just hint at the cause.
-    if (response.status === 413)
-      return "That file is too large. Photos must be under 10 MB and videos under 64 MB.";
-    if (response.status === 415)
-      return "Unsupported format. Try JPEG, PNG or HEIC photos, or MP4/MOV video.";
-    return fallback;
+    return parseUploadError(response.status, await response.text(), fallback);
   } catch {
     return fallback;
   }
@@ -108,8 +117,67 @@ export async function pickImage(): Promise<string | null> {
   return null;
 }
 
-/** Longest video we accept, in seconds. Keeps uploads inside the server's 64 MB cap. */
+/** Longest video we accept, in seconds. */
 export const MAX_VIDEO_SECONDS = 60;
+/** Largest video we accept. Mirrors MAX_VIDEO_BYTES in the server's upload middleware. */
+export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+/** Largest photo we accept. Mirrors MAX_IMAGE_BYTES on the server. */
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
+const mb = (bytes: number) => Math.round(bytes / 1024 / 1024);
+
+/**
+ * Transcode quality for picked video (iOS only — Android's picker has no
+ * equivalent and hands back the original).
+ *
+ * `Medium` is roughly 720p and cuts a 60s clip from hundreds of MB to tens,
+ * which is the difference between an upload that finishes on mobile data and
+ * one that doesn't. `quality` in the picker options only affects stills, so
+ * without this videos were uploading at full capture resolution.
+ */
+export const VIDEO_PICKER_QUALITY = ImagePicker.UIImagePickerControllerQualityType.Medium;
+
+/**
+ * Why a picked asset can't be uploaded, or null when it's fine.
+ *
+ * Checked on the client because the alternative is silent: `videoMaxDuration`
+ * only caps in-app *recording*, so a 5-minute clip picked from the library
+ * sails through the picker, uploads for however long the connection takes, and
+ * then 413s. Rejecting up front turns that into an immediate, specific message.
+ *
+ * `fileSize` and `duration` are both optional in the picker result — when the
+ * OS doesn't report them we let the asset through and rely on the server's
+ * limit, since guessing would block legitimate uploads.
+ */
+export function mediaRejectionReason(asset: ImagePicker.ImagePickerAsset): string | null {
+  const isVideo = asset.type === "video" || isVideoUrl(asset.uri);
+
+  if (isVideo) {
+    // duration is milliseconds (see ImagePickerAsset.duration).
+    if (typeof asset.duration === "number" && asset.duration > 0) {
+      const seconds = Math.round(asset.duration / 1000);
+      if (seconds > MAX_VIDEO_SECONDS) {
+        return `That video is ${formatDuration(seconds)} long. Videos need to be ${MAX_VIDEO_SECONDS} seconds or shorter — trim it and try again.`;
+      }
+    }
+    if (typeof asset.fileSize === "number" && asset.fileSize > MAX_VIDEO_BYTES) {
+      return `That video is ${mb(asset.fileSize)} MB. Videos need to be under ${mb(MAX_VIDEO_BYTES)} MB.`;
+    }
+    return null;
+  }
+
+  if (typeof asset.fileSize === "number" && asset.fileSize > MAX_IMAGE_BYTES) {
+    return `That photo is ${mb(asset.fileSize)} MB. Photos need to be under ${mb(MAX_IMAGE_BYTES)} MB.`;
+  }
+  return null;
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds} seconds`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s ? `${m}m ${s}s` : `${m} minute${m > 1 ? "s" : ""}`;
+}
 
 export interface PickMediaOptions {
   /** Also offer videos in the picker. Off by default — avatars and cover photos must stay stills. */
@@ -145,14 +213,31 @@ export async function pickMultipleImages(
     allowsMultipleSelection: true,
     ...(limit ? { selectionLimit: limit } : {}),
     videoMaxDuration: MAX_VIDEO_SECONDS,
+    videoQuality: VIDEO_PICKER_QUALITY,
     quality: 0.8,
   });
 
-  if (!result.canceled && result.assets) {
-    return result.assets.map(asset => asset.uri);
+  if (result.canceled || !result.assets) return [];
+
+  // Reject oversized/overlong picks here rather than letting them fail at
+  // upload. Valid items in the same selection are kept — losing four good
+  // photos because the fifth was a long video would be worse than the error.
+  const accepted: string[] = [];
+  const rejections: string[] = [];
+  for (const asset of result.assets) {
+    const reason = mediaRejectionReason(asset);
+    if (reason) rejections.push(reason);
+    else accepted.push(asset.uri);
   }
 
-  return [];
+  if (rejections.length) {
+    Alert.alert(
+      rejections.length === 1 ? "Can't add that file" : `Skipped ${rejections.length} files`,
+      rejections.join("\n\n")
+    );
+  }
+
+  return accepted;
 }
 
 /**
@@ -186,7 +271,8 @@ export async function takePhoto(): Promise<string | null> {
 export async function uploadImage(
   imageUri: string,
   folder: string = 'nightvibe',
-  token: string
+  token: string,
+  onProgress?: (fraction: number) => void
 ): Promise<ImageUploadResult> {
   const formData = new FormData();
 
@@ -200,24 +286,44 @@ export async function uploadImage(
   } as any);
   formData.append('folder', folder);
 
-  const response = await fetch(`${BASE_URL}/upload/image`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
+  // XMLHttpRequest rather than fetch: RN's fetch gives no upload progress
+  // events, and a 100 MB video with no feedback looks identical to a hang.
+  return new Promise<ImageUploadResult>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${BASE_URL}/upload/image`);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+    if (onProgress) {
+      // Deliberately not gated on `lengthComputable`: React Native's XHR does
+      // not reliably set it for multipart bodies, and requiring it meant the
+      // callback never fired and the bar sat at 0% for the whole upload.
+      xhr.upload.onprogress = (e) => {
+        if (e.total > 0) onProgress(Math.min(1, e.loaded / e.total));
+      };
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          // Upload finished; anything after this is server-side processing.
+          onProgress?.(1);
+          resolve({ url: data.url, publicId: data.publicId });
+        } catch {
+          reject(new Error('The upload finished but the server response was unreadable.'));
+        }
+        return;
+      }
+      reject(new Error(parseUploadError(xhr.status, xhr.responseText, 'Failed to upload media')));
+    };
+
+    xhr.onerror = () =>
+      reject(new Error('Upload failed. Check your connection and try again.'));
+    xhr.ontimeout = () => reject(new Error('The upload timed out. Try again on a stronger connection.'));
+    xhr.onabort = () => reject(new Error('Upload cancelled.'));
+
+    xhr.send(formData);
   });
-
-  if (!response.ok) {
-    const msg = await readErrorMessage(response, 'Failed to upload image');
-    throw new Error(msg);
-  }
-
-  const data = await response.json();
-  return {
-    url: data.url,
-    publicId: data.publicId,
-  };
 }
 
 /**

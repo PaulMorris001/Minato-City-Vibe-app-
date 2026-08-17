@@ -44,6 +44,10 @@ import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
 import EventQRModal from "@/components/shared/EventQRModal";
 import { ImageViewerModal } from "@/components/shared";
 import MediaTile from "@/components/shared/MediaTile";
+import EventLocationMap from "@/components/shared/EventLocationMap";
+import CollapsibleDescription from "@/components/shared/CollapsibleDescription";
+import { cacheRead, cacheWrite } from "@/utils/offlineCache";
+import { ensureOnline } from "@/utils/requireOnline";
 import { GlassCard } from "@/components/event-details/GlassCard";
 import { AU } from "@/components/auth/tokens";
 import {
@@ -94,6 +98,8 @@ interface Event {
   city?: string;
   state?: string;
   country?: string;
+  /** Map pin, [lng, lat] per GeoJSON. Absent on events created before 1.2.0. */
+  geo?: { type?: string; coordinates?: number[] };
   isVirtual?: boolean;
   meetingLink?: string;
   hasMeetingLink?: boolean;
@@ -292,6 +298,9 @@ export default function EventDetailsPage() {
   // instead of the event UI. Lets cold-start deep links work for logged-out
   // users on browsably-public events, and gates private ones behind login.
   const [needsLogin, setNeedsLogin] = useState(false);
+  // True when this event is being rendered from the offline cache rather than
+  // a live response — drives the "saved copy" chip below the hero.
+  const [fromCache, setFromCache] = useState(false);
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [isInviteModalVisible, setIsInviteModalVisible] = useState(false);
@@ -362,6 +371,10 @@ export default function EventDetailsPage() {
       if (res.ok) {
         setEvent(data.event);
         setNeedsLogin(false);
+        setFromCache(false);
+        // Keep a copy so this event stays readable with no connection. Only a
+        // 2xx is cached — a 401/403 body is an error, not the event.
+        cacheWrite(`event:${id}`, data);
         trackEvent("event_viewed", { eventId: data.event._id, isPublic: data.event.isPublic });
       } else if (res.status === 403) {
         // Logged in, but not on the guest list of a private/invite-only event.
@@ -391,6 +404,16 @@ export default function EventDetailsPage() {
         ]);
       }
     } catch (err) {
+      // The request never completed (offline, DNS, timeout) — as opposed to
+      // the server answering with an error, which is handled above. This is
+      // the only case where a saved copy is the right answer.
+      const cached = await cacheRead<{ event: Event }>(`event:${id}`);
+      if (cached?.data?.event) {
+        setEvent(cached.data.event);
+        setNeedsLogin(false);
+        setFromCache(true);
+        return;
+      }
       console.error("Fetch event details error:", err);
       Alert.alert("Error", "Failed to load event details", [
         {
@@ -542,6 +565,7 @@ export default function EventDetailsPage() {
   const handleRsvp = async (status: "going" | "not_going") => {
     if (!event) return;
     if (!requireAuth("RSVP to this event")) return;
+    if (!ensureOnline("RSVP to an event")) return;
     setRsvpLoading(true);
     try {
       const token = await authToken();
@@ -741,6 +765,7 @@ export default function EventDetailsPage() {
   const handlePurchaseTicket = async () => {
     if (!event) return;
     if (!requireAuth("purchase a ticket")) return;
+    if (!ensureOnline("buy a ticket")) return;
     // Every paid purchase goes through the checkout sheet — it hosts the tier
     // rows (one synthetic row for single-price events) and the discount-code
     // entry, so it always opens with a clean slate.
@@ -1325,6 +1350,16 @@ export default function EventDetailsPage() {
               </View>
             )}
 
+          {/* Saved copy — headcount, prices and sold-out state may have moved on */}
+          {fromCache && (
+            <View style={styles.cachedChip}>
+              <Ionicons name="cloud-offline-outline" size={13} color={colors.textDim} />
+              <Text style={styles.cachedChipText}>
+                Offline — showing a saved copy of this event
+              </Text>
+            </View>
+          )}
+
           {/* Pending invite — Accept / Decline */}
           {userIsPendingInvite && (
             <GlassCard>
@@ -1412,7 +1447,11 @@ export default function EventDetailsPage() {
           {!!event.description && (
             <GlassCard>
               <Text style={styles.microLabel}>ABOUT</Text>
-              <Text style={styles.aboutBody}>{event.description}</Text>
+              <CollapsibleDescription
+                text={event.description}
+                textStyle={styles.aboutBody}
+                onReadMore={() => router.push(`/event-description/${event._id}` as any)}
+              />
             </GlassCard>
           )}
 
@@ -1459,6 +1498,15 @@ export default function EventDetailsPage() {
                   }) || event.location}
                 </Text>
               </View>
+              <EventLocationMap
+                coordinates={event.geo?.coordinates}
+                address={event.address}
+                city={event.city}
+                state={event.state}
+                country={event.country}
+                location={event.location}
+                title={event.title}
+              />
             </GlassCard>
           )}
 
@@ -2744,6 +2792,23 @@ const createStyles = (c: ThemeColors) =>
     color: c.textFaint,
     letterSpacing: 1,
     textTransform: "uppercase",
+  },
+  cachedChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.glassStroke,
+    backgroundColor: c.cardAlt,
+  },
+  cachedChipText: {
+    flex: 1,
+    fontFamily: Fonts.medium,
+    fontSize: 12.5,
+    color: c.textDim,
   },
 
   // Banners

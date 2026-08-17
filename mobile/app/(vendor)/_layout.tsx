@@ -25,6 +25,7 @@ import { BASE_URL } from "@/constants/constants";
 import { useAccount } from "@/contexts/AccountContext";
 import { useUnread } from "@/contexts/UnreadContext";
 import socketService from "@/services/socket.service";
+import { clearLocalData } from "@/utils/localData";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -145,6 +146,7 @@ export default function VendorLayout() {
       await SecureStore.deleteItemAsync("user");
       await SecureStore.deleteItemAsync("token");
       await SecureStore.deleteItemAsync("activeAccount");
+      await clearLocalData();
       socketService.disconnect();
       router.replace("/login");
       setIsProfileModalVisible(false);

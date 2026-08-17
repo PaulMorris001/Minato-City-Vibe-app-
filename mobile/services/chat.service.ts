@@ -1,9 +1,20 @@
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
+import {
+  getChats,
+  getMessagesPage,
+  upsertChats,
+  upsertMessages,
+} from "@/db/chatRepo";
 
 /**
  * Chat API Service
  * Handles all API calls related to chat functionality
+ *
+ * Every successful read is written through to the local SQLite store
+ * (db/chatRepo.ts) so the next open paints from disk before the network
+ * answers, and so history stays readable with no connection. The local writes
+ * are fire-and-forget — a failed one never fails the request that succeeded.
  */
 
 export interface ChatEventRef {
@@ -120,11 +131,20 @@ class ChatService {
       }
 
       const data = await response.json();
-      return data.chats;
+      const chats: Chat[] = data.chats || [];
+      // Write-through: the inbox can paint from SQLite on the next open before
+      // any network call returns.
+      upsertChats(chats, scope);
+      return chats;
     } catch (error) {
       console.error("Get user chats error:", error);
       throw error;
     }
+  }
+
+  /** The inbox as last seen. Used to paint instantly, and when offline. */
+  async getCachedChats(scope: ChatScope = "client"): Promise<Chat[]> {
+    return getChats(scope);
   }
 
   /**
@@ -291,11 +311,47 @@ class ChatService {
       }
 
       const data = await response.json();
+      upsertMessages(data.messages || []);
       return data;
     } catch (error) {
       console.error("Get messages error:", error);
       throw error;
     }
+  }
+
+  /**
+   * Only the messages that arrived after `since` (epoch ms). This is the
+   * reconnect path — the client already holds everything older locally, so
+   * refetching page 1 and merging by id is wasted bytes.
+   */
+  async getMessagesSince(
+    chatId: string,
+    since: number,
+    limit: number = 100
+  ): Promise<{ messages: Message[]; hasMore: boolean }> {
+    const headers = await this.getAuthHeader();
+    const response = await fetch(
+      `${BASE_URL}/chats/${chatId}/messages?since=${since}&limit=${limit}`,
+      { headers }
+    );
+    if (!response.ok) {
+      throw new Error("Failed to sync messages");
+    }
+    const data = await response.json();
+    const messages: Message[] = data.messages || [];
+    upsertMessages(messages);
+    return { messages, hasMore: !!data.pagination?.hasMore };
+  }
+
+  /**
+   * A page of locally-stored history, oldest-first. `before` walks backwards
+   * through older pages the same way `page` does on the network.
+   */
+  async getCachedMessages(
+    chatId: string,
+    opts: { before?: number; limit?: number } = {}
+  ): Promise<Message[]> {
+    return getMessagesPage(chatId, opts);
   }
 
   /**

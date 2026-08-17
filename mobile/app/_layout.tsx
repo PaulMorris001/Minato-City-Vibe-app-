@@ -42,7 +42,9 @@ import { StripeProvider } from "@stripe/stripe-react-native";
 import { StatusBar } from "expo-status-bar";
 import { setupGlobalErrorHandler, setupConsoleOverride } from "@/utils/errorHandler";
 import { setupApiClient } from "@/utils/apiClient";
-import { checkBackendReachable } from "@/utils/reachability";
+import { checkBackendReachable, watchNetworkState } from "@/utils/reachability";
+import OfflineBanner from "@/components/shared/OfflineBanner";
+import { pruneChatStore, removeMessage, upsertMessages } from "@/db/chatRepo";
 import * as Sentry from '@sentry/react-native';
 import ErrorBoundary from "@/components/ErrorBoundary";
 
@@ -124,6 +126,11 @@ setupApiClient();
 // fail; the rest of the app can read `getReachability()` to show a banner.
 checkBackendReachable();
 
+// Keep watching the OS network state after that one-shot probe, so losing
+// signal mid-session flips the offline banner and the payment guards
+// immediately rather than at the next request that times out.
+watchNetworkState();
+
 // Push notification `type` values that should deep-link to the event details
 // screen. The payload carries an `eventId`. Add new types here as they ship.
 const EVENT_PUSH_TYPES = new Set([
@@ -194,9 +201,21 @@ export default Sentry.wrap(function RootLayout() {
       SplashScreen.hideAsync();
       socketService.connect();
       registerForPushNotifications();
+      // Keep the local chat store current even when no chat screen is
+      // mounted, so opening a conversation later paints the real latest
+      // message instead of whatever was there when it was last visited.
+      socketService.on("chat-store", {
+        onNewMessage: (message) => upsertMessages([message]),
+        onMessageEdited: ({ message }) => upsertMessages([message]),
+        onMessageDeleted: ({ messageId }) => removeMessage(messageId),
+      });
+      // Trim history that has aged out. Once per launch is plenty — nothing
+      // here is urgent, and it touches every row.
+      pruneChatStore();
     }
 
     return () => {
+      socketService.off("chat-store");
       socketService.disconnect();
     };
   }, [fontsLoaded]);
@@ -362,6 +381,7 @@ export default Sentry.wrap(function RootLayout() {
               <CartProvider>
               <PortalProvider>
                 <ThemedNavigation />
+                <OfflineBanner />
                 <Toast />
               </PortalProvider>
               </CartProvider>

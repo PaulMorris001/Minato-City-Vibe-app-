@@ -39,6 +39,7 @@ import { uploadImage } from "@/utils/imageUpload";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
+import { clearLocalData } from "@/utils/localData";
 import { isSupportUser } from "@/constants/support";
 import { openSupportChat } from "@/utils/userNavigation";
 const THEME_OPTIONS = [
@@ -99,6 +100,7 @@ export default function SettingsScreen() {
   const [usernameDraft, setUsernameDraft] = useState("");
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
   const [savingUsername, setSavingUsername] = useState(false);
+  const [clearingLocalData, setClearingLocalData] = useState(false);
 
   // Debounced live availability check while the username editor is open —
   // same flow as the signup wizard. A network hiccup stays non-blocking; the
@@ -379,6 +381,34 @@ export default function SettingsScreen() {
       console.warn("Account reset failed, falling back to replace:", err);
       resetToAccountRoot(type);
     }
+  };
+
+  /**
+   * Free up whatever this device has stored for offline use. Nothing is lost —
+   * everything here re-downloads on the next open with a connection — so this
+   * is a space/privacy control, not a destructive one.
+   */
+  const handleClearLocalData = () => {
+    Alert.alert(
+      "Clear offline data?",
+      "Saved chats, events and passes will be removed from this device and re-downloaded next time you're online.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            setClearingLocalData(true);
+            try {
+              await clearLocalData();
+              showSuccess("Offline data cleared.");
+            } finally {
+              setClearingLocalData(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleSwitchAccount = () => {
@@ -992,6 +1022,23 @@ export default function SettingsScreen() {
           <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
         </TouchableOpacity>
 
+        <TouchableOpacity style={styles.preferenceItem} onPress={handleClearLocalData}>
+          <View style={styles.preferenceLeft}>
+            <Ionicons name="server-outline" size={22} color={colors.textBody} />
+            <View>
+              <Text style={styles.preferenceText}>Clear offline data</Text>
+              <Text style={styles.preferenceSubtext}>
+                Saved chats, events and passes on this device
+              </Text>
+            </View>
+          </View>
+          {clearingLocalData ? (
+            <ActivityIndicator size="small" color={colors.textMuted} />
+          ) : (
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          )}
+        </TouchableOpacity>
+
         <TouchableOpacity
           style={[styles.preferenceItem, { borderBottomWidth: 0 }]}
           onPress={() => WebBrowser.openBrowserAsync("https://api.ourcityvibe.com/delete-account")}
@@ -1232,6 +1279,12 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 16,
     fontFamily: Fonts.medium,
     color: c.textBody,
+  },
+  preferenceSubtext: {
+    fontSize: 12.5,
+    fontFamily: Fonts.regular,
+    color: c.textMuted,
+    marginTop: 2,
   },
   reminderHint: {
     fontSize: 13,

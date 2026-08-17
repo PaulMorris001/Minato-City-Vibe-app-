@@ -20,6 +20,7 @@ import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { currencyPrefix } from "@/constants/payments";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { showError, showSuccess } from "@/utils/toast";
+import { ensureOnline } from "@/utils/requireOnline";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -78,6 +79,7 @@ export default function OrderConfirm() {
 
   const handleConfirmPay = async () => {
     if (!order || paying) return;
+    if (!ensureOnline("pay for an order")) return;
     setPaying(true);
     try {
       const result = await payForOrder(order._id);

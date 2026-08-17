@@ -10,6 +10,7 @@ import {
   extractPublicId,
   isVideoUrl,
 } from "../config/cloudinary.js";
+import { isVideoMimeType } from "../middleware/upload.middleware.js";
 
 /**
  * Upload an image or video file to Cloudinary. Resource type is left to
@@ -25,7 +26,12 @@ export async function uploadImage(file, folder = "nightvibe") {
     throw new Error("No file provided");
   }
 
-  const result = await uploadToCloudinary(file.buffer, folder);
+  // Pass the kind explicitly rather than letting Cloudinary sniff it. The
+  // mimetype was already validated by the upload middleware, and an explicit
+  // resource_type is what keeps the image-only upload transform off videos —
+  // "auto" silently took the image path and forced a synchronous transcode.
+  const resourceType = isVideoMimeType(file.mimetype) ? "video" : "image";
+  const result = await uploadToCloudinary(file.buffer, folder, null, resourceType);
 
   return {
     url: result.secure_url,

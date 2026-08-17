@@ -29,7 +29,7 @@ import { useLocalSearchParams, router, useFocusEffect } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { BASE_URL } from "@/constants/constants";
-import MessageBubble from "@/components/chat/MessageBubble";
+import MessageBubble, { replyPreviewLabel } from "@/components/chat/MessageBubble";
 import MessageActionSheet from "@/components/chat/MessageActionSheet";
 import ReactionsListSheet from "@/components/chat/ReactionsListSheet";
 import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
@@ -42,7 +42,15 @@ import socketService from "@/services/socket.service";
 import * as SecureStore from "expo-secure-store";
 import { capitalize } from "@/libs/helpers";
 import { chatParticipantName, chatParticipantAvatar } from "@/utils/chatDisplay";
-import { uploadImage } from "@/utils/imageUpload";
+import {
+  uploadImage,
+  MAX_VIDEO_SECONDS,
+  VIDEO_PICKER_QUALITY,
+  mediaRejectionReason,
+} from "@/utils/imageUpload";
+import { isVideoUrl } from "@/utils/media";
+import { saveRemoteMediaToGallery, saveWithFeedback } from "@/utils/saveToGallery";
+import MediaTile from "@/components/shared/MediaTile";
 import { openUserProfile } from "@/utils/userNavigation";
 import { trackEvent } from "@/utils/analytics";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
@@ -53,6 +61,18 @@ import { showError, showSuccess } from "@/utils/toast";
 import type { ThemeColors } from "@/constants/theme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import GlassBackButton from "@/components/shared/GlassBackButton";
+import {
+  bumpOutboxAttempts,
+  dequeueOutbox,
+  enqueueOutbox,
+  listOutbox,
+  newestCreatedAt,
+} from "@/db/chatRepo";
+import { isOnline } from "@/utils/reachability";
+import { useIsOnline } from "@/hooks/useIsOnline";
+
+/** Mirrors the server's default page size in chat.controller.js. */
+const PAGE_SIZE = 50;
 
 export default function ChatScreen() {
   const { colors } = useTheme();
@@ -66,7 +86,10 @@ export default function ChatScreen() {
   const [currentUserId, setCurrentUserId] = useState<string>("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   // Camera shot / gallery pick awaiting Send-or-Cancel confirmation.
-  const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [pendingMedia, setPendingMedia] = useState<string | null>(null);
+  // Optimistic message ids whose media is still uploading — drives the
+  // spinner overlay on the bubble.
+  const [uploadingIds, setUploadingIds] = useState<Set<string>>(new Set());
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [editGroupName, setEditGroupName] = useState("");
@@ -99,9 +122,13 @@ export default function ChatScreen() {
 
   // Older-message pagination. We load the most recent page first, then fetch
   // earlier pages on demand so full history stays reachable in busy chats.
+  // Earlier pages come from the local SQLite store until it runs dry, and only
+  // then from the server.
   const [page, setPage] = useState(1);
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [localHistoryExhausted, setLocalHistoryExhausted] = useState(true);
+  const online = useIsOnline();
 
   // Add-members (group invite) modal
   const [addMembersVisible, setAddMembersVisible] = useState(false);
@@ -142,20 +169,53 @@ export default function ChatScreen() {
   };
 
   const loadChatAndMessages = useCallback(async () => {
-    try {
+    // Paint from the local store first. This is the whole point of keeping
+    // chat in SQLite: an already-visited conversation opens with its history
+    // on screen before a single byte moves, instead of a spinner.
+    const cached = await chatService.getCachedMessages(id, { limit: PAGE_SIZE });
+    if (cached.length) {
+      setMessages(cached);
+      setLocalHistoryExhausted(false);
+      setHasMoreOlder(true);
+      setLoading(false);
+    } else {
       setLoading(true);
+    }
+
+    try {
       const c = await chatService.getChatById(id);
       setChat(c);
-      const messagesData = await chatService.getChatMessages(id, 1);
-      setMessages(messagesData.messages);
-      setPage(1);
-      setHasMoreOlder((messagesData.pagination?.totalPages || 1) > 1);
+
+      const newest = cached.length ? await newestCreatedAt(id) : null;
+      if (newest) {
+        // We already hold the history — ask only for the tail we're missing
+        // rather than refetching page 1 and merging it against itself.
+        const { messages: delta } = await chatService.getMessagesSince(id, newest);
+        if (delta.length) {
+          setMessages((prev) => {
+            const known = new Set(prev.map((m) => m._id));
+            return [...prev, ...delta.filter((m) => !known.has(m._id))];
+          });
+        }
+      } else {
+        const messagesData = await chatService.getChatMessages(id, 1);
+        setMessages(messagesData.messages);
+        setPage(1);
+        setHasMoreOlder((messagesData.pagination?.totalPages || 1) > 1);
+      }
+
       trackEvent("chat_opened", { chatId: id, chatType: c.type });
       await chatService.markMessagesAsRead(id);
       if (currentUserId) {
         socketService.markMessagesAsRead(id, currentUserId);
       }
     } catch (error: any) {
+      // Already showing saved history — a dead network is not worth an alert
+      // over a screen the user can read perfectly well.
+      if (cached.length) {
+        console.warn("Chat sync failed, showing local history:", error?.message);
+        return;
+      }
       console.error("Error loading chat:", error, "id=", id);
       // Surface the real reason (status code / server message / id problem)
       // so we can diagnose "Failed to open chat" reports from real devices.
@@ -424,13 +484,23 @@ export default function ChatScreen() {
     setMessages((prev) => [...prev, tempMessage]);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
 
+    const body = {
+      type: "text" as const,
+      content: content.trim(),
+      replyTo: replyTarget?._id,
+    };
+
+    // Offline: park it in the outbox and leave the bubble on "sending". It
+    // flushes when the connection returns — the WhatsApp behaviour, and much
+    // better than 20s of spinner followed by "Failed to send".
+    if (!isOnline()) {
+      await enqueueOutbox(tempId, id as string, body);
+      return;
+    }
+
     try {
       setSending(true);
-      const newMessage = await chatService.sendMessage(id as string, {
-        type: "text",
-        content: content.trim(),
-        replyTo: replyTarget?._id,
-      });
+      const newMessage = await chatService.sendMessage(id as string, body);
       setMessages((prev) => {
         if (prev.some((m) => m._id === newMessage._id)) {
           return prev.filter((m) => m._id !== tempId);
@@ -449,54 +519,149 @@ export default function ChatScreen() {
     }
   };
 
-  // Upload a confirmed local image and send it as an image message.
-  const sendImageMessage = async (localUri: string) => {
+  /**
+   * Drain anything composed while offline, oldest first so the thread keeps
+   * the order the user typed in. Each entry either lands (temp bubble swapped
+   * for the real message) or gets its attempt counted; five failures and
+   * chatRepo drops it, leaving the bubble marked failed for a manual resend.
+   */
+  const flushOutbox = useCallback(async () => {
+    const queued = await listOutbox(id as string);
+    for (const entry of queued) {
+      try {
+        const sent = await chatService.sendMessage(entry.chatId, entry.body as any);
+        await dequeueOutbox(entry.tempId);
+        setMessages((prev) => {
+          if (prev.some((m) => m._id === sent._id)) {
+            return prev.filter((m) => m._id !== entry.tempId);
+          }
+          return prev.map((m) => (m._id === entry.tempId ? sent : m));
+        });
+      } catch {
+        await bumpOutboxAttempts(entry.tempId);
+        setMessages((prev) =>
+          prev.map((m) => (m._id === entry.tempId ? { ...m, status: "failed" } : m))
+        );
+        // Stop on the first failure — the rest will almost certainly fail too,
+        // and burning their attempt counters on one dead network is wrong.
+        break;
+      }
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (online) flushOutbox();
+  }, [online, flushOutbox]);
+
+  /**
+   * Upload a confirmed local photo or video and send it.
+   *
+   * Both kinds ride on `type: "image"` with the URL in `imageUrl` — Cloudinary
+   * puts the kind in the delivery path, so `isVideoUrl` tells them apart at
+   * render time and no schema change was needed (see utils/media.ts).
+   */
+  const sendMediaMessage = async (localUri: string) => {
+    const isVideo = isVideoUrl(localUri);
+    const tempId = `temp_${Date.now()}`;
+    const senderProfile = chat?.participants.find((p) => p._id === currentUserId)
+      ?? { _id: currentUserId, username: "", email: "" };
+
+    // Show the media in the thread immediately, pointing at the LOCAL uri, and
+    // track upload progress on it. Previously nothing appeared until the
+    // upload finished, so a large video looked like the send had silently
+    // failed — which is exactly what it looks like when it actually does.
+    const tempMessage: Message = {
+      _id: tempId,
+      chat: id as string,
+      sender: senderProfile,
+      type: "image",
+      imageUrl: localUri,
+      status: "sending",
+      isDeleted: false,
+      isEdited: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, tempMessage]);
+    setUploadingIds((prev) => new Set(prev).add(tempId));
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+
+    const clearUploading = () =>
+      setUploadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(tempId);
+        return next;
+      });
+
     try {
       setSending(true);
       const token = await SecureStore.getItemAsync("token");
       if (!token) {
         Alert.alert("Error", "Authentication token not found");
+        setMessages((prev) => prev.filter((m) => m._id !== tempId));
+        clearUploading();
         return;
       }
-      try {
-        const uploadResult = await uploadImage(localUri, "chat_images", token);
-        const newImageMessage = await chatService.sendMessage(id, {
-          type: "image",
-          imageUrl: uploadResult.url,
-        });
-        setMessages((prev) => {
-          if (prev.some((m) => m._id === newImageMessage._id)) return prev;
-          return [...prev, newImageMessage];
-        });
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
-      } catch (uploadError: any) {
-        console.error("Error uploading image to Cloudinary:", uploadError);
-        Alert.alert("Upload Error", "Failed to upload image");
-      }
+
+      // No onProgress callback: the bubble shows an indeterminate spinner, so
+      // subscribing would re-render the message list per chunk to display
+      // nothing. `uploadingIds` membership is the only signal the UI needs.
+      const uploadResult = await uploadImage(localUri, "chat_images", token);
+      const newMediaMessage = await chatService.sendMessage(id, {
+        type: "image",
+        imageUrl: uploadResult.url,
+      });
+      setMessages((prev) => {
+        if (prev.some((m) => m._id === newMediaMessage._id)) {
+          return prev.filter((m) => m._id !== tempId);
+        }
+        return prev.map((m) => (m._id === tempId ? newMediaMessage : m));
+      });
+      clearUploading();
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (error: any) {
-      console.error("Error sending image:", error);
-      Alert.alert("Error", "Failed to send image");
+      // One handler: the upload and the send-message call fail the same way as
+      // far as the user is concerned, and the thrown message is already
+      // user-facing (see parseUploadError).
+      console.error("Error sending media:", error);
+      setMessages((prev) =>
+        prev.map((m) => (m._id === tempId ? { ...m, status: "failed" } : m))
+      );
+      clearUploading();
+      Alert.alert(
+        `Couldn't send that ${isVideo ? "video" : "photo"}`,
+        error?.message || `Failed to send ${isVideo ? "video" : "photo"}.`
+      );
     } finally {
       setSending(false);
     }
   };
 
-  // Both gallery picks and camera shots land in `pendingImage`, which shows a
+  // Both gallery picks and camera shots land in `pendingMedia`, which shows a
   // confirm-before-send preview (Send / Cancel) instead of sending directly.
   const handleImagePick = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
+        mediaTypes: ["images", "videos"],
         allowsEditing: false,
         quality: 0.7,
+        // Only caps in-app recording, not library picks — the real enforcement
+        // is mediaRejectionReason below.
+        videoMaxDuration: MAX_VIDEO_SECONDS,
+        // Transcodes video down on pick; `quality` above only affects stills.
+        videoQuality: VIDEO_PICKER_QUALITY,
       });
       if (!result.canceled && result.assets[0]) {
-        setPendingImage(result.assets[0].uri);
+        const asset = result.assets[0];
+        const reason = mediaRejectionReason(asset);
+        if (reason) {
+          Alert.alert("Can't send that file", reason);
+          return;
+        }
+        setPendingMedia(asset.uri);
       }
     } catch (error: any) {
-      console.error("Error picking image:", error);
+      console.error("Error picking media:", error);
       Alert.alert("Error", "Couldn't open your photo library");
     }
   };
@@ -511,12 +676,15 @@ export default function ChatScreen() {
         );
         return;
       }
+      // Stills only. In-app video *recording* needs microphone access, which
+      // would add NSMicrophoneUsageDescription and a new privacy declaration
+      // for something the gallery picker above already covers.
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ["images"],
         quality: 0.7,
       });
       if (!result.canceled && result.assets[0]) {
-        setPendingImage(result.assets[0].uri);
+        setPendingMedia(result.assets[0].uri);
       }
     } catch (error: any) {
       console.error("Error capturing photo:", error);
@@ -541,6 +709,16 @@ export default function ChatScreen() {
     } catch {
       // Clipboard write failed (rare) — nothing useful to surface.
     }
+  }, []);
+
+  const handleSaveMedia = useCallback(async (message: Message) => {
+    const url = message.imageUrl;
+    if (!url) return;
+    const isVideo = isVideoUrl(url);
+    await saveWithFeedback(
+      () => saveRemoteMediaToGallery(url, isVideo ? "video" : "photo"),
+      isVideo ? "Video saved to your library." : "Photo saved to your library."
+    );
   }, []);
 
   // Toggle a reaction (from the shared action menu's emoji row or the reactions
@@ -1123,7 +1301,32 @@ export default function ChatScreen() {
     if (loadingOlder || !hasMoreOlder) return;
     setLoadingOlder(true);
     try {
-      const nextPage = page + 1;
+      // Local history first — it's instant and works offline. Only once the
+      // store is exhausted do we start paging the server, and from then on we
+      // stay on the network path so `page` keeps advancing correctly.
+      let fromPage = page;
+      if (!localHistoryExhausted) {
+        const oldest = messagesRef.current[0];
+        const before = oldest ? new Date(oldest.createdAt).getTime() : undefined;
+        const local = await chatService.getCachedMessages(id, {
+          before,
+          limit: PAGE_SIZE,
+        });
+        if (local.length > 0) {
+          setMessages((prev) => {
+            const existing = new Set(prev.map((m) => m._id));
+            return [...local.filter((m) => !existing.has(m._id)), ...prev];
+          });
+          return;
+        }
+        setLocalHistoryExhausted(true);
+        // The server pages back from the newest message, so the next page to
+        // ask for is however many pages the local store already covered. Held
+        // in a local — `setPage` won't have landed by the time we read it.
+        fromPage = Math.max(1, Math.ceil(messagesRef.current.length / PAGE_SIZE));
+      }
+
+      const nextPage = fromPage + 1;
       const data = await chatService.getChatMessages(id, nextPage);
       const older = data.messages || [];
       if (older.length > 0) {
@@ -1137,10 +1340,13 @@ export default function ChatScreen() {
       setHasMoreOlder(nextPage < (data.pagination?.totalPages || nextPage));
     } catch (error) {
       console.error("Error loading older messages:", error);
+      // Offline with nothing left locally — stop the spinner from reappearing
+      // on every scroll to the top.
+      setHasMoreOlder(false);
     } finally {
       setLoadingOlder(false);
     }
-  }, [id, page, hasMoreOlder, loadingOlder]);
+  }, [id, page, hasMoreOlder, loadingOlder, localHistoryExhausted]);
 
   // Stable callbacks so MessageBubble's React.memo isn't defeated by a fresh
   // arrow function on every render.
@@ -1288,6 +1494,7 @@ export default function ChatScreen() {
           currentUserId={currentUserId}
           isHighlighted={highlightedId === msg._id}
           onImagePress={handleImagePress}
+          isUploading={uploadingIds.has(msg._id)}
           onLongPress={setMenuMessage}
           onReactionsPress={setReactionsMessage}
           onReply={setReplyingTo}
@@ -1309,6 +1516,7 @@ export default function ChatScreen() {
       handleReplyPress,
       handleOrderPay,
       handleOrderQuote,
+      uploadingIds,
       styles,
     ]
   );
@@ -1446,9 +1654,7 @@ export default function ChatScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.pinnedBannerLabel}>Pinned message</Text>
                 <Text style={styles.pinnedBannerText} numberOfLines={1}>
-                  {(chat.pinnedMessage as any).type === "image"
-                    ? "📷 Photo"
-                    : (chat.pinnedMessage as any).content || "Message"}
+                  {replyPreviewLabel(chat.pinnedMessage)}
                 </Text>
               </View>
               <TouchableOpacity
@@ -1605,6 +1811,7 @@ export default function ChatScreen() {
         onPin={handlePinMessage}
         onReact={handleQuickReact}
         onReport={(m) => setReportMessage(m)}
+        onSaveMedia={handleSaveMedia}
       />
       {/* Report / block flow for objectionable messages (Apple Guideline 1.2) */}
       <ReportBlockSheet
@@ -1872,7 +2079,8 @@ export default function ChatScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Full-screen image viewer — pinch, pan and double-tap to zoom */}
+      {/* Full-screen media viewer — images pinch/pan/double-tap to zoom,
+          videos play inline with native controls. */}
       <Modal
         visible={!!selectedImage}
         animationType="fade"
@@ -1881,12 +2089,22 @@ export default function ChatScreen() {
         statusBarTranslucent
       >
         <View style={styles.imageViewerOverlay}>
-          {selectedImage && (
-            <ZoomableImage
-              uri={selectedImage}
-              onSingleTap={() => setSelectedImage(null)}
-            />
-          )}
+          {selectedImage &&
+            (isVideoUrl(selectedImage) ? (
+              // No single-tap-to-dismiss on video: that gesture belongs to the
+              // player's own controls. The back button closes it.
+              <MediaTile
+                uri={selectedImage}
+                style={styles.videoViewer}
+                autoPlay
+                muted={false}
+              />
+            ) : (
+              <ZoomableImage
+                uri={selectedImage}
+                onSingleTap={() => setSelectedImage(null)}
+              />
+            ))}
           <GlassBackButton
             onPress={() => setSelectedImage(null)}
             overMedia
@@ -1897,23 +2115,25 @@ export default function ChatScreen() {
 
       {/* Confirm-before-send preview for camera shots and gallery picks */}
       <Modal
-        visible={!!pendingImage}
+        visible={!!pendingMedia}
         animationType="slide"
         transparent
-        onRequestClose={() => setPendingImage(null)}
+        onRequestClose={() => setPendingMedia(null)}
         statusBarTranslucent
       >
         <View style={styles.imagePreviewOverlay}>
-          {pendingImage && (
-            <Image
-              source={{ uri: pendingImage }}
+          {pendingMedia && (
+            // A picked video has no derivable poster until it's uploaded, so
+            // MediaTile plays it here rather than showing a blank tile.
+            <MediaTile
+              uri={pendingMedia}
               style={styles.imagePreviewImage}
               contentFit="contain"
             />
           )}
           <TouchableOpacity
             style={[styles.imageViewerClose, { top: insets.top + 8 }]}
-            onPress={() => setPendingImage(null)}
+            onPress={() => setPendingMedia(null)}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             <Ionicons name="close" size={22} color={colors.textBright} />
@@ -1923,7 +2143,7 @@ export default function ChatScreen() {
           >
             <TouchableOpacity
               style={styles.imagePreviewCancel}
-              onPress={() => setPendingImage(null)}
+              onPress={() => setPendingMedia(null)}
               activeOpacity={0.8}
             >
               <Text style={styles.imagePreviewCancelText}>Cancel</Text>
@@ -1932,9 +2152,9 @@ export default function ChatScreen() {
               style={{ flex: 1 }}
               activeOpacity={0.85}
               onPress={() => {
-                const uri = pendingImage;
-                setPendingImage(null);
-                if (uri) sendImageMessage(uri);
+                const uri = pendingMedia;
+                setPendingMedia(null);
+                if (uri) sendMediaMessage(uri);
               }}
             >
               <LinearGradient
@@ -2637,6 +2857,10 @@ const createStyles = (c: ThemeColors) =>
   imageViewerOverlay: {
     flex: 1,
     backgroundColor: "#000",
+  },
+  videoViewer: {
+    flex: 1,
+    width: "100%",
   },
   imageViewerClose: {
     position: "absolute",

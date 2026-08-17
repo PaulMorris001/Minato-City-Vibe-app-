@@ -27,10 +27,14 @@ import {
   LocationPicker,
   MultiImagePicker,
 } from "@/components/shared";
+import LocationPinPicker, {
+  PinnedCoordinates,
+} from "@/components/shared/LocationPinPicker";
 import { uploadImage, resolveImageUrls } from "@/utils/imageUpload";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import { LocationSelection } from "@/libs/interfaces";
 import { formatLocation } from "@/utils/location";
+import { ensureOnline } from "@/utils/requireOnline";
 import { currencyPrefix, sellingCurrencyForCountry } from "@/constants/payments";
 
 import type { ThemeColors } from "@/constants/theme";
@@ -72,6 +76,9 @@ export default function CreateEventModal({
   });
   const [eventImages, setEventImages] = useState<string[]>([]);
   const [venueProofImage, setVenueProofImage] = useState("");
+  // Exact venue pin. Optional — an event without one still works.
+  const [pinnedCoords, setPinnedCoords] = useState<PinnedCoordinates | null>(null);
+  const [pinPickerOpen, setPinPickerOpen] = useState(false);
   // Named ticket tiers (optional, max 10). While empty, the single Ticket
   // Price field is used instead. Prices are in the organizer's currency.
   // `quantity` is the optional per-tier allocation — set it on every tier to cap
@@ -113,6 +120,7 @@ export default function CreateEventModal({
   };
 
   const handleCreateEvent = async () => {
+    if (!ensureOnline("create an event")) return;
     // Validation
     if (!formData.title.trim()) {
       Alert.alert("Validation Error", "Please enter an event title");
@@ -228,6 +236,9 @@ export default function CreateEventModal({
         city: formData.isVirtual ? "" : eventLocation!.city,
         state: formData.isVirtual ? "" : eventLocation!.state,
         country: formData.isVirtual ? "" : eventLocation!.country,
+        // Optional map pin. Left off entirely when the host skipped it — the
+        // event screen geocodes the address on the device in that case.
+        ...(!formData.isVirtual && pinnedCoords ? pinnedCoords : {}),
         isVirtual: formData.isVirtual,
         meetingLink: formData.isVirtual ? formData.meetingLink.trim() : "",
         description: formData.description.trim(),
@@ -285,6 +296,7 @@ export default function CreateEventModal({
       setEventImages([]);
       setVenueProofImage("");
       setEventLocation(null);
+      setPinnedCoords(null);
       setTiers([]);
 
       // Callback and close
@@ -475,6 +487,24 @@ export default function CreateEventModal({
                       required
                     />
                   </View>
+
+                  <TouchableOpacity
+                    style={styles.pinRow}
+                    onPress={() => setPinPickerOpen(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name={pinnedCoords ? "location" : "location-outline"}
+                      size={17}
+                      color={pinnedCoords ? colors.primaryLight : colors.textDim}
+                    />
+                    <Text style={styles.pinRowText}>
+                      {pinnedCoords ? "Map pin set" : "Pin the exact spot on a map"}
+                    </Text>
+                    <Text style={styles.pinRowAction}>
+                      {pinnedCoords ? "Change" : "Optional"}
+                    </Text>
+                  </TouchableOpacity>
                 </>
               )}
 
@@ -803,6 +833,21 @@ export default function CreateEventModal({
           </LinearGradient>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
+
+      <LocationPinPicker
+        visible={pinPickerOpen}
+        onClose={() => setPinPickerOpen(false)}
+        onConfirm={setPinnedCoords}
+        initial={pinnedCoords}
+        searchText={[
+          formData.address.trim(),
+          eventLocation?.city,
+          eventLocation?.state,
+          eventLocation?.country,
+        ]
+          .filter(Boolean)
+          .join(", ")}
+      />
     </Modal>
   );
 }
@@ -873,6 +918,30 @@ const createStyles = (c: ThemeColors) =>
     color: c.textBright,
     backgroundColor: c.glassFillSubtle,
     marginBottom: 4,
+  },
+  pinRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 20,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderWidth: 1,
+    borderColor: c.glassStroke,
+    borderRadius: 12,
+    backgroundColor: c.glassFillSubtle,
+  },
+  pinRowText: {
+    flex: 1,
+    fontFamily: Fonts.medium,
+    fontSize: scaleFontSize(14),
+    color: c.textBright,
+  },
+  pinRowAction: {
+    fontFamily: Fonts.semiBold,
+    fontSize: scaleFontSize(12.5),
+    color: c.textDim,
   },
   // ── Ticket tier editor ──
   tierHint: {

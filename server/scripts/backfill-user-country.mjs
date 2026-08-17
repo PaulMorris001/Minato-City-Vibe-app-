@@ -24,16 +24,25 @@
  * touched, and a city name that matches several countries is skipped rather
  * than guessed.
  *
+ * Some of those legacy cities were later re-created through findOrCreateCity,
+ * WITH a country — so the collection holds two docs for the same place and
+ * filling the country in blindly trips the unique (country, state, name) index.
+ * Those pairs are reported, not merged: the legacy doc is the orphan (nothing
+ * references it, and it double-lists the city in the vendor picker), so
+ * --prune-duplicate-cities deletes it, but only when no vendor points at it.
+ *
  * Usage:
  *   node scripts/backfill-user-country.mjs --dry-run   # report only
  *   node scripts/backfill-user-country.mjs             # apply
+ *   node scripts/backfill-user-country.mjs --prune-duplicate-cities
  */
 import mongoose from "mongoose";
 import connectDB from "../src/config/db.js";
 import User from "../src/models/user.model.js";
-import { City } from "../src/models/vendor.model.js";
+import { City, Vendor } from "../src/models/vendor.model.js";
 
 const DRY_RUN = process.argv.includes("--dry-run");
+const PRUNE_DUPES = process.argv.includes("--prune-duplicate-cities");
 
 const norm = (s) => (s || "").trim().toLowerCase();
 
@@ -42,17 +51,59 @@ const norm = (s) => (s || "").trim().toLowerCase();
 const CITY_DEFAULT_COUNTRY = City.schema.path("country").defaultValue;
 
 async function backfillCities() {
-  const missing = { $or: [{ country: { $exists: false } }, { country: null }, { country: "" }] };
-  const count = await City.countDocuments(missing);
-  console.log(`cities with no country: ${count}`);
-  if (count === 0) return;
+  const stale = await City.find({
+    $or: [{ country: { $exists: false } }, { country: null }, { country: "" }],
+  }).select("name state");
+  console.log(`cities with no country: ${stale.length}`);
+  if (stale.length === 0) return;
 
-  if (DRY_RUN) {
-    console.log(`  [dry run] would set country="${CITY_DEFAULT_COUNTRY}" on ${count} cities`);
-    return;
+  let filled = 0;
+  let duplicates = 0;
+  let pruned = 0;
+
+  for (const city of stale) {
+    // Per-doc rather than one updateMany: a single collision aborts the whole
+    // batch, and half of these legacy docs collide.
+    const twin = await City.findOne({
+      _id: { $ne: city._id },
+      name: city.name,
+      state: city.state,
+      country: CITY_DEFAULT_COUNTRY,
+    }).select("_id");
+
+    if (twin) {
+      duplicates += 1;
+      // Vendor.city is the only reference to a City anywhere in the schema, so
+      // an unreferenced duplicate is inert data — safe to drop, and dropping it
+      // stops the city appearing twice in the vendor picker.
+      const referencedBy = await Vendor.countDocuments({ city: city._id });
+      if (referencedBy > 0) {
+        console.log(
+          `  ! ${city.name} / ${city.state}: duplicate of ${twin._id} but ${referencedBy} vendor(s) point at it — left alone`
+        );
+        continue;
+      }
+      if (!PRUNE_DUPES) {
+        console.log(
+          `  ? ${city.name} / ${city.state}: duplicate of ${twin._id}, unreferenced — rerun with --prune-duplicate-cities to remove`
+        );
+        continue;
+      }
+      if (!DRY_RUN) await City.deleteOne({ _id: city._id });
+      pruned += 1;
+      console.log(`  − ${city.name} / ${city.state}: removed duplicate ${city._id}`);
+      continue;
+    }
+
+    if (!DRY_RUN) await City.updateOne({ _id: city._id }, { $set: { country: CITY_DEFAULT_COUNTRY } });
+    filled += 1;
+    console.log(`  ✓ ${city.name} / ${city.state} → ${CITY_DEFAULT_COUNTRY}`);
   }
-  const result = await City.updateMany(missing, { $set: { country: CITY_DEFAULT_COUNTRY } });
-  console.log(`  set country="${CITY_DEFAULT_COUNTRY}" on ${result.modifiedCount} cities`);
+
+  console.log(
+    `  ${DRY_RUN ? "[dry run] would fill" : "filled"}: ${filled}, ` +
+      `duplicates: ${duplicates}${PRUNE_DUPES ? ` (pruned ${pruned})` : ""}`
+  );
 }
 
 async function run() {

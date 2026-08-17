@@ -19,6 +19,7 @@ import { unregisterForPushNotifications } from "@/utils/pushNotifications";
 import axios from "axios";
 import { useRouter } from "expo-router";
 import socketService from "@/services/socket.service";
+import { clearLocalData } from "@/utils/localData";
 import { BASE_URL } from "@/constants/constants";
 import {
   payoutCountryKnown,
@@ -260,6 +261,7 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
             await SecureStore.deleteItemAsync("user");
             await SecureStore.deleteItemAsync("token");
             await SecureStore.deleteItemAsync("activeAccount");
+            await clearLocalData();
           } catch {}
           socketService.disconnect();
           router.replace("/login");

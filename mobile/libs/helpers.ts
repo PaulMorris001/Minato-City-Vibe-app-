@@ -1,6 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import socketService from "@/services/socket.service";
+import { clearLocalData } from "@/utils/localData";
 
 
 export function capitalize(val: string | null) {
@@ -14,6 +15,7 @@ export const useLogout = () => {
     try {
       await SecureStore.deleteItemAsync("token");
       await SecureStore.deleteItemAsync("user");
+      await clearLocalData();
       socketService.disconnect();
       router.replace("/login");
     } catch (err) {

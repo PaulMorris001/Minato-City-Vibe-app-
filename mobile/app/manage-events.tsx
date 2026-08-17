@@ -43,6 +43,9 @@ import {
   ActiveLocationChip,
   GlassBackButton,
 } from "@/components/shared";
+import LocationPinPicker, {
+  PinnedCoordinates,
+} from "@/components/shared/LocationPinPicker";
 import { formatLocation } from "@/utils/location";
 import { resolveImageUrls } from "@/utils/imageUpload";
 
@@ -57,6 +60,8 @@ interface Event {
   city?: string;
   state?: string;
   country?: string;
+  /** Map pin, [lng, lat] per GeoJSON. Absent on events created before 1.2.0. */
+  geo?: { type?: string; coordinates?: number[] };
   isVirtual?: boolean;
   meetingLink?: string;
   image?: string;
@@ -177,6 +182,9 @@ export default function EventsPage() {
   // the event uses a single flat price.
   const [editTiers, setEditTiers] = useState<{ name: string; price: string; quantity: string }[]>([]);
   const [editLocation, setEditLocation] = useState<LocationSelection | null>(null);
+  // Existing (or newly dragged) venue pin for the event being edited.
+  const [editPin, setEditPin] = useState<PinnedCoordinates | null>(null);
+  const [pinPickerOpen, setPinPickerOpen] = useState(false);
 
   const PAGE_LIMIT = 10;
 
@@ -447,6 +455,12 @@ export default function EventsPage() {
 
   const openEditModal = (event: Event) => {
     setSelectedEvent(event);
+    const coords = event.geo?.coordinates;
+    setEditPin(
+      Array.isArray(coords) && coords.length === 2
+        ? { latitude: coords[1], longitude: coords[0] }
+        : null
+    );
     const eventDate = new Date(event.date);
     setEditData({
       title: event.title,
@@ -614,7 +628,15 @@ export default function EventsPage() {
       // meeting link. Blank the other family so nothing stale is sent.
       const base = editData.isVirtual
         ? { ...rest, images: imageUrls, location: "Online", address: "", city: "", state: "", country: "", meetingLink: editData.meetingLink.trim() }
-        : { ...rest, images: imageUrls, meetingLink: "" };
+        : {
+            ...rest,
+            images: imageUrls,
+            meetingLink: "",
+            // Only sent when the host actually has a pin — the server leaves
+            // `geo` untouched when latitude/longitude are absent, so an
+            // untouched pin survives a description-only edit.
+            ...(editPin ?? {}),
+          };
 
       // Pricing (paid events only). On a PUBLIC event the server holds these
       // material changes for admin approval; on a private event they apply now.
@@ -1296,6 +1318,22 @@ export default function EventsPage() {
                       }}
                     />
                   </View>
+
+                  <TouchableOpacity
+                    style={styles.pinRow}
+                    onPress={() => setPinPickerOpen(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name={editPin ? "location" : "location-outline"}
+                      size={17}
+                      color={editPin ? colors.primaryLight : colors.textMuted}
+                    />
+                    <Text style={styles.pinRowText}>
+                      {editPin ? "Map pin set" : "Pin the exact spot on a map"}
+                    </Text>
+                    <Text style={styles.pinRowAction}>{editPin ? "Change" : "Optional"}</Text>
+                  </TouchableOpacity>
                 </>
               )}
 
@@ -1556,6 +1594,16 @@ export default function EventsPage() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <LocationPinPicker
+        visible={pinPickerOpen}
+        onClose={() => setPinPickerOpen(false)}
+        onConfirm={setEditPin}
+        initial={editPin}
+        searchText={[editData.address, editData.city, editData.state, editData.country]
+          .filter(Boolean)
+          .join(", ")}
+      />
 
       {/* Invite User Modal */}
       <Modal
@@ -2025,6 +2073,29 @@ const createStyles = (c: ThemeColors) =>
   },
   inputGroup: {
     marginBottom: 20,
+  },
+  pinRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: 12,
+    backgroundColor: c.cardAlt,
+  },
+  pinRowText: {
+    flex: 1,
+    fontFamily: Fonts.medium,
+    fontSize: scaleFontSize(14),
+    color: c.textBright,
+  },
+  pinRowAction: {
+    fontFamily: Fonts.semiBold,
+    fontSize: scaleFontSize(12.5),
+    color: c.textMuted,
   },
   inputLabel: {
     fontSize: scaleFontSize(14),

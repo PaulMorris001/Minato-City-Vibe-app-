@@ -22,6 +22,7 @@ import {
 import { rejectIfCannotSell } from "../services/payments/sellingEligibility.js";
 import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { findEventByAnyId } from "../utils/resolveEvent.js";
+import { toGeoPoint } from "../utils/geo.js";
 import { issueEventPass } from "../services/pass.service.js";
 import { linkQrDataUrl } from "../utils/qrcode.js";
 import config from "../config/env.js";
@@ -147,6 +148,8 @@ export const createEvent = async (req, res) => {
       venueProofImage,
       isVirtual,
       meetingLink,
+      latitude,
+      longitude,
     } = req.body;
     const userId = req.user.id;
     const virtual = Boolean(isVirtual);
@@ -344,6 +347,7 @@ export const createEvent = async (req, res) => {
       city: virtual ? "" : (city || ""),
       state: virtual ? "" : (state || ""),
       country: virtual ? "" : (country || ""),
+      geo: virtual ? undefined : toGeoPoint(latitude, longitude),
       isVirtual: virtual,
       meetingLink: virtual ? (meetingLink || "") : "",
       image: eventImageUrl,
@@ -403,7 +407,7 @@ export const createEventFromGroup = async (req, res) => {
   try {
     const userId = req.user.id;
     const { chatId } = req.params;
-    const { title, date, location, address, city, state, country, image, description, isVirtual, meetingLink } = req.body;
+    const { title, date, location, address, city, state, country, image, description, isVirtual, meetingLink, latitude, longitude } = req.body;
     const virtual = Boolean(isVirtual);
 
     if (!title || !date || (!virtual && !location)) {
@@ -461,6 +465,7 @@ export const createEventFromGroup = async (req, res) => {
       city: virtual ? "" : (city || ""),
       state: virtual ? "" : (state || ""),
       country: virtual ? "" : (country || ""),
+      geo: virtual ? undefined : toGeoPoint(latitude, longitude),
       isVirtual: virtual,
       meetingLink: virtual ? (meetingLink || "") : "",
       image: eventImageUrl,
@@ -1037,6 +1042,7 @@ export const updateEvent = async (req, res) => {
     const {
       title, date, location, address, city, state, country, image, images,
       description, isPublic, isVirtual, meetingLink, showAttendance,
+      latitude, longitude,
       // Material (pricing/capacity) fields — held for admin approval on public events.
       ticketTiers, ticketPrice, maxGuests,
     } = req.body;
@@ -1134,6 +1140,7 @@ export const updateEvent = async (req, res) => {
       event.city = "";
       event.state = "";
       event.country = "";
+      event.geo = undefined;
     } else {
       // Switching virtual → physical requires a real location in the same request.
       if (event.isVirtual && !location) {
@@ -1145,6 +1152,12 @@ export const updateEvent = async (req, res) => {
       if (city !== undefined) event.city = city;
       if (state !== undefined) event.state = state;
       if (country !== undefined) event.country = country;
+      // Minor field, same class as `address`: the pin is where the venue is,
+      // not what the attendee paid. It applies immediately rather than sitting
+      // in pendingEdits.
+      if (latitude !== undefined && longitude !== undefined) {
+        event.geo = toGeoPoint(latitude, longitude);
+      }
     }
     if (meetingLink !== undefined) {
       if (meetingLink && !isValidMeetingLink(meetingLink)) {

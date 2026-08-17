@@ -12,7 +12,7 @@ const GOOGLE_IOS_URL_SCHEME = GOOGLE_IOS_CLIENT_ID
 module.exports = {
   name: "OurCityvibe",
   slug: "cityvibe",
-  version: "1.1.0",
+  version: "1.2.0",
   orientation: "portrait",
   icon: "./assets/images/ios/icon.png",
   scheme: "mobile",
@@ -56,10 +56,22 @@ module.exports = {
     },
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
+      // Without these, Linking.canOpenURL() returns false for the third-party
+      // map apps even when they're installed, so utils/maps.ts would only ever
+      // offer Apple Maps.
+      LSApplicationQueriesSchemes: ["comgooglemaps", "waze"],
     },
   },
   android: {
     package: "com.ourcityvibe.app",
+    // react-native-maps renders Google Maps on Android, which needs a Maps SDK
+    // for Android key. iOS uses Apple Maps and needs no key at all. Without
+    // this the map tile area renders blank (no error) on Android.
+    config: {
+      googleMaps: {
+        apiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY || "",
+      },
+    },
     intentFilters: [
       {
         action: "VIEW",
@@ -179,6 +191,24 @@ module.exports = {
         calendarPermission: "OurCityvibe needs calendar access to add events you're attending so you get a reminder and a quick link back to the event.",
       },
     ],
+    [
+      "expo-media-library",
+      {
+        savePhotosPermission:
+          "OurCityvibe saves event QR codes and chat photos and videos to your photo library.",
+        // Read access is NOT optional, even though we only ever *write* via
+        // MediaLibrary. Picking a video makes expo-image-picker export the
+        // AVAsset to the cache directory, which is a direct photo-library read
+        // — iOS SIGKILLs the app on the spot if this key is absent. Picking a
+        // still goes through the out-of-process picker and doesn't, which is
+        // why photos worked and only video crashed.
+        photosPermission:
+          "OurCityvibe needs access to your photos and videos so you can share them in chat and on your events.",
+        granularPermissions: ["photo", "video"],
+        isAccessMediaLocationEnabled: false,
+      },
+    ],
+    "expo-sqlite",
   ],
   experiments: {
     typedRoutes: true,

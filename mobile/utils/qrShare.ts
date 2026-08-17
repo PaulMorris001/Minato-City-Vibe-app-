@@ -1,4 +1,4 @@
-import { Linking, Platform, Share } from "react-native";
+import { Platform, Share } from "react-native";
 
 export type ShareQrResult =
   | { ok: true; mode: "image" | "link" }
@@ -36,7 +36,7 @@ function loadFileSystem(): typeof import("expo-file-system") | null {
 }
 
 /** Filesystem-safe stem for the exported file, so "Save to Files" names it usefully. */
-function slugify(title: string): string {
+export function slugify(title: string): string {
   const s = title
     .toLowerCase()
     .normalize("NFD")
@@ -65,27 +65,6 @@ function slugify(title: string): string {
  * Returns which mode was used so the caller can tell the user when the image
  * itself couldn't be attached.
  */
-/**
- * Open the QR as a real PNG in the system browser, where the user can
- * long-press → "Save Image" (iOS) / "Download image" (Android).
- *
- * This is the download path that needs NO native module: `Linking` ships with
- * React Native itself, and the server renders the PNG at a plain https URL
- * (`<share link>/qr.png`), so it works on binaries built long before any
- * file-system or sharing module existed — i.e. over the air, no new build.
- *
- * @param url the event's share link, e.g. https://api.ourcityvibe.com/event/lagos-beach-party
- */
-export async function openQrForSaving(url: string): Promise<boolean> {
-  try {
-    // Tolerate a trailing slash so we never produce `…/event/x//qr.png`.
-    await Linking.openURL(`${url.replace(/\/+$/, "")}/qr.png`);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export async function shareEventQr({
   dataUrl,
   title,

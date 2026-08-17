@@ -5,6 +5,7 @@ import Event from "../models/event.model.js";
 import Notification from "../models/notification.model.js";
 import { emitNewMessage, getSocketInstance } from "./socket.service.js";
 import { uploadBase64Image, deleteImage } from "./image.service.js";
+import { isVideoUrl } from "../config/cloudinary.js";
 import { sendPushNotification } from "./notification.service.js";
 import { areMutualFollows } from "../utils/followCheck.js";
 import { involvesSupport } from "../utils/supportAccount.js";
@@ -314,7 +315,8 @@ class ChatService {
     // Order cards have no text content — without a label their push body is
     // empty and the recipient sees just the sender's name.
     const rawContent =
-      message.type === "image" ? "📷 Photo"
+      message.type === "image"
+        ? (isVideoUrl(message.imageUrl) ? "🎥 Video" : "📷 Photo")
       : message.type === "order" ? "🧾 Order update"
       : (message.content || "");
 
@@ -358,7 +360,18 @@ class ChatService {
   /**
    * Get messages for a chat with pagination
    */
-  async getChatMessages(chatId, userId, page = 1, limit = 50) {
+  /**
+   * A page of history, or — with `since` — only what has arrived after a
+   * timestamp the client already holds locally.
+   *
+   * The delta form is what makes reopening a chat cheap once the device keeps
+   * its own copy (db/chatRepo.ts): instead of refetching page 1 and merging by
+   * id, the client asks for the tail it's missing. It's oldest-first and
+   * capped by `limit` like the paged form, so a client that has been offline
+   * for a week still gets a bounded response and simply asks again with a
+   * newer `since`.
+   */
+  async getChatMessages(chatId, userId, page = 1, limit = 50, since = null) {
     // Verify user is participant
     const chat = await Chat.findById(chatId);
     if (!chat) {
@@ -380,14 +393,22 @@ class ChatService {
       throw new Error('User is not a participant in this chat');
     }
 
-    const skip = (page - 1) * limit;
-
-    const messages = await Message.find({
+    const baseFilter = {
       chat: chatId,
       isDeleted: false,
       deletedFor: { $ne: userId }
-    })
-      .sort({ createdAt: -1 })
+    };
+
+    // Delta mode: everything strictly newer than what the client holds,
+    // oldest-first so it can append. Paged mode keeps the original
+    // newest-first-then-reverse behaviour so `page` still walks backwards.
+    const skip = since ? 0 : (page - 1) * limit;
+    const filter = since
+      ? { ...baseFilter, createdAt: { $gt: since } }
+      : baseFilter;
+
+    const messages = await Message.find(filter)
+      .sort({ createdAt: since ? 1 : -1 })
       .skip(skip)
       .limit(limit)
       .populate('sender', 'username email profilePicture')
@@ -400,19 +421,19 @@ class ChatService {
       .populate('order')
       .populate('reactions.user', 'username profilePicture');
 
-    const total = await Message.countDocuments({
-      chat: chatId,
-      isDeleted: false,
-      deletedFor: { $ne: userId }
-    });
+    const total = await Message.countDocuments(baseFilter);
 
     return {
-      messages: messages.reverse(), // Reverse to show oldest first
+      // Delta mode already sorted oldest-first; paged mode has to be flipped.
+      messages: since ? messages : messages.reverse(),
       pagination: {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limit),
+        // Tells the client whether asking again with a newer `since` will
+        // yield more, without it having to compare counts.
+        hasMore: since ? messages.length === limit : undefined
       }
     };
   }

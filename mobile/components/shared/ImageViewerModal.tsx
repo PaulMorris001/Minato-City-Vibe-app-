@@ -8,12 +8,14 @@ import {
   FlatList,
   Dimensions,
   StatusBar,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import ZoomableImage from "./ZoomableImage";
 import MediaTile from "./MediaTile";
 import { isVideoUrl } from "@/utils/media";
+import { saveRemoteMediaToGallery, saveWithFeedback } from "@/utils/saveToGallery";
 
 import { useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -42,11 +44,25 @@ export default function ImageViewerModal({
   // Paging is disabled while an image is zoomed so panning the zoomed image
   // doesn't fight the horizontal pager.
   const [scrollEnabled, setScrollEnabled] = useState(true);
+  const [saving, setSaving] = useState(false);
   const listRef = useRef<FlatList>(null);
 
   const onScroll = (e: any) => {
     const i = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
     if (i !== index) setIndex(i);
+  };
+
+  const current = images[index];
+
+  const handleSave = async () => {
+    if (!current || saving) return;
+    setSaving(true);
+    const isVideo = isVideoUrl(current);
+    await saveWithFeedback(
+      () => saveRemoteMediaToGallery(current, isVideo ? "video" : "photo"),
+      isVideo ? "Video saved to your library." : "Photo saved to your library."
+    );
+    setSaving(false);
   };
 
   return (
@@ -85,6 +101,21 @@ export default function ImageViewerModal({
           <Ionicons name="close" size={26} color="#fff" />
         </TouchableOpacity>
 
+        {!!current && (
+          <TouchableOpacity
+            style={styles.saveButton}
+            onPress={handleSave}
+            disabled={saving}
+            hitSlop={12}
+          >
+            {saving ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="download-outline" size={22} color="#fff" />
+            )}
+          </TouchableOpacity>
+        )}
+
         {images.length > 1 && (
           <View style={styles.counter}>
             <Text style={styles.counterText}>{index + 1} / {images.length}</Text>
@@ -119,6 +150,17 @@ const createStyles = (c: ThemeColors) =>
     position: "absolute",
     top: 56,
     right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  saveButton: {
+    position: "absolute",
+    top: 56,
+    left: 20,
     width: 40,
     height: 40,
     borderRadius: 20,

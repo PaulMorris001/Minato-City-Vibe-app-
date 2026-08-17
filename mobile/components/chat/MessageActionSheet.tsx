@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { Message } from "@/services/chat.service";
+import { isVideoUrl } from "@/utils/media";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -35,6 +36,8 @@ interface MessageActionSheetProps {
   onReact: (message: Message, emoji: string) => void;
   /** Report someone else's message as objectionable (Apple Guideline 1.2). */
   onReport?: (message: Message) => void;
+  /** Save an attached photo or video to the device's photo library. */
+  onSaveMedia: (message: Message) => void;
 }
 
 /**
@@ -54,6 +57,7 @@ export default function MessageActionSheet({
   onPin,
   onReact,
   onReport,
+  onSaveMedia,
 }: MessageActionSheetProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -67,13 +71,20 @@ export default function MessageActionSheet({
   const canDelete = isOwnMessage && !isTemp;
   const canCopy = !isTemp && message?.type === "text" && !!message?.content;
   const canReport = !isOwnMessage && !isTemp && !!onReport;
+  // Photos and videos both ride on `imageUrl` — the Cloudinary delivery path
+  // is what distinguishes them (see utils/media.ts).
+  const canSaveMedia = !isTemp && !!message?.imageUrl;
 
   // Open on the action list, unless there are no actions at all (e.g. someone
   // else's image with no pin) — then jump straight to the emoji picker.
   useEffect(() => {
     if (!message) return;
-    setMenuMode(canEdit || canDelete || canCopy || canPin || canReport ? "actions" : "react");
-  }, [message, canEdit, canDelete, canCopy, canPin, canReport]);
+    setMenuMode(
+      canEdit || canDelete || canCopy || canPin || canReport || canSaveMedia
+        ? "actions"
+        : "react"
+    );
+  }, [message, canEdit, canDelete, canCopy, canPin, canReport, canSaveMedia]);
 
   const handleDelete = () => {
     if (!message) return;
@@ -143,6 +154,25 @@ export default function MessageActionSheet({
                 >
                   <Ionicons name="copy-outline" size={18} color={colors.textBright} />
                   <Text style={styles.actionLabel}>Copy</Text>
+                </TouchableOpacity>
+                <View style={styles.actionDivider} />
+              </>
+            )}
+
+            {canSaveMedia && (
+              <>
+                <TouchableOpacity
+                  style={styles.actionRow}
+                  onPress={() => {
+                    if (message) onSaveMedia(message);
+                    onClose();
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="download-outline" size={18} color={colors.textBright} />
+                  <Text style={styles.actionLabel}>
+                    {isVideoUrl(message?.imageUrl) ? "Save video" : "Save photo"}
+                  </Text>
                 </TouchableOpacity>
                 <View style={styles.actionDivider} />
               </>

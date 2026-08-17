@@ -12,6 +12,14 @@ const eventSchema = mongoose.Schema({
   city: { type: String },
   state: { type: String },
   country: { type: String },
+  // Map pin for the venue. Optional — events created before 1.2.0 have none and
+  // the app geocodes their address on the device instead. Same shape as
+  // externalEvent.model.js so both feed one map component.
+  geo: {
+    // GeoJSON Point; stored as [lng, lat] per spec
+    type: { type: String, enum: ["Point"], default: "Point" },
+    coordinates: { type: [Number], default: undefined }, // [lng, lat]
+  },
   // Virtual events have no physical venue; location is stored as "Online".
   isVirtual: { type: Boolean, default: false },
   // Optional meeting URL (Zoom/Meet/etc). Only returned to attendees.

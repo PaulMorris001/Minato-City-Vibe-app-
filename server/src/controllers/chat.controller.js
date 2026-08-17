@@ -231,8 +231,14 @@ export const getChatMessages = async (req, res) => {
     const { chatId } = req.params;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
+    // `since` (ISO 8601 or epoch ms) switches to delta mode — only messages
+    // newer than the client's local copy. An unparseable value is ignored
+    // rather than 400'd, so a bad clock degrades to a normal page-1 fetch.
+    const sinceRaw = req.query.since;
+    const sinceDate = sinceRaw ? new Date(/^\d+$/.test(sinceRaw) ? Number(sinceRaw) : sinceRaw) : null;
+    const since = sinceDate && !isNaN(sinceDate.getTime()) ? sinceDate : null;
 
-    const result = await ChatService.getChatMessages(chatId, userId, page, limit);
+    const result = await ChatService.getChatMessages(chatId, userId, page, limit, since);
 
     res.status(200).json(result);
   } catch (error) {
