@@ -90,13 +90,30 @@ export default function ChatListScreen({
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchChats = async (silent = false) => {
+    // Paint the inbox from the local store first so a returning user sees
+    // their threads immediately instead of a spinner. Skipped on the silent
+    // background refreshes, which already have a list on screen.
+    if (!silent) {
+      const cached = await chatService.getCachedChats("client");
+      if (cached.length) {
+        setChats(cached);
+        setLoading(false);
+      }
+    }
     try {
       // Client inbox: personal chats plus threads where this user is the customer.
       const list = await chatService.getUserChats("client");
       setChats(list);
     } catch (error: any) {
-      console.error("Error fetching chats:", error);
-      if (!silent) Alert.alert("Error", "Failed to load chats");
+      // A saved inbox is on screen — alerting over a failed refresh would be
+      // noise, and every thread in it still opens from local history.
+      const hasLocal = (await chatService.getCachedChats("client")).length > 0;
+      if (hasLocal) {
+        console.warn("Chat list refresh failed, showing local copy:", error?.message);
+      } else {
+        console.error("Error fetching chats:", error);
+        if (!silent) Alert.alert("Error", "Failed to load chats");
+      }
     } finally {
       if (!silent) setLoading(false);
       setRefreshing(false);

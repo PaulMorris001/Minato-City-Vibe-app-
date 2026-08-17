@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
 import { goBack } from "@/utils/navigation";
+import { ensureOnline } from "@/utils/requireOnline";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
@@ -53,6 +54,7 @@ export default function BookingsScreen() {
   const { payForBooking } = useStripePayment();
 
   const handlePayBooking = async (bookingId: string) => {
+    if (!ensureOnline("pay for a booking")) return;
     setPayingFor(bookingId);
     try {
       const result = await payForBooking(bookingId);

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { View, StyleSheet, Pressable, StyleProp, ViewStyle, ImageStyle } from "react-native";
 import { Image, ImageContentFit, ImageLoadEventData } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,6 +18,12 @@ interface MediaTileProps {
   posterOnly?: boolean;
   /** Start playing as soon as the player is ready. Ignored when posterOnly. */
   autoPlay?: boolean;
+  /**
+   * Mute the player. Defaults to `autoPlay`, because autoplaying with sound is
+   * hostile in a feed — but a full-screen viewer the user deliberately opened
+   * should pass `muted={false}`, or the video plays silently.
+   */
+  muted?: boolean;
   /**
    * Size the tile to the photo's own aspect ratio instead of the fixed box in
    * `style`, so a portrait photo gets a taller (or narrower) card rather than
@@ -60,6 +66,7 @@ export default function MediaTile({
   contentFit = "cover",
   posterOnly = false,
   autoPlay = false,
+  muted,
   adaptive,
   minAspectRatio = 3 / 4,
   maxAspectRatio = 16 / 9,
@@ -87,7 +94,12 @@ export default function MediaTile({
       : { aspectRatio: ratio, width: undefined };
 
   const content = showPlayer ? (
-    <VideoPlayerTile uri={uri} style={style} autoPlay={autoPlay} />
+    <VideoPlayerTile
+      uri={uri}
+      style={style}
+      autoPlay={autoPlay}
+      muted={muted ?? autoPlay}
+    />
   ) : isVideo ? (
     <VideoPoster uri={uri} style={style} contentFit={contentFit} />
   ) : (
@@ -140,17 +152,25 @@ function VideoPlayerTile({
   uri,
   style,
   autoPlay,
+  muted,
 }: {
   uri: string;
   style?: StyleProp<ViewStyle & ImageStyle>;
   autoPlay: boolean;
+  muted: boolean;
 }) {
-  const player = useVideoPlayer(uri, (p) => {
+  // `useCaching` lets expo-video keep the file in its own native disk cache, so
+  // replaying a clip doesn't re-stream it. Remote URLs only — a local file is
+  // already on disk.
+  const source = useMemo(
+    () => (/^https?:/i.test(uri) ? { uri, useCaching: true } : uri),
+    [uri]
+  );
+
+  const player = useVideoPlayer(source, (p) => {
     p.loop = false;
-    if (autoPlay) {
-      p.muted = true; // Autoplay with sound is hostile in a feed.
-      p.play();
-    }
+    p.muted = muted;
+    if (autoPlay) p.play();
   });
 
   return (

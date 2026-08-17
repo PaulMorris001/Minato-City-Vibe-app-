@@ -34,11 +34,17 @@ const ALLOWED_VIDEO_MIME_TYPES = new Set([
 ]);
 
 // Photos stay on the old 10 MB budget; video needs room for a minute of phone
-// footage. multer can only enforce ONE byte ceiling, so it gets the larger of
-// the two and the image-specific limit is applied after the fact — `fileFilter`
+// footage — 4K/60 on a recent iPhone runs ~350 MB/min, but the client
+// re-encodes at quality 0.8 before upload, which lands a 60s clip well under
+// this. multer can only enforce ONE byte ceiling, so it gets the larger of the
+// two and the image-specific limit is applied after the fact — `fileFilter`
 // runs before any bytes are read, so it can't know the size yet.
+//
+// Keep MAX_VIDEO_BYTES in sync with mobile/utils/imageUpload.ts, which rejects
+// oversized picks up front so the user isn't made to wait for an upload that
+// was always going to 413.
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-export const MAX_VIDEO_BYTES = 64 * 1024 * 1024;
+export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 
 // Every media collection in the app (event galleries, guide sections, vendor
 // products, catalogue categories) caps at 10 items, so one request never needs

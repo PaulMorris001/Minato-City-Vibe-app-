@@ -34,6 +34,7 @@ import GlassBackButton from "@/components/shared/GlassBackButton";
 import MediaTile from "@/components/shared/MediaTile";
 import ImageViewerModal from "@/components/shared/ImageViewerModal";
 import { sectionMedia } from "@/utils/media";
+import { ensureOnline } from "@/utils/requireOnline";
 
 /**
  * A section's photos and videos. One item fills the width the way the old
@@ -219,6 +220,7 @@ export default function GuideDetailPage() {
 
   const handlePurchase = async () => {
     if (!id) return;
+    if (!ensureOnline("buy a guide")) return;
     const token = await SecureStore.getItemAsync("token");
     if (!token) {
       router.push("/login");

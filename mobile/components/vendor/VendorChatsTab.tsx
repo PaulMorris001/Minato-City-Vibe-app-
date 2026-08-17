@@ -52,14 +52,26 @@ export default function VendorChatsTab() {
   const [currentUserId, setCurrentUserId] = useState<string>("");
 
   const fetchChats = async () => {
+    // Local copy first — the inbox appears immediately and survives a dead
+    // network. See db/chatRepo.ts.
+    const cached = await chatService.getCachedChats("vendor");
+    if (cached.length) {
+      setChats(cached);
+      setFilteredChats(cached);
+      setLoading(false);
+    }
     try {
       // Vendor inbox: only business↔customer threads where this user is the vendor.
       const chats = await chatService.getUserChats("vendor");
       setChats(chats);
       setFilteredChats(chats);
     } catch (error: any) {
-      console.error("Error fetching chats:", error);
-      Alert.alert("Error", "Failed to load chats");
+      if (cached.length) {
+        console.warn("Vendor chat refresh failed, showing local copy:", error?.message);
+      } else {
+        console.error("Error fetching chats:", error);
+        Alert.alert("Error", "Failed to load chats");
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

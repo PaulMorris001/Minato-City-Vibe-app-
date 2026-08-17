@@ -6,6 +6,7 @@ import type { Chat } from "@/services/chat.service";
 import { capitalize } from "@/libs/helpers";
 import { chatParticipantName, chatParticipantAvatar } from "@/utils/chatDisplay";
 import { Avatar } from "@/components/shared/Avatar";
+import { isVideoUrl } from "@/utils/media";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -79,7 +80,7 @@ export default function ChatListItem({
       case "text":
         return lastMessage.content || "";
       case "image":
-        return "📷 Photo";
+        return isVideoUrl(lastMessage.imageUrl) ? "🎥 Video" : "📷 Photo";
       case "event":
         return "📅 Event";
       case "system":

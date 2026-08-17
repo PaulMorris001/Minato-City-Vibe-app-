@@ -26,6 +26,7 @@ import { BASE_URL } from "@/constants/constants";
 import { useAccount } from "@/contexts/AccountContext";
 import { useUnread } from "@/contexts/UnreadContext";
 import socketService from "@/services/socket.service";
+import { clearLocalData } from "@/utils/localData";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "@/components/shared/Avatar";
 import { getCircularAvatarUrl } from "@/utils/imageUpload";
@@ -140,6 +141,7 @@ export default function TabsLayout() {
       // cached user instead.
       if (status === 401 || status === 403) {
         await SecureStore.deleteItemAsync("token");
+        await clearLocalData();
         socketService.disconnect();
         router.replace("/login");
         return;
@@ -212,6 +214,7 @@ export default function TabsLayout() {
       await SecureStore.deleteItemAsync("user");
       await SecureStore.deleteItemAsync("token");
       await SecureStore.deleteItemAsync("activeAccount");
+      await clearLocalData();
       socketService.disconnect();
       router.replace("/login");
       setIsProfileModalVisible(false);

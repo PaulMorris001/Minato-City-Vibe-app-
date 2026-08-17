@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Pressable,
   Linking,
+  ActivityIndicator,
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,6 +28,8 @@ import type { Message } from "@/services/chat.service";
 import { groupReactions } from "@/utils/reactions";
 import { openUserProfile } from "@/utils/userNavigation";
 import { Avatar } from "@/components/shared/Avatar";
+import MediaTile from "@/components/shared/MediaTile";
+import { isVideoUrl } from "@/utils/media";
 import { currencyPrefix, formatMoney } from "@/constants/payments";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 
@@ -81,6 +84,8 @@ interface MessageBubbleProps {
   onOrderPay?: (order: any) => void;
   /** Vendor taps "Send invoice" on an order request card. */
   onOrderQuote?: (order: any) => void;
+  /** This message's media is still uploading — shows a spinner over it. */
+  isUploading?: boolean;
 }
 
 /**
@@ -92,7 +97,7 @@ export function replyPreviewLabel(msg: any): string {
   if (msg.content && String(msg.content).trim()) return msg.content;
   switch (msg.type) {
     case "image":
-      return "📷 Photo";
+      return isVideoUrl(msg.imageUrl) ? "🎥 Video" : "📷 Photo";
     case "event":
       return "📅 Event";
     case "guide":
@@ -125,6 +130,7 @@ function MessageBubble({
   isHighlighted = false,
   onOrderPay,
   onOrderQuote,
+  isUploading,
 }: MessageBubbleProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -273,13 +279,33 @@ function MessageBubble({
                 onPress={() => onImagePress?.(message.imageUrl!)}
                 onLongPress={handleLongPress}
               >
-                <Image
-                  source={{ uri: message.imageUrl }}
-                  style={styles.messageImage}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  transition={200}
-                />
+                {isVideoUrl(message.imageUrl) ? (
+                  // posterOnly: a busy thread would otherwise mount an
+                  // AVPlayer per video. Tapping opens the full-screen viewer,
+                  // which plays it.
+                  <MediaTile
+                    uri={message.imageUrl}
+                    style={styles.messageImage}
+                    posterOnly
+                  />
+                ) : (
+                  <Image
+                    source={{ uri: message.imageUrl }}
+                    style={styles.messageImage}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    transition={200}
+                  />
+                )}
+                {isUploading && (
+                  // Deliberately just a spinner, no percentage. The number only
+                  // covers phone→server; the rest of the wait is Cloudinary
+                  // transcoding, which reports nothing — so a bar that races to
+                  // 100% and then stalls promises more than it can deliver.
+                  <View style={styles.uploadOverlay}>
+                    <ActivityIndicator color="#fff" />
+                  </View>
+                )}
               </TouchableOpacity>
             )}
             {!!message.content && (
@@ -990,6 +1016,12 @@ const createStyles = (c: ThemeColors) =>
   messageImage: {
     width: 220,
     height: 160,
+  },
+  uploadOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.45)",
   },
   imageCaptionStrip: {
     backgroundColor: "rgba(168,85,247,0.85)",

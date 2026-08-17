@@ -33,6 +33,8 @@ import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useL
 import { useActiveCity, setActiveCity as setSharedActiveCity } from "@/hooks/useActiveCity";
 import { trackEvent } from "@/utils/analytics";
 import { ensureAuth } from "@/utils/requireAuth";
+import { cacheRead, cacheWrite } from "@/utils/offlineCache";
+import { ensureOnline } from "@/utils/requireOnline";
 import SupportFab from "@/components/shared/SupportFab";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -580,8 +582,16 @@ export default function Home() {
       const data = await response.json();
       if (response.ok && activeCityRef.current === (city ?? null)) {
         setPublicEvents(data.events || []);
+        cacheWrite(`home:explore:${city ?? "all"}`, data.events || []);
       }
-    } catch {}
+    } catch {
+      // Offline — a stale feed beats an empty home tab, and every card in it
+      // opens an event that is itself cached.
+      const cached = await cacheRead<PublicEvent[]>(`home:explore:${city ?? "all"}`);
+      if (cached && activeCityRef.current === (city ?? null)) {
+        setPublicEvents(cached.data);
+      }
+    }
   };
 
   /**
@@ -617,13 +627,20 @@ export default function Home() {
       });
       const data = await response.json();
       if (response.ok && activeCityRef.current === (city ?? null)) {
-        setHighlights({
+        const next = {
           trending: data.trending || [],
           upcoming: data.upcoming || [],
           myUpcoming: data.myUpcoming || [],
-        });
+        };
+        setHighlights(next);
+        cacheWrite(`home:highlights:${city ?? "all"}`, next);
       }
-    } catch {}
+    } catch {
+      const cached = await cacheRead<typeof highlights>(`home:highlights:${city ?? "all"}`);
+      if (cached && activeCityRef.current === (city ?? null)) {
+        setHighlights(cached.data);
+      }
+    }
   };
 
   const fetchVendors = async () => {
@@ -649,8 +666,14 @@ export default function Home() {
       const cityParam = city ? `&city=${encodeURIComponent(city)}` : "";
       const response = await fetch(`${BASE_URL}/guides/top?limit=10${cityParam}`, { headers });
       const data = await response.json();
-      if (response.ok && activeCityRef.current === (city ?? null)) setTopGuides(data.guides || []);
-    } catch {}
+      if (response.ok && activeCityRef.current === (city ?? null)) {
+        setTopGuides(data.guides || []);
+        cacheWrite(`home:guides:${city ?? "all"}`, data.guides || []);
+      }
+    } catch {
+      const cached = await cacheRead<TopGuide[]>(`home:guides:${city ?? "all"}`);
+      if (cached && activeCityRef.current === (city ?? null)) setTopGuides(cached.data);
+    }
   };
 
   const fetchUsername = async () => {
@@ -788,6 +811,7 @@ export default function Home() {
 
   const handleRsvp = async (eventId: string, action: "accept" | "decline") => {
     if (!(await ensureAuth("RSVP to this event"))) return;
+    if (!ensureOnline("RSVP to an event")) return;
     try {
       const token = await SecureStore.getItemAsync("token");
       if (!token) return;
@@ -814,6 +838,7 @@ export default function Home() {
 
   const handleJoinFreeEvent = async (eventId: string, eventTitle: string) => {
     if (!(await ensureAuth("join this event"))) return;
+    if (!ensureOnline("join an event")) return;
     try {
       const token = await SecureStore.getItemAsync("token");
       if (!token) return;

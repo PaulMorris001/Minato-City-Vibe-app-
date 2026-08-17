@@ -31,12 +31,17 @@ export function createCloudinaryStorage(folder = "nightvibe") {
 
 /**
  * The `q_auto,f_auto` eager transform is image-oriented — applying it to a
- * video upload makes Cloudinary transcode synchronously and the request can
- * time out. Delivery-time transforms (which is how the clients size media) work
- * for both, so uploads stay untransformed for video.
+ * video makes Cloudinary transcode synchronously, which fails outright on a
+ * clip of any size ("Video is too large to process synchronously"). Delivery-
+ * time transforms (which is how the clients size media) work for both, so
+ * uploads stay untransformed for anything that isn't definitely an image.
+ *
+ * Note this tests for "image", not "not video": the previous form let the
+ * default `resource_type: "auto"` — which every real caller uses — fall
+ * through and transcode video anyway.
  */
 const uploadTransformation = (resourceType) =>
-  resourceType === "video" ? undefined : [{ quality: "auto", fetch_format: "auto" }];
+  resourceType === "image" ? [{ quality: "auto", fetch_format: "auto" }] : undefined;
 
 /**
  * Upload a buffer to Cloudinary

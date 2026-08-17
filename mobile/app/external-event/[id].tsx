@@ -7,7 +7,6 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
-  Linking,
 } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -24,6 +23,9 @@ import { externalEventService, ExternalEvent } from "@/services/externalEvent.se
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import { GlassIconButton } from "@/components/shared/GlassBackButton";
+import EventLocationMap from "@/components/shared/EventLocationMap";
+import CollapsibleDescription from "@/components/shared/CollapsibleDescription";
+import { openInMapsApp } from "@/utils/maps";
 import type { ThemeColors } from "@/constants/theme";
 /**
  * Detail screen for external events (Ticketmaster, Bandsintown, etc).
@@ -164,14 +166,14 @@ export default function ExternalEventDetail() {
 
   const openMaps = () => {
     if (!event) return;
-    const dest = [event.venueName, event.address, event.city, event.state, event.country]
-      .filter(Boolean)
-      .join(", ");
-    const q = encodeURIComponent(dest);
-    const url = event.geo?.coordinates
-      ? `https://maps.apple.com/?ll=${event.geo.coordinates[1]},${event.geo.coordinates[0]}&q=${q}`
-      : `https://maps.apple.com/?q=${q}`;
-    Linking.openURL(url).catch(() => Alert.alert("Maps unavailable"));
+    const coords = event.geo?.coordinates;
+    openInMapsApp({
+      latitude: coords?.[1],
+      longitude: coords?.[0],
+      label: [event.venueName, event.address, event.city, event.state, event.country]
+        .filter(Boolean)
+        .join(", "),
+    });
   };
 
   if (loading) {
@@ -319,11 +321,16 @@ export default function ExternalEventDetail() {
                     .join(", ")}
                 </Text>
               )}
-              <View style={styles.mapsHintRow}>
-                <Ionicons name="navigate-outline" size={13} color={colors.primaryLight} />
-                <Text style={styles.mapsHintText}>Open in Maps</Text>
-              </View>
             </TouchableOpacity>
+            <EventLocationMap
+              coordinates={event.geo?.coordinates}
+              address={event.address || event.venueName}
+              city={event.city}
+              state={event.state}
+              country={event.country}
+              location={event.location}
+              title={event.title || event.venueName || "Event"}
+            />
           </GlassCard>
 
           {/* Category / Genre card */}
@@ -356,7 +363,13 @@ export default function ExternalEventDetail() {
           {event.description ? (
             <GlassCard>
               <Text style={styles.microLabel}>About</Text>
-              <Text style={styles.aboutText}>{event.description}</Text>
+              <CollapsibleDescription
+                text={event.description}
+                textStyle={styles.aboutText}
+                onReadMore={() =>
+                  router.push(`/event-description/${event._id}?source=external` as any)
+                }
+              />
             </GlassCard>
           ) : null}
 
@@ -539,17 +552,6 @@ const createStyles = (c: ThemeColors) =>
     height: 1,
     backgroundColor: c.glassFill,
     marginVertical: 12,
-  },
-  mapsHintRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    marginTop: 8,
-  },
-  mapsHintText: {
-    fontFamily: Fonts.semiBold,
-    fontSize: 12,
-    color: c.primaryLight,
   },
 
   // Gallery

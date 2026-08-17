@@ -21,6 +21,8 @@ import { BASE_URL } from "@/constants/constants";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
+import { saveBase64ImageToGallery, saveWithFeedback } from "@/utils/saveToGallery";
+import { cacheRead, cacheWrite } from "@/utils/offlineCache";
 type AttendanceStatus = "incoming" | "attended" | "missed";
 
 interface Pass {
@@ -57,6 +59,8 @@ export default function PassesScreen() {
   const [passes, setPasses] = useState<Pass[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [savingPassId, setSavingPassId] = useState<string | null>(null);
+  const [fromCache, setFromCache] = useState(false);
 
   const fetchPasses = useCallback(async () => {
     try {
@@ -64,9 +68,20 @@ export default function PassesScreen() {
       const res = await axios.get(`${BASE_URL}/my-passes`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setPasses(res.data?.passes || []);
+      const list: Pass[] = res.data?.passes || [];
+      setPasses(list);
+      setFromCache(false);
+      // The QR is a base64 data URL inside this payload, so caching the
+      // response is what lets a pass scan at the door with no signal.
+      cacheWrite("passes", list);
     } catch (error) {
-      console.error("Fetch passes error:", error);
+      const cached = await cacheRead<Pass[]>("passes");
+      if (cached) {
+        setPasses(cached.data);
+        setFromCache(true);
+      } else {
+        console.error("Fetch passes error:", error);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -82,6 +97,20 @@ export default function PassesScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchPasses();
+  };
+
+  // A saved pass scans at the door with no signal — the point of the button.
+  const handleSavePass = async (pass: Pass) => {
+    if (savingPassId) return;
+    setSavingPassId(pass.id);
+    try {
+      await saveWithFeedback(
+        () => saveBase64ImageToGallery(pass.qr, pass.event.title),
+        "Pass saved to your photos."
+      );
+    } finally {
+      setSavingPassId(null);
+    }
   };
 
   return (
@@ -110,6 +139,15 @@ export default function PassesScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }
         >
+          {fromCache && !loading && (
+            <View style={styles.cachedChip}>
+              <Ionicons name="cloud-offline-outline" size={13} color={colors.textDim} />
+              <Text style={styles.cachedChipText}>
+                Offline — saved passes. Codes still scan.
+              </Text>
+            </View>
+          )}
+
           {loading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator size="large" color={colors.primary} />
@@ -185,6 +223,27 @@ export default function PassesScreen() {
                         </View>
                       )}
                     </View>
+
+                    {/* Saving a spent pass would just clutter the library. */}
+                    {pass.status === "incoming" && (
+                      <TouchableOpacity
+                        style={styles.saveRow}
+                        onPress={() => handleSavePass(pass)}
+                        disabled={savingPassId === pass.id}
+                        activeOpacity={0.7}
+                      >
+                        {savingPassId === pass.id ? (
+                          <ActivityIndicator size="small" color={colors.textBright} />
+                        ) : (
+                          <Ionicons
+                            name="download-outline"
+                            size={15}
+                            color={colors.textBright}
+                          />
+                        )}
+                        <Text style={styles.saveRowText}>Save to photos</Text>
+                      </TouchableOpacity>
+                    )}
 
                     <Text style={styles.passType}>
                       {pass.type === "ticket" ? "🎟️ Ticket" : "✅ RSVP"} ·{" "}
@@ -304,6 +363,42 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 12.5,
     color: c.textDim,
     textAlign: "center",
+  },
+  cachedChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    marginBottom: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    backgroundColor: c.cardAlt,
+  },
+  cachedChipText: {
+    flex: 1,
+    fontFamily: "Outfit_500Medium",
+    fontSize: 12.5,
+    color: c.textDim,
+  },
+  saveRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "center",
+    gap: 7,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    marginBottom: 6,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    backgroundColor: c.cardAlt,
+  },
+  saveRowText: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 13,
+    color: c.textBright,
   },
   emptyState: { alignItems: "center", paddingVertical: 70, paddingHorizontal: 24 },
   emptyEmoji: { fontSize: 72, opacity: 0.3, marginBottom: 14 },

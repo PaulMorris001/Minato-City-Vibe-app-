@@ -21,6 +21,7 @@ import { useCart } from "@/contexts/CartContext";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { currencyPrefix } from "@/constants/payments";
 import { showError } from "@/utils/toast";
+import { ensureOnline } from "@/utils/requireOnline";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
@@ -54,6 +55,7 @@ export default function CartScreen() {
 
   const handleCheckout = async () => {
     if (!singleVendorGroup) return;
+    if (!ensureOnline("place an order")) return;
     setSubmitting(true);
     try {
       const token = await SecureStore.getItemAsync("token");
