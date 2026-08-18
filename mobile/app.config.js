@@ -64,6 +64,13 @@ module.exports = {
   },
   android: {
     package: "com.ourcityvibe.app",
+    // Strip these even if a transitive library merges them back in — see the
+    // expo-media-library granularPermissions note below. Google Play blocks the
+    // release of any app that merely declares them without a justification.
+    blockedPermissions: [
+      "android.permission.READ_MEDIA_IMAGES",
+      "android.permission.READ_MEDIA_VIDEO",
+    ],
     // react-native-maps renders Google Maps on Android, which needs a Maps SDK
     // for Android key. iOS uses Apple Maps and needs no key at all. Without
     // this the map tile area renders blank (no error) on Android.
@@ -204,7 +211,13 @@ module.exports = {
         // why photos worked and only video crashed.
         photosPermission:
           "OurCityvibe needs access to your photos and videos so you can share them in chat and on your events.",
-        granularPermissions: ["photo", "video"],
+        // Android only, and empty on purpose. saveToGallery.ts always passes
+        // writeOnly, and expo-media-library skips the granular READ_MEDIA_*
+        // permissions entirely in that path (Android 13+ needs no permission to
+        // write); expo-image-picker uses the system photo picker, which also
+        // needs none. Declaring them anyway bought nothing and forced a Google
+        // Play "Photo and Video Permissions" declaration we cannot honestly make.
+        granularPermissions: [],
         isAccessMediaLocationEnabled: false,
       },
     ],
