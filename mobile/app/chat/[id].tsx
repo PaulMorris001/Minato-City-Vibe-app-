@@ -404,13 +404,24 @@ export default function ChatScreen() {
         // us: that's the echo of our own markMessagesAsRead call, which says
         // nothing about whether the other side has seen our messages.
         if (chatId !== id || readerId === currentUserId) return;
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.sender._id === currentUserId && m.status !== "read"
-              ? { ...m, status: "read" }
-              : m
-          )
-        );
+        setMessages((prev) => {
+          // The server emits this event twice per read action (an immediate
+          // relay of the client's raw socket emit, then again once the REST
+          // call's DB update lands) — the second firing has nothing left to
+          // flip. Returning `prev` unchanged (instead of a fresh .map()
+          // result that happens to be equal) keeps this a true no-op so the
+          // message list doesn't re-render — and FlashList doesn't
+          // re-anchor/jump — on every redundant read receipt.
+          let changed = false;
+          const next = prev.map((m) => {
+            if (m.sender._id === currentUserId && m.status !== "read") {
+              changed = true;
+              return { ...m, status: "read" as const };
+            }
+            return m;
+          });
+          return changed ? next : prev;
+        });
       },
       onTypingStart: (data: { chatId: string; userId: string }) => {
         if (data.chatId === id && data.userId !== currentUserId) {
