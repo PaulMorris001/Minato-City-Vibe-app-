@@ -186,7 +186,10 @@ export default function ServiceDetailSheet({
                 {inCart && (
                   <PressScale
                     style={styles.checkoutBtn}
-                    onPress={() => router.push("/cart" as any)}
+                    onPress={() => {
+                      onClose();
+                      router.push("/cart" as any);
+                    }}
                     accessibilityRole="button"
                   >
                     <Text style={styles.checkoutText}>Go to cart</Text>
@@ -335,8 +338,8 @@ const createStyles = (t: ServicesTokens) =>
       borderRadius: 16,
       justifyContent: "center",
       alignItems: "center",
-      backgroundColor: Brand.violet,
-      shadowColor: Brand.violet,
+      backgroundColor: Brand.black,
+      shadowColor: Brand.black,
       shadowOffset: { width: 0, height: 10 },
       shadowOpacity: 0.18,
       shadowRadius: 20,

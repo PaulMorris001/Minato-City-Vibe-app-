@@ -2180,16 +2180,31 @@ export const getEventHighlights = async (req, res) => {
     const myTicketEventIds = myTickets.map((t) => t.event);
 
     // Guests have no "your upcoming events" — skip the user-specific query.
-    const myUpcoming = userId
-      ? await Event.find({
-          isActive: true,
-          date: { $gte: now },
+    // Same city rule as trending/upcoming above: when a city is selected, the
+    // hero must never promote a commitment outside it, so it gets the exact
+    // same $and city clause rather than being left unfiltered.
+    const myUpcomingFilter = {
+      isActive: true,
+      date: { $gte: now },
+      $or: [
+        { createdBy: userId },
+        { rsvpUsers: userId },
+        { _id: { $in: myTicketEventIds } },
+      ],
+    };
+    if (city) {
+      myUpcomingFilter.$and = [
+        {
           $or: [
-            { createdBy: userId },
-            { rsvpUsers: userId },
-            { _id: { $in: myTicketEventIds } },
+            { city: { $regex: new RegExp(`^${esc(city)}$`, "i") } },
+            { location: { $regex: esc(city), $options: "i" } },
           ],
-        })
+        },
+        { isVirtual: { $ne: true } },
+      ];
+    }
+    const myUpcoming = userId
+      ? await Event.find(myUpcomingFilter)
           .populate("createdBy", "username email profilePicture")
           .sort({ date: 1 })
           .limit(5)

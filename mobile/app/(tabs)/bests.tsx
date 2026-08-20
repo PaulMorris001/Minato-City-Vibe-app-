@@ -34,16 +34,25 @@ export default function BestsPage() {
   // The one shared active browsing location — see ActiveLocationChip.
   const activeCity = useActiveCity();
   const headerAnim = useRef(new Animated.Value(0)).current;
+  // The city the most recent loadGuides call was issued for. activeCity can
+  // change again (GPS/IP resolving after this screen already fetched with a
+  // stale or unset city) while that fetch is still in flight — without this
+  // guard, whichever response lands last wins, so an outdated, unfiltered (or
+  // wrong-city) response could overwrite the correct one and the guide list
+  // would intermittently show guides outside the selected location.
+  const requestedCityRef = useRef<string | null>(null);
 
   const loadGuides = async (city: string | null) => {
+    requestedCityRef.current = city;
     setLoading(true);
     try {
       const data = await fetchGuidesAll({ city: city || undefined });
+      if (requestedCityRef.current !== city) return;
       setGuides(Array.isArray(data) ? data : []);
     } catch {
-      setGuides([]);
+      if (requestedCityRef.current === city) setGuides([]);
     } finally {
-      setLoading(false);
+      if (requestedCityRef.current === city) setLoading(false);
     }
   };
 

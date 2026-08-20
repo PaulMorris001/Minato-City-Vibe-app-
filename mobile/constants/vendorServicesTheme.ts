@@ -72,6 +72,7 @@ export const Brand = {
   /** Avatar fallback fill: linear-gradient(135deg,#e0219f,#7c22d6). */
   avatarGradient: ["#e0219f", "#7c22d6"] as const,
   gold: "#f5b942",
+  black: "#000000",
   teal: "#22c9a5",
   tealInk: "#06231d",
   red: "#ef5350",

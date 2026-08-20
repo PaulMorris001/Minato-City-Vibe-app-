@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { AppState } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import * as Notifications from "expo-notifications";
@@ -130,8 +130,18 @@ export function UnreadProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refreshUnread, refreshNotifs, scheduleChatRefresh]);
 
+  // Memoized so consumers (the tab layout's badges, notifications screen)
+  // only re-render when a count actually changes, not on every provider
+  // render — this context updates often (socket events, the 600ms coalesced
+  // refresh, AppState foreground), and an unmemoized object literal here
+  // forced the tab layout to re-render on all of them, including mid-switch.
+  const value = useMemo(
+    () => ({ totalUnread: chatUnread, vendorUnread, notifUnread, refreshUnread }),
+    [chatUnread, vendorUnread, notifUnread, refreshUnread]
+  );
+
   return (
-    <UnreadContext.Provider value={{ totalUnread: chatUnread, vendorUnread, notifUnread, refreshUnread }}>
+    <UnreadContext.Provider value={value}>
       {children}
     </UnreadContext.Provider>
   );

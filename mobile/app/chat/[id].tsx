@@ -397,6 +397,21 @@ export default function ChatScreen() {
           }
         }
       },
+      onMessageRead: ({ chatId, readerId }: { chatId: string; readerId: string }) => {
+        // The other participant just read the chat — flip our own sent
+        // messages to "read" so the checkmark updates live instead of
+        // waiting for the next refreshMessages poll. Skip when readerId is
+        // us: that's the echo of our own markMessagesAsRead call, which says
+        // nothing about whether the other side has seen our messages.
+        if (chatId !== id || readerId === currentUserId) return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.sender._id === currentUserId && m.status !== "read"
+              ? { ...m, status: "read" }
+              : m
+          )
+        );
+      },
       onTypingStart: (data: { chatId: string; userId: string }) => {
         if (data.chatId === id && data.userId !== currentUserId) {
           setTypingUsers((prev) => new Set(prev).add(data.userId));

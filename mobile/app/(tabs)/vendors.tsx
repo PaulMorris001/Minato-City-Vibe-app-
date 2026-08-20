@@ -51,6 +51,13 @@ export default function VendorsPage() {
   // updates instantly wherever it's read, so a change made elsewhere shows up
   // here too even if this screen never lost focus in between.
   const activeCity = useActiveCity();
+  // The city the most recent loadVendors call was issued for. activeCity can
+  // change again (GPS/IP resolving after this screen already fetched with a
+  // stale or unset city) while that fetch is still in flight — without this
+  // guard, whichever response lands last wins, so an outdated (or unfiltered)
+  // response could overwrite the correct one and the list would
+  // intermittently show vendors outside the selected location.
+  const requestedCityRef = useRef<string | null>(null);
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const headerAnim = useRef(new Animated.Value(0)).current;
@@ -74,14 +81,16 @@ export default function VendorsPage() {
   };
 
   const loadVendors = async (city: string | null) => {
+    requestedCityRef.current = city;
     setLoading(true);
     try {
       const data = await fetchVendorsBrowse({ city: city || undefined });
+      if (requestedCityRef.current !== city) return;
       setVendors(Array.isArray(data) ? data : []);
     } catch {
-      setVendors([]);
+      if (requestedCityRef.current === city) setVendors([]);
     } finally {
-      setLoading(false);
+      if (requestedCityRef.current === city) setLoading(false);
     }
   };
 

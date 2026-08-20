@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -154,8 +154,18 @@ export default function ProfileScreen() {
     loadData();
   }, []);
 
+  // useFocusEffect also fires on the initial mount (a freshly-focused screen
+  // counts as a focus event), which duplicated the effect above into two
+  // concurrent fetch cycles on the very first visit to this tab. Skip that
+  // first firing — the mount effect already covers it — and refetch only on
+  // every focus after that.
+  const hasFocusedRef = useRef(false);
   useFocusEffect(
     useCallback(() => {
+      if (!hasFocusedRef.current) {
+        hasFocusedRef.current = true;
+        return;
+      }
       loadData(true);
     }, [])
   );

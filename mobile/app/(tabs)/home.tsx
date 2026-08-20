@@ -643,16 +643,17 @@ export default function Home() {
     }
   };
 
-  const fetchVendors = async () => {
+  const fetchVendors = async (city?: string | null) => {
     try {
       const token = await SecureStore.getItemAsync("token");
       const headers: Record<string, string> = {};
       if (token) headers.Authorization = `Bearer ${token}`;
-      const response = await fetch(`${BASE_URL}/vendors/search?query=&limit=10`, {
+      const cityParam = city ? `&city=${encodeURIComponent(city)}` : "";
+      const response = await fetch(`${BASE_URL}/vendors/search?query=${cityParam}&limit=10`, {
         headers,
       });
       const data = await response.json();
-      if (response.ok) {
+      if (response.ok && activeCityRef.current === (city ?? null)) {
         setVendors(data.vendors || data || []);
       }
     } catch {}
@@ -704,7 +705,7 @@ export default function Home() {
       fetchPublicEvents(selectedCity, true),
       fetchExternalEvents(selectedCity),
       fetchHighlights(selectedCity),
-      fetchVendors(),
+      fetchVendors(selectedCity),
       fetchTopGuides(selectedCity),
     ]);
     setRefreshing(false);
@@ -742,7 +743,7 @@ export default function Home() {
         fetchPublicEvents(cityToUse),
         fetchExternalEvents(cityToUse),
         fetchHighlights(cityToUse),
-        fetchVendors(),
+        fetchVendors(cityToUse),
         fetchTopGuides(cityToUse),
       ]).finally(() => {
         if (!cancelled) setInitialLoading(false);
@@ -759,8 +760,13 @@ export default function Home() {
 
       const subscription = AppState.addEventListener("change", (nextState) => {
         if (nextState === "active") {
+          // Mirrors onRefresh's full set — a quiet, no-spinner update so the
+          // home tab is current the moment the app comes back to foreground.
           fetchPublicEvents(selectedCity, true);
+          fetchExternalEvents(selectedCity);
           fetchHighlights(selectedCity);
+          fetchVendors(selectedCity);
+          fetchTopGuides(selectedCity);
         }
       });
 
