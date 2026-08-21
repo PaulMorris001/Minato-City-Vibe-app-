@@ -344,8 +344,37 @@ class ChatService {
   }
 
   /**
+   * The page of history immediately older than `before` (epoch ms), oldest-first.
+   *
+   * This is the mirror of getMessagesSince and the mirror of how the local
+   * store pages (db/chatRepo.ts getMessagesPage), which is the point: the
+   * screen walks backwards with one cursor whether the page comes from SQLite
+   * or the network. The old `?page=N` form couldn't do that — the client had to
+   * guess N from how many rows it happened to hold, and the server's `skip`
+   * shifts every time a new message arrives, which silently skipped history.
+   */
+  async getMessagesBefore(
+    chatId: string,
+    before: number,
+    limit: number = 50
+  ): Promise<{ messages: Message[]; hasMore: boolean }> {
+    const headers = await this.getAuthHeader();
+    const response = await fetch(
+      `${BASE_URL}/chats/${chatId}/messages?before=${before}&limit=${limit}`,
+      { headers }
+    );
+    if (!response.ok) {
+      throw new Error("Failed to fetch older messages");
+    }
+    const data = await response.json();
+    const messages: Message[] = data.messages || [];
+    upsertMessages(messages);
+    return { messages, hasMore: !!data.pagination?.hasMore };
+  }
+
+  /**
    * A page of locally-stored history, oldest-first. `before` walks backwards
-   * through older pages the same way `page` does on the network.
+   * through older pages the same way it does on the network.
    */
   async getCachedMessages(
     chatId: string,

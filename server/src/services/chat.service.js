@@ -358,20 +358,22 @@ class ChatService {
   }
 
   /**
-   * Get messages for a chat with pagination
-   */
-  /**
-   * A page of history, or — with `since` — only what has arrived after a
-   * timestamp the client already holds locally.
+   * A page of history. Three read modes, in precedence order:
    *
-   * The delta form is what makes reopening a chat cheap once the device keeps
-   * its own copy (db/chatRepo.ts): instead of refetching page 1 and merging by
-   * id, the client asks for the tail it's missing. It's oldest-first and
-   * capped by `limit` like the paged form, so a client that has been offline
-   * for a week still gets a bounded response and simply asks again with a
-   * newer `since`.
+   *   before — cursor-paginated history older than a timestamp the client
+   *            already holds. This is what the app scrolls back with.
+   *   since  — the delta forward from what the client holds locally.
+   *   page   — legacy offset paging, kept so already-installed clients keep
+   *            working. It is unsound against a growing collection: `skip`
+   *            counts backwards from the newest message *at query time*, so
+   *            every message that arrives mid-scroll shifts the window and
+   *            silently skips history. `before` exists to replace it.
+   *
+   * Both cursor modes are capped by `limit` and report `hasMore` instead of a
+   * total, so a client that has been offline for a week gets a bounded
+   * response and simply asks again with a newer `since` / older `before`.
    */
-  async getChatMessages(chatId, userId, page = 1, limit = 50, since = null) {
+  async getChatMessages(chatId, userId, page = 1, limit = 50, since = null, before = null) {
     // Verify user is participant
     const chat = await Chat.findById(chatId);
     if (!chat) {
@@ -400,16 +402,18 @@ class ChatService {
     };
 
     // Delta mode: everything strictly newer than what the client holds,
-    // oldest-first so it can append. Paged mode keeps the original
-    // newest-first-then-reverse behaviour so `page` still walks backwards.
-    const skip = since ? 0 : (page - 1) * limit;
-    const filter = since
-      ? { ...baseFilter, createdAt: { $gt: since } }
-      : baseFilter;
+    // oldest-first so it can append. Cursor and paged modes both sort
+    // newest-first so LIMIT takes the right end, then flip for the client.
+    const cursored = Boolean(before || since);
+    const filter = before
+      ? { ...baseFilter, createdAt: { $lt: before } }
+      : since
+        ? { ...baseFilter, createdAt: { $gt: since } }
+        : baseFilter;
 
     const messages = await Message.find(filter)
       .sort({ createdAt: since ? 1 : -1 })
-      .skip(skip)
+      .skip(cursored ? 0 : (page - 1) * limit)
       .limit(limit)
       .populate('sender', 'username email profilePicture')
       .populate({
@@ -421,19 +425,27 @@ class ChatService {
       .populate('order')
       .populate('reactions.user', 'username profilePicture');
 
+    // Delta mode already sorted oldest-first; the other two have to be flipped.
+    const ordered = since ? messages : [...messages].reverse();
+
+    if (cursored) {
+      return {
+        messages: ordered,
+        // Tells the client whether asking again with a newer `since` / older
+        // `before` will yield more, without a countDocuments on every scroll.
+        pagination: { limit, hasMore: messages.length === limit }
+      };
+    }
+
     const total = await Message.countDocuments(baseFilter);
 
     return {
-      // Delta mode already sorted oldest-first; paged mode has to be flipped.
-      messages: since ? messages : messages.reverse(),
+      messages: ordered,
       pagination: {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
-        // Tells the client whether asking again with a newer `since` will
-        // yield more, without it having to compare counts.
-        hasMore: since ? messages.length === limit : undefined
+        totalPages: Math.ceil(total / limit)
       }
     };
   }

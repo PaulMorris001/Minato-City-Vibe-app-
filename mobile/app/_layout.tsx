@@ -136,6 +136,9 @@ watchNetworkState();
 const EVENT_PUSH_TYPES = new Set([
   "event",
   "event_reminder",
+  // Twice-weekly "come see what's on" nudge (server jobs/engagementPush.job.js).
+  // Carries an eventId when the user's city had something to feature.
+  "event_suggestion",
   "ticket_sold",
   "ticket_purchased",
   "ticket_refunded",
@@ -263,6 +266,11 @@ export default Sentry.wrap(function RootLayout() {
       if (ORDER_CHAT_PUSH_TYPES.has(type ?? "") && looksLikeObjectId(d.chatId)) {
         return { kind: "chat", chatId: d.chatId };
       }
+      // The engagement nudge falls back to generic copy when the user's city
+      // had nothing on, and then deliberately carries no eventId. Opening the
+      // app on its default route is the intended outcome, not a bug worth
+      // logging alongside genuinely malformed payloads.
+      if (type === "event_suggestion") return null;
       console.warn("[PushNotif] payload was not routable:", type, d);
       return null;
     };

@@ -74,6 +74,67 @@ import { useIsOnline } from "@/hooks/useIsOnline";
 /** Mirrors the server's default page size in chat.controller.js. */
 const PAGE_SIZE = 50;
 
+/**
+ * How many `?since=` rounds the open-chat catch-up will walk before giving up
+ * and just refetching the newest page. Past this the device is so far behind
+ * that paging the gap costs more than starting over.
+ */
+const MAX_CATCHUP_ROUNDS = 5;
+
+/**
+ * Merge incoming messages into the list we already hold, newest last.
+ *
+ * Every path that adds messages goes through here — the open-chat delta sync,
+ * the silent catch-up poll and live socket delivery — because the one thing
+ * they all have to guarantee is chronological order. buildMessageSections
+ * renders in raw array order and the list anchors to its own bottom, so a
+ * single unsorted append parks the user on old history with the recent
+ * messages stranded above it.
+ *
+ * Returns `prev` untouched when nothing actually changed, so a redundant poll
+ * doesn't re-render every bubble and make FlashList re-anchor.
+ */
+function mergeMessages(
+  prev: Message[],
+  incoming: Message[],
+  currentUserId: string
+): Message[] {
+  if (!incoming.length) return prev;
+
+  const byId = new Map(prev.map((m) => [m._id, m]));
+  let changed = false;
+
+  for (const msg of incoming) {
+    const existing = byId.get(msg._id);
+    if (existing) {
+      // Pick up edits/reactions/deletes that landed while we were away.
+      if (
+        msg.updatedAt !== existing.updatedAt ||
+        msg.isDeleted !== existing.isDeleted ||
+        (msg.reactions?.length || 0) !== (existing.reactions?.length || 0)
+      ) {
+        byId.set(msg._id, { ...existing, ...msg });
+        changed = true;
+      }
+      continue;
+    }
+    // One of our own messages we hadn't seen resolve — it raced the send
+    // response, so swap it in for the oldest optimistic bubble rather than
+    // leaving both on screen.
+    if (msg.sender._id === currentUserId) {
+      const tempKey = [...byId.keys()].find((k) => k.startsWith("temp_"));
+      if (tempKey) byId.delete(tempKey);
+    }
+    byId.set(msg._id, msg);
+    changed = true;
+  }
+
+  if (!changed) return prev;
+  return [...byId.values()].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+}
+
 export default function ChatScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -123,11 +184,24 @@ export default function ChatScreen() {
   // Older-message pagination. We load the most recent page first, then fetch
   // earlier pages on demand so full history stays reachable in busy chats.
   // Earlier pages come from the local SQLite store until it runs dry, and only
-  // then from the server.
-  const [page, setPage] = useState(1);
+  // then from the server — both walk backwards from the same cursor.
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const [localHistoryExhausted, setLocalHistoryExhausted] = useState(true);
+  // The pagination bookkeeping lives in refs, not state, on purpose. FlashList
+  // calls onStartReached straight out of its scroll handler, so several calls
+  // can land inside one frame — before any setState has committed. A state
+  // guard read from a useCallback closure is still `false` for all of them,
+  // which let the SQLite path (a ~2ms read) cascade-prepend the entire local
+  // store and drag the view deep into old history. Refs are the only guards
+  // that are true the instant they're set.
+  const loadingOlderRef = useRef(false);
+  const localHistoryExhaustedRef = useRef(true);
+  /** Epoch ms of the oldest message loaded — the authoritative page cursor. */
+  const oldestCursorRef = useRef<number | null>(null);
+  /** Set once FlashList has laid out, so the first render can't trip a load. */
+  const listReadyRef = useRef(false);
+  /** True while the initial open is in flight, to keep refreshes off its back. */
+  const initialLoadRef = useRef(false);
   const online = useIsOnline();
 
   // Add-members (group invite) modal
@@ -169,18 +243,36 @@ export default function ChatScreen() {
   };
 
   const loadChatAndMessages = useCallback(async () => {
+    initialLoadRef.current = true;
     // Paint from the local store first. This is the whole point of keeping
     // chat in SQLite: an already-visited conversation opens with its history
     // on screen before a single byte moves, instead of a spinner.
     const cached = await chatService.getCachedMessages(id, { limit: PAGE_SIZE });
     if (cached.length) {
       setMessages(cached);
-      setLocalHistoryExhausted(false);
+      oldestCursorRef.current = new Date(cached[0].createdAt).getTime();
+      localHistoryExhaustedRef.current = false;
       setHasMoreOlder(true);
       setLoading(false);
     } else {
       setLoading(true);
     }
+
+    /** Drop back to the newest page and let scroll-back refill from there. */
+    const resetToNewestPage = async () => {
+      const data = await chatService.getChatMessages(id, 1);
+      const fresh = data.messages || [];
+      if (!fresh.length) return;
+      setMessages((prev) => [
+        ...fresh,
+        ...prev.filter((m) => m._id.startsWith("temp_")),
+      ]);
+      oldestCursorRef.current = new Date(fresh[0].createdAt).getTime();
+      // Page back from the server, not SQLite: there's a gap between what the
+      // local store holds and this page, and only the server can fill it.
+      localHistoryExhaustedRef.current = true;
+      setHasMoreOlder(fresh.length === PAGE_SIZE);
+    };
 
     try {
       const c = await chatService.getChatById(id);
@@ -189,19 +281,37 @@ export default function ChatScreen() {
       const newest = cached.length ? await newestCreatedAt(id) : null;
       if (newest) {
         // We already hold the history — ask only for the tail we're missing
-        // rather than refetching page 1 and merging it against itself.
-        const { messages: delta } = await chatService.getMessagesSince(id, newest);
-        if (delta.length) {
-          setMessages((prev) => {
-            const known = new Set(prev.map((m) => m._id));
-            return [...prev, ...delta.filter((m) => !known.has(m._id))];
-          });
+        // rather than refetching page 1 and merging it against itself. The
+        // server caps each delta at its page size and says whether more is
+        // waiting, so keep asking with a newer cursor until it says no. The
+        // cap used to be ignored, which stranded everything past the first
+        // 100 missed messages and left the newest ones off screen entirely.
+        let cursor = newest;
+        let caughtUp = false;
+        for (let round = 0; round < MAX_CATCHUP_ROUNDS; round++) {
+          const { messages: delta, hasMore } = await chatService.getMessagesSince(id, cursor);
+          if (delta.length) {
+            setMessages((prev) => mergeMessages(prev, delta, currentUserId));
+            cursor = new Date(delta[delta.length - 1].createdAt).getTime();
+          }
+          if (!hasMore || !delta.length) {
+            caughtUp = true;
+            break;
+          }
         }
+        // Hundreds of messages behind — cheaper and less error-prone to start
+        // from the newest page than to keep walking the gap.
+        if (!caughtUp) await resetToNewestPage();
       } else {
-        const messagesData = await chatService.getChatMessages(id, 1);
-        setMessages(messagesData.messages);
-        setPage(1);
-        setHasMoreOlder((messagesData.pagination?.totalPages || 1) > 1);
+        const data = await chatService.getChatMessages(id, 1);
+        const fresh = data.messages || [];
+        setMessages(fresh);
+        oldestCursorRef.current = fresh.length
+          ? new Date(fresh[0].createdAt).getTime()
+          : null;
+        // Nothing was in the local store, so there's nothing to page from it.
+        localHistoryExhaustedRef.current = true;
+        setHasMoreOlder(fresh.length === PAGE_SIZE);
       }
 
       trackEvent("chat_opened", { chatId: id, chatType: c.type });
@@ -223,6 +333,7 @@ export default function ChatScreen() {
       Alert.alert("Couldn't open chat", `We couldn't load this conversation.${detail}`);
     } finally {
       setLoading(false);
+      initialLoadRef.current = false;
     }
   }, [id, currentUserId]);
 
@@ -240,7 +351,12 @@ export default function ChatScreen() {
   // foreground, and on a slow interval. Merging (not replacing) preserves
   // older paginated pages and in-flight temp_ optimistic messages.
   const refreshMessages = useCallback(async () => {
-    if (!id || pendingInviteeRef.current) return;
+    // Standing off the initial open matters: this fires on focus too, so on
+    // mount it used to race loadChatAndMessages. Whichever lost would write
+    // its result on top of the other's, and the delta append then landed
+    // *older* messages after newer ones — which is how the list ended up
+    // anchored to old history you couldn't scroll down out of.
+    if (!id || pendingInviteeRef.current || initialLoadRef.current) return;
     try {
       const data = await chatService.getChatMessages(id, 1);
       const fetched: Message[] = data?.messages ?? [];
@@ -257,50 +373,17 @@ export default function ChatScreen() {
 
       if (!overlaps) {
         // More than a full page arrived while we were offline. Merging would
-        // leave a silent gap in the middle of the list and break
-        // loadOlderMessages' "fetched pages are older than everything loaded"
-        // assumption, so start over from the newest page instead.
+        // leave a silent gap in the middle of the list, so start over from the
+        // newest page instead and let scroll-back refill from the server.
         setMessages((prev) => [
           ...fetched,
           ...prev.filter((m) => m._id.startsWith("temp_")),
         ]);
-        setPage(1);
-        setHasMoreOlder((data.pagination?.totalPages || 1) > 1);
+        oldestCursorRef.current = new Date(fetched[0].createdAt).getTime();
+        localHistoryExhaustedRef.current = true;
+        setHasMoreOlder(fetched.length === PAGE_SIZE);
       } else {
-        setMessages((prev) => {
-          const byId = new Map(prev.map((m) => [m._id, m]));
-          let changed = false;
-          for (const msg of fetched) {
-            const existing = byId.get(msg._id);
-            if (existing) {
-              // Pick up edits/reactions/deletes that happened while offline,
-              // but keep the existing object when nothing changed so the
-              // list doesn't re-render on every silent poll.
-              if (
-                msg.updatedAt !== existing.updatedAt ||
-                msg.isDeleted !== existing.isDeleted ||
-                (msg.reactions?.length || 0) !== (existing.reactions?.length || 0)
-              ) {
-                byId.set(msg._id, { ...existing, ...msg });
-                changed = true;
-              }
-            } else {
-              // An own message we haven't seen resolve raced the send
-              // response — swap it in for the oldest optimistic bubble,
-              // same as the onNewMessage socket path.
-              if (msg.sender._id === currentUserId) {
-                const tempKey = [...byId.keys()].find((k) => k.startsWith("temp_"));
-                if (tempKey) byId.delete(tempKey);
-              }
-              byId.set(msg._id, msg);
-              changed = true;
-            }
-          }
-          if (!changed) return prev;
-          return [...byId.values()].sort(
-            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-          );
-        });
+        setMessages((prev) => mergeMessages(prev, fetched, currentUserId));
       }
 
       if (hasNewIncoming && currentUserId) {
@@ -379,18 +462,7 @@ export default function ChatScreen() {
         // Don't surface live messages to a user who's only been invited.
         if (pendingInviteeRef.current) return;
         if (message.chat === id) {
-          setMessages((prev) => {
-            if (prev.some((m) => m._id === message._id)) return prev;
-            if (message.sender._id === currentUserId) {
-              const tempIdx = prev.findIndex((m) => m._id.startsWith("temp_"));
-              if (tempIdx !== -1) {
-                const next = [...prev];
-                next[tempIdx] = message;
-                return next;
-              }
-            }
-            return [...prev, message];
-          });
+          setMessages((prev) => mergeMessages(prev, [message], currentUserId));
           if (message.sender._id !== currentUserId && currentUserId) {
             chatService.markMessagesAsRead(id);
             socketService.markMessagesAsRead(id, currentUserId);
@@ -1321,58 +1393,70 @@ export default function ChatScreen() {
     flatListRef.current?.scrollToEnd({ animated: true });
   };
 
-  // Fetch the next page of older messages and prepend them. Guarded so the
-  // list's onContentSizeChange doesn't yank the view back to the bottom.
+  // Fetch the page of messages immediately older than the cursor and prepend
+  // them. Local SQLite first — instant, and works offline — then the server
+  // once the store runs dry. Both walk backwards from the same `before`
+  // cursor, so there is no page-number arithmetic to get wrong.
   const loadOlderMessages = useCallback(async () => {
-    if (loadingOlder || !hasMoreOlder) return;
+    if (loadingOlderRef.current || !hasMoreOlder) return;
+    loadingOlderRef.current = true;
     setLoadingOlder(true);
     try {
-      // Local history first — it's instant and works offline. Only once the
-      // store is exhausted do we start paging the server, and from then on we
-      // stay on the network path so `page` keeps advancing correctly.
-      let fromPage = page;
-      if (!localHistoryExhausted) {
-        const oldest = messagesRef.current[0];
-        const before = oldest ? new Date(oldest.createdAt).getTime() : undefined;
+      const before = oldestCursorRef.current ?? Date.now();
+
+      if (!localHistoryExhaustedRef.current) {
         const local = await chatService.getCachedMessages(id, {
           before,
           limit: PAGE_SIZE,
         });
         if (local.length > 0) {
+          oldestCursorRef.current = new Date(local[0].createdAt).getTime();
           setMessages((prev) => {
             const existing = new Set(prev.map((m) => m._id));
             return [...local.filter((m) => !existing.has(m._id)), ...prev];
           });
           return;
         }
-        setLocalHistoryExhausted(true);
-        // The server pages back from the newest message, so the next page to
-        // ask for is however many pages the local store already covered. Held
-        // in a local — `setPage` won't have landed by the time we read it.
-        fromPage = Math.max(1, Math.ceil(messagesRef.current.length / PAGE_SIZE));
+        localHistoryExhaustedRef.current = true;
       }
 
-      const nextPage = fromPage + 1;
-      const data = await chatService.getChatMessages(id, nextPage);
-      const older = data.messages || [];
+      if (!isOnline()) {
+        // Nothing left locally and no connection — stop offering "load more"
+        // so it doesn't spin on every scroll to the top.
+        setHasMoreOlder(false);
+        return;
+      }
+
+      const { messages: older, hasMore } = await chatService.getMessagesBefore(
+        id,
+        before,
+        PAGE_SIZE
+      );
       if (older.length > 0) {
+        oldestCursorRef.current = new Date(older[0].createdAt).getTime();
         setMessages((prev) => {
           const existing = new Set(prev.map((m) => m._id));
-          const deduped = older.filter((m) => !existing.has(m._id));
-          return [...deduped, ...prev];
+          return [...older.filter((m) => !existing.has(m._id)), ...prev];
         });
-        setPage(nextPage);
       }
-      setHasMoreOlder(nextPage < (data.pagination?.totalPages || nextPage));
+      setHasMoreOlder(hasMore && older.length > 0);
     } catch (error) {
       console.error("Error loading older messages:", error);
-      // Offline with nothing left locally — stop the spinner from reappearing
-      // on every scroll to the top.
       setHasMoreOlder(false);
     } finally {
+      loadingOlderRef.current = false;
       setLoadingOlder(false);
     }
-  }, [id, page, hasMoreOlder, loadingOlder, localHistoryExhausted]);
+  }, [id, hasMoreOlder]);
+
+  // FlashList can fire onStartReached during its first layout pass, before it
+  // has settled at the bottom — on its own that kicks off a prepend, which
+  // trips the next one, and so on. The header button calls loadOlderMessages
+  // directly instead: an explicit tap is never ambiguous.
+  const handleStartReached = useCallback(() => {
+    if (!listReadyRef.current) return;
+    loadOlderMessages();
+  }, [loadOlderMessages]);
 
   // Stable callbacks so MessageBubble's React.memo isn't defeated by a fresh
   // arrow function on every render.
@@ -1714,7 +1798,10 @@ export default function ChatScreen() {
             showsVerticalScrollIndicator={false}
             onScroll={handleMessagesScroll}
             scrollEventThrottle={16}
-            onStartReached={loadOlderMessages}
+            onLoad={() => {
+              listReadyRef.current = true;
+            }}
+            onStartReached={handleStartReached}
             onStartReachedThreshold={0.15}
             // FlashList v2 anchors at the bottom and follows new messages when
             // near the bottom — this replaces all the manual scrollToEnd /

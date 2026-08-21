@@ -34,6 +34,12 @@ export async function registerForPushNotifications() {
   console.log("[PushNotif] Auth token present:", !!authToken);
 
   if (authToken && token) {
+    // Ride along with the city the user is browsing. This is the only route it
+    // takes to the server — useActiveCity keeps it in SecureStore and nothing
+    // else uploads it — and it's what lets server-side pushes name an event
+    // that's actually near them.
+    const city = await SecureStore.getItemAsync("selectedCity");
+
     try {
       const res = await fetch(`${BASE_URL}/notifications/token`, {
         method: "PUT",
@@ -41,7 +47,7 @@ export async function registerForPushNotifications() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, ...(city ? { city } : {}) }),
       });
       console.log("[PushNotif] FCM token saved to backend, status:", res.status);
     } catch (err) {
