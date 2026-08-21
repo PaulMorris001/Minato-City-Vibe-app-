@@ -119,6 +119,17 @@ const userSchema = mongoose.Schema({
   // FCM push notification token (updated on each app launch)
   fcmToken: { type: String, default: null },
 
+  // Last "come see what's on" nudge (jobs/engagementPush.job.js). This stamp,
+  // not the job's tick rate, is what actually caps the send rate — the job runs
+  // hourly and would otherwise re-send all evening. Null means never sent.
+  lastEngagementPushAt: { type: Date, default: null },
+
+  // The city the user is actually browsing, refreshed by the mobile app every
+  // launch when it registers its push token. `location.city` can't stand in for
+  // this: it's the vendor/payments account address, only ~a third of users set
+  // it, and it's where they live rather than where they're looking for events.
+  pushCity: { type: String, default: null },
+
   // Email/push channel preferences. Push follows the OS permission; these
   // cover the channels we control. Default on — users opt out, not in.
   notificationPrefs: {
