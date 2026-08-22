@@ -45,7 +45,7 @@ async function releaseDuePayouts() {
 
   const due = events.filter((evt) => {
     const releaseAt = new Date(
-      new Date(evt.date).getTime() + (evt.payoutDelayHours || 48) * 60 * 60 * 1000
+      new Date(evt.date).getTime() + (evt.payoutDelayHours || 24) * 60 * 60 * 1000
     );
     return releaseAt <= now;
   });
