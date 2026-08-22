@@ -1,44 +1,44 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import {
-  ScrollView,
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  RefreshControl,
-  AppState,
-  FlatList,
-  Animated,
-  Platform,
-  Linking,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import { Image } from "expo-image";
-import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
-import * as Location from "expo-location";
+import CreateEventModal from "@/components/client/CreateEventModal";
+import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
+import ExternalEventCard from "@/components/shared/ExternalEventCard";
+import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
+import SupportFab from "@/components/shared/SupportFab";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { currencyPrefix, priceLabel } from "@/constants/payments";
-import CreateEventModal from "@/components/client/CreateEventModal";
-import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
-import ExternalEventCard from "@/components/shared/ExternalEventCard";
-import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
-import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
-import { useStripePayment } from "@/hooks/useStripePayment";
+import { setActiveCity as setSharedActiveCity, useActiveCity } from "@/hooks/useActiveCity";
 import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useLocation";
-import { useActiveCity, setActiveCity as setSharedActiveCity } from "@/hooks/useActiveCity";
+import { useStripePayment } from "@/hooks/useStripePayment";
+import { ExternalEvent, externalEventService } from "@/services/externalEvent.service";
 import { trackEvent } from "@/utils/analytics";
-import { ensureAuth } from "@/utils/requireAuth";
 import { cacheRead, cacheWrite } from "@/utils/offlineCache";
+import { ensureAuth } from "@/utils/requireAuth";
 import { ensureOnline } from "@/utils/requireOnline";
-import SupportFab from "@/components/shared/SupportFab";
+import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
+import * as Location from "expo-location";
+import { useRouter } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  Animated,
+  AppState,
+  FlatList,
+  Linking,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 
 function Skeleton({ width, height, borderRadius = 10, style }: { width: number | string; height: number; borderRadius?: number; style?: any }) {
   const { colors } = useTheme();
@@ -173,6 +173,73 @@ function SectionHeader({ title, subtitle, onAction, actionLabel }: { title: stri
         </TouchableOpacity>
       )}
     </View>
+  );
+}
+
+function RaffleBanner({
+  hasBirthdayEvent = false,
+}: {
+  hasBirthdayEvent?: boolean;
+}) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  const router = useRouter();
+
+  const handlePress = () => {
+    if (hasBirthdayEvent) {
+      router.push("/birthday-raffle/status" as any);
+    } else {
+      router.push("/birthday-raffle" as any);
+    }
+  };
+  return (
+    <TouchableOpacity
+     style={styles.raffleBanner}
+      onPress={handlePress}
+      activeOpacity={0.85}
+      >
+      <LinearGradient
+        colors={
+          hasBirthdayEvent
+            ? [colors.primary, colors.primaryDark || "#1a0f3d"]
+            : ["#2D1B69", colors.primaryDark || "#1a0f3d"]
+        }
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.raffleBannerInner}
+      >
+        <View style={styles.raffleBannerContent}>
+          <View style={styles.raffleBadge}>
+            <Ionicons
+              name={hasBirthdayEvent ? "checkmark-circle" : "gift"}
+              size={12}
+              color="#fff"
+            />
+            <Text style={styles.raffleBadgeText}>
+              {hasBirthdayEvent ? "YOU’RE IN" : "NEW"}
+            </Text>
+          </View>
+
+          <Text style={styles.raffleTitle}>
+            {hasBirthdayEvent
+              ? "View Your Raffle Status"
+              : "Birthday Raffle is Live 🎉"}
+          </Text>
+
+          <Text style={styles.raffleSubtitle}>
+            {hasBirthdayEvent
+              ? "See your verified RSVPs, tracking link & eligibility"
+              : "Create a birthday event & stand a chance to win cash prizes"}
+          </Text>
+        </View>
+
+        <Ionicons
+          name="chevron-forward"
+          size={20}
+          color="rgba(255,255,255,0.8)"
+        />
+      </LinearGradient>
+    </TouchableOpacity>
   );
 }
 
@@ -952,6 +1019,9 @@ export default function Home() {
 
         {/* The search bar that used to sit here moved into the unified search
             page. */}
+
+            {/* Temporary Raffle Entry Point */}
+        <RaffleBanner hasBirthdayEvent={true} />
 
         {locationBanner === "approximate" && (
           <View style={styles.locationBanner}>
@@ -1853,4 +1923,50 @@ const createStyles = (c: ThemeColors) =>
     justifyContent: "center",
     alignItems: "center",
   },
+
+  raffleBanner: {
+  marginHorizontal: 20,
+  marginBottom: 20,
+  borderRadius: 18,
+  overflow: "hidden",
+},
+raffleBannerInner: {
+  flexDirection: "row",
+  alignItems: "center",
+  paddingVertical: 16,
+  paddingHorizontal: 16,
+  gap: 12,
+},
+raffleBannerContent: {
+  flex: 1,
+},
+raffleBadge: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 4,
+  alignSelf: "flex-start",
+  backgroundColor: "rgba(255,255,255,0.15)",
+  paddingHorizontal: 8,
+  paddingVertical: 3,
+  borderRadius: 999,
+  marginBottom: 8,
+},
+raffleBadgeText: {
+  fontFamily: Fonts.bold,
+  fontSize: 10,
+  color: "#fff",
+  letterSpacing: 0.5,
+},
+raffleTitle: {
+  fontFamily: Fonts.bold,
+  fontSize: 16,
+  color: "#fff",
+  marginBottom: 4,
+},
+raffleSubtitle: {
+  fontFamily: Fonts.regular,
+  fontSize: 13,
+  color: "rgba(255,255,255,0.8)",
+  lineHeight: 18,
+},
 });
