@@ -212,7 +212,7 @@ const eventSchema = mongoose.Schema({
     enum: ["none", "pending", "awaiting_approval", "released", "failed"],
     default: "none",
   },
-  payoutDelayHours: { type: Number, default: 48 },
+  payoutDelayHours: { type: Number, default: 24 },
   payoutReleasedAt: { type: Date },
   payoutTransferIds: [{ type: String }],
   payoutError: { type: String },

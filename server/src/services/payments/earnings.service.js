@@ -71,7 +71,7 @@ function payoutReference(type, relatedId, buyerId) {
  */
 function ticketReleaseAt(event) {
   return new Date(
-    new Date(event.date).getTime() + (event.payoutDelayHours ?? 48) * 60 * 60 * 1000
+    new Date(event.date).getTime() + (event.payoutDelayHours ?? 24) * 60 * 60 * 1000
   );
 }
 
