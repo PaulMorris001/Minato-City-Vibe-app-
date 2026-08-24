@@ -16,6 +16,7 @@ import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean, assertMeaningful } from "../utils/contentFilter.js";
 import {
   hasPayoutOnboarding,
+  getSettlementProvider,
   currencyForUser,
   PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
@@ -824,6 +825,16 @@ export const getEventById = async (req, res) => {
       eventObj.ticketingReady = true;
     }
 
+    // Which rail this organizer's ticket money settles on, so their payout
+    // banners can name the right account instead of assuming Stripe — a
+    // Nigerian organizer settles through Paystack and has no Stripe account to
+    // be told about. Organizer-only: it's their account detail, not public. The
+    // client can't derive it, because the cached user object it would need a
+    // country from is written at login, which doesn't return `location`.
+    if (isCreator || isCohostViewer) {
+      eventObj.payoutProvider = getSettlementProvider(event.createdBy);
+    }
+
     // Never leak the organizer's payout IDs/status to the client.
     if (eventObj.createdBy) {
       delete eventObj.createdBy.paystackRecipientCode;
@@ -907,6 +918,53 @@ export const getEventByShareToken = async (req, res) => {
     eventObj.hasMeetingLink = !!event.meetingLink;
     delete eventObj.meetingLink;
     delete eventObj.pendingEdits;
+
+    // There is no `req.user` on this route at all, so the viewer is always a
+    // stranger. It used to return the raw document from here, which shipped the
+    // invite list (populated, INCLUDING email addresses), the viewer list, and
+    // every capacity number regardless of `showAttendance` — an organizer who
+    // opted out still had their headcount published to anyone holding a link.
+    // Mirror the anonymous branch of getEventById instead.
+    delete eventObj.viewedBy;
+    delete eventObj.pendingInvites;
+    delete eventObj.joinRequests;
+    // Not deleted outright like the lists above: the share screen checks whether
+    // the viewer is already on it to decide between "Join" and "You're going".
+    // It only ever reads `_id`, so reduce to ids — the populated form was
+    // shipping every invitee's email and photo to anyone holding the link.
+    eventObj.invitedUsers = (event.invitedUsers || []).map((u) => ({ _id: String(u._id) }));
+
+    // Counts are derived before redacting so applyAttendanceVisibility can work
+    // out `soldOut` — the one signal that survives the opt-out, because checkout
+    // needs it and it reveals no number.
+    eventObj.rsvpCount = event.rsvpUsers.length;
+    if (event.isPaid) {
+      const ticketsSold = await Ticket.countDocuments({ event: event._id, isValid: true });
+      eventObj.ticketsSold = ticketsSold;
+      eventObj.ticketsRemaining = Math.max(event.maxGuests - ticketsSold, 0);
+      // Paid capacity is measured in tickets, not RSVP entries — one buyer can
+      // hold several. Same rule as getEventById.
+      eventObj.rsvpCount = ticketsSold;
+      eventObj.rsvpUsers = [];
+
+      const tiersWithQty = (event.ticketTiers || []).filter(
+        (t) => typeof t.quantity === "number"
+      );
+      if (tiersWithQty.length) {
+        const soldByTier = await Ticket.aggregate([
+          { $match: { event: event._id, isValid: true } },
+          { $group: { _id: "$tierId", count: { $sum: 1 } } },
+        ]);
+        const soldMap = new Map(soldByTier.map((r) => [String(r._id), r.count]));
+        eventObj.ticketTiers = (eventObj.ticketTiers || []).map((t) => {
+          if (typeof t.quantity !== "number") return t;
+          const sold = soldMap.get(String(t._id)) || 0;
+          return { ...t, remaining: Math.max(t.quantity - sold, 0) };
+        });
+      }
+    }
+    // Anonymous viewer, so never the organizer.
+    applyAttendanceVisibility(eventObj, { isOrganizer: false });
 
     res.status(200).json({ event: eventObj });
   } catch (error) {
