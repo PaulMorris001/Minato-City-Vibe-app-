@@ -186,7 +186,7 @@ export default function ShareEventScreen() {
 
   const isCreator = event?.createdBy._id === currentUserId;
   const alreadyJoined =
-    event?.invitedUsers.some((u) => u._id === currentUserId) || isCreator;
+    event?.invitedUsers?.some((u) => u._id === currentUserId) || isCreator;
 
   if (loading || redirecting) {
     return (

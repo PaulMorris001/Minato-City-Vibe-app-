@@ -32,7 +32,7 @@ import { trackEvent } from "@/utils/analytics";
 import { createEventShareLink } from "@/utils/shareLinks";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { useStripePayment } from "@/hooks/useStripePayment";
-import { currencyPrefix } from "@/constants/payments";
+import { currencyPrefix, payoutAccountLabel } from "@/constants/payments";
 import {
   fetchEventDiscountCodes,
   previewDiscountCode,
@@ -130,6 +130,10 @@ interface Event {
   approvalRejectReason?: string;
   payoutStatus?: "none" | "pending" | "released" | "failed";
   payoutReleasedAt?: string;
+  /** Hold window before ticket money is released. Absent on older events (24). */
+  payoutDelayHours?: number;
+  /** Settlement rail, organizer-only. Names the account in the payout banners. */
+  payoutProvider?: "paystack" | "stripe" | null;
   userStatus: "creator" | "accepted" | "pending" | "requested" | "none";
   createdBy: User;
   cohosts?: User[];
@@ -1328,8 +1332,9 @@ export default function EventDetailsPage() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.bannerTitle}>Payout held</Text>
                   <Text style={styles.bannerBody}>
-                    Ticket revenue is held by OurCityvibe and released to your Stripe
-                    account 48h after the event ends.
+                    Ticket revenue is held by OurCityvibe and released to your{" "}
+                    {payoutAccountLabel(event.payoutProvider)}{" "}
+                    {event.payoutDelayHours ?? 24}h after the event ends.
                   </Text>
                 </View>
               </View>
@@ -1343,7 +1348,7 @@ export default function EventDetailsPage() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.bannerTitle}>Payout released</Text>
                   <Text style={styles.bannerBody}>
-                    Transferred to your Stripe account on{" "}
+                    Transferred to your {payoutAccountLabel(event.payoutProvider)} on{" "}
                     {new Date(event.payoutReleasedAt).toLocaleDateString()}.
                   </Text>
                 </View>
