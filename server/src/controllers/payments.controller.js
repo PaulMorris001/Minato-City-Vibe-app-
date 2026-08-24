@@ -24,11 +24,10 @@ import {
   getPayoutProvider,
   getSettlementProvider,
   hasPayoutOnboarding,
-  PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
-import { fulfillTicket, issueRecipientTicket, fulfillGuide, fulfillBooking, fulfillOrder, formatAmountText } from "../services/payments/fulfillment.js";
+import { fulfillTicket, fulfillTicketOrder, fulfillGuide, fulfillBooking, fulfillOrder } from "../services/payments/fulfillment.js";
 import { computeSplit } from "../services/payments/split.js";
-import { buildPaystackInit, verifyPaystackCharge } from "./paystack.controller.js";
+import { buildPaystackInit, verifyPaystackCharge, paystackReturnUrl } from "./paystack.controller.js";
 import { createPayout } from "../services/payments/payout.service.js";
 import { settleStripePurchase } from "../services/payments/settleStripePayment.js";
 import TicketOrder from "../models/ticketOrder.model.js";
@@ -40,10 +39,6 @@ import {
   updateRedemptionReference,
   applyRedemptionByReference,
 } from "../services/payments/discount.service.js";
-import { findOrCreateGuestUser } from "./guestCheckout.controller.js";
-import { notifyUser } from "../services/notification.service.js";
-import { sendSaleEmail, sendPurchaseReceiptEmail } from "../services/email.service.js";
-import { invalidateCachePattern } from "../utils/cache.js";
 import { findEventByAnyId } from "../utils/resolveEvent.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -521,6 +516,15 @@ async function confirmFreeTicket(type, id, reference, userId, res, tierId) {
 }
 
 async function confirmPaystack(type, id, reference, userId, res, tierId) {
+  // A batch reference must never be redeemed as a single purchase.
+  // verifyPaystackCharge only rejects UNDERpayment, so an NGN 750 two-ticket
+  // charge would verify happily against a NGN 250 tier and issue ONE ticket,
+  // crediting the seller for one sale — the buyer pays for two and the organizer
+  // is paid for one.
+  if (await TicketOrder.exists({ reference })) {
+    return res.status(400).json({ message: "This payment belongs to a multi-ticket order" });
+  }
+
   // Re-derive the expected charge from the item (never trust the client — the
   // tierId only picks WHICH server-known price to verify the charge against).
   const purchase = await resolvePurchaseForConfirm(type, id, userId, res, tierId);
@@ -812,7 +816,19 @@ export const initTicketBatch = async (req, res) => {
 
     if (provider === "paystack") {
       const buyer = await User.findById(buyerId).select("email username");
-      const init = await buildPaystackInit({ type: "ticket", id: eventKey, amount: total, currency, buyer });
+      const init = await buildPaystackInit({
+        type: "ticket",
+        id: eventKey,
+        amount: total,
+        currency,
+        buyer,
+        // Tags the charge as a batch so nothing can mistake it for a single
+        // ticket, and gives the webhook the order to fulfill.
+        meta: { batch: true, ticketOrderId: order._id.toString() },
+        // This endpoint is web-only (the app buys through /init/:type/:id), so
+        // the popup must land on a page, not the app's custom scheme.
+        callbackUrl: paystackReturnUrl({ web: true }),
+      });
       order.reference = init.reference;
       await order.save();
       if (redemption) await updateRedemptionReference(redemption._id, init.reference);
@@ -919,128 +935,10 @@ export const confirmTicketBatch = async (req, res) => {
       }
     }
 
-    // Re-derived from the seller rather than read back from the order/PI, so a
-    // routing change between init and confirm settles on today's rail.
-    const batchSeller = await User.findById(order.seller).select(PAYOUT_ROUTING_FIELDS);
-    const payoutProvider = isPaystack ? "paystack" : getSettlementProvider(batchSeller);
-    // Discounted orders spread the charge across items proportionally
-    // (scale = total/subtotal) so per-ticket accounting sums to exactly what
-    // was paid; the rounding remainder lands on the last item. Undiscounted
-    // orders have no `subtotal`, scale 1, and behave as before.
-    const round2 = (n) => Math.round(n * 100) / 100;
-    const scale = order.subtotal ? order.total / order.subtotal : 1;
-    let paidSoFar = 0;
-    const ticketIds = [];
-    for (let i = 0; i < order.items.length; i++) {
-      const item = order.items[i];
-      const isLast = i === order.items.length - 1;
-      const paidForItem = isLast ? round2(order.total - paidSoFar) : round2(item.price * scale);
-      paidSoFar = round2(paidSoFar + paidForItem);
-      const recipient = await findOrCreateGuestUser(item.recipientEmail, item.recipientName);
-      // Fee accounting mirrors the single-ticket flow: Stripe stores cents,
-      // Paystack stores major units (the field name says "Cents"; currency
-      // disambiguates — see ticket.model.js).
-      let platformFeeCents, sellerNetCents;
-      if (isPaystack || isFree) {
-        const split = computeSplit(paidForItem);
-        platformFeeCents = split.platformFee;
-        sellerNetCents = split.sellerNet;
-      } else {
-        const cents = Math.round(paidForItem * 100);
-        platformFeeCents = Math.round(cents * (PLATFORM_FEE_PERCENT / 100));
-        sellerNetCents = cents - platformFeeCents;
-      }
-      const tier = item.tierId
-        ? { tierId: item.tierId, name: item.tierName, price: item.price }
-        : null;
-      const ticket = await issueRecipientTicket({
-        event,
-        recipientUserId: recipient._id,
-        buyerUserId: buyerId,
-        tier,
-        provider: isFree ? "none" : isPaystack ? "paystack" : "stripe",
-        payoutProvider,
-        paymentRef: reference,
-        currency: isPaystack || isFree ? order.currency : "usd",
-        platformFeeCents,
-        sellerNetCents,
-        recipientEmail: item.recipientEmail,
-        recipientName: item.recipientName,
-        ...(order.discountCode
-          ? {
-              amountPaid: paidForItem,
-              discountCode: order.discountCode,
-              discountAmount: round2(item.price - paidForItem),
-            }
-          : {}),
-      });
-      ticketIds.push(ticket._id);
-    }
-
-    // Ticket holders (buyers, gift recipients, guests) are intentionally NOT
-    // added to rsvpUsers/invitedUsers: attendance for a paid event is tracked by
-    // Ticket records (so capacity counts every ticket, and one buyer holding
-    // several is counted correctly), and dropping them keeps auto-created guest /
-    // gift-recipient accounts out of the public "who's coming" list.
-
-    // Event detail is cached under whichever param the caller used, so drop the
-    // `_id`, slug and shareToken keys — otherwise a slug-fetched page keeps
-    // serving stale ticket counts after a sale.
-    for (const key of [eventKey, event.slug, event.shareToken].filter(Boolean)) {
-      invalidateCachePattern(`event_detail_${key}_`);
-    }
-    invalidateCachePattern("public_events_");
-    invalidateCachePattern("event_highlights_");
-
-    // Notify + email both parties. notifyUser writes the durable Notification
-    // doc — the old bare push left the seller with no in-app record of the sale.
-    const [batchBuyer, batchSellerUser] = await Promise.all([
-      User.findById(buyerId).select("username email"),
-      User.findById(event.createdBy).select("username email"),
-    ]);
-    const ticketCount = order.items.length;
-    const ticketLabel = ticketCount === 1 ? "Ticket" : "Tickets";
-    const batchAmountText = formatAmountText(order.total, order.currency || "usd");
-    await notifyUser(event.createdBy, {
-      type: "ticket_sold",
-      title: "🎟️ Tickets sold!",
-      body: `${ticketCount} ticket${ticketCount === 1 ? "" : "s"} just sold for "${event.title}"`,
-      data: { eventId: eventKey.toString() },
-    });
-    await notifyUser(buyerId, {
-      type: "ticket_purchased",
-      title: "🎟️ Tickets Confirmed",
-      body: `${ticketCount} ticket${ticketCount === 1 ? "" : "s"} for "${event.title}" — passes emailed to each recipient`,
-      data: { eventId: eventKey.toString() },
-    });
-    if (batchSellerUser?.email) {
-      sendSaleEmail(batchSellerUser.email, {
-        sellerName: batchSellerUser.username,
-        buyerName: batchBuyer?.username,
-        itemLabel: ticketLabel,
-        itemTitle: event.title,
-        amountText: batchAmountText,
-        quantity: ticketCount,
-      }).catch((e) => console.error("sendSaleEmail (confirmTicketBatch) failed:", e));
-    }
-    if (batchBuyer?.email) {
-      sendPurchaseReceiptEmail(batchBuyer.email, {
-        buyerName: batchBuyer.username,
-        sellerName: batchSellerUser?.username,
-        itemLabel: ticketLabel,
-        itemTitle: event.title,
-        amountText: batchAmountText,
-        quantity: ticketCount,
-      }).catch((e) => console.error("sendPurchaseReceiptEmail (confirmTicketBatch) failed:", e));
-    }
-
-    order.status = "paid";
-    order.ticketIds = ticketIds;
-    order.paidAt = new Date();
-    await order.save();
-
-    // Settle the discount reservation now that the order is fulfilled.
-    if (order.discountCode) await applyRedemptionByReference(order.reference);
+    // The charge is verified; the fan-out is shared with both provider webhooks,
+    // so a buyer whose browser never makes this call still gets her tickets.
+    // See fulfillTicketOrder.
+    const { ticketIds } = await fulfillTicketOrder({ order, event });
 
     return res.status(201).json({
       message: "Tickets confirmed",

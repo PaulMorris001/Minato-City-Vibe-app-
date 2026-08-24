@@ -43,7 +43,10 @@ const ticketOrderSchema = mongoose.Schema(
 
     items: { type: [ticketOrderItemSchema], required: true },
 
-    status: { type: String, enum: ["pending", "paid"], default: "pending" },
+    // "fulfilling" is the claim a fulfiller takes before issuing any ticket, so
+    // the confirm endpoint and a provider webhook racing the same order can't
+    // both run the fan-out. It reverts to "pending" if the fan-out throws.
+    status: { type: String, enum: ["pending", "fulfilling", "paid"], default: "pending" },
     ticketIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "ticket" }],
     paidAt: { type: Date },
   },

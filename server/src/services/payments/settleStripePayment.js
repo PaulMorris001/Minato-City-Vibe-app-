@@ -18,8 +18,10 @@
  */
 
 import User from "../../models/user.model.js";
+import TicketOrder from "../../models/ticketOrder.model.js";
 import {
   fulfillTicket,
+  fulfillTicketOrder,
   fulfillGuide,
   fulfillBooking,
   fulfillOrder,
@@ -119,6 +121,29 @@ export async function settleStripePurchase(paymentIntent) {
     // No payout here: ticket money is held until after the event and released in
     // bulk by payoutRelease.job.js, so the organizer can't be paid for an event
     // that hasn't happened.
+    return { type, result, payout: null };
+  }
+
+  // Web batch checkout (multi / gift tickets). The order carries its own frozen
+  // accounting, so there is nothing to re-derive here — just fan it out. Without
+  // this branch the whole batch flow had NO server-side fallback: fulfillment
+  // happened only if the buyer's browser completed the confirm round trip, and a
+  // closed tab meant a collected charge with no tickets and no seller payout.
+  if (type === "ticket_batch") {
+    const order = meta.ticketOrderId
+      ? await TicketOrder.findById(meta.ticketOrderId)
+      : await TicketOrder.findOne({ reference: paymentIntent.id });
+    if (!order) {
+      throw new Error(
+        `settleStripePurchase: no TicketOrder for PaymentIntent ${paymentIntent.id}`
+      );
+    }
+    if (Number(paymentIntent.amount) < Math.round(order.total * 100)) {
+      throw new Error(`settleStripePurchase: PI ${paymentIntent.id} underpays order ${order._id}`);
+    }
+    const result = await fulfillTicketOrder({ order });
+    // No payout here: ticket money is held until after the event and released in
+    // bulk by payoutRelease.job.js — same as the single-ticket branch below.
     return { type, result, payout: null };
   }
 
