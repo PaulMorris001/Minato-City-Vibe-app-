@@ -43,12 +43,14 @@ interface CreateEventModalProps {
   visible: boolean;
   onClose: () => void;
   onEventCreated?: () => void;
+  isBirthdayRaffle?: boolean;
 }
 
 export default function CreateEventModal({
   visible,
   onClose,
   onEventCreated,
+  isBirthdayRaffle = false,
 }: CreateEventModalProps) {
   const { colors, isDark } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -265,6 +267,7 @@ export default function CreateEventModal({
         // so a blank Max Guests is fine (send 0 and let the server compute).
         maxGuests: formData.isPaid && formData.maxGuests ? parseInt(formData.maxGuests) : 0,
         venueProofImage: venueProofUrl,
+        isBirthdayRaffle: isBirthdayRaffle,
       };
 
       const { data } = await axios.post(`${BASE_URL}/events`, eventData, {
@@ -273,35 +276,44 @@ export default function CreateEventModal({
 
       // Every paid event waits on admin review before it can sell tickets, so
       // trust the server's wording rather than always claiming it's live.
-      Alert.alert(
-        data?.pendingApproval ? "Submitted for review" : "Success",
-        data?.message || "Event created successfully!"
-      );
+          Alert.alert(
+      data?.pendingApproval ? "Submitted for review" : "Success",
+      isBirthdayRaffle
+        ? "Birthday event created! You’re now entered into the raffle."
+        : data?.message || "Event created successfully!"
+    );
 
-      // Reset form
-      setFormData({
-        title: "",
-        date: "",
-        location: "",
-        address: "",
-        description: "",
-        isVirtual: false,
-        meetingLink: "",
-        isPublic: false,
-        isPaid: false,
-        showAttendance: false,
-        ticketPrice: "",
-        maxGuests: "",
-      });
-      setEventImages([]);
-      setVenueProofImage("");
-      setEventLocation(null);
-      setPinnedCoords(null);
-      setTiers([]);
+    // Reset form
+    setFormData({
+      title: "",
+      date: "",
+      location: "",
+      address: "",
+      description: "",
+      isVirtual: false,
+      meetingLink: "",
+      isPublic: false,
+      isPaid: false,
+      showAttendance: false,
+      ticketPrice: "",
+      maxGuests: "",
+    });
+    setEventImages([]);
+    setVenueProofImage("");
+    setEventLocation(null);
+    setPinnedCoords(null);
+    setTiers([]);
 
-      // Callback and close
-      if (onEventCreated) onEventCreated();
-      onClose();
+    // Callback and close
+    if (onEventCreated) onEventCreated();
+    onClose();
+
+    // If this was a birthday raffle event → go to status screen
+    if (isBirthdayRaffle) {
+      router.push("/birthday-raffle/status" as any);
+    }
+
+ 
     } catch (error: any) {
       console.error("Error creating event:", error);
       const errorMessage =
@@ -369,7 +381,9 @@ export default function CreateEventModal({
             >
               {/* Header */}
               <View style={styles.header}>
-                <Text style={styles.modalTitle}>Create event</Text>
+                <Text style={styles.modalTitle}>
+                  {isBirthdayRaffle ? "Create Birthday Event" : "Create event"}
+                </Text>
                 <TouchableOpacity style={styles.closeButton} onPress={onClose}>
                   <Ionicons name="close" size={20} color={colors.textDim} />
                 </TouchableOpacity>

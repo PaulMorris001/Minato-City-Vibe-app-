@@ -69,20 +69,17 @@ export default function BirthdayRaffleScreen() {
     checkStatus();
   }, []);
 
-  const handlePrimaryCTA = async () => {
-    if (!(await ensureAuth("join the birthday raffle"))) return;
+const handlePrimaryCTA = async () => {
+  if (!(await ensureAuth("join the birthday raffle"))) return;
 
-    if (hasBirthdayEvent) {
-      // User already has a qualifying event → go to status page
-      router.push("/birthday-raffle/status" as any);
-    } else {
-      // No event yet → open create event flow
-      // For now we go back and let the existing CreateEventModal handle it,
-      // or you can navigate to a dedicated create screen later.
-      router.back();
-      // Optional: you can also emit an event or use a global state to open the modal
-    }
-  };
+  if (hasBirthdayEvent) {
+    // User already has a qualifying event → go to status page
+    router.push("/birthday-raffle/status" as any);
+  } else {
+    // No event yet → go to Home and open CreateEventModal with birthday flag
+    router.replace("/(tabs)?openCreate=birthday" as any);
+  }
+};
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -108,7 +105,7 @@ export default function BirthdayRaffleScreen() {
       >
         {/* Hero */}
         <LinearGradient
-          colors={["#2D1B69", colors.backgroundDeep]}
+          colors={[colors.primary, colors.primaryDark]}
           style={styles.hero}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}

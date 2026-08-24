@@ -18,7 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -460,6 +460,8 @@ export default function Home() {
   const isIpad = Platform.OS === "ios" && Platform.isPad;
   const { payForTicket } = useStripePayment();
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isBirthdayRaffle, setIsBirthdayRaffle] = useState(false);
+  const { openCreate } = useLocalSearchParams<{ openCreate?: string }>();
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
   const [highlights, setHighlights] = useState<{
     trending: PublicEvent[];
@@ -856,6 +858,16 @@ export default function Home() {
     };
   }, [selectedCity, resolveHomeLocation]);
 
+  useEffect(() => {
+  if (openCreate === "birthday") {
+    setIsBirthdayRaffle(true);
+    setIsModalVisible(true);
+
+    // Clear the param so it doesn't re-trigger
+    router.setParams({ openCreate: undefined });
+  }
+}, [openCreate]);
+
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
     if (!(await ensureAuth("buy a ticket"))) return;
     // The hook runs checkout AND confirms server-side before returning.
@@ -1015,7 +1027,7 @@ export default function Home() {
             page. */}
 
             {/* Temporary Raffle Entry Point */}
-        <RaffleBanner hasBirthdayEvent={true} />
+        <RaffleBanner hasBirthdayEvent={false} />
 
         {locationBanner === "approximate" && (
           <View style={styles.locationBanner}>
@@ -1409,11 +1421,15 @@ export default function Home() {
           gates itself on tap, so guests get the standard sign-in prompt. */}
       <SupportFab />
 
-      <CreateEventModal
-        visible={isModalVisible}
-        onClose={() => setIsModalVisible(false)}
-        onEventCreated={() => fetchPublicEvents(selectedCity)}
-      />
+        <CreateEventModal
+          visible={isModalVisible}
+          onClose={() => {
+            setIsModalVisible(false);
+            setIsBirthdayRaffle(false);
+          }}
+          onEventCreated={() => fetchPublicEvents(selectedCity)}
+          isBirthdayRaffle={isBirthdayRaffle}
+        />
     </>
   );
 }
