@@ -50,6 +50,7 @@ export async function issueEventPass({
   ticketId = null,
   recipientEmail = null,
   recipientName = null,
+  sendEmail = true,
 }) {
   try {
     let pass = null;
@@ -95,7 +96,11 @@ export async function issueEventPass({
       }
     }
 
-    if (!pass || !shouldEmail) return;
+    // `sendEmail: false` still records the pass — it is the entitlement, and the
+    // QR must be valid — it only skips delivery. Used when repairing an order
+    // long after the fact, where mailing a pass for a finished event would
+    // confuse the holder more than help them.
+    if (!pass || !shouldEmail || !sendEmail) return;
 
     // Email is best-effort and must not block or fail the caller's flow. Send to
     // the ticket recipient when given (gifting), else the pass owner's email.

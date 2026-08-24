@@ -937,7 +937,6 @@ function PaystackCheckout({
 
   function pollConfirm(reference: string, win: Window | null) {
     let ticks = 0;
-    let closedTicks = 0;
     let inFlight = false; // never run two confirms at once — avoids double-fulfilling
     const timer = setInterval(async () => {
       if (inFlight) return;
@@ -954,18 +953,14 @@ function PaystackCheckout({
         } catch {}
         onPaid({ recipients: done.recipients || [] });
       } catch {
-        if (win && win.closed) {
-          closedTicks++;
-          if (closedTicks >= 2) {
-            clearInterval(timer);
-            setBusy(false);
-          }
-        }
+        // Deliberately does NOT give up when the popup closes. Closing it is the
+        // normal end of the Paystack flow, and bailing there is what abandoned
+        // paid orders — the buyer was charged and never got her passes.
         if (ticks >= 100) {
           clearInterval(timer);
           setBusy(false);
           setError(
-            "We couldn't confirm your payment. If you were charged, your passes may still arrive by email — contact support if they don't."
+            "We're still confirming your payment. If you were charged, your passes will arrive by email shortly — contact support if they don't."
           );
         }
       } finally {
