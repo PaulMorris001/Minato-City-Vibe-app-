@@ -456,7 +456,7 @@ const html = `
         <a href="#tickets">How tickets work</a>
         <a href="/privacy">Privacy</a>
         <a href="/csae-policy">Child Safety</a>
-        <a href="mailto:Support@nvibez.com">Contact</a>
+        <a href="mailto:hello@ourcityvibe.com">Contact</a>
       </div>
     </div>
     <p class="copyright" style="margin-top: 24px;">

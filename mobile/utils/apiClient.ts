@@ -43,8 +43,12 @@ const RETRYABLE_POSTS: string[] = [
   "/auth/verify-otp",
   "/auth/verify-signup-email",
   "/auth/resend-signup-otp",
+  "/auth/resend-signup",
   "/stripe/config",
 ];
+// Deliberately NOT retryable: /auth/verify-signup consumes the pending signup
+// row to create the account, so a replay after a lost response would 404 and
+// tell the user to sign up again for an account that now exists.
 
 // URLs we deliberately don't retry — they're fire-and-forget telemetry that
 // must never delay a real request behind it.

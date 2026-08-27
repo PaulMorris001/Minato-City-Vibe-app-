@@ -6,6 +6,7 @@ import { OAuth2Client } from "google-auth-library";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import config from "../config/env.js";
 import User from "../models/user.model.js";
+import PendingSignup from "../models/pendingSignup.model.js";
 import { Vendor, City, VendorType } from "../models/vendor.model.js";
 import { findOrCreateCity } from "./vendors.controller.js";
 import { uploadBase64Image, deleteImage } from "../services/image.service.js";
@@ -74,6 +75,17 @@ async function generateUniqueUsername(seed) {
   return candidate;
 }
 
+// A pending signup outlives its 10-minute code so a resend can refresh the code
+// in place rather than racing the row's own expiry.
+const SIGNUP_OTP_TTL_MS = 10 * 60 * 1000;
+const PENDING_SIGNUP_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * POST /register
+ * Start a signup. Does NOT create an account — the submitted details are held
+ * in PendingSignup until the emailed code is confirmed by verifySignup, so an
+ * abandoned signup never squats on an email or username.
+ */
 export async function register(req, res) {
   const { username, email, password, termsAccepted, accountType } = req.body;
 
@@ -133,12 +145,7 @@ export async function register(req, res) {
         .json({ message: "That username is already taken. Please choose another." });
     }
 
-    const hashed = await bcrypt.hash(password, 10);
-
-    // Generate a 6-digit OTP that the user must enter on the next screen.
-    // Stored on the user doc with a 10-minute expiry; cleared when verified.
-    const otp = generateOTP();
-    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    const passwordHash = await bcrypt.hash(password, 10);
 
     // Signing up as a business doesn't create a vendor account here — the
     // Vendor doc needs a business name, type and city, which are collected
@@ -147,48 +154,53 @@ export async function register(req, res) {
     // user drops out mid-way). becomeVendor flips isVendor and clears this.
     const wantsVendor = accountType === "vendor";
 
-    const user = new User({
-      username: normalizedUsername,
-      email: normalizedEmail,
-      password: hashed,
-      isVendor: false, // vendor status is earned by completing the business form
-      vendorSignupPending: wantsVendor,
-      termsAcceptedAt: new Date(),
-      signupOTP: otp,
-      signupOTPExpires: otpExpires,
-    });
-    await user.save();
+    const otp = generateOTP();
 
-    // Fire-and-log; we don't fail the signup if email is misconfigured —
-    // the user can resend from the OTP screen.
+    // Upsert rather than insert: re-submitting the form for the same address
+    // (a typo'd first attempt, a lost code) should replace the pending row and
+    // its code, not 409 against a record for an account that doesn't exist.
+    await PendingSignup.findOneAndUpdate(
+      { email: normalizedEmail },
+      {
+        username: normalizedUsername,
+        email: normalizedEmail,
+        passwordHash,
+        vendorSignupPending: wantsVendor,
+        termsAcceptedAt: new Date(),
+        otp,
+        otpExpires: new Date(Date.now() + SIGNUP_OTP_TTL_MS),
+        attempts: 0,
+        // Reset the TTL clock so a resubmission gets a full window.
+        expiresAt: new Date(Date.now() + PENDING_SIGNUP_TTL_MS),
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    // The code is now the ONLY route to an account, so a failed send has to
+    // fail the request — swallowing it would strand the user with no account
+    // and no code. Same posture as startGuestOtp.
     try {
-      await sendSignupVerificationOTP(normalizedEmail, otp, username);
+      await sendSignupVerificationOTP(normalizedEmail, otp, normalizedUsername);
     } catch (mailErr) {
       console.error("Failed to send signup OTP email:", mailErr?.message ?? mailErr);
+      if (!config.dev.fixedOtp) {
+        await PendingSignup.deleteOne({ email: normalizedEmail });
+        return res.status(502).json({
+          message: "We couldn't email your code right now. Please try again shortly.",
+        });
+      }
+      console.log(`[signup] DEV fallback — OTP for ${normalizedEmail} is ${otp}`);
     }
 
-    const token = jwt.sign({ id: user._id }, config.jwt.secret, {
-      expiresIn: config.jwt.expiresIn,
-    });
-
     res.status(201).json({
-      message: "User Created. Please verify your email.",
-      token,
-      requiresEmailVerification: true,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        isVendor: user.isVendor,
-        vendorSignupPending: user.vendorSignupPending,
-        emailVerifiedAt: null,
-      },
+      message: "Check your email for a 6-digit code to finish creating your account.",
+      email: normalizedEmail,
     });
   } catch (error) {
     const status = error.statusCode || 400;
     res
       .status(status)
-      .json({ message: error.statusCode ? error.message : "Error creating User", details: error.message });
+      .json({ message: error.statusCode ? error.message : "Could not start signup", details: error.message });
   }
 }
 
@@ -1555,10 +1567,150 @@ export async function appleAuth(req, res) {
 
 // ─── Signup Email Verification ───────────────────────────────────────────────
 
+// A 6-digit code is brute-forceable in the abstract; capped per pending row so
+// an attacker has to re-register (and re-solve the rate limiter) to keep going.
+const MAX_OTP_ATTEMPTS = 5;
+
 /**
- * Verify the signup OTP sent at registration. On success, sets
- * `emailVerifiedAt` and clears the OTP fields. Caller is authenticated
- * (we already issued them a JWT at signup).
+ * POST /auth/verify-signup   body: { email, otp }
+ * Confirm a pending signup and create the account. Unauthenticated by design —
+ * there is no user to authenticate as until this call succeeds.
+ */
+export async function verifySignup(req, res) {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const otp = String(req.body?.otp || "").trim();
+    if (!isValidEmail(email) || otp.length !== 6) {
+      return res.status(400).json({ message: "Email and a 6-digit code are required." });
+    }
+
+    const pending = await PendingSignup.findOne({ email });
+    if (!pending) {
+      // Also the shape a replayed call takes after a successful one: the row is
+      // gone because the account was created, so point at login rather than
+      // sending someone to re-register an email that is now taken.
+      return res.status(404).json({
+        message:
+          "That signup is no longer active. If you already entered this code, try logging in — otherwise sign up again.",
+      });
+    }
+    if (pending.attempts >= MAX_OTP_ATTEMPTS) {
+      return res.status(429).json({ message: "Too many incorrect codes. Please sign up again." });
+    }
+    if (pending.otpExpires.getTime() < Date.now()) {
+      return res.status(410).json({
+        message: "This code has expired. Tap 'Resend code' to get a new one.",
+      });
+    }
+    if (pending.otp !== otp) {
+      pending.attempts += 1;
+      await pending.save();
+      return res.status(400).json({ message: "Incorrect code. Try again." });
+    }
+
+    // A pending signup reserves neither field, so either can have been claimed
+    // while this one sat unconfirmed. Re-check at the moment of creation.
+    const [emailTaken, usernameTaken] = await Promise.all([
+      User.findOne({ email }).select("_id").lean(),
+      User.findOne({ username: exactCaseInsensitive(pending.username) }).select("_id").lean(),
+    ]);
+    if (emailTaken) {
+      await PendingSignup.deleteOne({ _id: pending._id });
+      return res.status(409).json({ message: "An account with this email already exists." });
+    }
+    if (usernameTaken) {
+      return res.status(409).json({
+        message: "That username was taken while you were verifying. Please sign up again with another.",
+      });
+    }
+
+    const user = new User({
+      username: pending.username,
+      email: pending.email,
+      // Already hashed by register — never re-hash.
+      password: pending.passwordHash,
+      isVendor: false, // vendor status is earned by completing the business form
+      vendorSignupPending: pending.vendorSignupPending,
+      termsAcceptedAt: pending.termsAcceptedAt,
+      // The code IS the proof, so the account is verified from birth.
+      emailVerifiedAt: new Date(),
+    });
+    await user.save();
+    await PendingSignup.deleteOne({ _id: pending._id });
+
+    const token = jwt.sign({ id: user._id }, config.jwt.secret, {
+      expiresIn: config.jwt.expiresIn,
+    });
+
+    // Same shape register used to return, so clients keep a single persist path.
+    res.status(201).json({
+      message: "Account created.",
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        isVendor: user.isVendor,
+        vendorSignupPending: user.vendorSignupPending,
+        emailVerifiedAt: user.emailVerifiedAt,
+      },
+    });
+  } catch (error) {
+    console.error("verifySignup error:", error);
+    res.status(500).json({ message: "Failed to verify code" });
+  }
+}
+
+/**
+ * POST /auth/resend-signup   body: { email }
+ * Issue a fresh code for a pending signup. A missing pending row responds the
+ * same as a successful send — the caller is unauthenticated, and there is
+ * nothing useful they can do with the difference.
+ */
+export async function resendSignup(req, res) {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ message: "Enter a valid email address." });
+    }
+
+    const pending = await PendingSignup.findOne({ email });
+    if (pending) {
+      const otp = generateOTP();
+      pending.otp = otp;
+      pending.otpExpires = new Date(Date.now() + SIGNUP_OTP_TTL_MS);
+      pending.attempts = 0;
+      // Push the row's own expiry out too, or a resend late in the window would
+      // hand out a code the TTL deletes before it can be used.
+      pending.expiresAt = new Date(Date.now() + PENDING_SIGNUP_TTL_MS);
+      await pending.save();
+
+      try {
+        await sendSignupVerificationOTP(email, otp, pending.username);
+      } catch (mailErr) {
+        console.error("Failed to resend signup OTP email:", mailErr?.message ?? mailErr);
+        if (!config.dev.fixedOtp) {
+          return res.status(502).json({
+            message: "We couldn't email your code right now. Please try again shortly.",
+          });
+        }
+        console.log(`[signup] DEV fallback — OTP for ${email} is ${otp}`);
+      }
+    }
+
+    res.json({ success: true, message: "If that signup is still active, a new code is on its way." });
+  } catch (error) {
+    console.error("resendSignup error:", error);
+    res.status(500).json({ message: "Failed to send code" });
+  }
+}
+
+/**
+ * POST /auth/verify-signup-email
+ * Verify the email of an account that ALREADY exists — reached from Settings by
+ * local accounts predating the pending-signup flow, which need a verified email
+ * to sell tickets. New signups go through verifySignup instead; this stays
+ * authenticated because there is a real session behind it.
  */
 export async function verifySignupEmail(req, res) {
   try {

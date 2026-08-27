@@ -41,15 +41,15 @@ const sections = [
   },
   {
     title: "Data Retention",
-    body: "We retain your account data for as long as your account is active. You may request deletion of your account and associated data by contacting Support@nvibez.com.",
+    body: "We retain your account data for as long as your account is active. You may request deletion of your account and associated data by contacting support@ourcityvibe.com.",
   },
   {
     title: "Your Rights",
-    body: "You have the right to access, correct, or delete your personal data. To exercise these rights, contact us at Support@nvibez.com.",
+    body: "You have the right to access, correct, or delete your personal data. To exercise these rights, contact us at support@ourcityvibe.com.",
   },
   {
     title: "Contact Us",
-    body: "For any privacy-related questions or concerns, reach out to:\n\nSupport@nvibez.com",
+    body: "For any privacy-related questions or concerns, reach out to:\n\nsupport@ourcityvibe.com",
   },
 ];
 

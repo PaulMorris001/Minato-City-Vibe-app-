@@ -118,6 +118,9 @@ export async function issueEventPass({
       eventDateText: formatEventDate(event.date),
       eventLocation: event.address || event.location || "",
       qrBuffer,
+      // Printed under the QR in the PDF so door staff can key it in when a
+      // screen won't scan.
+      code: pass.code,
       type: pass.type,
     });
   } catch (err) {

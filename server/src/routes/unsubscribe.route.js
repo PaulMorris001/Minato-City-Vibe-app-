@@ -67,7 +67,7 @@ function page(title, message, actionHref, actionLabel) {
     <h1>${title}</h1>
     <p>${message}</p>
     ${actionHref ? `<a class="action" href="${actionHref}">${actionLabel}</a>` : ''}
-    <p class="foot">Questions? <a href="mailto:Support@nvibez.com">Support@nvibez.com</a></p>
+    <p class="foot">Questions? <a href="mailto:support@ourcityvibe.com">support@ourcityvibe.com</a></p>
   </div>
 </body>
 </html>`;
@@ -121,7 +121,7 @@ async function handle(req, res) {
     res.setHeader('Content-Type', 'text/html');
     res
       .status(500)
-      .send(page('Something went wrong', 'Please try again later, or email Support@nvibez.com.', null, null));
+      .send(page('Something went wrong', 'Please try again later, or email support@ourcityvibe.com.', null, null));
   }
 }
 

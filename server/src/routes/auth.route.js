@@ -20,6 +20,8 @@ import {
   resetPassword,
   verifySignupEmail,
   resendSignupOTP,
+  verifySignup,
+  resendSignup,
 } from '../controllers/auth.controller.js'
 import { authenticate } from '../middleware/auth.middleware.js';
 import { authLimiter, otpLimiter, lookupLimiter } from '../middleware/rateLimit.middleware.js';
@@ -42,7 +44,13 @@ router.post("/auth/forgot-password", otpLimiter, forgotPassword);
 router.post("/auth/verify-otp", otpLimiter, verifyOTP);
 router.post("/auth/reset-password", otpLimiter, resetPassword);
 
-// Signup email verification (user is already authenticated; we issued a token on register)
+// Finish a pending signup. Unauthenticated on purpose — /register no longer
+// issues a token, because no account exists until the code below is confirmed.
+router.post("/auth/verify-signup", otpLimiter, verifySignup);
+router.post("/auth/resend-signup", otpLimiter, resendSignup);
+
+// Verify the email of an account that already exists (Settings → Verify email).
+// Kept for local accounts predating the pending-signup flow.
 router.post("/auth/verify-signup-email", authenticate, verifySignupEmail);
 router.post("/auth/resend-signup-otp", authenticate, otpLimiter, resendSignupOTP);
 

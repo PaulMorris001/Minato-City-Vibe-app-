@@ -24,6 +24,7 @@ import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { currencyPrefix, priceLabel } from "@/constants/payments";
 import CreateEventModal from "@/components/client/CreateEventModal";
+import CreateEventTooltip from "@/components/shared/CreateEventTooltip";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
@@ -35,7 +36,6 @@ import { trackEvent } from "@/utils/analytics";
 import { ensureAuth } from "@/utils/requireAuth";
 import { cacheRead, cacheWrite } from "@/utils/offlineCache";
 import { ensureOnline } from "@/utils/requireOnline";
-import SupportFab from "@/components/shared/SupportFab";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -1341,9 +1341,9 @@ export default function Home() {
         </LinearGradient>
       </TouchableOpacity>
 
-      {/* Labelled support pill, bottom-left so it clears the create FAB. It
-          gates itself on tap, so guests get the standard sign-in prompt. */}
-      <SupportFab />
+      {/* Rendered after the FAB so it layers above it; pointerEvents="none"
+          keeps the FAB tappable through it. */}
+      <CreateEventTooltip />
 
       <CreateEventModal
         visible={isModalVisible}

@@ -122,7 +122,7 @@ export function useStripePayment() {
           success: false,
           error:
             d.message ||
-            "Payment succeeded but access could not be granted. Please contact Support@nvibez.com.",
+            "Payment succeeded but access could not be granted. Please contact support@ourcityvibe.com.",
         };
       }
       return { success: true };
