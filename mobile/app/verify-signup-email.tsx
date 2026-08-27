@@ -19,6 +19,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
 import * as SecureStore from "expo-secure-store";
+import * as Sentry from "@sentry/react-native";
+import { remoteLog } from "@/utils/remoteLog";
 
 import { BASE_URL } from "@/constants/constants";
 import { PosterBackground } from "@/components/auth/PosterBackground";
@@ -89,11 +91,6 @@ export default function VerifySignupEmail() {
     setCode((c) => c.slice(0, -1));
   };
 
-  const authHeaders = async () => {
-    const token = await SecureStore.getItemAsync("token");
-    return { Authorization: `Bearer ${token}` };
-  };
-
   const handleVerify = async () => {
     if (!complete) {
       Alert.alert("Enter the code", "Type the full 6-digit code from your email.");
@@ -108,33 +105,44 @@ export default function VerifySignupEmail() {
     }
     setLoading(true);
     try {
-      const res = await axios.post(
-        `${BASE_URL}/auth/verify-signup-email`,
-        { otp: code },
-        { headers: await authHeaders() }
-      );
-      if (res.data?.success) {
-        let wantsVendor = false;
-        const userJson = await SecureStore.getItemAsync("user");
-        if (userJson) {
-          const u = JSON.parse(userJson);
-          u.emailVerifiedAt = res.data.emailVerifiedAt;
-          wantsVendor = !!u.vendorSignupPending && !u.isVendor;
-          await SecureStore.setItemAsync("user", JSON.stringify(u));
-        }
-        // Business signups go to the vendor setup form, not the client
-        // interests picker — /interests tunes the consumer event feed, which a
-        // vendor account hasn't got yet. Read off the stored user rather than a
-        // route param so it survives a reload of this screen.
-        router.replace((wantsVendor ? "/vendor-setup" : "/interests") as any);
-      }
+      // This call is what actually creates the account — the code is the proof.
+      // Unauthenticated: there is no session until it returns one.
+      const res = await axios.post(`${BASE_URL}/auth/verify-signup`, {
+        email,
+        otp: code,
+      });
+
+      const user = res.data?.user;
+      const token = res.data?.token;
+      if (!user || !token) throw new Error("Malformed verification response");
+
+      Sentry.setUser({ id: user.id, email: user.email, username: user.username });
+      remoteLog("info", "signup success", { userId: user.id });
+
+      await SecureStore.setItemAsync("token", token);
+      await SecureStore.setItemAsync("user", JSON.stringify(user));
+
+      // Business signups go to the vendor setup form, not the client interests
+      // picker — /interests tunes the consumer event feed, which a vendor
+      // account hasn't got yet.
+      const wantsVendor = !!user.vendorSignupPending && !user.isVendor;
+      router.replace((wantsVendor ? "/vendor-setup" : "/interests") as any);
     } catch (error: any) {
       let msg = "Could not verify code. Try again.";
       const status = error.response?.status;
       if (status === 400) msg = error.response?.data?.message || "Incorrect code.";
       else if (status === 410) msg = "Code expired. Tap 'Resend code' for a new one.";
       else if (error.response?.data?.message) msg = error.response.data.message;
-      Alert.alert("Verification failed", msg);
+      // 404 (signup expired), 409 (email/username claimed meanwhile) and 429
+      // (too many wrong codes) are all dead ends — the pending row is gone or
+      // unusable, so send them back to the form rather than looping here.
+      const restart = status === 404 || status === 409 || status === 429;
+      Alert.alert("Verification failed", msg, restart
+        ? [
+            { text: "Log in", onPress: () => router.replace("/login") },
+            { text: "Sign up again", onPress: () => router.replace("/signup") },
+          ]
+        : [{ text: "OK" }]);
     } finally {
       setLoading(false);
     }
@@ -143,11 +151,7 @@ export default function VerifySignupEmail() {
   const handleResend = async () => {
     setResending(true);
     try {
-      await axios.post(
-        `${BASE_URL}/auth/resend-signup-otp`,
-        {},
-        { headers: await authHeaders() }
-      );
+      await axios.post(`${BASE_URL}/auth/resend-signup`, { email });
       setCode("");
       setResendIn(RESEND_SECONDS);
       Alert.alert("Code sent", "A new verification code is on its way.");

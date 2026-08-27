@@ -121,7 +121,7 @@ export default function Login() {
       else if (status === 404)
         msg = "No account found with that email. Did you mean to sign up?";
       else if (status === 403)
-        msg = "Your account has been suspended. Contact Support@nvibez.com.";
+        msg = "Your account has been suspended. Contact support@ourcityvibe.com.";
       else if (status === 429) msg = "Too many attempts. Try again in a few minutes.";
       else if (isServerError) msg = "Server error. Try again later.";
       else if (error.response?.data?.message) msg = error.response.data.message;

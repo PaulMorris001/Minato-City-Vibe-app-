@@ -17,7 +17,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
-import * as SecureStore from "expo-secure-store";
 import * as Sentry from "@sentry/react-native";
 
 import { BASE_URL } from "@/constants/constants";
@@ -246,27 +245,15 @@ export default function Signup() {
         accountType,
       });
 
-      const user = res.data.user;
-      const token = res.data.token;
+      // No account and no session exist yet — /register only holds the details
+      // and emails a code. The OTP screen creates the account and stores the
+      // token, including the vendor-vs-client routing that used to happen here.
+      remoteLog("info", "signup pending verification", { email: values.email });
 
-      Sentry.setUser({ id: user._id, email: user.email, username: user.username });
-      remoteLog("info", "signup success", { userId: user._id });
-
-      await SecureStore.setItemAsync("token", token);
-      await SecureStore.setItemAsync("user", JSON.stringify(user));
-
-      if (res.data?.requiresEmailVerification) {
-        router.replace({
-          pathname: "/verify-signup-email",
-          params: { email: values.email },
-        } as any);
-      } else if (accountType === "vendor") {
-        // Straight to the business form — a vendor signup never touches the
-        // client tabs on the way in.
-        router.replace("/vendor-setup" as any);
-      } else {
-        router.replace("/(tabs)/home");
-      }
+      router.replace({
+        pathname: "/verify-signup-email",
+        params: { email: res.data?.email ?? values.email },
+      } as any);
     } catch (error: any) {
       const status = error.response?.status;
       const isNetworkError =

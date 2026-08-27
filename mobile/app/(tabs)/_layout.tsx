@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   Platform,
   StatusBar,
   ActivityIndicator,
+  Animated,
+  Easing,
 } from "react-native";
 import { Image } from "expo-image";
 import { Tabs, useRouter, useSegments } from "expo-router";
@@ -30,6 +32,8 @@ import { clearLocalData } from "@/utils/localData";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "@/components/shared/Avatar";
 import { getCircularAvatarUrl } from "@/utils/imageUpload";
+import { openSupportChat } from "@/utils/userNavigation";
+import { ensureAuth } from "@/utils/requireAuth";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -58,6 +62,88 @@ function PillSurface({
     <LinearGradient colors={gradientColors} style={styles.pillGradient}>
       {children}
     </LinearGradient>
+  );
+}
+
+/**
+ * Support entry point in the navbar.
+ *
+ * Support was previously a labelled FAB pinned bottom-left of home, where it
+ * fought the create-event FAB for the same corner. Up here it sits with the
+ * other navbar actions and borrows PillSurface, so it reads as chrome rather
+ * than as a second floating button.
+ *
+ * The halo pulse survives the move at a smaller scale — a still icon reads as
+ * decoration, where a moving one reads as "someone is there" — but it stays
+ * inside the 40pt pill so it can't be mistaken for the avatar's unread badge.
+ *
+ * Uses RN Animated rather than Reanimated: Reanimated is installed but used in
+ * only two files here, while every other animation in the app is Animated.
+ */
+function SupportNavButton({ glass }: { glass: boolean }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  const [opening, setOpening] = useState(false);
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.timing(pulse, {
+        toValue: 1,
+        duration: 1800,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      })
+    );
+    animation.start();
+    // Stop on unmount, or the loop keeps running against a dead component.
+    return () => animation.stop();
+  }, [pulse]);
+
+  const handlePress = async () => {
+    if (opening) return;
+    // Guests can browse but not message. Use the same prompt every other gated
+    // action uses rather than letting the request 401 into a generic error.
+    if (!(await ensureAuth("chat with support"))) return;
+    setOpening(true);
+    try {
+      await openSupportChat();
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  return (
+    <TouchableOpacity
+      onPress={handlePress}
+      disabled={opening}
+      style={styles.chatButton}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel="Chat with support"
+      accessibilityHint="Opens a conversation with the OurCityvibe support team"
+    >
+      <PillSurface
+        glass={glass}
+        tintColor={colors.primary}
+        gradientColors={[colors.primary, colors.primaryDark]}
+      >
+        <Animated.View
+          // Decorative only — the accessibility label carries the meaning.
+          pointerEvents="none"
+          style={[
+            styles.supportHalo,
+            {
+              transform: [
+                { scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2] }) },
+              ],
+              opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0] }),
+            },
+          ]}
+        />
+        <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
+      </PillSurface>
+    </TouchableOpacity>
   );
 }
 
@@ -405,6 +491,9 @@ export default function TabsLayout() {
                 than as brand chrome. */}
           </View>
           <View style={styles.navbarActions}>
+            {/* Outside the guest branch too — a guest hitting a wall is exactly
+                who needs support. It gates itself on tap. */}
+            <SupportNavButton glass={isGlassAvailable} />
             {/* Search sits OUTSIDE the guest branch on purpose: events, guides
                 and vendors are all guest-searchable, and this is now the only
                 search entry point on home. */}
@@ -725,6 +814,15 @@ const createStyles = (c: ThemeColors) =>
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
+  },
+  // Base size × the 2× pulse stays under the 40pt pill, so the halo never
+  // spills past the circular surface.
+  supportHalo: {
+    position: "absolute",
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#fff",
   },
   pillGradient: {
     width: 40,

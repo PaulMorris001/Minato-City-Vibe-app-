@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { config } from "../config/env.js";
+import { buildPassPdf } from "./ticketPdf.service.js";
 
 /**
  * Email service for sending OTP and other emails
@@ -22,6 +23,24 @@ const getCreds = () => ({
   pass: process.env.EMAIL_PASSWORD || process.env.SMTP_PASS,
 });
 
+// Sender identities, one per intent. Splitting them means a user muting
+// announcements can never lose password-reset or ticket mail, and replies land
+// somewhere a human actually reads.
+//
+//   no-reply  automated account, security, ticket and money mail
+//   support   inbound only (complaints, refunds, safety, technical issues) —
+//             never a From, but it is the Reply-To on every no-reply send so a
+//             reply still reaches a human
+//   hello     lifecycle, recommendations and announcements; always unsubscribable
+//
+// Deliberately not read from EMAIL_FROM: a single env override would collapse
+// all three back into one address.
+const SUPPORT_EMAIL = "support@ourcityvibe.com";
+const HELLO_EMAIL = "hello@ourcityvibe.com";
+
+const FROM_NO_REPLY = '"OurCityvibe" <no-reply@ourcityvibe.com>';
+const FROM_HELLO = `"OurCityvibe" <${HELLO_EMAIL}>`;
+
 // Create transporter
 const createTransporter = () => {
   const emailService = process.env.EMAIL_SERVICE?.toLowerCase().trim();
@@ -31,7 +50,6 @@ const createTransporter = () => {
     service: emailService,
     user: auth.user,
     hasPassword: !!auth.pass,
-    from: process.env.EMAIL_FROM,
   });
 
   if (emailService === 'gmail') {
@@ -98,7 +116,8 @@ export const sendPasswordResetOTP = async (email, otp, username) => {
     const transporter = createTransporter();
 
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
+      from: FROM_NO_REPLY,
+      replyTo: SUPPORT_EMAIL,
       to: email,
       subject: 'Password Reset - OurCityvibe',
       html: `
@@ -237,7 +256,7 @@ export const sendPasswordResetOTP = async (email, otp, username) => {
             <div class="footer">
               <p>
                 This is an automated message from OurCityvibe.<br>
-                Need help? Contact us at <a href="mailto:Support@nvibez.com">Support@nvibez.com</a>
+                Need help? Contact us at <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>
               </p>
               <p style="margin-top: 10px;">
                 © ${new Date().getFullYear()} OurCityvibe. All rights reserved.
@@ -293,7 +312,8 @@ export const sendSignupVerificationOTP = async (email, otp, username) => {
   try {
     const transporter = createTransporter();
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
+      from: FROM_NO_REPLY,
+      replyTo: SUPPORT_EMAIL,
       to: email,
       subject: "Verify your email - OurCityvibe",
       html: `
@@ -349,7 +369,8 @@ export const sendGuestCheckoutOTP = async (email, otp) => {
   try {
     const transporter = createTransporter();
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
+      from: FROM_NO_REPLY,
+      replyTo: SUPPORT_EMAIL,
       to: email,
       subject: "Your ticket checkout code - OurCityvibe",
       html: `
@@ -403,6 +424,11 @@ export const sendGuestCheckoutOTP = async (email, otp) => {
  * so it renders in the email body; the organizer scans it at the door to mark
  * the holder as attended.
  *
+ * Two saveable copies ride along, because the inline QR only helps someone
+ * holding a charged phone with this email still open: a printable PDF ticket,
+ * and the QR on its own as an image for a camera roll or a wallet screenshot.
+ * A missing `code` degrades to the inline QR alone rather than failing the send.
+ *
  * @param {string} email
  * @param {object} opts
  * @param {string} opts.username
@@ -410,19 +436,41 @@ export const sendGuestCheckoutOTP = async (email, otp) => {
  * @param {string} opts.eventDateText  human-readable date/time
  * @param {string} opts.eventLocation
  * @param {Buffer} opts.qrBuffer       PNG of the pass QR
+ * @param {string} [opts.code]         pass code, printed under the QR in the PDF
  * @param {"rsvp"|"ticket"} opts.type
  */
 export const sendEventPassEmail = async (
   email,
-  { username, eventTitle, eventDateText, eventLocation, qrBuffer, type }
+  { username, eventTitle, eventDateText, eventLocation, qrBuffer, code, type }
 ) => {
   try {
     const transporter = createTransporter();
     const passLabel = type === "ticket" ? "Your Ticket" : "Your RSVP Pass";
     const subject = `${passLabel} — ${eventTitle}`;
 
+    // A PDF failure must not cost the holder their pass — the inline QR below is
+    // the entitlement, the attachments are conveniences.
+    let pdfBuffer = null;
+    try {
+      pdfBuffer = await buildPassPdf({
+        eventTitle,
+        eventDateText,
+        eventLocation,
+        username,
+        code,
+        qrBuffer,
+        type,
+        supportEmail: SUPPORT_EMAIL,
+      });
+    } catch (pdfErr) {
+      console.error("buildPassPdf failed:", pdfErr?.message ?? pdfErr);
+    }
+
+    const fileStem = type === "ticket" ? "cityvibe-ticket" : "cityvibe-pass";
+
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
+      from: FROM_NO_REPLY,
+      replyTo: SUPPORT_EMAIL,
       to: email,
       subject,
       attachments: [
@@ -430,6 +478,18 @@ export const sendEventPassEmail = async (
           filename: "cityvibe-pass.png",
           content: qrBuffer,
           cid: "passqr@cityvibe",
+        },
+        ...(pdfBuffer
+          ? [{ filename: `${fileStem}.pdf`, content: pdfBuffer, contentType: "application/pdf" }]
+          : []),
+        // Same bytes as the inline copy under a different filename: clients hide
+        // cid-referenced parts from the attachment list, so without this there
+        // is nothing for the holder to actually save.
+        {
+          filename: `${fileStem}-qr.png`,
+          content: qrBuffer,
+          contentType: "image/png",
+          contentDisposition: "attachment",
         },
       ],
       html: `
@@ -469,10 +529,15 @@ export const sendEventPassEmail = async (
                 Show this QR code at the entrance. The organizer will scan it to
                 check you in. Keep it private — anyone with this code can use your pass.
               </p>
+              <p class="hint">
+                Prefer it offline? This email has a printable PDF ticket and the
+                QR on its own as an image attached — handy if your battery dies
+                or the venue has no signal.
+              </p>
             </div>
             <div class="footer">
               <p>See you there, ${username || "friend"}! 🎉</p>
-              <p>Need help? <a href="mailto:Support@nvibez.com">Support@nvibez.com</a></p>
+              <p>Need help? <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></p>
               <p style="margin-top: 8px;">© ${new Date().getFullYear()} OurCityvibe. All rights reserved.</p>
             </div>
           </div>
@@ -518,7 +583,9 @@ export const sendEventReminderEmail = async (
     const transporter = createTransporter();
 
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
+      // Lifecycle mail, not transactional — hello@ is a monitored, replyable
+      // address, so this send deliberately has no Reply-To override.
+      from: FROM_HELLO,
       to: email,
       subject: `Tomorrow: ${eventTitle}`,
       ...(unsubscribeUrl
@@ -567,7 +634,7 @@ export const sendEventReminderEmail = async (
             </div>
             <div class="footer">
               <p>See you there, ${username || "friend"}! 🎉</p>
-              <p>Need help? <a href="mailto:Support@nvibez.com">Support@nvibez.com</a></p>
+              <p>Need help? <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></p>
               ${
                 unsubscribeUrl
                   ? `<p style="margin-top: 8px;"><a href="${unsubscribeUrl}">Unsubscribe from event reminders</a></p>`
@@ -602,7 +669,8 @@ export const sendPasswordResetSuccessEmail = async (email, username) => {
     const transporter = createTransporter();
 
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
+      from: FROM_NO_REPLY,
+      replyTo: SUPPORT_EMAIL,
       to: email,
       subject: 'Password Reset Successful - OurCityvibe',
       html: `
@@ -689,7 +757,8 @@ export const sendSaleEmail = async (
     ];
 
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
+      from: FROM_NO_REPLY,
+      replyTo: SUPPORT_EMAIL,
       to: email,
       subject: `You made a sale — ${itemTitle}`,
       html: `
@@ -724,7 +793,7 @@ export const sendSaleEmail = async (
               <p>Best regards,<br>The OurCityvibe Team</p>
             </div>
             <div class="footer">
-              <p>Need help? <a href="mailto:Support@nvibez.com">Support@nvibez.com</a></p>
+              <p>Need help? <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></p>
               <p>© ${new Date().getFullYear()} OurCityvibe. All rights reserved.</p>
             </div>
           </div>
@@ -763,7 +832,8 @@ export const sendPurchaseReceiptEmail = async (
     ];
 
     const mailOptions = {
-      from: process.env.EMAIL_FROM || '"OurCityvibe" <Support@nvibez.com>',
+      from: FROM_NO_REPLY,
+      replyTo: SUPPORT_EMAIL,
       to: email,
       subject: `Your purchase receipt — ${itemTitle}`,
       html: `
@@ -798,7 +868,7 @@ export const sendPurchaseReceiptEmail = async (
               <p>Best regards,<br>The OurCityvibe Team</p>
             </div>
             <div class="footer">
-              <p>Need help? <a href="mailto:Support@nvibez.com">Support@nvibez.com</a></p>
+              <p>Need help? <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></p>
               <p>© ${new Date().getFullYear()} OurCityvibe. All rights reserved.</p>
             </div>
           </div>
