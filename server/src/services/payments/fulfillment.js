@@ -19,6 +19,7 @@ import Guide from "../../models/guide.model.js";
 import Ticket from "../../models/ticket.model.js";
 import { Booking } from "../../models/booking.model.js";
 import { Order } from "../../models/order.model.js";
+import { Service } from "../../models/service.model.js";
 import Chat from "../../models/chat.model.js";
 import chatService from "../chat.service.js";
 import { notifyUser } from "../notification.service.js";
@@ -567,13 +568,45 @@ export async function fulfillBooking({
   await booking.save();
 
   // Notify the vendor that the client has paid.
-  const client = await User.findById(booking.client).select("username");
+  const [client, vendor] = await Promise.all([
+    User.findById(booking.client).select("username email"),
+    User.findById(booking.vendor).select("username email businessName"),
+  ]);
   await notifyUser(booking.vendor, {
     type: "booking_paid",
     title: "💳 Booking Paid",
     body: `${client?.username || "A client"} just paid for their booking`,
     data: { bookingId: bookingId.toString() },
   });
+
+  // Emails to both parties, fire-and-forget — mirrors fulfillOrder. Amount comes
+  // from priceSnapshot, never the live Service doc, so a later price change can't
+  // rewrite what this buyer was charged.
+  const vendorName = vendor?.businessName || vendor?.username;
+  const amountText = formatAmountText(
+    booking.priceSnapshot?.amount,
+    booking.priceSnapshot?.currency
+  );
+  const service = await Service.findById(booking.service).select("name");
+  const itemTitle = service?.name || "Booking";
+  if (client?.email) {
+    sendPurchaseReceiptEmail(client.email, {
+      buyerName: client.username,
+      sellerName: vendorName,
+      itemLabel: "Booking",
+      itemTitle,
+      amountText,
+    }).catch((e) => console.error("sendPurchaseReceiptEmail (fulfillBooking) failed:", e));
+  }
+  if (vendor?.email) {
+    sendSaleEmail(vendor.email, {
+      sellerName: vendorName,
+      buyerName: client?.username,
+      itemLabel: "Booking",
+      itemTitle,
+      amountText,
+    }).catch((e) => console.error("sendSaleEmail (fulfillBooking) failed:", e));
+  }
 
   return { booking, alreadyPaid: false };
 }
