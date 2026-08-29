@@ -20,6 +20,9 @@ import axios from "axios";
 import { useRouter } from "expo-router";
 import socketService from "@/services/socket.service";
 import { clearLocalData } from "@/utils/localData";
+import { useAccount } from "@/contexts/AccountContext";
+import { useCart } from "@/contexts/CartContext";
+import { useUnread } from "@/contexts/UnreadContext";
 import { BASE_URL } from "@/constants/constants";
 import {
   payoutCountryKnown,
@@ -50,6 +53,9 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
+  const { setActiveAccount } = useAccount();
+  const cart = useCart();
+  const { reset: resetUnread } = useUnread();
   const [loading, setLoading] = useState(false);
   const [payoutOnboardingComplete, setPayoutOnboardingComplete] = useState(false);
   // Whether any payout rail reaches this vendor's country. Distinct from the
@@ -260,7 +266,9 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
             await unregisterForPushNotifications();
             await SecureStore.deleteItemAsync("user");
             await SecureStore.deleteItemAsync("token");
-            await SecureStore.deleteItemAsync("activeAccount");
+            await setActiveAccount("client");
+            cart.clear();
+            resetUnread();
             await clearLocalData();
           } catch {}
           socketService.disconnect();

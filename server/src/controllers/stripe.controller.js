@@ -146,7 +146,7 @@ export const refundOwnTicket = async (req, res) => {
 /**
  * Organizer cancels their own event — refunds all valid, non-transferred
  * tickets and marks the event cancelled. Must be called before the payout
- * job releases funds (i.e., within the 48h hold window).
+ * job releases funds (i.e., within the 24h hold window).
  */
 export const cancelEventByOrganizer = async (req, res) => {
   try {

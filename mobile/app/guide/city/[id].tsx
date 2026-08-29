@@ -18,6 +18,7 @@ import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { priceLabel } from "@/constants/payments";
 import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
+import MediaTile from "@/components/shared/MediaTile";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -115,33 +116,42 @@ export default function CityGuidesPage() {
       onPress={() => router.push(`/guide/${item._id}` as any)}
       activeOpacity={0.8}
     >
-      <View style={styles.guideHeader}>
-        <View style={styles.guideHeaderLeft}>
-          <Text style={styles.guideTitle} numberOfLines={2}>
-            {item.title}
-          </Text>
-          <Text style={styles.guideAuthor}>by {item.authorName}</Text>
+      {item.coverImage ? (
+        <MediaTile uri={item.coverImage} style={styles.guideCover} posterOnly />
+      ) : (
+        <View style={[styles.guideCover, styles.guideCoverPlaceholder]}>
+          <Ionicons name="book-outline" size={28} color={colors.textMuted} />
         </View>
-        <View style={styles.priceContainer}>
-          <Text style={styles.priceLabel}>Price</Text>
-          <Text style={styles.priceValue}>
-            {priceLabel(item.price, item.currency)}
-          </Text>
+      )}
+      <View style={styles.guideCardBody}>
+        <View style={styles.guideHeader}>
+          <View style={styles.guideHeaderLeft}>
+            <Text style={styles.guideTitle} numberOfLines={2}>
+              {item.title}
+            </Text>
+            <Text style={styles.guideAuthor}>by {item.authorName}</Text>
+          </View>
+          <View style={styles.priceContainer}>
+            <Text style={styles.priceLabel}>Price</Text>
+            <Text style={styles.priceValue}>
+              {priceLabel(item.price, item.currency)}
+            </Text>
+          </View>
         </View>
-      </View>
 
-      <Text style={styles.guideDescription} numberOfLines={3}>
-        {item.description}
-      </Text>
+        <Text style={styles.guideDescription} numberOfLines={3}>
+          {item.description}
+        </Text>
 
-      <View style={styles.guideFooter}>
-        <View style={styles.topicBadge}>
-          <Ionicons name="pricetag" size={12} color={Colors.primary} />
-          <Text style={styles.topicText}>{item.topic}</Text>
-        </View>
-        <View style={styles.statsRow}>
-          <Ionicons name="eye-outline" size={14} color={colors.textMuted} />
-          <Text style={styles.statsText}>{item.views} views</Text>
+        <View style={styles.guideFooter}>
+          <View style={styles.topicBadge}>
+            <Ionicons name="pricetag" size={12} color={Colors.primary} />
+            <Text style={styles.topicText}>{item.topic}</Text>
+          </View>
+          <View style={styles.statsRow}>
+            <Ionicons name="eye-outline" size={14} color={colors.textMuted} />
+            <Text style={styles.statsText}>{item.views} views</Text>
+          </View>
         </View>
       </View>
     </TouchableOpacity>
@@ -409,11 +419,14 @@ const createStyles = (c: ThemeColors) =>
   guideCard: {
     backgroundColor: c.card,
     borderRadius: 16,
-    padding: 16,
+    overflow: "hidden",
     marginBottom: 16,
     borderWidth: 1,
     borderColor: c.border,
   },
+  guideCover: { width: "100%", height: 150 },
+  guideCoverPlaceholder: { alignItems: "center", justifyContent: "center", backgroundColor: c.backgroundSecondary },
+  guideCardBody: { padding: 16 },
   guideHeader: {
     flexDirection: "row",
     justifyContent: "space-between",

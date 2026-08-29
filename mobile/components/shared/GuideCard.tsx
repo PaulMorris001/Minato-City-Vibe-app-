@@ -6,11 +6,13 @@ import { formatLocation } from "@/utils/location";
 import { priceLabel } from "@/constants/payments";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
+import MediaTile from "@/components/shared/MediaTile";
 
 /** The guide shape returned by /guides/all and the unified /search. */
 export interface GuideCardItem {
   _id: string;
   title: string;
+  coverImage?: string;
   city?: string;
   cityState?: string;
   country?: string;
@@ -46,31 +48,40 @@ export default function GuideCard({
       activeOpacity={0.85}
       onPress={() => onPress(guide)}
     >
-      <Text style={styles.title} numberOfLines={2}>
-        {guide.title}
-      </Text>
-      <Text style={styles.meta} numberOfLines={1}>
-        {formatLocation({
-          city: guide.city,
-          state: guide.cityState,
-          country: guide.country || "",
-        })}
-      </Text>
-      {!!guide.authorName && (
-        <Text style={styles.author} numberOfLines={1}>
-          by {guide.authorName}
-        </Text>
+      {guide.coverImage ? (
+        <MediaTile uri={guide.coverImage} style={styles.cover} posterOnly />
+      ) : (
+        <View style={[styles.cover, styles.coverPlaceholder]}>
+          <Ionicons name="book-outline" size={28} color={colors.textMuted} />
+        </View>
       )}
-      <View style={styles.footer}>
-        <Text style={styles.price}>
-          {priceLabel(guide.price, guide.currency)}
+      <View style={styles.body}>
+        <Text style={styles.title} numberOfLines={2}>
+          {guide.title}
         </Text>
-        {guide.views != null && (
-          <View style={styles.views}>
-            <Ionicons name="eye-outline" size={13} color={colors.textDim} />
-            <Text style={styles.viewsText}>{guide.views}</Text>
-          </View>
+        <Text style={styles.meta} numberOfLines={1}>
+          {formatLocation({
+            city: guide.city,
+            state: guide.cityState,
+            country: guide.country || "",
+          })}
+        </Text>
+        {!!guide.authorName && (
+          <Text style={styles.author} numberOfLines={1}>
+            by {guide.authorName}
+          </Text>
         )}
+        <View style={styles.footer}>
+          <Text style={styles.price}>
+            {priceLabel(guide.price, guide.currency)}
+          </Text>
+          {guide.views != null && (
+            <View style={styles.views}>
+              <Ionicons name="eye-outline" size={13} color={colors.textDim} />
+              <Text style={styles.viewsText}>{guide.views}</Text>
+            </View>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -81,11 +92,13 @@ const createStyles = (c: ThemeColors) =>
     card: {
       backgroundColor: c.card,
       borderRadius: 14,
-      padding: 14,
-      gap: 4,
+      overflow: "hidden",
       borderWidth: 1,
       borderColor: c.border,
     },
+    cover: { width: "100%", height: 120 },
+    coverPlaceholder: { alignItems: "center", justifyContent: "center", backgroundColor: c.backgroundSecondary },
+    body: { padding: 14, gap: 4 },
     title: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.text },
     meta: { fontSize: 13, fontFamily: Fonts.regular, color: c.textSecondary },
     author: { fontSize: 12, fontFamily: Fonts.regular, color: c.textMuted },

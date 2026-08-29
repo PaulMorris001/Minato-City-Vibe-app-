@@ -64,6 +64,32 @@ function payoutReference(type, relatedId, buyerId) {
 }
 
 /**
+ * Which payout covers a given ticket.
+ *
+ * An event can have more than one: a payout that already transferred can't be
+ * revised, so tickets fulfilled after it get a top-up payout of their own
+ * (`event_payout_<id>_2`, see payoutRelease.job.js). Matching every ticket to the
+ * event's FIRST payout would tell a seller that a late ticket had already been
+ * paid out when its money hasn't moved — the exact false reassurance this file
+ * exists to prevent.
+ *
+ * Returns null when nothing covers the ticket yet, so the caller falls through to
+ * "held" / "awaiting_approval" instead of borrowing an unrelated payout's status.
+ */
+function ticketPayoutRef(ticket, payouts) {
+  if (ticket.transferred) {
+    // Settled: it belongs to whichever transfer marked it, by construction of
+    // markRelatedSettled. Older tickets predate per-payout transferIds.
+    const byTransfer = ticket.transferId && payouts.find((p) => p.transferId === ticket.transferId);
+    if (byTransfer) return byTransfer.reference;
+    const paid = payouts.find((p) => p.status === "paid");
+    if (paid) return paid.reference;
+  }
+  const open = payouts.find((p) => !["paid"].includes(p.status));
+  return open ? open.reference : null;
+}
+
+/**
  * When ticket money for an event becomes releasable: event date + hold window.
  * Before this, the earnings are real but deliberately not payable yet — that's
  * what `inHoldWindow` reports, and it's usually the honest answer to "where is
@@ -71,7 +97,7 @@ function payoutReference(type, relatedId, buyerId) {
  */
 function ticketReleaseAt(event) {
   return new Date(
-    new Date(event.date).getTime() + (event.payoutDelayHours ?? 48) * 60 * 60 * 1000
+    new Date(event.date).getTime() + (event.payoutDelayHours ?? 24) * 60 * 60 * 1000
   );
 }
 
@@ -84,6 +110,21 @@ function ticketReleaseAt(event) {
 async function collectSales(sellerId) {
   const now = new Date();
   const sales = [];
+
+  // One payout query for the whole seller. Loaded up front because tickets need
+  // to know which payout covers them, not just look one up by a fixed key.
+  const payouts = await Payout.find({ vendor: sellerId })
+    .select("reference status amount currency createdAt relatedType relatedId transferId")
+    .sort({ createdAt: 1 })
+    .lean();
+  const payoutByRef = new Map(payouts.map((p) => [p.reference, p]));
+  const ticketPayoutsByEvent = new Map();
+  for (const p of payouts) {
+    if (p.relatedType !== "ticket") continue;
+    const key = String(p.relatedId);
+    if (!ticketPayoutsByEvent.has(key)) ticketPayoutsByEvent.set(key, []);
+    ticketPayoutsByEvent.get(key).push(p);
+  }
 
   // ── Tickets ────────────────────────────────────────────────────────────────
   // Tickets don't carry the seller; they carry the event. Resolve the seller's
@@ -99,7 +140,7 @@ async function collectSales(sellerId) {
       isValid: true,
       refunded: { $ne: true },
     })
-      .select("event user ticketPrice amountPaid discountCode currency provider sellerNetCents createdAt tierName")
+      .select("event user ticketPrice amountPaid discountCode currency provider sellerNetCents createdAt tierName transferred transferId")
       .populate("user", "username profilePicture")
       .lean();
 
@@ -121,7 +162,7 @@ async function collectSales(sellerId) {
         currency: (t.currency || "USD").toUpperCase(),
         soldAt: t.createdAt,
         relatedId: String(t.event),
-        reference: payoutReference("ticket", t.event),
+        reference: ticketPayoutRef(t, ticketPayoutsByEvent.get(String(t.event)) || []),
         held,
       });
     }
@@ -210,12 +251,6 @@ async function collectSales(sellerId) {
       held: false,
     });
   }
-
-  // One payout query for the whole seller, indexed by reference.
-  const payouts = await Payout.find({ vendor: sellerId })
-    .select("reference status amount currency createdAt relatedType relatedId")
-    .lean();
-  const payoutByRef = new Map(payouts.map((p) => [p.reference, p]));
 
   sales.sort((a, b) => new Date(b.soldAt || 0) - new Date(a.soldAt || 0));
 

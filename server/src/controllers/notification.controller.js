@@ -4,11 +4,18 @@ import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
 
 /**
+ * PUT /notifications/token
  * Save or update the Expo push token for the authenticated user.
+ *
+ * Optionally carries the city the app is currently browsing. This runs on
+ * every launch, so it's the freshest location signal the server gets — and the
+ * only one for most users, since the browsing city otherwise lives purely in
+ * device storage and `location.city` is a vendor/payments account address that
+ * most accounts never fill in.
  */
 export const savePushToken = async (req, res) => {
   try {
-    const { token } = req.body;
+    const { token, city } = req.body;
     if (!token) return res.status(400).json({ message: "token is required" });
 
     // A device has exactly one FCM token. If other accounts were previously
@@ -19,7 +26,12 @@ export const savePushToken = async (req, res) => {
       { fcmToken: null }
     );
 
-    await User.findByIdAndUpdate(req.user.id, { fcmToken: token });
+    const update = { fcmToken: token };
+    // Only overwrite on a real value — an older build, or a launch before the
+    // user has picked a location, sends no city and must not wipe the last one.
+    if (typeof city === "string" && city.trim()) update.pushCity = city.trim();
+
+    await User.findByIdAndUpdate(req.user.id, update);
     res.status(200).json({ message: "Push token saved" });
   } catch (error) {
     console.error("Save push token error:", error);

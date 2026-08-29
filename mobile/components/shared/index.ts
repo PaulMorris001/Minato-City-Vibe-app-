@@ -1,6 +1,7 @@
 export { default as AnimatedListCard } from "./AnimatedListCard";
 export { default as PrimaryButton } from "./PrimaryButton";
 export { default as FormInput } from "./FormInput";
+export { default as InfoTip } from "./InfoTip";
 export { default as BottomSheetModal } from "./BottomSheetModal";
 export { default as PickerModal, PickerItemText } from "./PickerModal";
 export { default as LocationPicker } from "./LocationPicker";

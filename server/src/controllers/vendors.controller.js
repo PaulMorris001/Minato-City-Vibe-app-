@@ -55,11 +55,22 @@ export async function browseVendors(req, res) {
 
     const vendorQuery = {};
     if (country || state || city) {
-      const cityQuery = {};
-      if (country) cityQuery.country = new RegExp(`^${escapeRegex(country)}$`, "i");
-      if (state) cityQuery.state = new RegExp(`^${escapeRegex(state)}$`, "i");
-      if (city) cityQuery.name = new RegExp(`^${escapeRegex(city)}$`, "i");
-      const matchingCities = await City.find(cityQuery).select("_id");
+      const cityConditions = [];
+      if (country) cityConditions.push({ country: new RegExp(`^${escapeRegex(country)}$`, "i") });
+      if (state) cityConditions.push({ state: new RegExp(`^${escapeRegex(state)}$`, "i") });
+      // A "city" filter is also matched against the state name: pickers built
+      // on the country/state/city hierarchy (vendor onboarding) store vendors
+      // under a specific locality (e.g. "Ebute Metta"), while location search
+      // (geocoding) resolves a place like "Lagos" to that same name — which is
+      // the *state*, not any single locality within it. Matching state too is
+      // what makes "Lagos" actually surface Lagos-based vendors.
+      if (city) {
+        const cityRx = new RegExp(`^${escapeRegex(city)}$`, "i");
+        cityConditions.push({ $or: [{ name: cityRx }, { state: cityRx }] });
+      }
+      const matchingCities = await City.find(
+        cityConditions.length > 1 ? { $and: cityConditions } : cityConditions[0]
+      ).select("_id");
       vendorQuery.city = { $in: matchingCities.map((c) => c._id) };
     }
 
@@ -172,10 +183,14 @@ export async function getVendorReviews(req, res) {
 export async function buildVendorSearchQuery({ q, city }) {
   const vendorQuery = {};
 
-  // Narrow to a city first, the same way browseVendors does.
+  // Narrow to a city first, the same way browseVendors does. Matched against
+  // the city's state too — see the comment in browseVendors — so a search for
+  // "Lagos" finds vendors whose City doc is a locality within Lagos state,
+  // not only a City literally named "Lagos".
   if (city) {
+    const cityRx = new RegExp(`^${escapeRegex(city)}$`, "i");
     const matchingCities = await City.find({
-      name: new RegExp(`^${escapeRegex(city)}$`, "i"),
+      $or: [{ name: cityRx }, { state: cityRx }],
     }).select("_id");
     vendorQuery.city = { $in: matchingCities.map((c) => c._id) };
   }
@@ -224,6 +239,63 @@ export async function searchVendors(req, res) {
       .populate("vendorType", "name icon")
       .sort({ verified: -1, rating: -1 })
       .limit(limit);
+
+    res.json({ vendors });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+/**
+ * GET /vendors/top
+ * Highest-rated vendors, optionally scoped to a city. Ranks on review COUNT
+ * before rating so a single 5-star review can't outrank a vendor with fifty
+ * 4.5-star ones — `rating` alone (what browseVendors and searchVendors sort by)
+ * makes brand-new vendors look like the best in the city.
+ */
+export async function getTopVendors(req, res) {
+  try {
+    const { city } = req.query;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 10, 50);
+
+    const vendorQuery = {};
+    // Matched against the city's state too — see browseVendors — so "Lagos"
+    // finds vendors whose City doc is a locality within Lagos state, not only
+    // a City literally named "Lagos".
+    if (city) {
+      const cityRx = new RegExp(`^${escapeRegex(city)}$`, "i");
+      const matchingCities = await City.find({
+        $or: [{ name: cityRx }, { state: cityRx }],
+      }).select("_id");
+      vendorQuery.city = { $in: matchingCities.map((c) => c._id) };
+    }
+
+    // Rated vendors first, then fill the rest of the page with unrated ones so
+    // a city that has no reviews yet still shows a rail instead of nothing.
+    const candidates = await Vendor.find(vendorQuery)
+      .populate("city", "name state country")
+      .populate("vendorType", "name icon")
+      .sort({ verified: -1, rating: -1 })
+      .limit(limit * 4);
+
+    const counts = await Review.aggregate([
+      { $match: { vendor: { $in: candidates.map((v) => v._id) } } },
+      { $group: { _id: "$vendor", count: { $sum: 1 } } },
+    ]);
+    const countByVendor = new Map(counts.map((c) => [String(c._id), c.count]));
+
+    const vendors = candidates
+      .map((v) => ({
+        ...v.toObject(),
+        ratingCount: countByVendor.get(String(v._id)) || 0,
+      }))
+      .sort(
+        (a, b) =>
+          Number(b.verified) - Number(a.verified) ||
+          b.ratingCount - a.ratingCount ||
+          (b.rating || 0) - (a.rating || 0)
+      )
+      .slice(0, limit);
 
     res.json({ vendors });
   } catch (error) {

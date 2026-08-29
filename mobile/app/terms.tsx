@@ -57,7 +57,7 @@ const sections = [
   },
   {
     title: "10. Contact",
-    body: "Questions about these Terms? Email us at Support@nvibez.com.",
+    body: "Questions about these Terms? Email us at support@ourcityvibe.com.",
   },
 ];
 

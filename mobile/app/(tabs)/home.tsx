@@ -2,7 +2,7 @@ import CreateEventModal from "@/components/client/CreateEventModal";
 import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
-import SupportFab from "@/components/shared/SupportFab";
+import CreateEventTooltip from "@/components/shared/CreateEventTooltip";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { currencyPrefix, priceLabel } from "@/constants/payments";
@@ -1417,9 +1417,9 @@ export default function Home() {
         </LinearGradient>
       </TouchableOpacity>
 
-      {/* Labelled support pill, bottom-left so it clears the create FAB. It
-          gates itself on tap, so guests get the standard sign-in prompt. */}
-      <SupportFab />
+      {/* Rendered after the FAB so it layers above it; pointerEvents="none"
+          keeps the FAB tappable through it. */}
+      <CreateEventTooltip />
 
         <CreateEventModal
           visible={isModalVisible}

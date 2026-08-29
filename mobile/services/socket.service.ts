@@ -12,22 +12,46 @@ interface SocketEvents {
   onConnected?: () => void;
   onNewMessage?: (message: any) => void;
   onMessageRead?: (data: any) => void;
-  onMessageReaction?: (data: { chatId: string; messageId: string; reactions: any[] }) => void;
+  onMessageReaction?: (data: {
+    chatId: string;
+    messageId: string;
+    reactions: any[];
+  }) => void;
   onMessageDeleted?: (data: { chatId: string; messageId: string }) => void;
   onMessageEdited?: (data: { chatId: string; message: any }) => void;
   onChatPinned?: (data: { chatId: string; pinned: boolean }) => void;
-  onChatPinnedMessage?: (data: { chatId: string; pinnedMessage: any | null }) => void;
+  onChatPinnedMessage?: (data: {
+    chatId: string;
+    pinnedMessage: any | null;
+  }) => void;
   onChatMuted?: (data: { chatId: string; muted: boolean }) => void;
   onNotificationNew?: (notification: any) => void;
   onTypingStart?: (data: any) => void;
   onTypingStop?: (data: any) => void;
   onUserOnline?: (userId: string) => void;
   onUserOffline?: (userId: string) => void;
-  onGroupUpdated?: (data: { chatId: string; name?: string; groupImage?: string }) => void;
-  onGroupInvite?: (data: { chatId: string; groupName: string; inviterUsername: string }) => void;
+  onGroupUpdated?: (data: {
+    chatId: string;
+    name?: string;
+    groupImage?: string;
+  }) => void;
+  onGroupInvite?: (data: {
+    chatId: string;
+    groupName: string;
+    inviterUsername: string;
+  }) => void;
   onGroupRemoved?: (data: { chatId: string }) => void;
-  onEventInvite?: (data: { eventId: string; eventTitle: string; inviterUsername: string }) => void;
-  onFollowNew?: (data: { followerId: string; followerUsername: string; followerProfilePicture: string; isMutual: boolean }) => void;
+  onEventInvite?: (data: {
+    eventId: string;
+    eventTitle: string;
+    inviterUsername: string;
+  }) => void;
+  onFollowNew?: (data: {
+    followerId: string;
+    followerUsername: string;
+    followerProfilePicture: string;
+    isMutual: boolean;
+  }) => void;
 }
 
 class SocketService {
@@ -95,7 +119,7 @@ class SocketService {
         // upgrading to WS — adding latency to the start of every chat
         // session, not just the carrier-blocked case this was guarding
         // against.)
-        transports: ["websocket", "polling"],
+        transports: ["polling", "websocket"],
         reconnection: true,
         reconnectionAttempts: Infinity,
         reconnectionDelay: 1000,
@@ -121,9 +145,11 @@ class SocketService {
       });
 
       this.socket.on("connect_error", (error) => {
-        console.error("Socket connection error:", error.message);
+        console.error("🔴 Socket connection error:", {
+          message: error.message,
+          type: error.name,
+        });
       });
-
       this.socket.on("error", (error) => {
         console.error("Socket error:", error);
       });

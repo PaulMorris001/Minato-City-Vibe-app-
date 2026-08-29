@@ -24,7 +24,8 @@ import Ticket from "../models/ticket.model.js";
 import Payout from "../models/payout.model.js";
 import { Booking } from "../models/booking.model.js";
 import { Vendor } from "../models/vendor.model.js";
-import { fulfillGuide } from "../services/payments/fulfillment.js";
+import TicketOrder from "../models/ticketOrder.model.js";
+import { fulfillGuide, fulfillTicketOrder } from "../services/payments/fulfillment.js";
 import { markVerified, queueManualReview, namesMatch } from "../services/verification.service.js";
 
 const toKobo = (major) => Math.round(Number(major) * 100);
@@ -202,9 +203,13 @@ const APP_RETURN_URL = "mobile://payments/paystack-return";
 
 /** Page Paystack redirects the browser to after checkout. Must be a real,
  * reachable http(s) URL (Paystack rejects custom schemes as callback_url),
- * so it points at this server, which then forwards to APP_RETURN_URL. */
-export function paystackReturnUrl() {
-  return `${config.stripe.serverUrl}/api/payments/paystack/return`;
+ * so it points at this server, which then forwards to APP_RETURN_URL.
+ *
+ * `web: true` suppresses that forward. A browser popup sent to `mobile://` shows
+ * a dead end the buyer can only close, which is what abandoned the web batch
+ * checkout's confirm call and stranded paid orders. */
+export function paystackReturnUrl({ web = false } = {}) {
+  return `${config.stripe.serverUrl}/api/payments/paystack/return${web ? "?web=1" : ""}`;
 }
 
 /**
@@ -220,7 +225,7 @@ export function paystackReturnUrl() {
  * @param {object} args.buyer       { _id, email, username }
  * @returns {Promise<{ provider, paymentLink, reference, redirectUrl }>}
  */
-export async function buildPaystackInit({ type, id, amount, currency, buyer }) {
+export async function buildPaystackInit({ type, id, amount, currency, buyer, meta, callbackUrl }) {
   // Paystack transaction references only allow alphanumerics plus -.= so this
   // uses hyphens (unlike the underscore payout references, which are fine).
   const reference = `cv-${type}-${id}-${buyer._id}-${Date.now()}`;
@@ -232,8 +237,12 @@ export async function buildPaystackInit({ type, id, amount, currency, buyer }) {
       amount: toKobo(amount),
       currency: (currency || "NGN").toUpperCase(),
       email: buyer.email || `${buyer._id}@cityvibe.app`,
-      callback_url: paystackReturnUrl(),
-      metadata: { type, id: id.toString(), buyerId: buyer._id.toString() },
+      // Defaults to the app-scheme bounce page; a web caller passes its own URL,
+      // because sending a browser popup to `mobile://` dead-ends the checkout.
+      callback_url: callbackUrl || paystackReturnUrl(),
+      // `meta` distinguishes charges the plain {type,id} pair cannot — a batch
+      // ticket charge otherwise looks exactly like a single-ticket one.
+      metadata: { type, id: id.toString(), buyerId: buyer._id.toString(), ...(meta || {}) },
     },
   });
 
@@ -262,6 +271,27 @@ export async function buildPaystackInit({ type, id, amount, currency, buyer }) {
  * covers every case (same pattern as the Google auth return page).
  */
 export const paystackReturn = async (req, res) => {
+  // Web checkout: this page is a popup the opener is polling, and there is no app
+  // to hand off to. Say the payment landed and let the tab close itself.
+  if (req.query?.web === "1") {
+    return res.status(200).send(`<!DOCTYPE html>
+<html><head>
+  <meta charset="utf-8" />
+  <title>OurCityvibe</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; background:#0f0a1f;
+           color:#eee; display:flex; align-items:center; justify-content:center;
+           height:100vh; margin:0; text-align:center; padding:24px; }
+  </style>
+</head><body>
+  <div>
+    <p>Payment received — your passes are on the way by email.</p>
+    <p>You can close this window and return to OurCityvibe.</p>
+  </div>
+  <script>setTimeout(function(){ try { window.close(); } catch (e) {} }, 1500);</script>
+</body></html>`);
+  }
+
   const qs = Object.entries(req.query || {})
     .filter(([, v]) => typeof v === "string" && v !== "")
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
@@ -464,6 +494,35 @@ export const paystackWebhook = async (req, res) => {
       // which the confirm endpoint handles; the webhook is a guide backstop).
       if (meta.type === "guide" && meta.id && meta.buyerId) {
         await fulfillGuide({ guideId: meta.id, userId: meta.buyerId });
+      }
+      // Batch ticket orders ARE safe here, and need to be: the caveat above is
+      // about re-deriving accounting, and a TicketOrder froze its items, prices,
+      // discount and total at init. The web checkout's popup navigates away after
+      // payment, so its confirm call frequently never lands — this is the only
+      // thing standing between the buyer's money and her passes.
+      const order = await TicketOrder.findOne({ reference: data.reference });
+      if (order && order.status !== "paid") {
+        // Isolated: this webhook always 200s (see above), so a failure here must
+        // be loud and must not take the rest of the handler down with it. The
+        // order is left "pending" for the buyer's own confirm call to retry.
+        try {
+          if ((data.currency || "").toUpperCase() !== (order.currency || "").toUpperCase()) {
+            console.warn(`[Paystack] ${data.reference} currency mismatch — not fulfilling`);
+          } else if (Number(data.amount) < toKobo(order.total)) {
+            console.warn(`[Paystack] ${data.reference} underpays order ${order._id} — not fulfilling`);
+          } else {
+            const { alreadyFulfilled } = await fulfillTicketOrder({ order });
+            if (!alreadyFulfilled) {
+              console.log(`[Paystack] Webhook fulfilled ticket order ${order._id}`);
+            }
+          }
+        } catch (err) {
+          console.error(
+            `[Paystack] FAILED to fulfill paid ticket order ${order._id} (${data.reference}) — ` +
+              `buyer charged, tickets NOT issued:`,
+            err?.message ?? err
+          );
+        }
       }
     }
 

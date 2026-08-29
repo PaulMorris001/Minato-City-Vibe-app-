@@ -19,7 +19,7 @@ interface AuthState {
   user: User | null;
   token: string | null;
   loading: boolean;
-  /** Set after register when the account still needs email verification. */
+  /** Set after register: the account is not created until verifyEmail runs. */
   needsVerification: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
@@ -39,6 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setTok] = useState<string | null>(() => getToken());
   const [loading, setLoading] = useState(true);
   const [needsVerification, setNeedsVerification] = useState(false);
+  // Register no longer returns a session, so the address being verified is the
+  // only handle we have on the pending signup until the code confirms it.
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
   // Revalidate the stored token on load — clears a stale session.
   useEffect(() => {
@@ -83,27 +86,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function register(username: string, email: string, password: string) {
-    const data = await api<{ token: string; user: User; requiresEmailVerification: boolean }>(
-      "/register",
-      {
-        method: "POST",
-        body: { username, email, password, termsAccepted: true },
-        auth: false,
-      }
-    );
-    // The register token authenticates the OTP verification call.
-    persist(data.user, data.token);
-    setNeedsVerification(!!data.requiresEmailVerification);
+    // Holds the details server-side and emails a code. No account, no token —
+    // verifyEmail below is what actually creates the user.
+    const data = await api<{ email: string }>("/register", {
+      method: "POST",
+      body: { username, email, password, termsAccepted: true },
+      auth: false,
+    });
+    setPendingEmail(data.email ?? email);
+    setNeedsVerification(true);
   }
 
   async function verifyEmail(otp: string) {
-    await api("/auth/verify-signup-email", { method: "POST", body: { otp } });
+    if (!pendingEmail) throw new Error("Start the signup again to get a new code.");
+    const data = await api<{ token: string; user: User }>("/auth/verify-signup", {
+      method: "POST",
+      body: { email: pendingEmail, otp },
+      auth: false,
+    });
+    persist(data.user, data.token);
+    setPendingEmail(null);
     setNeedsVerification(false);
-    if (user) persist({ ...user, emailVerifiedAt: new Date().toISOString() }, token);
   }
 
   function logout() {
     setNeedsVerification(false);
+    setPendingEmail(null);
     persist(null, null);
   }
 

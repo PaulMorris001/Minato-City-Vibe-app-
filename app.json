@@ -1,7 +1,16 @@
 {
   "expo": {
     "ios": {
-      "googleServicesFile": "./GoogleService-Info.plist"
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "bundleIdentifier": "com.obitoven1sorganization.nightviberoot",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "a7ef1e15-ad84-4dbf-b02a-41c126007c1f"
+      }
     }
   }
 }

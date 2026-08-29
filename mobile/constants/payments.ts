@@ -109,6 +109,30 @@ export function sellingCurrencyForCountry(country?: string): string {
   return COUNTRY_CURRENCY[c] || "USD";
 }
 
+/** Provider names as a seller should read them. */
+const PAYOUT_PROVIDER_LABELS: Record<PayoutProvider, string> = {
+  paystack: "Paystack",
+  stripe: "Stripe",
+};
+
+/**
+ * How to refer to a seller's payout destination in copy — "your Paystack
+ * account", "your Stripe account", or a neutral "your payout account" when the
+ * rail is unknown or no rail reaches them.
+ *
+ * Exists because payout banners used to hardcode "your Stripe account", which
+ * every Nigerian seller reads as being about an account they have never had.
+ * Compose it as `your ${payoutAccountLabel(provider)}`.
+ *
+ * Takes the rail rather than a country on purpose: the country this would have
+ * to derive from lives on the cached user object, which is written at login —
+ * and the login response carries no `location`. Screens should pass the value
+ * the API hands them (e.g. an event's `payoutProvider`).
+ */
+export function payoutAccountLabel(provider?: PayoutProvider | null): string {
+  return provider ? `${PAYOUT_PROVIDER_LABELS[provider]} account` : "payout account";
+}
+
 /** Payout-onboarding screen for each rail. */
 export const PAYOUT_ONBOARDING_ROUTES: Record<PayoutProvider, string> = {
   paystack: "/paystack-onboarding",

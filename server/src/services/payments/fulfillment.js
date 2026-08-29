@@ -19,6 +19,7 @@ import Guide from "../../models/guide.model.js";
 import Ticket from "../../models/ticket.model.js";
 import { Booking } from "../../models/booking.model.js";
 import { Order } from "../../models/order.model.js";
+import { Service } from "../../models/service.model.js";
 import Chat from "../../models/chat.model.js";
 import chatService from "../chat.service.js";
 import { notifyUser } from "../notification.service.js";
@@ -26,6 +27,11 @@ import { sendSaleEmail, sendPurchaseReceiptEmail } from "../email.service.js";
 import { computeSplit } from "./split.js";
 import { issueEventPass } from "../pass.service.js";
 import { invalidateCachePattern } from "../../utils/cache.js";
+import config from "../../config/env.js";
+import TicketOrder from "../../models/ticketOrder.model.js";
+import { getSettlementProvider, PAYOUT_ROUTING_FIELDS } from "./resolveProvider.js";
+import { applyRedemptionByReference } from "./discount.service.js";
+import { findOrCreateGuestUser } from "../../controllers/guestCheckout.controller.js";
 
 /** "USD 25.00" / "NGN 4,000.00" — or "Free" for zero-amount purchases. */
 export function formatAmountText(amount, currency) {
@@ -210,6 +216,7 @@ export async function issueRecipientTicket({
   amountPaid,
   discountCode,
   discountAmount,
+  sendPassEmail = true,
 }) {
   const ticketData = {
     event: event._id,
@@ -244,9 +251,213 @@ export async function issueRecipientTicket({
     ticketId: ticket._id,
     recipientEmail,
     recipientName,
+    sendEmail: sendPassEmail,
   }).catch((e) => console.error("issueEventPass (issueRecipientTicket) failed:", e));
 
   return ticket;
+}
+
+/**
+ * Fan a paid TicketOrder out into one ticket + pass per line item.
+ *
+ * THE CALLER MUST HAVE VERIFIED THE CHARGE. This function moves no money and
+ * checks no payment — it reads the accounting frozen onto the order at init
+ * (items, prices, discount, total) and issues against it.
+ *
+ * Shared by the buyer's confirm call and BOTH provider webhooks. It used to live
+ * inline in confirmTicketBatch, which meant a batch order was only ever fulfilled
+ * if the buyer's browser completed the round trip — close the tab (or, on the web
+ * Paystack popup, simply let it redirect away) and the buyer was charged while the
+ * seller got no ticket, no sale and no payout. Six such orders were stranded in
+ * production before this existed.
+ *
+ * Re-entrant, because a webhook and a confirm WILL race:
+ *  - the "pending" -> "fulfilling" flip is an atomic claim; whoever loses returns
+ *    without issuing anything,
+ *  - `ticketIds` is appended as each ticket is created, so a retry after a partial
+ *    failure resumes at the first unissued item instead of duplicating,
+ *  - a throw reverts the claim to "pending" so the other path can pick it up.
+ *
+ * @param {object} args
+ * @param {object} args.order          a TicketOrder doc ("pending" or "fulfilling")
+ * @param {object} [args.event]        the loaded Event, if the caller already has it
+ * @param {boolean} [args.notifyBuyers=true]  false suppresses everything aimed at the
+ *   buyer — pass emails, receipt, in-app confirmation — while still recording the
+ *   tickets and passes. For repairing an order after its event has finished, where
+ *   "your pass is here" for a past date reads as a fault, not a fix. The seller is
+ *   always told, because the sale is real and drives their payout.
+ * @returns {Promise<{ ticketIds: string[], alreadyFulfilled: boolean }>}
+ */
+export async function fulfillTicketOrder({ order, event: loadedEvent, notifyBuyers = true }) {
+  if (order.status === "paid") {
+    return { ticketIds: order.ticketIds || [], alreadyFulfilled: true };
+  }
+
+  // Atomic claim. A null result means another caller is mid-fan-out (or just
+  // finished) — never issue a second set of tickets on top of theirs.
+  const claimed = await TicketOrder.findOneAndUpdate(
+    { _id: order._id, status: "pending" },
+    { status: "fulfilling" },
+    { new: true }
+  );
+  if (!claimed) {
+    const current = await TicketOrder.findById(order._id).select("ticketIds status");
+    return { ticketIds: current?.ticketIds || [], alreadyFulfilled: true };
+  }
+
+  const event = loadedEvent || (await Event.findById(claimed.event));
+  if (!event) {
+    await TicketOrder.updateOne({ _id: claimed._id }, { status: "pending" });
+    throw new Error(`fulfillTicketOrder: event ${claimed.event} not found`);
+  }
+  const eventKey = event._id;
+  const reference = claimed.reference;
+  const isPaystack = claimed.provider === "paystack";
+  const isFree = claimed.provider === "none";
+
+  // Re-derived from the seller rather than read back from the order, so a
+  // routing change between init and fulfillment settles on today's rail.
+  const seller = await User.findById(claimed.seller).select(PAYOUT_ROUTING_FIELDS);
+  const payoutProvider = isPaystack ? "paystack" : getSettlementProvider(seller);
+
+  // Discounted orders spread the charge across items proportionally
+  // (scale = total/subtotal) so per-ticket accounting sums to exactly what was
+  // paid; the rounding remainder lands on the last item. Undiscounted orders
+  // have no `subtotal`, scale 1. Computed for EVERY item up front so a resumed
+  // run gives the remainder to the same item a clean run would have.
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const scale = claimed.subtotal ? claimed.total / claimed.subtotal : 1;
+  const amounts = [];
+  let paidSoFar = 0;
+  for (let i = 0; i < claimed.items.length; i++) {
+    const isLast = i === claimed.items.length - 1;
+    const paidForItem = isLast
+      ? round2(claimed.total - paidSoFar)
+      : round2(claimed.items[i].price * scale);
+    paidSoFar = round2(paidSoFar + paidForItem);
+    amounts.push(paidForItem);
+  }
+
+  const ticketIds = [...(claimed.ticketIds || [])];
+  try {
+    for (let i = ticketIds.length; i < claimed.items.length; i++) {
+      const item = claimed.items[i];
+      const paidForItem = amounts[i];
+      const recipient = await findOrCreateGuestUser(item.recipientEmail, item.recipientName);
+      // Fee accounting mirrors the single-ticket flow: Stripe stores cents,
+      // Paystack stores major units (the field name says "Cents"; currency
+      // disambiguates — see ticket.model.js).
+      let platformFeeCents, sellerNetCents;
+      if (isPaystack || isFree) {
+        const split = computeSplit(paidForItem);
+        platformFeeCents = split.platformFee;
+        sellerNetCents = split.sellerNet;
+      } else {
+        const cents = Math.round(paidForItem * 100);
+        platformFeeCents = Math.round(cents * (config.stripe.platformFeePercent / 100));
+        sellerNetCents = cents - platformFeeCents;
+      }
+      const tier = item.tierId
+        ? { tierId: item.tierId, name: item.tierName, price: item.price }
+        : null;
+      const ticket = await issueRecipientTicket({
+        event,
+        recipientUserId: recipient._id,
+        buyerUserId: claimed.buyer,
+        tier,
+        provider: claimed.provider,
+        payoutProvider,
+        paymentRef: reference,
+        currency: isPaystack || isFree ? claimed.currency : "usd",
+        platformFeeCents,
+        sellerNetCents,
+        recipientEmail: item.recipientEmail,
+        recipientName: item.recipientName,
+        sendPassEmail: notifyBuyers,
+        ...(claimed.discountCode
+          ? {
+              amountPaid: paidForItem,
+              discountCode: claimed.discountCode,
+              discountAmount: round2(item.price - paidForItem),
+            }
+          : {}),
+      });
+      // Persisted per ticket, not in one write at the end: a crash mid-fan-out
+      // must leave a record of what was already issued, or the retry duplicates.
+      await TicketOrder.updateOne({ _id: claimed._id }, { $push: { ticketIds: ticket._id } });
+      ticketIds.push(ticket._id);
+    }
+  } catch (err) {
+    // Release the claim so the other path (webhook / confirm retry) can resume.
+    await TicketOrder.updateOne({ _id: claimed._id }, { status: "pending" });
+    throw err;
+  }
+
+  // Ticket holders (buyers, gift recipients, guests) are intentionally NOT
+  // added to rsvpUsers/invitedUsers: attendance for a paid event is tracked by
+  // Ticket records (so capacity counts every ticket, and one buyer holding
+  // several is counted correctly), and dropping them keeps auto-created guest /
+  // gift-recipient accounts out of the public "who's coming" list.
+
+  // Event detail is cached under whichever param the caller used, so drop the
+  // `_id`, slug and shareToken keys — otherwise a slug-fetched page keeps
+  // serving stale ticket counts after a sale.
+  for (const key of [eventKey, event.slug, event.shareToken].filter(Boolean)) {
+    invalidateCachePattern(`event_detail_${key}_`);
+  }
+  invalidateCachePattern("public_events_");
+  invalidateCachePattern("event_highlights_");
+
+  // Notify + email both parties. notifyUser writes the durable Notification
+  // doc — the old bare push left the seller with no in-app record of the sale.
+  const [buyer, sellerUser] = await Promise.all([
+    User.findById(claimed.buyer).select("username email"),
+    User.findById(event.createdBy).select("username email"),
+  ]);
+  const ticketCount = claimed.items.length;
+  const ticketLabel = ticketCount === 1 ? "Ticket" : "Tickets";
+  const amountText = formatAmountText(claimed.total, claimed.currency || "usd");
+  await notifyUser(event.createdBy, {
+    type: "ticket_sold",
+    title: "🎟️ Tickets sold!",
+    body: `${ticketCount} ticket${ticketCount === 1 ? "" : "s"} just sold for "${event.title}"`,
+    data: { eventId: eventKey.toString() },
+  });
+  if (notifyBuyers) {
+    await notifyUser(claimed.buyer, {
+      type: "ticket_purchased",
+      title: "🎟️ Tickets Confirmed",
+      body: `${ticketCount} ticket${ticketCount === 1 ? "" : "s"} for "${event.title}" — passes emailed to each recipient`,
+      data: { eventId: eventKey.toString() },
+    });
+  }
+  if (sellerUser?.email) {
+    sendSaleEmail(sellerUser.email, {
+      sellerName: sellerUser.username,
+      buyerName: buyer?.username,
+      itemLabel: ticketLabel,
+      itemTitle: event.title,
+      amountText,
+      quantity: ticketCount,
+    }).catch((e) => console.error("sendSaleEmail (fulfillTicketOrder) failed:", e));
+  }
+  if (notifyBuyers && buyer?.email) {
+    sendPurchaseReceiptEmail(buyer.email, {
+      buyerName: buyer.username,
+      sellerName: sellerUser?.username,
+      itemLabel: ticketLabel,
+      itemTitle: event.title,
+      amountText,
+      quantity: ticketCount,
+    }).catch((e) => console.error("sendPurchaseReceiptEmail (fulfillTicketOrder) failed:", e));
+  }
+
+  await TicketOrder.updateOne({ _id: claimed._id }, { status: "paid", paidAt: new Date() });
+
+  // Settle the discount reservation now that the order is fulfilled.
+  if (claimed.discountCode) await applyRedemptionByReference(reference);
+
+  return { ticketIds, alreadyFulfilled: false };
 }
 
 /**
@@ -357,13 +568,45 @@ export async function fulfillBooking({
   await booking.save();
 
   // Notify the vendor that the client has paid.
-  const client = await User.findById(booking.client).select("username");
+  const [client, vendor] = await Promise.all([
+    User.findById(booking.client).select("username email"),
+    User.findById(booking.vendor).select("username email businessName"),
+  ]);
   await notifyUser(booking.vendor, {
     type: "booking_paid",
     title: "💳 Booking Paid",
     body: `${client?.username || "A client"} just paid for their booking`,
     data: { bookingId: bookingId.toString() },
   });
+
+  // Emails to both parties, fire-and-forget — mirrors fulfillOrder. Amount comes
+  // from priceSnapshot, never the live Service doc, so a later price change can't
+  // rewrite what this buyer was charged.
+  const vendorName = vendor?.businessName || vendor?.username;
+  const amountText = formatAmountText(
+    booking.priceSnapshot?.amount,
+    booking.priceSnapshot?.currency
+  );
+  const service = await Service.findById(booking.service).select("name");
+  const itemTitle = service?.name || "Booking";
+  if (client?.email) {
+    sendPurchaseReceiptEmail(client.email, {
+      buyerName: client.username,
+      sellerName: vendorName,
+      itemLabel: "Booking",
+      itemTitle,
+      amountText,
+    }).catch((e) => console.error("sendPurchaseReceiptEmail (fulfillBooking) failed:", e));
+  }
+  if (vendor?.email) {
+    sendSaleEmail(vendor.email, {
+      sellerName: vendorName,
+      buyerName: client?.username,
+      itemLabel: "Booking",
+      itemTitle,
+      amountText,
+    }).catch((e) => console.error("sendSaleEmail (fulfillBooking) failed:", e));
+  }
 
   return { booking, alreadyPaid: false };
 }
@@ -465,4 +708,11 @@ export async function fulfillOrder({
   return { order, alreadyPaid: false };
 }
 
-export default { fulfillTicket, issueRecipientTicket, fulfillGuide, fulfillBooking, fulfillOrder };
+export default {
+  fulfillTicket,
+  issueRecipientTicket,
+  fulfillTicketOrder,
+  fulfillGuide,
+  fulfillBooking,
+  fulfillOrder,
+};

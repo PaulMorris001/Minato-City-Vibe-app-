@@ -18,6 +18,7 @@ import {
   getEventTicketSales,
   rsvpEvent,
   getEventHighlights,
+  getSimilarEvents,
   addVendorToEvent,
   removeVendorFromEvent,
   respondToVendorInvite,
@@ -70,6 +71,10 @@ router.get("/events/:eventId/qr", optionalAuth, getEventQr);
 // viewers — the controller returns 401 for non-public events and strips
 // private fields for anon viewers.
 router.get("/events/:eventId", optionalAuth, getEventById);
+
+// "You may also like" — other public events near this one. optionalAuth so a
+// logged-out share-link viewer gets suggestions too.
+router.get("/events/:eventId/similar", optionalAuth, getSimilarEvents);
 
 // Get event by share token (public access for sharing)
 router.get("/events/share/:shareToken", getEventByShareToken);

@@ -23,6 +23,7 @@ import { capitalize } from "@/libs/helpers";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useAccount } from "@/contexts/AccountContext";
+import { useCart } from "@/contexts/CartContext";
 import { useUnread } from "@/contexts/UnreadContext";
 import socketService from "@/services/socket.service";
 import { clearLocalData } from "@/utils/localData";
@@ -38,6 +39,8 @@ export default function VendorLayout() {
   const { colors, isDark } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { setActiveAccount } = useAccount();
+  const cart = useCart();
+  const { reset: resetUnread } = useUnread();
   const isGlassAvailable = Platform.OS === "ios" && isLiquidGlassAvailable();
   const isIpad = Platform.OS === "ios" && Platform.isPad;
   // The profile modal sits on a translucent surface on any iOS (real glass on
@@ -145,7 +148,9 @@ export default function VendorLayout() {
       await unregisterForPushNotifications();
       await SecureStore.deleteItemAsync("user");
       await SecureStore.deleteItemAsync("token");
-      await SecureStore.deleteItemAsync("activeAccount");
+      await setActiveAccount("client");
+      cart.clear();
+      resetUnread();
       await clearLocalData();
       socketService.disconnect();
       router.replace("/login");

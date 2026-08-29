@@ -32,7 +32,7 @@ import { trackEvent } from "@/utils/analytics";
 import { createEventShareLink } from "@/utils/shareLinks";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { useStripePayment } from "@/hooks/useStripePayment";
-import { currencyPrefix } from "@/constants/payments";
+import { currencyPrefix, payoutAccountLabel } from "@/constants/payments";
 import {
   fetchEventDiscountCodes,
   previewDiscountCode,
@@ -89,6 +89,19 @@ interface EventVendor {
   vendorType?: { name?: string } | string;
 }
 
+/** Just the fields the "you may also like" rail renders. */
+interface SimilarEvent {
+  _id: string;
+  title: string;
+  date: string;
+  image?: string;
+  location?: string;
+  isVirtual?: boolean;
+  isPaid?: boolean;
+  ticketPrice?: number;
+  currency?: string;
+}
+
 interface Event {
   _id: string;
   title: string;
@@ -130,6 +143,10 @@ interface Event {
   approvalRejectReason?: string;
   payoutStatus?: "none" | "pending" | "released" | "failed";
   payoutReleasedAt?: string;
+  /** Hold window before ticket money is released. Absent on older events (24). */
+  payoutDelayHours?: number;
+  /** Settlement rail, organizer-only. Names the account in the payout banners. */
+  payoutProvider?: "paystack" | "stripe" | null;
   userStatus: "creator" | "accepted" | "pending" | "requested" | "none";
   createdBy: User;
   cohosts?: User[];
@@ -292,6 +309,8 @@ export default function EventDetailsPage() {
         ? rawParams.id[0]
         : undefined;
   const [event, setEvent] = useState<Event | null>(null);
+  /** "You may also like" rail. Empty until the event resolves; never blocks it. */
+  const [similarEvents, setSimilarEvents] = useState<SimilarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   // True when the server returned 401/403 — render the "Log in to view" panel
@@ -477,6 +496,30 @@ export default function EventDetailsPage() {
       }
     })();
   }, [event?.createdBy?._id, currentUserId]);
+
+  // "You may also like" — other public events near this one. Best-effort: an
+  // empty or failed rail just doesn't render, and it never blocks the event.
+  useEffect(() => {
+    const eventId = event?._id;
+    if (!eventId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await authToken();
+        const res = await fetch(`${BASE_URL}/events/${eventId}/similar?limit=10`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setSimilarEvents(data.events ?? []);
+      } catch {
+        // Non-fatal — the rail is a suggestion, not part of the event.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [event?._id]);
 
   // ─── User search (debounced) ──────────────────────────────────────────────
   const searchUsers = async (query: string) => {
@@ -1328,8 +1371,9 @@ export default function EventDetailsPage() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.bannerTitle}>Payout held</Text>
                   <Text style={styles.bannerBody}>
-                    Ticket revenue is held by OurCityvibe and released to your Stripe
-                    account 48h after the event ends.
+                    Ticket revenue is held by OurCityvibe and released to your{" "}
+                    {payoutAccountLabel(event.payoutProvider)}{" "}
+                    {event.payoutDelayHours ?? 24}h after the event ends.
                   </Text>
                 </View>
               </View>
@@ -1343,7 +1387,7 @@ export default function EventDetailsPage() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.bannerTitle}>Payout released</Text>
                   <Text style={styles.bannerBody}>
-                    Transferred to your Stripe account on{" "}
+                    Transferred to your {payoutAccountLabel(event.payoutProvider)} on{" "}
                     {new Date(event.payoutReleasedAt).toLocaleDateString()}.
                   </Text>
                 </View>
@@ -1898,6 +1942,70 @@ export default function EventDetailsPage() {
                 )}
               </GlassCard>
             )}
+
+          {/* ─── YOU MAY ALSO LIKE ──────────────────────────── */}
+          {similarEvents.length > 0 && (
+            <View>
+              <View style={styles.rowBetween}>
+                <Text style={[styles.microLabel, { paddingHorizontal: 0 }]}>
+                  YOU MAY ALSO LIKE
+                </Text>
+                <TouchableOpacity onPress={() => router.push("/public-events" as any)}>
+                  <Text style={styles.seeAll}>See all</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginTop: 8 }}
+              >
+                {similarEvents.map((sug) => (
+                  <TouchableOpacity
+                    key={sug._id}
+                    activeOpacity={0.85}
+                    style={styles.suggestCard}
+                    // replace, not push: chaining suggestions would otherwise
+                    // build an unbounded back stack of event screens.
+                    onPress={() => router.replace(`/event/${sug._id}` as any)}
+                  >
+                    {sug.image ? (
+                      <Image
+                        source={{ uri: sug.image }}
+                        style={styles.suggestImage}
+                        contentFit="cover"
+                        transition={150}
+                      />
+                    ) : (
+                      <LinearGradient
+                        colors={[colors.primaryFaded, colors.cardGlass]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.suggestImage}
+                      >
+                        <Text style={styles.suggestEmoji}>{heroEmojiFor(sug.title)}</Text>
+                      </LinearGradient>
+                    )}
+                    <Text style={styles.suggestTitle} numberOfLines={2}>
+                      {sug.title}
+                    </Text>
+                    <Text style={styles.suggestMeta} numberOfLines={1}>
+                      {heroDateLine(sug.date)}
+                    </Text>
+                    <Text style={styles.suggestMeta} numberOfLines={1}>
+                      {sug.isVirtual
+                        ? "Online"
+                        : neighborhoodFromLocation(sug.location) || "—"}
+                    </Text>
+                    <Text style={styles.suggestPrice}>
+                      {sug.isPaid && sug.ticketPrice
+                        ? `${currencyPrefix(sug.currency)}${sug.ticketPrice}`
+                        : "Free"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -3053,6 +3161,44 @@ const createStyles = (c: ThemeColors) =>
 
   // Vendors
   seeAll: { color: c.primaryLight, fontFamily: Fonts.bold, fontSize: 11 },
+  suggestCard: {
+    width: 150,
+    marginRight: 10,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: c.glassStroke,
+    backgroundColor: c.cardGlass,
+  },
+  suggestImage: {
+    width: "100%",
+    height: 88,
+    borderRadius: 10,
+    marginBottom: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  suggestEmoji: { fontSize: 30 },
+  suggestTitle: {
+    color: c.textBright,
+    fontFamily: "BricolageGrotesque_700Bold",
+    fontSize: 13,
+    letterSpacing: -0.13,
+    lineHeight: 17,
+  },
+  suggestMeta: {
+    color: c.textDim,
+    fontFamily: Fonts.regular,
+    fontSize: 11,
+    marginTop: 3,
+  },
+  suggestPrice: {
+    color: c.primaryLight,
+    fontFamily: Fonts.bold,
+    fontSize: 11.5,
+    marginTop: 6,
+  },
   vendorCard: {
     minWidth: 138,
     marginRight: 8,

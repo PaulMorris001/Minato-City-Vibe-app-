@@ -1,6 +1,7 @@
 import Event from "../models/event.model.js";
 import Ticket from "../models/ticket.model.js";
 import User from "../models/user.model.js";
+import Payout from "../models/payout.model.js";
 import {
   getSettlementProvider,
   hasPayoutOnboarding,
@@ -33,19 +34,24 @@ function ticketPayoutAmount(totalNet, settlement) {
  * is when the actual transfer runs (see payout.service.executePayout). No money
  * leaves the platform here.
  */
-async function releaseDuePayouts() {
+export async function releaseDuePayouts() {
   const now = new Date();
 
+  // "awaiting_approval" and "released" are rescanned, not just "pending"/"failed":
+  // a provider webhook can fulfill a batch ticket order hours after this job first
+  // ran, and those late tickets used to be invisible here forever — the event had
+  // already moved past the selectable states and `createPayout` is idempotent on
+  // the reference, so the seller was simply never paid for them.
   const events = await Event.find({
     isPaid: true,
     isPublic: true,
-    payoutStatus: { $in: ["pending", "failed"] },
+    payoutStatus: { $in: ["pending", "failed", "awaiting_approval", "released"] },
     approvalStatus: "approved",
   }).lean();
 
   const due = events.filter((evt) => {
     const releaseAt = new Date(
-      new Date(evt.date).getTime() + (evt.payoutDelayHours || 48) * 60 * 60 * 1000
+      new Date(evt.date).getTime() + (evt.payoutDelayHours || 24) * 60 * 60 * 1000
     );
     return releaseAt <= now;
   });
@@ -56,6 +62,21 @@ async function releaseDuePayouts() {
 
   for (const evt of due) {
     try {
+      // The two rescanned states are here only to catch tickets fulfilled late.
+      // With none, the event is finished and must fall straight through — the
+      // rail checks below would otherwise flip an already-released event to
+      // "failed" and tell its organizer their payout is blocked.
+      if (evt.payoutStatus === "released" || evt.payoutStatus === "awaiting_approval") {
+        const late = await Ticket.countDocuments({
+          event: evt._id,
+          isValid: true,
+          transferred: { $ne: true },
+          refunded: { $ne: true },
+          sellerNetCents: { $gt: 0 },
+        });
+        if (late === 0) continue;
+      }
+
       const seller = await User.findById(evt.createdBy).select(
         `${PAYOUT_ROUTING_FIELDS} paystackBank username`
       );
@@ -130,10 +151,14 @@ async function releaseDuePayouts() {
       });
 
       if (unsettled.length === 0) {
-        await Event.updateOne(
-          { _id: evt._id },
-          { payoutStatus: "released", payoutReleasedAt: new Date() }
-        );
+        // Guarded so a rescanned, already-released event isn't rewritten every
+        // sweep just to restate what it already says.
+        if (evt.payoutStatus !== "released") {
+          await Event.updateOne(
+            { _id: evt._id },
+            { payoutStatus: "released", payoutReleasedAt: new Date() }
+          );
+        }
         continue;
       }
 
@@ -141,16 +166,55 @@ async function releaseDuePayouts() {
       const amount = ticketPayoutAmount(totalNet, settlement);
       const currency = settlement === "paystack" ? unsettled[0].currency || "NGN" : "USD";
 
-      // Idempotent on the event — re-runs return the existing payout.
-      await createPayout({
-        vendor: seller._id,
-        relatedType: "ticket",
-        relatedId: evt._id,
-        provider: settlement,
-        amount,
-        currency,
-        reference: `event_payout_${evt._id}`,
-      });
+      // One payout normally covers every ticket on an event. But a payout that
+      // has already moved money can never be revised, so tickets that arrive
+      // afterwards — a provider webhook landing late, or a stuck order repaired
+      // by hand — need a payout of their own. `unsettled` already excludes
+      // everything a previous transfer marked settled, so a top-up is exactly the
+      // late arrivals and cannot double-pay.
+      const priorPayouts = await Payout.find({ relatedType: "ticket", relatedId: evt._id })
+        .sort({ createdAt: 1 })
+        .lean();
+      const open = priorPayouts.find((p) => ["awaiting_approval", "failed"].includes(p.status));
+
+      if (open) {
+        // Not approved yet — fold the late tickets into the figure the admin sees
+        // rather than queueing a second payout beside it.
+        if (Number(open.amount) !== amount) {
+          await Payout.updateOne(
+            { _id: open._id },
+            { amount, displayAmount: amount, currency, displayCurrency: currency }
+          );
+          console.log(
+            `[PayoutRelease] Event ${evt._id} — payout ${open._id} revised to ${currency} ${amount} (${unsettled.length} unsettled tickets)`
+          );
+        }
+      } else {
+        // Idempotent on the reference — re-runs return the existing payout.
+        const reference =
+          priorPayouts.length === 0
+            ? `event_payout_${evt._id}`
+            : `event_payout_${evt._id}_${priorPayouts.length + 1}`;
+        await createPayout({
+          vendor: seller._id,
+          relatedType: "ticket",
+          relatedId: evt._id,
+          provider: settlement,
+          amount,
+          currency,
+          reference,
+        });
+        if (priorPayouts.length > 0) {
+          console.log(
+            `[PayoutRelease] Event ${evt._id} — TOP-UP payout queued for ${unsettled.length} ` +
+              `late ticket(s) (${currency} ${amount}, ${reference})`
+          );
+        }
+      }
+
+      // Already-queued events are rescanned every sweep now; only announce the
+      // transition, not the fact that it is still queued.
+      if (evt.payoutStatus === "awaiting_approval") continue;
 
       await Event.updateOne(
         { _id: evt._id },

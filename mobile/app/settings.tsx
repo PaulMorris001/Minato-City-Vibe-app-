@@ -86,10 +86,6 @@ export default function SettingsScreen() {
   // otherwise. `savingReminders` blocks a double-tap while the PUT is in flight.
   const [eventReminderEmails, setEventReminderEmails] = useState(true);
   const [savingReminders, setSavingReminders] = useState(false);
-  const [verificationStatus, setVerificationStatus] = useState<"none" | "pending" | "approved" | "rejected">("none");
-  const [verificationNotes, setVerificationNotes] = useState("");
-  const [licenseImage, setLicenseImage] = useState("");
-  const [submittingVerification, setSubmittingVerification] = useState(false);
 
   // Onboarding screen for whichever rail settles this user, or null when no rail
   // reaches their country (they can still publish free listings).
@@ -267,14 +263,9 @@ export default function SettingsScreen() {
     if (!hasLoadedOnceRef.current) setLoading(true);
     try {
       const token = await SecureStore.getItemAsync("token");
-      const [profileRes, verifRes] = await Promise.all([
-        axios.get(`${BASE_URL}/profile`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        axios.get(`${BASE_URL}/verification/status`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }).catch(() => ({ data: { status: "none" } })),
-      ]);
+      const profileRes = await axios.get(`${BASE_URL}/profile`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       const userData = profileRes.data.user;
       setUser({
@@ -297,10 +288,6 @@ export default function SettingsScreen() {
           city: userData.location.city || "",
         });
       }
-
-      const verifData = verifRes.data;
-      setVerificationStatus(verifData.status || "none");
-      setVerificationNotes(verifData.reviewNotes || "");
     } catch (error: any) {
       console.error("Error fetching profile:", error);
       showError("Failed to load profile");
@@ -326,38 +313,6 @@ export default function SettingsScreen() {
       showError("Couldn't update your email preference. Please try again.");
     } finally {
       setSavingReminders(false);
-    }
-  };
-
-  const handleSubmitVerification = async () => {
-    if (!licenseImage) {
-      showInfo("Please select an image of your driver's license.", "Required");
-      return;
-    }
-    setSubmittingVerification(true);
-    try {
-      const token = await SecureStore.getItemAsync("token");
-
-      let imageUrl = licenseImage;
-      if (licenseImage.startsWith("file://")) {
-        const { uploadImage } = await import("@/utils/imageUpload");
-        const result = await uploadImage(licenseImage, "verifications", token!);
-        imageUrl = result.url;
-      }
-
-      await axios.post(
-        `${BASE_URL}/verification/submit`,
-        { documentImage: imageUrl },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      setVerificationStatus("pending");
-      setLicenseImage("");
-      showSuccess("Your verification request has been submitted. We'll review it shortly.", "Submitted");
-    } catch (error: any) {
-      showError(error.response?.data?.message || "Failed to submit verification");
-    } finally {
-      setSubmittingVerification(false);
     }
   };
 
@@ -869,67 +824,23 @@ export default function SettingsScreen() {
         )}
       </View>
 
-      {/* Identity Verification — open to all users */}
+      {/* Identity Verification — open to all users. The actual status +
+          submit flow now lives on its own screen (see verify-account.tsx),
+          so the "Complete your setup" checklists can link straight to the
+          action instead of dropping someone into this whole Settings list. */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Identity Verification</Text>
-        <Text style={styles.sectionDescription}>
-          {user.isVendor
-            ? "Submit a government-issued ID to get a verification badge on your profile. Verified vendors and hosts get priority approval for paid events."
-            : "Submit a government-issued ID to get a verification badge and become a trusted host. Verified hosts get faster approval for paid events."}
-        </Text>
-
-          {verificationStatus === "approved" && (
-            <View style={styles.verifStatusRow}>
-              <Ionicons name="checkmark-circle" size={22} color="#22c55e" />
-              <Text style={[styles.verifStatusText, { color: "#22c55e" }]}>Verified</Text>
-            </View>
-          )}
-
-          {verificationStatus === "pending" && (
-            <View style={styles.verifStatusRow}>
-              <Ionicons name="time-outline" size={22} color={colors.warning} />
-              <Text style={[styles.verifStatusText, { color: colors.warning }]}>Under Review</Text>
-            </View>
-          )}
-
-          {verificationStatus === "rejected" && (
-            <>
-              <View style={styles.verifStatusRow}>
-                <Ionicons name="close-circle" size={22} color={colors.error} />
-                <Text style={[styles.verifStatusText, { color: colors.error }]}>Not Approved</Text>
-              </View>
-              {verificationNotes ? (
-                <Text style={styles.verifNotes}>Reason: {verificationNotes}</Text>
-              ) : null}
-            </>
-          )}
-
-          {(verificationStatus === "none" || verificationStatus === "rejected") && (
-            <>
-              <ImagePickerButton
-                imageUri={licenseImage}
-                onImageSelected={setLicenseImage}
-                label="Government-issued ID"
-                size={120}
-                shape="square"
-              />
-              <TouchableOpacity
-                style={[styles.saveButton, submittingVerification && styles.saveButtonDisabled]}
-                onPress={handleSubmitVerification}
-                disabled={submittingVerification}
-              >
-                {submittingVerification ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <>
-                    <Ionicons name="shield-checkmark-outline" size={20} color="#fff" />
-                    <Text style={styles.saveButtonText}>Submit for Verification</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
+        <TouchableOpacity
+          style={styles.preferenceItem}
+          onPress={() => router.push("/verify-account" as any)}
+        >
+          <View style={styles.preferenceLeft}>
+            <Ionicons name="shield-checkmark-outline" size={22} color={Colors.primary} />
+            <Text style={styles.preferenceText}>Verify your identity</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
 
       {/* Support — hidden when you are the support account */}
       {!isSupportUser(user._id) && (

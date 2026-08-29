@@ -48,7 +48,11 @@ export default function Signup() {
     setError("");
     setInfo("");
     try {
-      await api("/auth/resend-signup-otp", { method: "POST" });
+      await api("/auth/resend-signup", {
+        method: "POST",
+        body: { email },
+        auth: false,
+      });
       setInfo("A new code is on its way to your inbox.");
     } catch (err: any) {
       setError(err.message || "Couldn't resend the code.");

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { AppState } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import * as Notifications from "expo-notifications";
@@ -14,6 +14,13 @@ interface UnreadContextType {
   notifUnread: number;
   /** Force a re-fetch of all counts (call after marking things read). */
   refreshUnread: () => void;
+  /**
+   * Zero every count without hitting the server. Call on logout — the counts
+   * otherwise stay on screen (tab badges, app icon badge) showing the
+   * outgoing user's numbers until the next refresh, which can visibly bleed
+   * into whichever account logs in next.
+   */
+  reset: () => void;
 }
 
 const UnreadContext = createContext<UnreadContextType>({
@@ -21,6 +28,7 @@ const UnreadContext = createContext<UnreadContextType>({
   vendorUnread: 0,
   notifUnread: 0,
   refreshUnread: () => {},
+  reset: () => {},
 });
 
 export function UnreadProvider({ children }: { children: React.ReactNode }) {
@@ -88,6 +96,13 @@ export function UnreadProvider({ children }: { children: React.ReactNode }) {
     refreshNotifs();
   }, [refreshChats, refreshNotifs]);
 
+  const reset = useCallback(() => {
+    currentUserIdRef.current = null;
+    setChatUnread(0);
+    setVendorUnread(0);
+    setNotifUnread(0);
+  }, []);
+
   // Coalesce bursts of incoming messages into a single server read.
   const scheduleChatRefresh = useCallback(() => {
     if (chatTimer.current) clearTimeout(chatTimer.current);
@@ -130,8 +145,18 @@ export function UnreadProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refreshUnread, refreshNotifs, scheduleChatRefresh]);
 
+  // Memoized so consumers (the tab layout's badges, notifications screen)
+  // only re-render when a count actually changes, not on every provider
+  // render — this context updates often (socket events, the 600ms coalesced
+  // refresh, AppState foreground), and an unmemoized object literal here
+  // forced the tab layout to re-render on all of them, including mid-switch.
+  const value = useMemo(
+    () => ({ totalUnread: chatUnread, vendorUnread, notifUnread, refreshUnread, reset }),
+    [chatUnread, vendorUnread, notifUnread, refreshUnread, reset]
+  );
+
   return (
-    <UnreadContext.Provider value={{ totalUnread: chatUnread, vendorUnread, notifUnread, refreshUnread }}>
+    <UnreadContext.Provider value={value}>
       {children}
     </UnreadContext.Provider>
   );

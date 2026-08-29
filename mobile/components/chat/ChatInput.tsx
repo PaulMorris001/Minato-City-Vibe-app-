@@ -204,7 +204,11 @@ export default function ChatInput({
             placeholderTextColor={colors.textFaint}
             multiline
             maxLength={1000}
-            editable={!disabled}
+            // Not gated on `disabled` (which flips true for the round-trip of
+            // every send): setting editable={false} on a focused input force-
+            // blurs it, which was dismissing the keyboard on every send. The
+            // send/attach buttons below still gate on `disabled` to prevent a
+            // double-submit while the previous message is in flight.
           />
           {onCameraCapture && (
             <TouchableOpacity

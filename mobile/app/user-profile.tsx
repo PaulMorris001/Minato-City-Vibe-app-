@@ -82,16 +82,35 @@ export default function UserProfileScreen() {
   const [avatarViewerVisible, setAvatarViewerVisible] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
 
+  // Separate from currentUserId because a logged-out viewer legitimately has
+  // none — "undefined" alone can't tell "not signed in" from "still reading
+  // SecureStore", and gating the fetch on the latter would hang share links.
+  const [viewerResolved, setViewerResolved] = useState(false);
+
   useEffect(() => {
-    SecureStore.getItemAsync("user").then((u) => {
-      if (u) {
-        try {
-          const parsed = JSON.parse(u);
-          setCurrentUserId(parsed.id || parsed._id);
-        } catch {}
-      }
-    });
+    SecureStore.getItemAsync("user")
+      .then((u) => {
+        if (u) {
+          try {
+            const parsed = JSON.parse(u);
+            setCurrentUserId(parsed.id || parsed._id);
+          } catch {}
+        }
+      })
+      .finally(() => setViewerResolved(true));
   }, []);
+
+  // Your own profile is never rendered as a stranger's. Two checks, because
+  // `userId` may be a slug or shareToken rather than an id — the param compare
+  // avoids the fetch entirely for the common case, and the resolved `_id`
+  // compare catches someone opening their own share link. `replace`, not push,
+  // so Back doesn't drop them right back onto the public view.
+  const isSelf =
+    !!currentUserId && (userId === currentUserId || user?._id === currentUserId);
+
+  useEffect(() => {
+    if (isSelf) router.replace("/(tabs)/profile");
+  }, [isSelf]);
 
   useEffect(() => {
     if (!userId) return;
@@ -102,8 +121,11 @@ export default function UserProfileScreen() {
       openSupportChat({ replace: true });
       return;
     }
+    // Wait for the stored user before fetching, so we don't render a stranger's
+    // view of ourselves for a frame while the SecureStore read is in flight.
+    if (!viewerResolved || isSelf) return;
     fetchAll();
-  }, [userId]);
+  }, [userId, viewerResolved, isSelf]);
 
   const fetchAll = async () => {
     setLoading(true);

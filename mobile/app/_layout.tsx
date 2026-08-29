@@ -103,6 +103,27 @@ try {
   console.warn("[PushNotif] Background handler registration failed:", e);
 }
 
+// A single notification tap can be delivered twice on Android — once by
+// Firebase's onNotificationOpenedApp and once by expo-notifications' response
+// listener, since both libraries handle the same incoming FCM message. Anything
+// arriving for the same destination inside this window is that echo, not the
+// user tapping twice.
+const DUPLICATE_TAP_MS = 2000;
+let lastRouted: { key: string; at: number } | null = null;
+
+/** Identity of a deep link, for collapsing duplicate deliveries of one tap. */
+function dedupeKey(link: PendingDeepLink): string {
+  switch (link.kind) {
+    case "chat":
+      return `chat:${link.chatId}`;
+    case "user":
+      return `user:${link.userId}`;
+    case "event":
+    case "guide":
+      return `${link.kind}:${link.token}`;
+  }
+}
+
 // Prevent auto-hiding splash screen
 SplashScreen.preventAutoHideAsync();
 
@@ -136,6 +157,9 @@ watchNetworkState();
 const EVENT_PUSH_TYPES = new Set([
   "event",
   "event_reminder",
+  // Twice-weekly "come see what's on" nudge (server jobs/engagementPush.job.js).
+  // Carries an eventId when the user's city had something to feature.
+  "event_suggestion",
   "ticket_sold",
   "ticket_purchased",
   "ticket_refunded",
@@ -263,25 +287,57 @@ export default Sentry.wrap(function RootLayout() {
       if (ORDER_CHAT_PUSH_TYPES.has(type ?? "") && looksLikeObjectId(d.chatId)) {
         return { kind: "chat", chatId: d.chatId };
       }
+      // The engagement nudge falls back to generic copy when the user's city
+      // had nothing on, and then deliberately carries no eventId. Opening the
+      // app on its default route is the intended outcome, not a bug worth
+      // logging alongside genuinely malformed payloads.
+      if (type === "event_suggestion") return null;
       console.warn("[PushNotif] payload was not routable:", type, d);
       return null;
     };
 
     /**
-     * Attempt to route immediately. If the navigator isn't ready yet (cold
-     * start, before the initial route mounts) the push silently no-ops, so
-     * we ALSO park the link in the pending store — index.tsx will pick it
-     * up after the auth check resolves.
+     * Navigate for a tapped notification.
+     *
+     * This used to BOTH push and park the link, which opened the destination
+     * twice. Two separate duplicate paths existed:
+     *   - On Android a single background tap is delivered by Firebase
+     *     (onNotificationOpenedApp) AND by expo-notifications' response
+     *     listener, so route() ran twice for one tap. `lastRouted` collapses
+     *     that pair.
+     *   - On a cold start the link was pushed here and ALSO parked, and then
+     *     index.tsx redirected to the parked copy. `park` splits the two: the
+     *     cold-start caller parks only and lets index.tsx do the navigating.
+     *
+     * Parking on a warm tap was also what let a stale notification reopen its
+     * screen on the NEXT cold start, since nothing consumed the queue until
+     * index.tsx mounted again.
      */
-    const route = (link: PendingDeepLink | null) => {
+    const route = (link: PendingDeepLink | null, { park = false } = {}) => {
       if (!link) return;
-      setPendingDeepLink(link);
+
+      const key = dedupeKey(link);
+      const now = Date.now();
+      if (lastRouted && lastRouted.key === key && now - lastRouted.at < DUPLICATE_TAP_MS) {
+        console.log("[PushNotif] duplicate delivery suppressed:", key);
+        return;
+      }
+      lastRouted = { key, at: now };
+
+      if (park) {
+        setPendingDeepLink(link);
+        return;
+      }
+
       const path = deepLinkToPath(link);
       if (!path) return;
       try {
         router.push(path as any);
+        // Nothing else should replay this tap once it has actually navigated.
+        setPendingDeepLink(null);
       } catch (err) {
-        console.warn("[PushNotif] router.push threw, will rely on pending queue:", err);
+        console.warn("[PushNotif] router.push threw, parking for index.tsx instead:", err);
+        setPendingDeepLink(link);
       }
     };
 
@@ -305,10 +361,14 @@ export default Sentry.wrap(function RootLayout() {
         route(linkFromNotificationData(remoteMessage?.data, "onNotificationOpenedApp"));
       });
 
-      // Tap that cold-started the app from a quit state
+      // Tap that cold-started the app from a quit state. Park only: the
+      // navigator isn't mounted yet, and index.tsx redirects once the auth
+      // check resolves.
       messaging().getInitialNotification().then(remoteMessage => {
         if (remoteMessage) {
-          route(linkFromNotificationData(remoteMessage.data, "getInitialNotification"));
+          route(linkFromNotificationData(remoteMessage.data, "getInitialNotification"), {
+            park: true,
+          });
         }
       });
     } catch (e) {
