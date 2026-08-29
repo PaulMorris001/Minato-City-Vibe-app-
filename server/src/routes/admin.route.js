@@ -18,6 +18,8 @@ import {
   getEvents,
   toggleEventActive,
   deleteEvent,
+  getRaffleEntries,
+  setRaffleWinner,
   getGuides,
   toggleGuideActive,
   deleteGuide,
@@ -78,6 +80,10 @@ router.delete("/admin/vendor-types/:id", authenticateAdmin, deleteVendorType);
 router.get("/admin/events", authenticateAdmin, getEvents);
 router.patch("/admin/events/:id/toggle", authenticateAdmin, toggleEventActive);
 router.delete("/admin/events/:id", authenticateAdmin, deleteEvent);
+
+// Birthday Raffle
+router.get("/admin/raffle/entries", authenticateAdmin, getRaffleEntries);
+router.patch("/admin/raffle/:id/winner", authenticateAdmin, setRaffleWinner);
 
 // Guides
 router.get("/admin/guides", authenticateAdmin, getGuides);

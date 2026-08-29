@@ -461,6 +461,10 @@ export default function Home() {
   const { payForTicket } = useStripePayment();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isBirthdayRaffle, setIsBirthdayRaffle] = useState(false);
+  // Drives the RaffleBanner's two states ("Birthday Raffle is Live" vs "View
+  // Your Raffle Status"). Guests and the not-yet-loaded case both read as
+  // false, which is the right default — nothing to view yet either way.
+  const [hasBirthdayRaffleEvent, setHasBirthdayRaffleEvent] = useState(false);
   const { openCreate } = useLocalSearchParams<{ openCreate?: string }>();
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
   const [highlights, setHighlights] = useState<{
@@ -868,6 +872,25 @@ export default function Home() {
   }
 }, [openCreate]);
 
+  // Checked once per mount rather than tied to `refreshing` — the banner only
+  // needs to flip from "join" to "view status" after a birthday event is
+  // created, which already re-navigates through this same param above.
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await SecureStore.getItemAsync("token");
+        if (!token) return;
+        const res = await fetch(`${BASE_URL}/raffle/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (res.ok) setHasBirthdayRaffleEvent(!!data.hasQualifyingEvent);
+      } catch {
+        // Non-critical — banner just falls back to "join" copy.
+      }
+    })();
+  }, []);
+
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
     if (!(await ensureAuth("buy a ticket"))) return;
     // The hook runs checkout AND confirms server-side before returning.
@@ -1027,7 +1050,7 @@ export default function Home() {
             page. */}
 
             {/* Temporary Raffle Entry Point */}
-        <RaffleBanner hasBirthdayEvent={false} />
+        <RaffleBanner hasBirthdayEvent={hasBirthdayRaffleEvent} />
 
         {locationBanner === "approximate" && (
           <View style={styles.locationBanner}>

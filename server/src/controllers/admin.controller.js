@@ -299,6 +299,63 @@ export async function deleteEvent(req, res) {
   }
 }
 
+// ── Birthday Raffle ────────────────────────────────────────────────────────
+// Scores are computed the same way birthdayRaffle.controller.js computes
+// them for a user's own status — kept in sync by hand since this is a small,
+// campaign-scoped feature, not by sharing a module (the two call sites want
+// different shapes: one entry vs a whole leaderboard).
+
+export async function getRaffleEntries(req, res) {
+  try {
+    const events = await Event.find({ isBirthdayRaffle: true })
+      .populate("createdBy", "username email profilePicture")
+      .sort({ createdAt: -1 });
+
+    const entries = events
+      .map((e) => ({
+        eventId: e._id,
+        title: e.title,
+        date: e.date,
+        createdAt: e.createdAt,
+        host: e.createdBy,
+        // See scoreEntry() in birthdayRaffle.controller.js for why this reads
+        // rsvpUsers (the live going/not_going toggle) rather than
+        // invitedUsers (a one-way list nothing ever removes from).
+        verifiedRsvps: e.rsvpUsers.length,
+        totalInvites: e.invitedUsers.length + e.pendingInvites.length,
+        eligibilityScore: 1 + e.rsvpUsers.length,
+        winnerRank: e.raffleWinnerRank || null,
+      }))
+      .sort((a, b) => b.eligibilityScore - a.eligibilityScore);
+
+    res.json({ entries });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// Manual by design — "Winners are selected randomly from eligible entries by
+// admin" per the campaign rules, not an automated draw. Set rank to null to
+// undo a pick.
+export async function setRaffleWinner(req, res) {
+  try {
+    const { id } = req.params;
+    const { rank } = req.body;
+    if (rank !== null && ![1, 2, 3].includes(rank)) {
+      return res.status(400).json({ message: "rank must be 1, 2, 3, or null" });
+    }
+    const event = await Event.findById(id);
+    if (!event || !event.isBirthdayRaffle) {
+      return res.status(404).json({ message: "Raffle entry not found" });
+    }
+    event.raffleWinnerRank = rank;
+    await event.save();
+    res.json({ eventId: event._id, winnerRank: event.raffleWinnerRank });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
 // ── Guides ─────────────────────────────────────────────────────────────────
 
 export async function getGuides(req, res) {

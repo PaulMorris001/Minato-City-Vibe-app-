@@ -8,31 +8,33 @@ import {
   Alert,
   Share,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import * as Clipboard from "expo-clipboard";
+import * as SecureStore from "expo-secure-store";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import { Fonts } from "@/constants/fonts";
+import { BASE_URL } from "@/constants/constants";
+import { createEventShareLink } from "@/utils/shareLinks";
+import { useCountdown } from "@/hooks/useCountdown";
 
-// ── Mock data (replace with real API later) ────────────────────────────────
-const MOCK_STATUS = {
-  eventTitle: "Tolu's Birthday Bash",
-  eventDate: "2026-09-12",
-  trackingLink: "https://cityvibe.app/e/bday-tolu-9x4k",
-  trackingCode: "bday-tolu-9x4k",
-  verifiedRsvps: 7,
-  totalInvites: 18,
-  eligibilityScore: 8, // base 1 + 7 verified RSVPs
-  isEligible: true,
-  status: "active" as "active" | "eligible" | "ineligible" | "winner",
-  daysLeft: 42,
-  campaignDeadline: "September 30, 2026",
-};
+interface RaffleStatus {
+  eventTitle: string;
+  eventDate: string;
+  trackingLink: string;
+  verifiedRsvps: number;
+  totalInvites: number;
+  eligibilityScore: number;
+  isEligible: boolean;
+  status: "active" | "eligible" | "ineligible" | "winner";
+  campaignDeadlineMs: number;
+}
 
 export default function RaffleStatusScreen() {
   const { colors } = useTheme();
@@ -40,10 +42,57 @@ export default function RaffleStatusScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<RaffleStatus | null>(null);
+  const countdown = useCountdown(status?.campaignDeadlineMs ?? null);
+
+  const loadStatus = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const res = await fetch(`${BASE_URL}/raffle/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok && data.hasQualifyingEvent) {
+        setStatus({
+          eventTitle: data.eventTitle,
+          eventDate: data.eventDate,
+          // Same helper every other share flow in the app uses — the
+          // server sends back the slug/shareToken/id, not a built URL.
+          trackingLink: createEventShareLink(data.trackingCode),
+          verifiedRsvps: data.verifiedRsvps,
+          totalInvites: data.totalInvites,
+          eligibilityScore: data.eligibilityScore,
+          isEligible: data.isEligible,
+          status: data.status,
+          campaignDeadlineMs: new Date(data.campaignDeadline).getTime(),
+        });
+      } else if (!status) {
+        // No qualifying event on the very first load (or the fetch failed) —
+        // nothing to show here. A failed refresh on a later focus just keeps
+        // whatever's already on screen instead of bouncing them out.
+        router.replace("/birthday-raffle" as any);
+      }
+    } catch {
+      if (!status) router.replace("/birthday-raffle" as any);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Re-fetches every time this screen gains focus — not just on mount — so a
+  // friend accepting or undoing an RSVP while the host is elsewhere in the
+  // app shows up the moment they come back to check their raffle status.
+  useFocusEffect(
+    React.useCallback(() => {
+      loadStatus();
+    }, [])
+  );
 
   const handleCopyLink = async () => {
+    if (!status) return;
     try {
-      await Clipboard.setStringAsync(MOCK_STATUS.trackingLink);
+      await Clipboard.setStringAsync(status.trackingLink);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -52,10 +101,11 @@ export default function RaffleStatusScreen() {
   };
 
   const handleShare = async () => {
+    if (!status) return;
     try {
       await Share.share({
-        message: `I'm hosting my birthday on CityVibe! Join me: ${MOCK_STATUS.trackingLink}`,
-        url: MOCK_STATUS.trackingLink, // iOS
+        message: `I'm hosting my birthday on CityVibe! Join me: ${status.trackingLink}`,
+        url: status.trackingLink, // iOS
         title: "Join my birthday event",
       });
     } catch {
@@ -63,8 +113,16 @@ export default function RaffleStatusScreen() {
     }
   };
 
+  if (loading || !status) {
+    return (
+      <View style={[styles.container, styles.loadingContainer, { paddingTop: insets.top }]}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
   const progressPercent = Math.min(
-    (MOCK_STATUS.verifiedRsvps / 10) * 100, // example target of 10 for full bar
+    (status.verifiedRsvps / 10) * 100, // example target of 10 for full bar
     100
   );
 
@@ -93,7 +151,7 @@ export default function RaffleStatusScreen() {
         {/* Status Hero */}
         <LinearGradient
           colors={
-            MOCK_STATUS.isEligible
+            status.isEligible
               ? ["#2D1B69", colors.primaryDark || "#1a0f3d"]
               : [colors.card, colors.cardAlt]
           }
@@ -103,18 +161,18 @@ export default function RaffleStatusScreen() {
         >
           <View style={styles.statusBadge}>
             <Ionicons
-              name={MOCK_STATUS.isEligible ? "checkmark-circle" : "time"}
+              name={status.isEligible ? "checkmark-circle" : "time"}
               size={14}
               color="#fff"
             />
             <Text style={styles.statusBadgeText}>
-              {MOCK_STATUS.isEligible ? "ELIGIBLE" : "IN PROGRESS"}
+              {status.isEligible ? "ELIGIBLE" : "IN PROGRESS"}
             </Text>
           </View>
 
-          <Text style={styles.heroTitle}>{MOCK_STATUS.eventTitle}</Text>
+          <Text style={styles.heroTitle}>{status.eventTitle}</Text>
           <Text style={styles.heroDate}>
-            {new Date(MOCK_STATUS.eventDate).toLocaleDateString("en-US", {
+            {new Date(status.eventDate).toLocaleDateString("en-US", {
               weekday: "long",
               month: "long",
               day: "numeric",
@@ -124,32 +182,52 @@ export default function RaffleStatusScreen() {
 
           <View style={styles.scoreRow}>
             <Text style={styles.scoreLabel}>Eligibility Score</Text>
-            <Text style={styles.scoreValue}>{MOCK_STATUS.eligibilityScore}</Text>
+            <Text style={styles.scoreValue}>{status.eligibilityScore}</Text>
           </View>
         </LinearGradient>
 
         {/* Stats Cards */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{MOCK_STATUS.verifiedRsvps}</Text>
+            <Text style={styles.statNumber}>{status.verifiedRsvps}</Text>
             <Text style={styles.statLabel}>Verified RSVPs</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{MOCK_STATUS.totalInvites}</Text>
+            <Text style={styles.statNumber}>{status.totalInvites}</Text>
             <Text style={styles.statLabel}>Total Invites</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{MOCK_STATUS.daysLeft}</Text>
+            <Text style={styles.statNumber}>{countdown?.days ?? "—"}</Text>
             <Text style={styles.statLabel}>Days Left</Text>
           </View>
         </View>
+
+        {/* Live countdown — ticks every second, see hooks/useCountdown. */}
+        {countdown && (
+          <View style={styles.countdownRow}>
+            {[
+              { label: "Days", value: countdown.days },
+              { label: "Hrs", value: countdown.hours },
+              { label: "Min", value: countdown.minutes },
+              { label: "Sec", value: countdown.seconds },
+            ].map((unit, i) => (
+              <React.Fragment key={unit.label}>
+                {i > 0 && <Text style={styles.countdownColon}>:</Text>}
+                <View style={styles.countdownUnit}>
+                  <Text style={styles.countdownValue}>{String(unit.value).padStart(2, "0")}</Text>
+                  <Text style={styles.countdownLabel}>{unit.label}</Text>
+                </View>
+              </React.Fragment>
+            ))}
+          </View>
+        )}
 
         {/* Progress */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Progress</Text>
             <Text style={styles.progressText}>
-              {MOCK_STATUS.verifiedRsvps} / 10 verified
+              {status.verifiedRsvps} / 10 verified
             </Text>
           </View>
           <View style={styles.progressTrack}>
@@ -174,7 +252,7 @@ export default function RaffleStatusScreen() {
 
           <View style={styles.linkBox}>
             <Text style={styles.linkText} numberOfLines={1}>
-              {MOCK_STATUS.trackingLink}
+              {status.trackingLink}
             </Text>
           </View>
 
@@ -227,7 +305,12 @@ export default function RaffleStatusScreen() {
         <View style={styles.deadlineNote}>
           <Ionicons name="time-outline" size={16} color={colors.textDim} />
           <Text style={styles.deadlineNoteText}>
-            Campaign ends {MOCK_STATUS.campaignDeadline}
+            Campaign ends{" "}
+            {new Date(status.campaignDeadlineMs).toLocaleDateString("en-US", {
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}
           </Text>
         </View>
       </ScrollView>
@@ -240,6 +323,10 @@ const createStyles = (c: ThemeColors) =>
     container: {
       flex: 1,
       backgroundColor: c.backgroundDeep,
+    },
+    loadingContainer: {
+      alignItems: "center",
+      justifyContent: "center",
     },
     header: {
       flexDirection: "row",
@@ -321,6 +408,44 @@ const createStyles = (c: ThemeColors) =>
       flexDirection: "row",
       gap: 10,
       marginBottom: 28,
+    },
+    countdownRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: -16,
+      marginBottom: 28,
+      gap: 6,
+    },
+    countdownUnit: {
+      alignItems: "center",
+      backgroundColor: c.card,
+      borderRadius: 10,
+      paddingVertical: 6,
+      paddingHorizontal: 8,
+      minWidth: 42,
+      borderWidth: 1,
+      borderColor: c.glassStroke || "rgba(255,255,255,0.06)",
+    },
+    countdownValue: {
+      fontFamily: Fonts.bold,
+      fontSize: 16,
+      color: c.textBright,
+      fontVariant: ["tabular-nums"],
+    },
+    countdownLabel: {
+      fontFamily: Fonts.medium,
+      fontSize: 9,
+      color: c.textDim,
+      letterSpacing: 0.4,
+      textTransform: "uppercase",
+      marginTop: 1,
+    },
+    countdownColon: {
+      fontFamily: Fonts.bold,
+      fontSize: 15,
+      color: c.textFaint,
+      marginTop: -10,
     },
     statCard: {
       flex: 1,

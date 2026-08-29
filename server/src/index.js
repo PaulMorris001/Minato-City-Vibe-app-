@@ -46,6 +46,7 @@ import blockRoutes from "./routes/block.route.js";
 import locationRoutes from "./routes/location.route.js";
 import externalEventRoutes from "./routes/externalEvent.route.js";
 import attendanceRoutes from "./routes/attendance.route.js";
+import birthdayRaffleRoutes from "./routes/birthdayRaffle.route.js";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -137,6 +138,7 @@ app.use("/api/", blockRoutes);
 app.use("/api/", locationRoutes);
 app.use("/api/", externalEventRoutes);
 app.use("/api/", attendanceRoutes);
+app.use("/api/", birthdayRaffleRoutes);
 app.use("/", deleteAccountRoutes);
 app.use("/", deepLinksRoutes);
 app.use("/", privacyRoutes);

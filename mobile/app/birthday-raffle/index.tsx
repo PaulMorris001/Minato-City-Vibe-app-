@@ -17,13 +17,21 @@ import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import { Fonts } from "@/constants/fonts";
 import { ensureAuth } from "@/utils/requireAuth";
+import { BASE_URL } from "@/constants/constants";
+import { useCountdown } from "@/hooks/useCountdown";
 
-// ── Mock campaign data (replace with API later) ────────────────────────────
+// Prizes and rules are static marketing copy — safe to hardcode. The deadline
+// instant below MUST match RAFFLE_CAMPAIGN_END in
+// server/src/config/birthdayRaffle.js — that's the value that actually gates
+// eligibility. This client-side copy only exists so the countdown can start
+// ticking immediately (including for guests, who can't hit the authenticated
+// /raffle/status endpoint) instead of waiting on a fetch; a logged-in user's
+// fetch overwrites it with the server's own value once it resolves.
+const CAMPAIGN_DEADLINE_MS = new Date("2026-09-30T23:59:59.999Z").getTime();
+
 const CAMPAIGN = {
   title: "Birthday Raffle Campaign",
   subtitle: "Create a birthday event, invite friends, and win prizes",
-  deadline: "September 30, 2026",
-  daysLeft: 42,
   prizes: [
     { place: "1st", reward: "₦150,000 Cash + Premium Event Pass", icon: "trophy" as const },
     { place: "2nd", reward: "₦75,000 Cash", icon: "medal" as const },
@@ -44,21 +52,32 @@ export default function BirthdayRaffleScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // Mock status — later this will come from an API
   const [hasBirthdayEvent, setHasBirthdayEvent] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
+  // Seeded from the client-side constant so the countdown ticks immediately
+  // (guests included); overwritten by the server's own value below for a
+  // logged-in user, which is the one that actually gates eligibility.
+  const [deadlineMs, setDeadlineMs] = useState(CAMPAIGN_DEADLINE_MS);
+  const countdown = useCountdown(deadlineMs);
 
   useEffect(() => {
-    // Simulate checking if the user already has a qualifying birthday event
     const checkStatus = async () => {
       try {
-        // TODO: Replace with real API call
-        // const token = await SecureStore.getItemAsync("token");
-        // const res = await fetch(...);
-        // setHasBirthdayEvent(data.hasQualifyingEvent);
-
-        // Mock: assume user does NOT have one yet
-        setHasBirthdayEvent(false);
+        const token = await SecureStore.getItemAsync("token");
+        if (!token) {
+          setHasBirthdayEvent(false);
+          return;
+        }
+        const res = await fetch(`${BASE_URL}/raffle/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setHasBirthdayEvent(!!data.hasQualifyingEvent);
+          if (data.campaignDeadline) setDeadlineMs(new Date(data.campaignDeadline).getTime());
+        } else {
+          setHasBirthdayEvent(false);
+        }
       } catch {
         setHasBirthdayEvent(false);
       } finally {
@@ -68,6 +87,12 @@ export default function BirthdayRaffleScreen() {
 
     checkStatus();
   }, []);
+
+  const deadlineLabel = new Date(deadlineMs).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 
 const handlePrimaryCTA = async () => {
   if (!(await ensureAuth("join the birthday raffle"))) return;
@@ -123,10 +148,28 @@ const handlePrimaryCTA = async () => {
 
           <View style={styles.deadlineRow}>
             <Ionicons name="time-outline" size={16} color="rgba(255,255,255,0.8)" />
-            <Text style={styles.deadlineText}>
-              Ends {CAMPAIGN.deadline} · {CAMPAIGN.daysLeft} days left
-            </Text>
+            <Text style={styles.deadlineText}>Ends {deadlineLabel}</Text>
           </View>
+
+          {/* Live countdown — ticks every second, see hooks/useCountdown. */}
+          {countdown && (
+            <View style={styles.countdownRow}>
+              {[
+                { label: "Days", value: countdown.days },
+                { label: "Hrs", value: countdown.hours },
+                { label: "Min", value: countdown.minutes },
+                { label: "Sec", value: countdown.seconds },
+              ].map((unit, i) => (
+                <React.Fragment key={unit.label}>
+                  {i > 0 && <Text style={styles.countdownColon}>:</Text>}
+                  <View style={styles.countdownUnit}>
+                    <Text style={styles.countdownValue}>{String(unit.value).padStart(2, "0")}</Text>
+                    <Text style={styles.countdownLabel}>{unit.label}</Text>
+                  </View>
+                </React.Fragment>
+              ))}
+            </View>
+          )}
         </LinearGradient>
 
         {/* Prizes */}
@@ -267,6 +310,40 @@ const createStyles = (c: ThemeColors) =>
       fontFamily: Fonts.semiBold,
       fontSize: 13,
       color: "rgba(255,255,255,0.85)",
+    },
+    countdownRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: 14,
+      gap: 6,
+    },
+    countdownUnit: {
+      alignItems: "center",
+      backgroundColor: "rgba(0,0,0,0.25)",
+      borderRadius: 10,
+      paddingVertical: 6,
+      paddingHorizontal: 8,
+      minWidth: 42,
+    },
+    countdownValue: {
+      fontFamily: Fonts.bold,
+      fontSize: 17,
+      color: "#fff",
+      fontVariant: ["tabular-nums"],
+    },
+    countdownLabel: {
+      fontFamily: Fonts.medium,
+      fontSize: 9,
+      color: "rgba(255,255,255,0.7)",
+      letterSpacing: 0.4,
+      textTransform: "uppercase",
+      marginTop: 1,
+    },
+    countdownColon: {
+      fontFamily: Fonts.bold,
+      fontSize: 16,
+      color: "rgba(255,255,255,0.5)",
+      marginTop: -10,
     },
     section: {
       marginBottom: 28,

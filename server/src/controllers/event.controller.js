@@ -151,6 +151,7 @@ export const createEvent = async (req, res) => {
       meetingLink,
       latitude,
       longitude,
+      isBirthdayRaffle,
     } = req.body;
     const userId = req.user.id;
     const virtual = Boolean(isVirtual);
@@ -372,6 +373,7 @@ export const createEvent = async (req, res) => {
       venueProofImage: venueProofUrl,
       approvalStatus,
       payoutStatus: isPublic && isPaid ? "pending" : "none",
+      isBirthdayRaffle: Boolean(isBirthdayRaffle),
     });
 
     await event.save();
