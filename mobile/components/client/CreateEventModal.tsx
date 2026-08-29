@@ -24,6 +24,7 @@ import { Fonts } from "@/constants/fonts";
 import {
   DateTimeDropdown,
   ImagePickerButton,
+  InfoTip,
   LocationPicker,
   MultiImagePicker,
 } from "@/components/shared";
@@ -35,7 +36,12 @@ import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import { LocationSelection } from "@/libs/interfaces";
 import { formatLocation } from "@/utils/location";
 import { ensureOnline } from "@/utils/requireOnline";
-import { currencyPrefix, sellingCurrencyForCountry } from "@/constants/payments";
+import {
+  currencyPrefix,
+  payoutCountryKnown,
+  payoutProviderForCountry,
+  sellingCurrencyForCountry,
+} from "@/constants/payments";
 
 import type { ThemeColors } from "@/constants/theme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -59,6 +65,9 @@ export default function CreateEventModal({
   // The currency this organizer sells in (NGN for Nigerian accounts, USD
   // otherwise) — display only; the server independently derives and enforces it.
   const [sellerCurrency, setSellerCurrency] = useState("USD");
+  // Kept alongside the currency so the "Sell tickets" tip can say up front
+  // whether the organizer can actually be paid out where they are.
+  const [sellerCountry, setSellerCountry] = useState<string | undefined>(undefined);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -111,6 +120,7 @@ export default function CreateEventModal({
       if (res.ok) {
         setIsVerified(data.user?.verified ?? data.vendor?.verified ?? false);
         setSellerCurrency(sellingCurrencyForCountry(data.user?.location?.country));
+        setSellerCountry(data.user?.location?.country);
       }
     } catch {}
   };
@@ -429,7 +439,16 @@ export default function CreateEventModal({
               </View>
 
               {/* Where is it held — in person vs virtual */}
-              <Text style={styles.label}>Where is it held</Text>
+              <InfoTip
+                label="WHERE IS IT HELD"
+                style={styles.infoTip}
+                labelStyle={styles.infoTipLabel}
+              >
+                In person events ask for a city and street address, and show guests a
+                map. Virtual events skip both and instead take a joining link — which
+                stays hidden until someone is on the guest list, so it can't leak from
+                a shared post.
+              </InfoTip>
               <View style={styles.visibilityRow}>
                 <TouchableOpacity
                   style={[styles.visibilityCard, !formData.isVirtual && styles.visibilityCardActive]}
@@ -521,7 +540,16 @@ export default function CreateEventModal({
               />
 
               {/* Who can join — visibility toggle */}
-              <Text style={styles.label}>Who can join</Text>
+              <InfoTip
+                label="WHO CAN JOIN"
+                style={styles.infoTip}
+                labelStyle={styles.infoTipLabel}
+              >
+                Private events never appear in search or the city feed — the only way in
+                is an invite or a link you share yourself. Public events are listed for
+                everyone browsing your city, can sell tickets, and need a verified
+                account.
+              </InfoTip>
               <View style={styles.visibilityRow}>
                 <TouchableOpacity
                   style={[styles.visibilityCard, !formData.isPublic && styles.visibilityCardActive]}
@@ -624,6 +652,26 @@ export default function CreateEventModal({
                     </View>
                     <Text style={styles.checkboxLabel}>Sell tickets 🎟️</Text>
                   </TouchableOpacity>
+                  {/* Said BEFORE they price anything: an organizer in a country
+                      with no settlement rail can still sell, but the money waits
+                      until a rail reaches them, and finding that out after the
+                      event is the worst possible time. */}
+                  <InfoTip
+                    label="CAN I GET PAID?"
+                    style={styles.infoTip}
+                    labelStyle={styles.infoTipLabel}
+                  >
+                    {payoutProviderForCountry(sellerCountry)
+                      ? "Ticket money is held until after your event, then paid out to " +
+                        "your payout account once our team approves it. Set that account " +
+                        "up in Settings before your first sale."
+                      : payoutCountryKnown(sellerCountry)
+                        ? "Payouts aren't available in your country yet. You can still " +
+                          "sell tickets and we'll hold the money safely, but we can't " +
+                          "transfer it to you until a payout option launches where you are."
+                        : "Set your location in Settings first — we use it to work out how " +
+                          "to pay you. Without it we can hold ticket money but can't send it."}
+                  </InfoTip>
 
                   {formData.isPaid && (
                     <>
@@ -659,6 +707,16 @@ export default function CreateEventModal({
                             for 6 — set its price, and (optionally) how many of that tier
                             are available. Buyers pick a tier at checkout.
                           </Text>
+                          <InfoTip
+                            label="HOW TIER QUANTITIES WORK"
+                            style={styles.infoTip}
+                            labelStyle={styles.infoTipLabel}
+                          >
+                            Quantities are all or nothing. Give every tier one and your
+                            capacity becomes their total, with each tier selling out on its
+                            own. Leave them all blank and a single Max Guests number covers
+                            the whole event. A mix of the two is rejected.
+                          </InfoTip>
                           {tiers.map((tier, idx) => (
                             <View key={idx} style={{ marginBottom: 10 }}>
                               <View style={styles.tierRow}>
@@ -754,7 +812,14 @@ export default function CreateEventModal({
                         </>
                       ) : (
                         <>
-                          <Text style={styles.label}>Max Guests *</Text>
+                          <InfoTip
+                            label="MAX GUESTS *"
+                            style={styles.infoTip}
+                            labelStyle={styles.infoTipLabel}
+                          >
+                            The total number of tickets on sale. Sales stop automatically
+                            when it's reached, and the event shows as sold out.
+                          </InfoTip>
                           <TextInput
                             style={styles.input}
                             placeholder="e.g., 100"
@@ -768,7 +833,15 @@ export default function CreateEventModal({
 
                       {!formData.isVirtual && (
                         <>
-                          <Text style={styles.label}>Venue Proof *</Text>
+                          <InfoTip
+                            label="VENUE PROOF *"
+                            style={styles.infoTip}
+                            labelStyle={styles.infoTipLabel}
+                          >
+                            Only our review team sees this — it's never shown to guests or
+                            on your event page. It's how we confirm a paid event has a real
+                            venue behind it before anyone is charged.
+                          </InfoTip>
                           <Text
                             style={{
                               color: colors.textDim,
@@ -895,6 +968,18 @@ const createStyles = (c: ThemeColors) =>
     backgroundColor: c.glassFill,
     justifyContent: "center",
     alignItems: "center",
+  },
+  infoTip: {
+    paddingHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  infoTipLabel: {
+    fontSize: scaleFontSize(13),
+    fontFamily: Fonts.semiBold,
+    color: c.textDim,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   label: {
     fontSize: scaleFontSize(13),
