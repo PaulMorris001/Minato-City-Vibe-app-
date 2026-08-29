@@ -885,3 +885,78 @@ export const sendPurchaseReceiptEmail = async (
     return { success: false };
   }
 };
+
+/**
+ * Seller-side "your payout is on its way" email — sent when an approved payout
+ * is actually transferred. The push notification that accompanies it is
+ * best-effort and invisible to a seller who declined push permission, so this
+ * is the only channel guaranteed to tell them their money moved.
+ * `amountText` is preformatted by the caller. Never throws.
+ */
+export const sendPayoutSentEmail = async (
+  email,
+  { sellerName, amountText, destinationLabel }
+) => {
+  try {
+    const transporter = createTransporter();
+
+    const rows = [
+      ["Amount", amountText || ""],
+      ["Destination", destinationLabel || "your payout account"],
+      ["Sent", new Date().toLocaleDateString("en-US", { dateStyle: "medium" })],
+    ];
+
+    const mailOptions = {
+      from: FROM_NO_REPLY,
+      replyTo: SUPPORT_EMAIL,
+      to: email,
+      subject: `Your payout is on its way — ${amountText}`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+            .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+            .sale-card { background: white; border: 1px solid #e5e7eb; border-radius: 8px; margin: 20px 0; }
+            .sale-card table { width: 100%; border-collapse: collapse; }
+            .footer { text-align: center; margin-top: 20px; color: #6b7280; font-size: 13px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🌙 OurCityvibe</h1>
+            </div>
+            <div class="content">
+              <h2 style="text-align: center; color: #10b981;">Payout sent 💸</h2>
+              <p>Hello ${sellerName || "there"},</p>
+              <p>We've sent your earnings to ${destinationLabel || "your payout account"}. Depending on your bank, it can take a few business days to land.</p>
+              <div class="sale-card">
+                <table>${purchaseRowsHtml(rows)}
+                </table>
+              </div>
+              <p>You can see every payout on your Earnings screen in the app.</p>
+              <p>Best regards,<br>The OurCityvibe Team</p>
+            </div>
+            <div class="footer">
+              <p>Need help? <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></p>
+              <p>© ${new Date().getFullYear()} OurCityvibe. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `Payout sent 💸\n\n${rows.map(([label, value]) => `${label}: ${value}`).join("\n")}\n\nDepending on your bank, it can take a few business days to land. You can see every payout on your Earnings screen in the app.\n\n— The OurCityvibe Team`,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error(`❌ Error sending payout email to ${email}:`, error?.message ?? error);
+    return { success: false };
+  }
+};

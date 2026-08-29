@@ -1,78 +1,40 @@
 /**
- * One-off coachmark pointing at the create-event FAB.
+ * Coachmark pointing at the create-event FAB.
  *
- * The FAB is a bare "+" circle with no label, so nothing tells a new user that
- * it is how events get made. This says so, briefly, on the first few visits to
- * home and then never again — a hint that keeps reappearing stops being a hint
- * and becomes noise for the people who already learned it.
+ * The FAB is a bare "+" circle with no label, so nothing tells a user that it
+ * is how events get made. By product decision this is permanent: it shows on
+ * EVERY visit to home and stays put. It previously stopped after three views
+ * and also faded itself out after five seconds, which meant anyone who hadn't
+ * connected the "+" to event creation in that window never got told again.
+ *
+ * pointerEvents="none" is what makes staying on screen safe — see the render.
  *
  * Uses the RN Animated API rather than Reanimated: Reanimated is installed but
  * used in only two files here, while every other animation in the app is
  * Animated — matching the local convention keeps this readable.
  */
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { Text, StyleSheet, Animated, Easing, Platform, View } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemedStyles } from "@/contexts/ThemeContext";
 import { Fonts } from "@/constants/fonts";
 import type { ThemeColors } from "@/constants/theme";
 
-const SEEN_KEY = "createEventTooltipShown";
-const MAX_SHOWS = 3;
-const HOLD_MS = 5000;
-
 export default function CreateEventTooltip() {
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
-  const [visible, setVisible] = useState(false);
   const anim = useRef(new Animated.Value(0)).current;
 
+  // Entrance only — the tooltip never leaves once it has animated in.
   useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-
-    (async () => {
-      // A read failure should cost the user a hint, never a crash on home.
-      let shows = 0;
-      try {
-        shows = parseInt((await AsyncStorage.getItem(SEEN_KEY)) ?? "0", 10) || 0;
-      } catch {
-        return;
-      }
-      if (cancelled || shows >= MAX_SHOWS) return;
-
-      setVisible(true);
-      AsyncStorage.setItem(SEEN_KEY, String(shows + 1)).catch(() => {});
-
-      Animated.timing(anim, {
-        toValue: 1,
-        duration: 260,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }).start();
-
-      timer = setTimeout(() => {
-        Animated.timing(anim, {
-          toValue: 0,
-          duration: 420,
-          easing: Easing.in(Easing.ease),
-          useNativeDriver: true,
-        }).start(({ finished }) => {
-          // Unmount rather than leaving a transparent view over the FAB.
-          if (finished && !cancelled) setVisible(false);
-        });
-      }, HOLD_MS);
-    })();
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: 260,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start();
   }, [anim]);
-
-  if (!visible) return null;
 
   return (
     <Animated.View

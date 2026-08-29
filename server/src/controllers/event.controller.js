@@ -2016,6 +2016,53 @@ export const getPublicEvents = async (req, res) => {
   }
 };
 
+/**
+ * GET /events/:eventId/similar
+ * "You may also like" — other upcoming public events in the same place.
+ *
+ * Reuses buildPublicEventQuery so the visibility rules (public, active, future,
+ * paid-and-approved) can never drift from the main discovery feed. Falls back to
+ * the wider state/country when the source event's city has nothing else on,
+ * rather than returning an empty rail.
+ */
+export async function getSimilarEvents(req, res) {
+  try {
+    const { eventId } = req.params;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 10, 20);
+    // optionalAuth — null for logged-out viewers arriving on a share link.
+    const userId = req.user?.id || null;
+
+    // The param may be a slug or shareToken, not just an ObjectId.
+    const source = await findEventByAnyId(eventId);
+    if (!source) return res.status(404).json({ message: "Event not found" });
+
+    const blockedIds = userId ? await getBlockedIds(userId) : [];
+
+    const findNearby = async (scope) => {
+      const query = buildPublicEventQuery({ ...scope, blockedIds });
+      query._id = { $ne: source._id };
+      return Event.find(query)
+        .populate("createdBy", "username email profilePicture")
+        .sort({ date: 1 })
+        .limit(limit);
+    };
+
+    let events = await findNearby({
+      city: source.city,
+      state: source.state,
+      country: source.country,
+    });
+    if (events.length === 0 && (source.state || source.country)) {
+      events = await findNearby({ state: source.state, country: source.country });
+    }
+
+    res.status(200).json({ events: await attachTicketInfo(events, userId) });
+  } catch (error) {
+    console.error("Get similar events error:", error);
+    res.status(500).json({ message: "Error fetching similar events" });
+  }
+}
+
 // Get user's purchased tickets
 export const getUserTickets = async (req, res) => {
   try {

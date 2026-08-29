@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   ScrollView,
   View,
@@ -403,6 +403,7 @@ export default function Home() {
   // Currently surfaced in the "Trending Now" carousel mixed with native events.
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [topVendors, setTopVendors] = useState<Vendor[]>([]);
   const [topGuides, setTopGuides] = useState<TopGuide[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -659,6 +660,24 @@ export default function Home() {
     } catch {}
   };
 
+  const fetchTopVendors = async (city?: string | null) => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const cityParam = city ? `&city=${encodeURIComponent(city)}` : "";
+      const response = await fetch(`${BASE_URL}/vendors/top?limit=10${cityParam}`, { headers });
+      const data = await response.json();
+      if (response.ok && activeCityRef.current === (city ?? null)) {
+        setTopVendors(data.vendors || []);
+        cacheWrite(`home:topVendors:${city ?? "all"}`, data.vendors || []);
+      }
+    } catch {
+      const cached = await cacheRead<Vendor[]>(`home:topVendors:${city ?? "all"}`);
+      if (cached && activeCityRef.current === (city ?? null)) setTopVendors(cached.data);
+    }
+  };
+
   const fetchTopGuides = async (city?: string | null) => {
     try {
       const token = await SecureStore.getItemAsync("token");
@@ -698,6 +717,15 @@ export default function Home() {
     setIsModalVisible(true);
   };
 
+  // Prefer vendors the rail above isn't already showing. A city with fewer than
+  // ~10 vendors would otherwise dedupe this section out of existence entirely,
+  // so fall back to the ranked list unfiltered rather than hiding it.
+  const rankedVendors = useMemo(() => {
+    const shown = new Set(vendors.map((v) => v._id));
+    const fresh = topVendors.filter((v) => !shown.has(v._id));
+    return fresh.length >= 3 ? fresh : topVendors;
+  }, [vendors, topVendors]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     activeCityRef.current = selectedCity ?? null;
@@ -706,6 +734,7 @@ export default function Home() {
       fetchExternalEvents(selectedCity),
       fetchHighlights(selectedCity),
       fetchVendors(selectedCity),
+      fetchTopVendors(selectedCity),
       fetchTopGuides(selectedCity),
     ]);
     setRefreshing(false);
@@ -744,6 +773,7 @@ export default function Home() {
         fetchExternalEvents(cityToUse),
         fetchHighlights(cityToUse),
         fetchVendors(cityToUse),
+        fetchTopVendors(cityToUse),
         fetchTopGuides(cityToUse),
       ]).finally(() => {
         if (!cancelled) setInitialLoading(false);
@@ -766,6 +796,7 @@ export default function Home() {
           fetchExternalEvents(selectedCity);
           fetchHighlights(selectedCity);
           fetchVendors(selectedCity);
+          fetchTopVendors(selectedCity);
           fetchTopGuides(selectedCity);
         }
       });
@@ -1284,6 +1315,44 @@ export default function Home() {
             />
           </View>
         )}
+
+            {/* Top vendors — ranked by review count, so a lone 5-star review
+                can't outrank a vendor with fifty. */}
+            {initialLoading ? (
+              <View style={styles.section}>
+                <SectionHeader title="Top vendors" subtitle="Highest rated in your city" />
+                <FlatList
+                  horizontal
+                  data={[1, 2, 3, 4]}
+                  keyExtractor={(item) => String(item)}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={() => <VendorCardSkeleton />}
+                />
+              </View>
+            ) : rankedVendors.length > 0 && (
+              <View style={styles.section}>
+                <SectionHeader
+                  title="Top vendors"
+                  subtitle="Highest rated in your city"
+                  onAction={() => router.push("/(tabs)/vendors")}
+                  actionLabel="All"
+                />
+                <FlatList
+                  horizontal
+                  data={rankedVendors}
+                  keyExtractor={(item) => item._id}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={({ item }) => (
+                    <VendorCard
+                      vendor={item}
+                      onPress={() => router.push(`/vendor-details/${item._id}` as any)}
+                    />
+                  )}
+                />
+              </View>
+            )}
 
             {/* Top guides — best-selling city guides */}
             {initialLoading ? (

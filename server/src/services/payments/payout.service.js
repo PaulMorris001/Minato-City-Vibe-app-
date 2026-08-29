@@ -17,6 +17,7 @@ import Ticket from "../../models/ticket.model.js";
 import { Booking } from "../../models/booking.model.js";
 import { Order } from "../../models/order.model.js";
 import { notifyUser } from "../notification.service.js";
+import { sendPayoutSentEmail } from "../email.service.js";
 import {
   createPaystackTransfer,
   getPaystackBalance,
@@ -279,6 +280,17 @@ async function markRelatedSettled(payout, transferId) {
   // guide: the purchase is already recorded on the guide; nothing else to mark.
 }
 
+/**
+ * How to name the payout destination in seller-facing copy. Mirrors the mobile
+ * `payoutAccountLabel` in constants/payments.ts — a Nigerian seller reads
+ * "your Stripe account" as being about an account they have never had.
+ */
+function payoutDestinationLabel(provider) {
+  if (provider === "paystack") return "your Paystack account";
+  if (provider === "stripe") return "your Stripe account";
+  return "your payout account";
+}
+
 /** Human-readable payout amount, e.g. "USD 45.00". */
 function payoutLabel(payout) {
   const currency = payout.displayCurrency || payout.currency;
@@ -300,6 +312,18 @@ async function notifyVendorPaid(payout) {
     body: `Your payout (${payoutLabel(payout)}) is on its way to your account.`,
     data: { payoutId: String(payout._id) },
   });
+
+  // Email too, fire-and-forget. Push is best-effort and a seller who declined
+  // notification permission would otherwise learn their money moved only by
+  // opening the Earnings screen unprompted.
+  const vendor = await User.findById(payout.vendor).select("username email businessName");
+  if (vendor?.email) {
+    sendPayoutSentEmail(vendor.email, {
+      sellerName: vendor.businessName || vendor.username,
+      amountText: payoutLabel(payout),
+      destinationLabel: payoutDestinationLabel(payout.provider),
+    }).catch((e) => console.error("sendPayoutSentEmail failed:", e));
+  }
 }
 
 export default { createPayout, executePayout };
