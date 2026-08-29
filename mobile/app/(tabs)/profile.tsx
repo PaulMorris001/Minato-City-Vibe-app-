@@ -6,6 +6,7 @@ import {
   Easing,
   FlatList,
   RefreshControl,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -30,7 +31,14 @@ import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { heroEmojiFor } from "@/utils/eventDetails";
 import { createUserShareLink } from "@/utils/shareLinks";
-import { priceLabel } from "@/constants/payments";
+import {
+  priceLabel,
+  payoutCountryKnown,
+  payoutProviderForCountry,
+  payoutOnboardingRoute,
+  PAYOUT_STATUS_ENDPOINTS,
+} from "@/constants/payments";
+import { isChecklistSnoozed, snoozeChecklist } from "@/utils/setupChecklist";
 import { Guide } from "@/libs/interfaces";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -45,6 +53,8 @@ interface UserProfile {
   isVendor?: boolean;
   businessName?: string;
   verified?: boolean;
+  /** Only used to resolve a payout rail for guide sellers — see SetupChecklist. */
+  country?: string;
   followersCount: number;
   followingCount: number;
 }
@@ -96,6 +106,7 @@ export default function ProfileScreen() {
         isVendor: u.isVendor,
         businessName: u.businessName || "",
         verified: u.verified || false,
+        country: u.location?.country || "",
         followersCount: u.followersCount || 0,
         followingCount: u.followingCount || 0,
       });
@@ -429,6 +440,9 @@ function Header({
         </View>
       </View>
 
+      {/* "Complete your setup" checklist — auto-hides once every item is done. */}
+      <SetupChecklist user={user} sellsGuides={guidesTotal > 0} />
+
       {/* Search */}
       <View style={styles.searchWrap}>
         <TouchableOpacity
@@ -508,6 +522,152 @@ function Header({
           <Text style={styles.manageLinkText}>Manage your events</Text>
         </TouchableOpacity>
       )}
+    </View>
+  );
+}
+
+// ─── Setup checklist ────────────────────────────────────────────────────────
+/**
+ * "Complete your setup" — verification, a profile photo, a bio, and (for
+ * anyone who's sold or is selling a guide) a payout method. Guide sellers
+ * are not vendors — Settings' own "Earnings" section is explicitly "for
+ * guide sellers and vendors alike" — so this is the only place a plain
+ * client checklist would otherwise miss that they need to get paid.
+ *
+ * Renders nothing before `user` has loaded (a default-false item would flash
+ * "add a bio" at someone who already wrote one) or once every item that
+ * applies is done.
+ */
+function SetupChecklist({ user, sellsGuides }: { user: UserProfile | null; sellsGuides: boolean }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  // Manual "no thanks", separate from completion and temporary — it comes
+  // back after a week to remind them (see isChecklistSnoozed). Keyed per
+  // user so a dismissal can't leak into a different account that later logs
+  // in on this device, and namespaced to this screen's checklist
+  // specifically — the vendor dashboard has its own, unrelated one.
+  const [dismissed, setDismissed] = useState(false);
+  const dismissKey = user ? `setupChecklistDismissed:profile:${user._id}` : null;
+
+  useEffect(() => {
+    if (!dismissKey) return;
+    isChecklistSnoozed(dismissKey).then(setDismissed);
+  }, [dismissKey]);
+
+  // Same payout signal DashboardTab and Settings both read: which rail (if
+  // any) covers this country, and whether onboarding on it is finished.
+  // Skipped entirely for someone with no guides — no point asking a client
+  // who's never sold anything to go connect a bank account.
+  const [payoutOnboardingComplete, setPayoutOnboardingComplete] = useState(false);
+  const [payoutSupported, setPayoutSupported] = useState(true);
+  const country = user?.country;
+
+  useEffect(() => {
+    if (!sellsGuides || !country) return;
+    const provider = payoutProviderForCountry(country);
+    if (!provider) {
+      setPayoutSupported(false);
+      return;
+    }
+    setPayoutSupported(true);
+    (async () => {
+      try {
+        const token = await SecureStore.getItemAsync("token");
+        const res = await axios.get(`${BASE_URL}${PAYOUT_STATUS_ENDPOINTS[provider]}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setPayoutOnboardingComplete(res.data.onboardingComplete ?? false);
+      } catch {
+        // Non-critical
+      }
+    })();
+  }, [sellsGuides, country]);
+
+  if (!user) return null;
+
+  const countryKnown = payoutCountryKnown(country);
+  const items: { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; done: boolean; route: string }[] = [
+    {
+      key: "verify",
+      label: "Verify your account",
+      icon: "shield-checkmark-outline",
+      done: !!user.verified,
+      route: "/verify-account",
+    },
+    {
+      key: "photo",
+      label: "Add a profile photo",
+      icon: "camera-outline",
+      done: !!user.profilePicture,
+      // No dedicated page for this — it's a field on the Settings profile
+      // form, same as bio below.
+      route: "/settings",
+    },
+    {
+      key: "bio",
+      label: "Add a bio",
+      icon: "create-outline",
+      done: !!user.bio,
+      route: "/settings",
+    },
+    // Dropped (not just marked done) when this country has no payout rail —
+    // there's nothing to complete, so it shouldn't block the card from
+    // auto-hiding. An unknown country is the opposite: fixable, but there's
+    // no rail yet to send them to, so that one case still lands on Settings'
+    // "Use my current location" control instead of a payment page.
+    ...(sellsGuides && (!countryKnown || payoutSupported)
+      ? [
+          {
+            key: "payout",
+            label: countryKnown ? "Add a payment method" : "Set your location for payouts",
+            icon: "cash-outline" as const,
+            done: countryKnown && payoutOnboardingComplete,
+            route: (countryKnown ? payoutOnboardingRoute(country) : "/settings") as string,
+          },
+        ]
+      : []),
+  ];
+  const doneCount = items.filter((i) => i.done).length;
+  if (dismissed || doneCount === items.length) return null;
+
+  const dismiss = () => {
+    setDismissed(true);
+    if (dismissKey) snoozeChecklist(dismissKey);
+  };
+
+  return (
+    <View style={styles.setupCard}>
+      <View style={styles.setupHeaderRow}>
+        <Text style={styles.setupTitle}>Complete your setup</Text>
+        <View style={styles.setupHeaderRight}>
+          <Text style={styles.setupCount}>{doneCount}/{items.length}</Text>
+          <TouchableOpacity onPress={dismiss} hitSlop={8} accessibilityLabel="Dismiss setup checklist">
+            <Ionicons name="close" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.setupTileGrid}>
+        {items.map((item) => (
+          <TouchableOpacity
+            key={item.key}
+            style={[styles.setupTile, item.done && styles.setupTileDone]}
+            activeOpacity={0.8}
+            disabled={item.done}
+            onPress={() => router.push(item.route as any)}
+          >
+            <View style={[styles.setupTileIcon, item.done && styles.setupCheckDone]}>
+              <Ionicons
+                name={item.done ? "checkmark" : item.icon}
+                size={16}
+                color={item.done ? colors.success : colors.text}
+              />
+            </View>
+            <Text style={styles.setupTileLabel} numberOfLines={2}>
+              {item.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
     </View>
   );
 }
@@ -938,6 +1098,44 @@ const createStyles = (c: ThemeColors) =>
     paddingBottom: 10,
   },
   manageLinkText: { fontFamily: Fonts.semiBold, fontSize: 13, color: c.primary },
+  // No card chrome of its own — sits directly on the screen background, like
+  // the hero and search blocks around it, rather than reading as a separate
+  // panel floating on top of the page.
+  setupCard: {
+    marginTop: 20,
+    marginBottom: 20,
+    paddingHorizontal: 22,
+  },
+  setupHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  setupHeaderRight: { flexDirection: "row", alignItems: "center", gap: 12 },
+  setupTitle: { fontFamily: Fonts.semiBold, fontSize: 15, color: c.text },
+  setupCount: { fontFamily: Fonts.semiBold, fontSize: 12, color: c.primary },
+  // Fixed-width tiles in a horizontal scroller rather than flex-shrinking to
+  // fit — squeezing a 4th tile (guide sellers get a payment one) onto the
+  // card's own width left labels wrapping awkwardly, so it scrolls instead.
+  setupTileGrid: { flexDirection: "row", gap: 8, marginTop: 12 },
+  setupTile: {
+    width: 104,
+    minHeight: 80,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: c.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: c.border,
+    justifyContent: "space-between",
+  },
+  setupTileDone: { opacity: 0.6 },
+  setupTileIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: c.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  setupCheckDone: { borderColor: c.success, backgroundColor: c.success + "22" },
+  setupTileLabel: { fontFamily: Fonts.regular, fontSize: 11.5, color: c.text, marginTop: 8, lineHeight: 14 },
   invitesBlock: { marginBottom: 20, gap: 8 },
   invitesTitle: {
     fontFamily: Fonts.semiBold,

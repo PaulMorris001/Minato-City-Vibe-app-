@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as SecureStore from "expo-secure-store";
 import { VendorStats } from "@/libs/interfaces";
+import { isChecklistSnoozed, snoozeChecklist } from "@/utils/setupChecklist";
 import VendorEventInvites from "./VendorEventInvites";
 import {
   VN,
@@ -26,7 +27,13 @@ import MediaTile from "@/components/shared/MediaTile";
 import { EarningsHero, StatCard } from "@/components/shared/EarningsHero";
 import { useRouter } from "expo-router";
 import { BASE_URL } from "@/constants/constants";
-import { formatMoney } from "@/constants/payments";
+import {
+  formatMoney,
+  payoutCountryKnown,
+  payoutProviderForCountry,
+  payoutOnboardingRoute,
+  PAYOUT_STATUS_ENDPOINTS,
+} from "@/constants/payments";
 
 /** The slice of /earnings/summary this dashboard renders. */
 interface EarningsSummary {
@@ -67,6 +74,37 @@ export default function DashboardTab({
   const [firstName, setFirstName] = useState("");
   const [earnings, setEarnings] = useState<EarningsSummary | null>(null);
 
+  // Backs the "Complete your setup" checklist. Kept separate from `stats`
+  // (which comes from /vendor/stats and knows nothing about verification or
+  // payouts) and from the cached SecureStore "user" (which can be stale after
+  // an edit in Settings or Account) — a fresh /profile fetch is what Account
+  // tab itself trusts for the same fields, so the checklist matches it.
+  const [profileMeta, setProfileMeta] = useState<{
+    id: string;
+    verified: boolean;
+    businessPicture: string;
+    country: string;
+  } | null>(null);
+  const [payoutOnboardingComplete, setPayoutOnboardingComplete] = useState(false);
+  const [payoutSupported, setPayoutSupported] = useState(true);
+  // Manual "no thanks" — separate from completion, and temporary (see
+  // isChecklistSnoozed): it comes back after a week to remind them. Keyed per
+  // user so it can't leak into a different account that later logs in on
+  // this device, and per-screen (vendorDashboard vs the client profile
+  // checklist) since the same person can want one and not the other.
+  const [dismissed, setDismissed] = useState(false);
+  const dismissKey = profileMeta ? `setupChecklistDismissed:vendorDashboard:${profileMeta.id}` : null;
+
+  useEffect(() => {
+    if (!dismissKey) return;
+    isChecklistSnoozed(dismissKey).then(setDismissed);
+  }, [dismissKey]);
+
+  const dismissChecklist = () => {
+    setDismissed(true);
+    if (dismissKey) snoozeChecklist(dismissKey);
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -96,11 +134,113 @@ export default function DashboardTab({
     })();
   }, [refreshing]);
 
+  // Same three fields Account tab reads off /profile for its own status
+  // pills — fetched here too since the checklist needs to know them before
+  // Account tab has ever been opened this session.
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await SecureStore.getItemAsync("token");
+        const res = await fetch(`${BASE_URL}/profile`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const u = (await res.json()).user;
+          setProfileMeta({
+            id: u._id,
+            verified: !!u.verified,
+            businessPicture: u.businessPicture || "",
+            country: u.location?.country || "",
+          });
+        }
+      } catch {
+        // Non-critical — checklist just stays hidden until this resolves.
+      }
+    })();
+  }, [refreshing]);
+
+  // Mirrors AccountTab's fetchPayoutStatus: no rail for this country means
+  // nothing for the vendor to complete, so the checklist item is dropped
+  // rather than left permanently unchecked.
+  useEffect(() => {
+    if (!profileMeta) return;
+    const provider = payoutProviderForCountry(profileMeta.country);
+    if (!provider) {
+      setPayoutSupported(false);
+      setPayoutOnboardingComplete(false);
+      return;
+    }
+    setPayoutSupported(true);
+    (async () => {
+      try {
+        const token = await SecureStore.getItemAsync("token");
+        const res = await fetch(`${BASE_URL}${PAYOUT_STATUS_ENDPOINTS[provider]}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) setPayoutOnboardingComplete((await res.json()).onboardingComplete ?? false);
+      } catch {
+        // Non-critical
+      }
+    })();
+  }, [profileMeta?.country]);
+
   const earningsThis = earnings?.thisMonthNet ?? 0;
   const earningsLast = earnings?.lastMonthNet ?? 0;
   const hasBookings = (stats?.bookingsThisMonth ?? 0) > 0 || earningsThis > 0;
 
   const categories = stats?.servicesByCategory ?? [];
+
+  // "Complete your setup" checklist. Only built once profileMeta has loaded —
+  // showing default-false items before that would flash "not verified" at an
+  // already-verified vendor. A payout rail this country doesn't have is
+  // dropped rather than shown as permanently incomplete (see the effect
+  // above); the card itself disappears once every remaining item is done.
+  const countryKnown = payoutCountryKnown(profileMeta?.country);
+  const checklist = profileMeta
+    ? [
+        {
+          key: "verify",
+          label: "Verify your account",
+          icon: "shield-checkmark-outline" as const,
+          done: profileMeta.verified,
+          onPress: () => router.push("/verify-account" as any),
+        },
+        !countryKnown || payoutSupported
+          ? {
+              key: "payout",
+              label: !countryKnown
+                ? "Set your location for payouts"
+                : payoutOnboardingComplete
+                  ? "Payouts active"
+                  : "Set up payouts",
+              icon: "cash-outline" as const,
+              done: countryKnown && payoutOnboardingComplete,
+              // Straight to the actual add-payment screen once we know which
+              // rail applies; an unknown country has no rail to send them to
+              // yet, so that one case still goes to Settings' own
+              // "Use my current location" control.
+              onPress: () =>
+                router.push((countryKnown ? payoutOnboardingRoute(profileMeta.country) : "/settings") as any),
+            }
+          : null,
+        {
+          key: "photo",
+          label: "Add a business photo",
+          icon: "camera-outline" as const,
+          done: !!profileMeta.businessPicture,
+          onPress: () => router.push("/(vendor)/account" as any),
+        },
+        {
+          key: "service",
+          label: "Add your first service",
+          icon: "briefcase-outline" as const,
+          done: (stats?.totalServices ?? 0) > 0,
+          onPress: onGoToServices,
+        },
+      ].filter((item): item is NonNullable<typeof item> => item !== null)
+    : [];
+  const checklistDone = checklist.filter((i) => i.done).length;
+  const showChecklist = !dismissed && checklist.length > 0 && checklistDone < checklist.length;
 
   return (
     <ScrollView
@@ -124,6 +264,54 @@ export default function DashboardTab({
           Welcome back, <Text style={styles.greetingName}>{firstName || "vendor"}</Text>
         </Text>
       </View>
+
+      {/* "Complete your setup" checklist — auto-hides once every item (that
+          applies to this vendor) is done. */}
+      {showChecklist && (
+        <View style={styles.sectionH}>
+          <View style={styles.setupCard}>
+            <View style={styles.setupHeaderRow}>
+              <Text style={styles.setupTitle}>Complete your setup</Text>
+              <View style={styles.setupHeaderRight}>
+                <Text style={styles.setupCount}>{checklistDone}/{checklist.length}</Text>
+                <TouchableOpacity
+                  onPress={dismissChecklist}
+                  hitSlop={8}
+                  accessibilityLabel="Dismiss setup checklist"
+                >
+                  <Ionicons name="close" size={16} color={colors.textDim} />
+                </TouchableOpacity>
+              </View>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.setupTileGrid}
+            >
+              {checklist.map((item) => (
+                <TouchableOpacity
+                  key={item.key}
+                  style={[styles.setupTile, item.done && styles.setupTileDone]}
+                  activeOpacity={0.8}
+                  onPress={item.onPress}
+                  disabled={item.done || !item.onPress}
+                >
+                  <View style={[styles.setupTileIcon, item.done && styles.setupCheckDone]}>
+                    <Ionicons
+                      name={item.done ? "checkmark" : item.icon}
+                      size={16}
+                      color={item.done ? VN.green : colors.textBright}
+                    />
+                  </View>
+                  <Text style={styles.setupTileLabel} numberOfLines={2}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      )}
 
       {/* Pending event invitations */}
       <VendorEventInvites />
@@ -321,6 +509,46 @@ const createStyles = (c: ThemeColors) =>
 
 
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+
+  setupCard: {
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: c.cardGlass,
+    borderWidth: 1,
+    borderColor: c.glassStroke,
+  },
+  setupHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  setupHeaderRight: { flexDirection: "row", alignItems: "center", gap: 12 },
+  setupTitle: { fontFamily: VNF.heading, fontSize: 15, color: c.textBright, letterSpacing: -0.2 },
+  setupCount: { fontFamily: VNF.bold, fontSize: 12, color: c.primaryLight },
+  // Small tiles in a wrapping row — 3 to a line, a 4th (or a dropped one
+  // leaving 2) still sizes evenly since the basis is a fraction, not fixed.
+  // Fixed-width tiles in a horizontal scroller rather than flex-shrinking to
+  // fit — squeezing a 4th tile onto the card's own width left labels
+  // wrapping awkwardly, so it scrolls instead.
+  setupTileGrid: { flexDirection: "row", gap: 8, marginTop: 12 },
+  setupTile: {
+    width: 104,
+    minHeight: 84,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: c.glassFillSubtle,
+    borderWidth: 1,
+    borderColor: c.glassStroke,
+    justifyContent: "space-between",
+  },
+  setupTileDone: { opacity: 0.6 },
+  setupTileIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: c.glassStrokeStrong,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  setupCheckDone: { borderColor: VN.green, backgroundColor: VN.green + "22" },
+  setupTileLabel: { fontFamily: VNF.medium, fontSize: 11.5, color: c.textBright, marginTop: 8, lineHeight: 14 },
 
   sectionTitle: { fontFamily: VNF.heading, fontSize: 18, color: c.textBright, letterSpacing: -0.4, marginBottom: 12 },
   sectionTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },

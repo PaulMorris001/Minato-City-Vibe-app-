@@ -1315,6 +1315,7 @@ export default function Home() {
               renderItem={({ item }) => (
                 <GuideCard
                   guide={item}
+                  style={styles.guideCardCarousel}
                   onPress={() => router.push(`/guide/${item._id}` as any)}
                 />
               )}
@@ -1612,6 +1613,13 @@ const createStyles = (c: ThemeColors) =>
   horizontalList: {
     paddingHorizontal: 20,
     paddingBottom: 2,
+  },
+  // GuideCard has no width of its own — it stretches to fill a vertical
+  // list, which doesn't work in a horizontal FlatList (there's nothing to
+  // stretch to), so the carousel gives it one explicitly.
+  guideCardCarousel: {
+    width: 160,
+    marginRight: 12,
   },
   smallCard: {
     width: 160,

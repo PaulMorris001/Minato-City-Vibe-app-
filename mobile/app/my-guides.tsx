@@ -20,6 +20,7 @@ import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { priceLabel } from "@/constants/payments";
 import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
+import MediaTile from "@/components/shared/MediaTile";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -114,64 +115,73 @@ export default function MyGuidesPage() {
       onPress={() => router.push(`/guide/${item._id}` as any)}
       activeOpacity={0.8}
     >
-      <View style={styles.cardHeader}>
-        <View style={styles.cardHeaderLeft}>
-          <Text style={styles.guideTitle} numberOfLines={2}>
-            {item.title}
-          </Text>
-          <View style={styles.metadataRow}>
-            <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-            <Text style={styles.metadataText}>
-              {item.city}, {item.cityState}
+      {item.coverImage ? (
+        <MediaTile uri={item.coverImage} style={styles.guideCover} posterOnly />
+      ) : (
+        <View style={[styles.guideCover, styles.guideCoverPlaceholder]}>
+          <Ionicons name="book-outline" size={28} color={colors.textMuted} />
+        </View>
+      )}
+      <View style={styles.guideCardBody}>
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderLeft}>
+            <Text style={styles.guideTitle} numberOfLines={2}>
+              {item.title}
             </Text>
-            <Text style={styles.metadataSeparator}>•</Text>
-            <Text style={styles.metadataText}>{item.topic}</Text>
+            <View style={styles.metadataRow}>
+              <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+              <Text style={styles.metadataText}>
+                {item.city}, {item.cityState}
+              </Text>
+              <Text style={styles.metadataSeparator}>•</Text>
+              <Text style={styles.metadataText}>{item.topic}</Text>
+            </View>
           </View>
+          {item.isDraft && (
+            <View style={styles.draftBadge}>
+              <Text style={styles.draftText}>Draft</Text>
+            </View>
+          )}
         </View>
-        {item.isDraft && (
-          <View style={styles.draftBadge}>
-            <Text style={styles.draftText}>Draft</Text>
+
+        <Text style={styles.guideDescription} numberOfLines={2}>
+          {item.description}
+        </Text>
+
+        <View style={styles.cardFooter}>
+          <View style={styles.statsRow}>
+            <Ionicons name="eye-outline" size={14} color={colors.textMuted} />
+            <Text style={styles.statsText}>{item.views} views</Text>
+            <Text style={styles.statsSeparator}>•</Text>
+            {/* Free guides are "unlocked", not "sold" — no money changed hands. */}
+            <Text style={styles.statsText}>
+              {item.salesCount ?? 0} {item.price === 0 ? "unlocks" : "sold"}
+            </Text>
+            <Text style={styles.statsSeparator}>•</Text>
+            <Text style={styles.priceText}>
+              {priceLabel(item.price, item.currency)}
+            </Text>
           </View>
-        )}
-      </View>
-
-      <Text style={styles.guideDescription} numberOfLines={2}>
-        {item.description}
-      </Text>
-
-      <View style={styles.cardFooter}>
-        <View style={styles.statsRow}>
-          <Ionicons name="eye-outline" size={14} color={colors.textMuted} />
-          <Text style={styles.statsText}>{item.views} views</Text>
-          <Text style={styles.statsSeparator}>•</Text>
-          {/* Free guides are "unlocked", not "sold" — no money changed hands. */}
-          <Text style={styles.statsText}>
-            {item.salesCount ?? 0} {item.price === 0 ? "unlocks" : "sold"}
-          </Text>
-          <Text style={styles.statsSeparator}>•</Text>
-          <Text style={styles.priceText}>
-            {priceLabel(item.price, item.currency)}
-          </Text>
-        </View>
-        <View style={styles.actionsRow}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              router.push(`/guide/edit/${item._id}` as any);
-            }}
-          >
-            <Ionicons name="create-outline" size={18} color={Colors.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              handleDeleteGuide(item._id);
-            }}
-          >
-            <Ionicons name="trash-outline" size={18} color={colors.error} />
-          </TouchableOpacity>
+          <View style={styles.actionsRow}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                router.push(`/guide/edit/${item._id}` as any);
+              }}
+            >
+              <Ionicons name="create-outline" size={18} color={Colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleDeleteGuide(item._id);
+              }}
+            >
+              <Ionicons name="trash-outline" size={18} color={colors.error} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </TouchableOpacity>
@@ -289,11 +299,14 @@ const createStyles = (c: ThemeColors) =>
   guideCard: {
     backgroundColor: c.card,
     borderRadius: 16,
-    padding: 16,
+    overflow: "hidden",
     marginBottom: 16,
     borderWidth: 1,
     borderColor: c.border,
   },
+  guideCover: { width: "100%", height: 150 },
+  guideCoverPlaceholder: { alignItems: "center", justifyContent: "center", backgroundColor: c.backgroundSecondary },
+  guideCardBody: { padding: 16 },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",

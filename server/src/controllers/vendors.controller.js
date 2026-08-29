@@ -55,11 +55,22 @@ export async function browseVendors(req, res) {
 
     const vendorQuery = {};
     if (country || state || city) {
-      const cityQuery = {};
-      if (country) cityQuery.country = new RegExp(`^${escapeRegex(country)}$`, "i");
-      if (state) cityQuery.state = new RegExp(`^${escapeRegex(state)}$`, "i");
-      if (city) cityQuery.name = new RegExp(`^${escapeRegex(city)}$`, "i");
-      const matchingCities = await City.find(cityQuery).select("_id");
+      const cityConditions = [];
+      if (country) cityConditions.push({ country: new RegExp(`^${escapeRegex(country)}$`, "i") });
+      if (state) cityConditions.push({ state: new RegExp(`^${escapeRegex(state)}$`, "i") });
+      // A "city" filter is also matched against the state name: pickers built
+      // on the country/state/city hierarchy (vendor onboarding) store vendors
+      // under a specific locality (e.g. "Ebute Metta"), while location search
+      // (geocoding) resolves a place like "Lagos" to that same name — which is
+      // the *state*, not any single locality within it. Matching state too is
+      // what makes "Lagos" actually surface Lagos-based vendors.
+      if (city) {
+        const cityRx = new RegExp(`^${escapeRegex(city)}$`, "i");
+        cityConditions.push({ $or: [{ name: cityRx }, { state: cityRx }] });
+      }
+      const matchingCities = await City.find(
+        cityConditions.length > 1 ? { $and: cityConditions } : cityConditions[0]
+      ).select("_id");
       vendorQuery.city = { $in: matchingCities.map((c) => c._id) };
     }
 
@@ -172,10 +183,14 @@ export async function getVendorReviews(req, res) {
 export async function buildVendorSearchQuery({ q, city }) {
   const vendorQuery = {};
 
-  // Narrow to a city first, the same way browseVendors does.
+  // Narrow to a city first, the same way browseVendors does. Matched against
+  // the city's state too — see the comment in browseVendors — so a search for
+  // "Lagos" finds vendors whose City doc is a locality within Lagos state,
+  // not only a City literally named "Lagos".
   if (city) {
+    const cityRx = new RegExp(`^${escapeRegex(city)}$`, "i");
     const matchingCities = await City.find({
-      name: new RegExp(`^${escapeRegex(city)}$`, "i"),
+      $or: [{ name: cityRx }, { state: cityRx }],
     }).select("_id");
     vendorQuery.city = { $in: matchingCities.map((c) => c._id) };
   }
