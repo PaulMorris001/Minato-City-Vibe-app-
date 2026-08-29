@@ -18,6 +18,7 @@ import { priceLabel } from "@/constants/payments";
 import { fetchSavedGuides } from "@/libs/api";
 import { formatLocation } from "@/utils/location";
 import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
+import MediaTile from "@/components/shared/MediaTile";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -60,21 +61,30 @@ export default function SavedGuidesPage() {
       onPress={() => router.push(`/guide/${item._id}` as any)}
       activeOpacity={0.8}
     >
-      <Text style={styles.guideTitle} numberOfLines={2}>{item.title}</Text>
-      <View style={styles.metadataRow}>
-        <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-        <Text style={styles.metadataText} numberOfLines={1}>
-          {formatLocation({ city: item.city, state: item.cityState, country: item.country })}
-        </Text>
-        <Text style={styles.metadataSeparator}>•</Text>
-        <Text style={styles.metadataText}>{item.topic}</Text>
-      </View>
-      <Text style={styles.guideDescription} numberOfLines={2}>{item.description}</Text>
-      <View style={styles.cardFooter}>
-        <Text style={styles.author} numberOfLines={1}>by {item.authorName}</Text>
-        <Text style={styles.priceText}>
-          {priceLabel(item.price, item.currency)}
-        </Text>
+      {item.coverImage ? (
+        <MediaTile uri={item.coverImage} style={styles.guideCover} posterOnly />
+      ) : (
+        <View style={[styles.guideCover, styles.guideCoverPlaceholder]}>
+          <Ionicons name="book-outline" size={28} color={colors.textMuted} />
+        </View>
+      )}
+      <View style={styles.guideCardBody}>
+        <Text style={styles.guideTitle} numberOfLines={2}>{item.title}</Text>
+        <View style={styles.metadataRow}>
+          <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+          <Text style={styles.metadataText} numberOfLines={1}>
+            {formatLocation({ city: item.city, state: item.cityState, country: item.country })}
+          </Text>
+          <Text style={styles.metadataSeparator}>•</Text>
+          <Text style={styles.metadataText}>{item.topic}</Text>
+        </View>
+        <Text style={styles.guideDescription} numberOfLines={2}>{item.description}</Text>
+        <View style={styles.cardFooter}>
+          <Text style={styles.author} numberOfLines={1}>by {item.authorName}</Text>
+          <Text style={styles.priceText}>
+            {priceLabel(item.price, item.currency)}
+          </Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -142,11 +152,14 @@ const createStyles = (c: ThemeColors) =>
   guideCard: {
     backgroundColor: c.card,
     borderRadius: 16,
-    padding: 16,
+    overflow: "hidden",
     marginBottom: 16,
     borderWidth: 1,
     borderColor: c.border,
   },
+  guideCover: { width: "100%", height: 150 },
+  guideCoverPlaceholder: { alignItems: "center", justifyContent: "center", backgroundColor: c.backgroundSecondary },
+  guideCardBody: { padding: 16 },
   guideTitle: { fontSize: 18, fontFamily: Fonts.bold, color: c.text, marginBottom: 6 },
   metadataRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 8 },
   metadataText: { fontSize: 12, fontFamily: Fonts.regular, color: c.textSecondary, flexShrink: 1 },

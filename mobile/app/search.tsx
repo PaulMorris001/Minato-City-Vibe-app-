@@ -127,6 +127,18 @@ export default function SearchScreen() {
   const abortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
 
+  // Arriving via the search button (focus=1): autoFocus fired the keyboard the
+  // instant this screen mounted, which is mid-push-transition — the keyboard
+  // shoved the still-animating layout up, then it snapped back once the
+  // transition settled. Focusing after the transition's had time to finish
+  // keeps the keyboard's rise from overlapping it.
+  const inputRef = useRef<TextInput>(null);
+  useEffect(() => {
+    if (params.focus !== "1") return;
+    const timer = setTimeout(() => inputRef.current?.focus(), 400);
+    return () => clearTimeout(timer);
+  }, [params.focus]);
+
   useEffect(() => {
     if (!isSearching) {
       abortRef.current?.abort();
@@ -380,12 +392,12 @@ export default function SearchScreen() {
         <View style={styles.searchBar}>
           <Ionicons name="search-outline" size={18} color={colors.textDim} />
           <TextInput
+            ref={inputRef}
             style={styles.input}
             value={query}
             onChangeText={setQuery}
             placeholder="Search events, guides, vendors, people"
             placeholderTextColor={colors.textDim}
-            autoFocus={params.focus === "1"}
             returnKeyType="search"
             onSubmitEditing={() => commitRecent(query)}
             autoCorrect={false}

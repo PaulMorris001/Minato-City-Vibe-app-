@@ -14,6 +14,7 @@ import * as SecureStore from "expo-secure-store";
 import { Guide, GUIDE_TOPICS } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { ActiveLocationChip } from "@/components/shared";
+import MediaTile from "@/components/shared/MediaTile";
 import UserListItemSkeleton from "@/components/skeletons/UserListItemSkeleton";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchGuidesAll } from "@/libs/api";
@@ -94,18 +95,27 @@ export default function BestsPage() {
       activeOpacity={0.85}
       onPress={() => router.push(`/guide/${g._id}` as any)}
     >
-      <Text style={styles.guideTitle} numberOfLines={2}>{g.title}</Text>
-      <Text style={styles.guideMeta} numberOfLines={1}>
-        {formatLocation({ city: g.city, state: g.cityState, country: g.country })}
-      </Text>
-      <Text style={styles.guideAuthor} numberOfLines={1}>by {g.authorName}</Text>
-      <View style={styles.guideFooter}>
-        <Text style={styles.guidePrice}>
-          {priceLabel(g.price, g.currency)}
+      {g.coverImage ? (
+        <MediaTile uri={g.coverImage} style={styles.guideCover} posterOnly />
+      ) : (
+        <View style={[styles.guideCover, styles.guideCoverPlaceholder]}>
+          <Ionicons name="book-outline" size={26} color={colors.textMuted} />
+        </View>
+      )}
+      <View style={styles.guideCardBody}>
+        <Text style={styles.guideTitle} numberOfLines={2}>{g.title}</Text>
+        <Text style={styles.guideMeta} numberOfLines={1}>
+          {formatLocation({ city: g.city, state: g.cityState, country: g.country })}
         </Text>
-        <View style={styles.guideViews}>
-          <Ionicons name="eye-outline" size={13} color={colors.textMuted} />
-          <Text style={styles.guideViewsText}>{g.views}</Text>
+        <Text style={styles.guideAuthor} numberOfLines={1}>by {g.authorName}</Text>
+        <View style={styles.guideFooter}>
+          <Text style={styles.guidePrice}>
+            {priceLabel(g.price, g.currency)}
+          </Text>
+          <View style={styles.guideViews}>
+            <Ionicons name="eye-outline" size={13} color={colors.textMuted} />
+            <Text style={styles.guideViewsText}>{g.views}</Text>
+          </View>
         </View>
       </View>
     </TouchableOpacity>
@@ -352,10 +362,13 @@ const createStyles = (c: ThemeColors) =>
     width: 220,
     backgroundColor: c.backgroundSecondary,
     borderRadius: 14,
-    padding: 14,
+    overflow: "hidden",
     borderWidth: 1,
     borderColor: c.glassStroke,
   },
+  guideCover: { width: "100%", height: 110 },
+  guideCoverPlaceholder: { alignItems: "center", justifyContent: "center", backgroundColor: c.card },
+  guideCardBody: { padding: 14 },
   guideTitle: {
     fontSize: 15,
     fontFamily: Fonts.bold,

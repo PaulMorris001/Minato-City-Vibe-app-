@@ -26,6 +26,7 @@ import { remoteLog } from "@/utils/remoteLog";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useAccount } from "@/contexts/AccountContext";
+import { useCart } from "@/contexts/CartContext";
 import { useUnread } from "@/contexts/UnreadContext";
 import socketService from "@/services/socket.service";
 import { clearLocalData } from "@/utils/localData";
@@ -150,10 +151,11 @@ function SupportNavButton({ glass }: { glass: boolean }) {
 export default function TabsLayout() {
   const { colors, isDark } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const { activeAccount } = useAccount();
+  const { activeAccount, setActiveAccount } = useAccount();
+  const cart = useCart();
   // totalUnread still needed — the badge moved from the header button to the
   // Chats tab, it didn't go away.
-  const { totalUnread, notifUnread } = useUnread();
+  const { totalUnread, notifUnread, reset: resetUnread } = useUnread();
   const isGlassAvailable = Platform.OS === "ios" && isLiquidGlassAvailable();
   const isIpad = Platform.OS === "ios" && Platform.isPad;
   // The profile modal sits on a translucent surface on any iOS (real glass on
@@ -227,6 +229,10 @@ export default function TabsLayout() {
       // cached user instead.
       if (status === 401 || status === 403) {
         await SecureStore.deleteItemAsync("token");
+        await SecureStore.deleteItemAsync("user");
+        await setActiveAccount("client");
+        cart.clear();
+        resetUnread();
         await clearLocalData();
         socketService.disconnect();
         router.replace("/login");
@@ -299,7 +305,9 @@ export default function TabsLayout() {
       await unregisterForPushNotifications();
       await SecureStore.deleteItemAsync("user");
       await SecureStore.deleteItemAsync("token");
-      await SecureStore.deleteItemAsync("activeAccount");
+      await setActiveAccount("client");
+      cart.clear();
+      resetUnread();
       await clearLocalData();
       socketService.disconnect();
       router.replace("/login");
