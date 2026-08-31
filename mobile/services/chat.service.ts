@@ -3,6 +3,7 @@ import { BASE_URL } from "@/constants/constants";
 import {
   getChats,
   getMessagesPage,
+  pruneChatsNotIn,
   upsertChats,
   upsertMessages,
 } from "@/db/chatRepo";
@@ -72,7 +73,8 @@ export interface User {
 export interface Message {
   _id: string;
   chat: string;
-  sender: User;
+  /** Null when the author's account was deleted; the message survives in group chats. */
+  sender: User | null;
   type: "text" | "image" | "event" | "guide" | "system" | "order";
   content?: string;
   imageUrl?: string;
@@ -135,6 +137,10 @@ class ChatService {
       // Write-through: the inbox can paint from SQLite on the next open before
       // any network call returns.
       upsertChats(chats, scope);
+      // ...and drop what the server no longer has. A conversation with a
+      // deleted account is gone server-side; without this the local copy
+      // outlives it and stays readable offline.
+      pruneChatsNotIn(chats.map((c) => c._id), scope);
       return chats;
     } catch (error) {
       console.error("Get user chats error:", error);
@@ -251,9 +257,13 @@ class ChatService {
           const body = await response.json();
           serverMessage = body?.message;
         } catch {}
-        throw new Error(
+        const err: any = new Error(
           `Chat fetch failed (${response.status}${serverMessage ? `: ${serverMessage}` : ""})`
         );
+        // Callers need to tell "gone" from "offline" — a 404 must not fall
+        // back to cached history the way a dead network does.
+        err.status = response.status;
+        throw err;
       }
 
       const data = await response.json();
