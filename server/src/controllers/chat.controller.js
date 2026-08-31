@@ -2,7 +2,7 @@ import ChatService from "../services/chat.service.js";
 import Chat from "../models/chat.model.js";
 import User from "../models/user.model.js";
 import { setCache, getCache, invalidateCache, invalidateCachePattern } from "../utils/cache.js";
-import { SUPPORT_USER_ID } from "../utils/supportAccount.js";
+import { SUPPORT_USER_ID, withSupportMarkers } from "../utils/supportAccount.js";
 
 /**
  * Chat Controller - Handles HTTP requests for chat operations
@@ -196,7 +196,7 @@ export const getChatById = async (req, res) => {
       return res.status(403).json({ message: "You don't have access to this chat" });
     }
 
-    res.status(200).json({ chat });
+    res.status(200).json({ chat: withSupportMarkers(chat) });
   } catch (error) {
     console.error("Get chat error:", error);
     res.status(500).json({ message: "Error fetching chat", error: error.message });

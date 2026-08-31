@@ -1204,11 +1204,17 @@ export default function ChatScreen() {
 
   const isGroup = chat?.type === "group";
   const otherParticipant = chat?.participants.find((p) => p._id !== currentUserId);
+  // The server flag is the authority: EXPO_PUBLIC_SUPPORT_USER_ID is unset, so
+  // the bundled constant falls back to a literal that no longer matches the
+  // configured SUPPORT_USER_ID. It stays as a fallback for the case where the
+  // app updates ahead of the server.
+  const isSupportChat =
+    !isGroup && (!!otherParticipant?.isSupport || isSupportUser(otherParticipant?._id));
   // Support has no profile page: openUserProfile bounces the tap straight back
   // into this same conversation via openSupportChat, which pushes a second
   // copy of this screen — tap the header enough times and the stack fills with
   // duplicate support chats. Nothing to open, so nothing to tap.
-  const headerTappable = !isGroup && !isSupportUser(otherParticipant?._id);
+  const headerTappable = !isGroup && !isSupportChat;
   // Usernames in this chat, used so multi-word @mentions ("@setemi Loye") get
   // tagged and highlighted in full rather than just the first word.
   const participantUsernames = useMemo(() => {
@@ -1704,13 +1710,29 @@ export default function ChatScreen() {
             >
               <Avatar uri={getChatAvatar()} name={getChatName()} size={38} />
               <View style={styles.headerText}>
-                <Text style={styles.headerTitle} numberOfLines={1}>
-                  {capitalize(getChatName())}
-                </Text>
-                {isGroup && (
-                  <Text style={styles.headerSubtitle}>
-                    {chat?.participants.length ?? 0} participants
+                <View style={styles.headerTitleRow}>
+                  <Text style={styles.headerTitle} numberOfLines={1}>
+                    {capitalize(getChatName())}
                   </Text>
+                  {/* Support is the one account users can't check out for
+                      themselves — the header doesn't open a profile — so the
+                      badge has to say it here. */}
+                  {isSupportChat && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={15}
+                      color={colors.info}
+                    />
+                  )}
+                </View>
+                {isSupportChat ? (
+                  <Text style={styles.headerSubtitle}>Official account</Text>
+                ) : (
+                  isGroup && (
+                    <Text style={styles.headerSubtitle}>
+                      {chat?.participants.length ?? 0} participants
+                    </Text>
+                  )
                 )}
               </View>
             </TouchableOpacity>
@@ -2838,11 +2860,18 @@ const createStyles = (c: ThemeColors) =>
     flex: 1,
     minWidth: 0,
   },
+  headerTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
   headerTitle: {
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 15,
     color: c.textBright,
     letterSpacing: -0.15,
+    // Shrinks rather than shoving the official badge off the row.
+    flexShrink: 1,
   },
   headerSubtitle: {
     fontFamily: "Outfit_500Medium",
