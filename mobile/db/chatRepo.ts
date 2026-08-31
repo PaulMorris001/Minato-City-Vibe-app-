@@ -1,3 +1,4 @@
+import type * as SQLite from "expo-sqlite";
 import { getDb } from "@/db";
 import type { Chat, ChatScope, Message } from "@/services/chat.service";
 
@@ -261,6 +262,65 @@ export async function bumpOutboxAttempts(tempId: string): Promise<void> {
 }
 
 // ── Housekeeping ────────────────────────────────────────────────────────────
+
+/**
+ * Erase whole conversations — messages, the chat row, and anything still
+ * queued for them. Not exported: callers go through `removeChat` or
+ * `pruneChatsNotIn`, which is where the decision of *what* to drop lives.
+ */
+async function deleteChatRows(
+  db: SQLite.SQLiteDatabase,
+  ids: string[]
+): Promise<void> {
+  if (!ids.length) return;
+  const placeholders = ids.map(() => "?").join(",");
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(`DELETE FROM messages WHERE chatId IN (${placeholders})`, ids);
+    await db.runAsync(`DELETE FROM outbox WHERE chatId IN (${placeholders})`, ids);
+    await db.runAsync(`DELETE FROM chats WHERE id IN (${placeholders})`, ids);
+  });
+}
+
+/**
+ * Drop one conversation the server no longer has. The account on the other
+ * side was deleted (or the chat was), and a cached copy would let the user
+ * keep reading a thread that is gone everywhere else.
+ */
+export async function removeChat(chatId: string): Promise<void> {
+  try {
+    await deleteChatRows(await getDb(), [chatId]);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Drop every cached chat in a scope that the server didn't return.
+ *
+ * Safe because GET /chats is unpaginated — the response *is* the full inbox
+ * for that scope — and upsertChats stamps each chat with exactly one scope.
+ * Only ever call this on a successful fetch; on an error the cache is all the
+ * user has.
+ */
+export async function pruneChatsNotIn(
+  ids: string[],
+  scope: ChatScope
+): Promise<void> {
+  try {
+    const db = await getDb();
+    const rows = await db.getAllAsync<{ id: string }>(
+      "SELECT id FROM chats WHERE scope = ?",
+      [scope]
+    );
+    const keep = new Set(ids);
+    await deleteChatRows(
+      db,
+      rows.map((r) => r.id).filter((id) => !keep.has(id))
+    );
+  } catch {
+    // ignore
+  }
+}
 
 /** Trim the store on launch so it can't grow without bound. */
 export async function pruneChatStore(): Promise<void> {

@@ -25,6 +25,7 @@ import * as SecureStore from "expo-secure-store";
 import { capitalize } from "@/libs/helpers";
 import { displayName } from "@/utils/displayName";
 import socketService from "@/services/socket.service";
+import { removeChat } from "@/db/chatRepo";
 import ChatListItemSkeleton from "@/components/skeletons/ChatListItemSkeleton";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -188,7 +189,8 @@ export default function ChatListScreen({
         setChats((prev) =>
           prev.map((chat) => {
             if (chat._id !== chatId || !chat.lastMessage) return chat;
-            if (chat.lastMessage.sender._id !== currentUserId) return chat;
+            // A group's last message can outlive its author's account.
+            if (chat.lastMessage.sender?._id !== currentUserId) return chat;
             const unreadObj = (chat.unreadCount as unknown as Record<string, number>) || {};
             return {
               ...chat,
@@ -262,6 +264,12 @@ export default function ChatListScreen({
       onGroupRemoved: () => {
         // Removed from a group (or declined an invite) — drop it from the inbox.
         fetchChats(true);
+      },
+      onChatRemoved: ({ chatId }) => {
+        // The other account was deleted, taking the conversation with it. Drop
+        // the cached copy too, or it stays readable offline.
+        removeChat(chatId);
+        setChats((prev) => prev.filter((c) => c._id !== chatId));
       },
     });
 

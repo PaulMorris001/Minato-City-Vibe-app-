@@ -25,6 +25,7 @@ import { Fonts } from "@/constants/fonts";
 import { currencyPrefix, priceLabel } from "@/constants/payments";
 import CreateEventModal from "@/components/client/CreateEventModal";
 import CreateEventTooltip from "@/components/shared/CreateEventTooltip";
+import { NAVBAR_ROW_HEIGHT, navbarTopPad } from "@/constants/homeChrome";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
@@ -152,12 +153,6 @@ const TOPIC_EMOJI: Record<string, string> = {
   "Hair and Nail Salons": "💅",
   "Barber Shops": "💈",
 };
-
-// Height of the tab layout's home navbar (paddingTop 50 + 40pt row + 16).
-// On iOS the navbar overlays this screen (see navbarOverlay in the tab
-// layout), so the scroll content pads itself below it; the automatic content
-// inset already contributes the top safe area, hence the subtraction.
-const NAVBAR_OVERLAY_HEIGHT = 106;
 
 function SectionHeader({ title, subtitle, onAction, actionLabel }: { title: string; subtitle?: string; onAction?: () => void; actionLabel?: string }) {
   const styles = useThemedStyles(createStyles);
@@ -955,11 +950,16 @@ export default function Home() {
         contentContainerStyle={[
           styles.scrollContent,
           Platform.OS === "ios" && {
-            // iPad's navbar is insets-driven (insets.top + 10 + ~56 row), so
-            // pad just past the row; phones keep the fixed-height overlay math.
+            // The navbar overlays this screen on iOS, so pad out from under
+            // it. contentInsetAdjustmentBehavior="automatic" already
+            // contributes the top safe area, hence the subtraction. iPad's
+            // navbar has its own inset maths, so pad just past the row.
             paddingTop: isIpad
               ? 10
-              : Math.max(0, NAVBAR_OVERLAY_HEIGHT - insets.top),
+              : Math.max(
+                  0,
+                  navbarTopPad(insets.top) + NAVBAR_ROW_HEIGHT - insets.top
+                ),
           },
           // Phones: tighter tail — the FAB floats over the last few px of
           // content instead of reserving a full empty band.

@@ -1050,6 +1050,83 @@ class ChatService {
 
     return { chats, messages };
   }
+
+  /**
+   * Remove a deleted account's conversations. Called from every account
+   * deletion path so the other side can't go back and re-read the thread.
+   *
+   * Direct chats (personal, vendor and support alike) are hard-deleted with
+   * every message in them — hiding via `deletedFor` would leave the history
+   * one query away. Group chats keep their messages so the rest of the group
+   * still has a readable thread; the account is only detached from the
+   * membership arrays. That also means a group's `lastMessage` and
+   * `pinnedMessage` still point at live documents and need no repointing.
+   */
+  async purgeUserChats(userId) {
+    const chats = await Chat.find({
+      $or: [{ participants: userId }, { "pendingInvites.user": userId }]
+    }).select("_id type participants");
+
+    const directIds = [];
+    const groupIds = [];
+    const notify = [];
+
+    for (const chat of chats) {
+      if (chat.type === "direct") {
+        directIds.push(chat._id);
+        for (const participantId of chat.participants) {
+          if (participantId.toString() !== userId.toString()) {
+            notify.push({ userId: participantId.toString(), chatId: chat._id.toString() });
+          }
+        }
+      } else {
+        groupIds.push(chat._id);
+      }
+    }
+
+    if (directIds.length) {
+      await Message.deleteMany({ chat: { $in: directIds } });
+      await Chat.deleteMany({ _id: { $in: directIds } });
+    }
+
+    if (groupIds.length) {
+      await Chat.updateMany(
+        { _id: { $in: groupIds } },
+        {
+          $pull: {
+            participants: userId,
+            admins: userId,
+            pinnedBy: userId,
+            blockedBy: userId,
+            deletedFor: userId,
+            pendingInvites: { user: userId }
+          },
+          $unset: { [`unreadCount.${userId}`]: "" }
+        }
+      );
+
+      // Scrub the refs left inside the messages we're keeping, or every
+      // populate on them yields a null user. Scoped to those chats — an
+      // unfiltered updateMany here would walk the whole messages collection.
+      await Message.updateMany(
+        { chat: { $in: groupIds } },
+        {
+          $pull: {
+            reactions: { user: userId },
+            mentions: userId,
+            readBy: { user: userId }
+          }
+        }
+      );
+    }
+
+    const io = getSocketInstance();
+    if (io) {
+      for (const { userId: participantId, chatId } of notify) {
+        io.to(`user:${participantId}`).emit("chat:removed", { chatId });
+      }
+    }
+  }
 }
 
 export default new ChatService();

@@ -41,6 +41,8 @@ interface SocketEvents {
     inviterUsername: string;
   }) => void;
   onGroupRemoved?: (data: { chatId: string }) => void;
+  /** The conversation itself was deleted — not a group removal. */
+  onChatRemoved?: (data: { chatId: string }) => void;
   onEventInvite?: (data: {
     eventId: string;
     eventTitle: string;
@@ -189,6 +191,10 @@ class SocketService {
 
       this.socket.on("group:removed", (data) => {
         this.notify("onGroupRemoved", data);
+      });
+
+      this.socket.on("chat:removed", (data) => {
+        this.notify("onChatRemoved", data);
       });
 
       this.socket.on("message:reaction", (data) => {

@@ -11,6 +11,7 @@ import VerificationRequest from "../models/verification.model.js";
 import Notification from "../models/notification.model.js";
 import Report from "../models/report.model.js";
 import Message from "../models/message.model.js";
+import chatService from "../services/chat.service.js";
 import { sendPushNotification } from "../services/notification.service.js";
 import { markVerified } from "../services/verification.service.js";
 import { getSocketInstance } from "../services/socket.service.js";
@@ -117,6 +118,7 @@ export async function deleteUser(req, res) {
     await Promise.all([
       User.findByIdAndDelete(id),
       Vendor.deleteOne({ user: id }),
+      chatService.purgeUserChats(id),
     ]);
     res.json({ message: "User deleted" });
   } catch (error) {

@@ -52,6 +52,7 @@ import { isVideoUrl } from "@/utils/media";
 import { saveRemoteMediaToGallery, saveWithFeedback } from "@/utils/saveToGallery";
 import MediaTile from "@/components/shared/MediaTile";
 import { openUserProfile } from "@/utils/userNavigation";
+import { isSupportUser } from "@/constants/support";
 import { trackEvent } from "@/utils/analytics";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { currencyPrefix } from "@/constants/payments";
@@ -67,6 +68,7 @@ import {
   enqueueOutbox,
   listOutbox,
   newestCreatedAt,
+  removeChat,
 } from "@/db/chatRepo";
 import { isOnline } from "@/utils/reachability";
 import { useIsOnline } from "@/hooks/useIsOnline";
@@ -121,7 +123,7 @@ function mergeMessages(
     // One of our own messages we hadn't seen resolve — it raced the send
     // response, so swap it in for the oldest optimistic bubble rather than
     // leaving both on screen.
-    if (msg.sender._id === currentUserId) {
+    if (msg.sender?._id === currentUserId) {
       const tempKey = [...byId.keys()].find((k) => k.startsWith("temp_"));
       if (tempKey) byId.delete(tempKey);
     }
@@ -320,6 +322,22 @@ export default function ChatScreen() {
         socketService.markMessagesAsRead(id, currentUserId);
       }
     } catch (error: any) {
+      // The conversation is gone server-side — the other account was deleted,
+      // or the chat was. This check must come BEFORE the offline fallback:
+      // otherwise we'd keep showing a cached copy of a thread nobody is
+      // supposed to be able to reach any more.
+      if (error?.status === 404) {
+        await removeChat(id);
+        Alert.alert(
+          "Conversation unavailable",
+          "This conversation is no longer available."
+        );
+        // Same fallback as handleBack, which is declared further down: a
+        // notification or deep link can make this the first screen on the stack.
+        if (router.canGoBack()) router.back();
+        else router.replace("/messages");
+        return;
+      }
       // Already showing saved history — a dead network is not worth an alert
       // over a screen the user can read perfectly well.
       if (cached.length) {
@@ -368,7 +386,7 @@ export default function ChatScreen() {
       );
       const overlaps = knownIds.size === 0 || fetched.some((m) => knownIds.has(m._id));
       const hasNewIncoming = fetched.some(
-        (m) => !knownIds.has(m._id) && m.sender._id !== currentUserId
+        (m) => !knownIds.has(m._id) && m.sender?._id !== currentUserId
       );
 
       if (!overlaps) {
@@ -463,7 +481,7 @@ export default function ChatScreen() {
         if (pendingInviteeRef.current) return;
         if (message.chat === id) {
           setMessages((prev) => mergeMessages(prev, [message], currentUserId));
-          if (message.sender._id !== currentUserId && currentUserId) {
+          if (message.sender?._id !== currentUserId && currentUserId) {
             chatService.markMessagesAsRead(id);
             socketService.markMessagesAsRead(id, currentUserId);
           }
@@ -486,7 +504,7 @@ export default function ChatScreen() {
           // re-anchor/jump — on every redundant read receipt.
           let changed = false;
           const next = prev.map((m) => {
-            if (m.sender._id === currentUserId && m.status !== "read") {
+            if (m.sender?._id === currentUserId && m.status !== "read") {
               changed = true;
               return { ...m, status: "read" as const };
             }
@@ -1152,7 +1170,7 @@ export default function ChatScreen() {
   const buildMessageSections = (msgs: Message[]): MessageSection[] => {
     const sections: MessageSection[] = [];
     let lastDateLabel = "";
-    let lastSenderId: string | null = null;
+    let lastSenderId: string | null | undefined = null;
     msgs.forEach((msg) => {
       const msgDate = new Date(msg.createdAt);
       const today = new Date();
@@ -1177,14 +1195,20 @@ export default function ChatScreen() {
       // showSender: first message in a contiguous run from the same sender.
       // Computed here (not per-row by index) so it's stable under FlashList
       // cell recycling.
-      const showSender = lastSenderId !== msg.sender._id;
-      lastSenderId = msg.sender._id;
+      const showSender = lastSenderId !== msg.sender?._id;
+      lastSenderId = msg.sender?._id;
       sections.push({ ...msg, showSender });
     });
     return sections;
   };
 
   const isGroup = chat?.type === "group";
+  const otherParticipant = chat?.participants.find((p) => p._id !== currentUserId);
+  // Support has no profile page: openUserProfile bounces the tap straight back
+  // into this same conversation via openSupportChat, which pushes a second
+  // copy of this screen — tap the header enough times and the stack fills with
+  // duplicate support chats. Nothing to open, so nothing to tap.
+  const headerTappable = !isGroup && !isSupportUser(otherParticipant?._id);
   // Usernames in this chat, used so multi-word @mentions ("@setemi Loye") get
   // tagged and highlighted in full rather than just the first word.
   const participantUsernames = useMemo(() => {
@@ -1593,7 +1617,7 @@ export default function ChatScreen() {
         );
       }
       const msg = item as MessageItem;
-      const isOwnMessage = msg.sender._id === currentUserId;
+      const isOwnMessage = msg.sender?._id === currentUserId;
 
       return (
         <MessageBubble
@@ -1672,11 +1696,10 @@ export default function ChatScreen() {
 
             <TouchableOpacity
               style={styles.headerCenter}
-              activeOpacity={isGroup ? 1 : 0.7}
+              activeOpacity={headerTappable ? 0.7 : 1}
               onPress={() => {
-                if (isGroup) return;
-                const other = chat?.participants.find((p) => p._id !== currentUserId);
-                openUserProfile(other?._id);
+                if (!headerTappable) return;
+                openUserProfile(otherParticipant?._id);
               }}
             >
               <Avatar uri={getChatAvatar()} name={getChatName()} size={38} />
