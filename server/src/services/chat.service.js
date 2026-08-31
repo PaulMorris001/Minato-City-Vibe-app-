@@ -8,7 +8,7 @@ import { uploadBase64Image, deleteImage } from "./image.service.js";
 import { isVideoUrl } from "../config/cloudinary.js";
 import { sendPushNotification } from "./notification.service.js";
 import { areMutualFollows } from "../utils/followCheck.js";
-import { involvesSupport } from "../utils/supportAccount.js";
+import { involvesSupport, withSupportMarkers } from "../utils/supportAccount.js";
 
 /**
  * Chat Service - Business logic layer for chat operations
@@ -199,7 +199,7 @@ class ChatService {
       })
       .sort({ updatedAt: -1 });
 
-    return chats;
+    return chats.map(withSupportMarkers);
   }
 
   /**

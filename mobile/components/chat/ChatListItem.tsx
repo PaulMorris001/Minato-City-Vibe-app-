@@ -7,6 +7,7 @@ import { capitalize } from "@/libs/helpers";
 import { chatParticipantName, chatParticipantAvatar } from "@/utils/chatDisplay";
 import { Avatar } from "@/components/shared/Avatar";
 import { isVideoUrl } from "@/utils/media";
+import { isSupportUser } from "@/constants/support";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -59,6 +60,9 @@ export default function ChatListItem({
       return {
         name: chatParticipantName(chat, otherUser) || "Unknown User",
         image: chatParticipantAvatar(chat, otherUser),
+        // Server-set; the bundled support id has drifted from the configured
+        // one before, so don't recognise support from a client constant.
+        isSupport: !!otherUser?.isSupport || isSupportUser(otherUser?._id),
       };
     }
   };
@@ -139,6 +143,14 @@ export default function ChatListItem({
           >
             {capitalize(chatInfo.name)}
           </Text>
+          {chatInfo.isSupport && (
+            <Ionicons
+              name="checkmark-circle"
+              size={12}
+              color={colors.info}
+              style={{ marginLeft: 4 }}
+            />
+          )}
           {chat.context === "vendor" && (
             <Ionicons
               name="storefront-outline"

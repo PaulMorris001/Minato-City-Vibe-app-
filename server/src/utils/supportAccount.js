@@ -20,3 +20,26 @@ export const isSupportUser = (id) =>
 
 /** True when either side of a pair is the support account. */
 export const involvesSupport = (a, b) => isSupportUser(a) || isSupportUser(b);
+
+/**
+ * Stamp `isSupport` (and the verified badge that goes with it) on the support
+ * account wherever it appears in a chat's participants.
+ *
+ * Clients must not have to recognise support from an id they carry in their
+ * own bundle: the mobile constant has drifted from the configured
+ * SUPPORT_USER_ID before, which silently disabled every support-specific
+ * behaviour in the shipped app. Same reasoning as the marker on
+ * GET /users/:userId.
+ *
+ * Returns a plain object — `isSupport` isn't a schema field, so a Mongoose
+ * document would drop it on serialisation. A no-op when support is unset.
+ */
+export function withSupportMarkers(chat) {
+  if (!chat || !SUPPORT_USER_ID) return chat;
+  const plain = typeof chat.toObject === "function" ? chat.toObject() : chat;
+  if (!Array.isArray(plain.participants)) return plain;
+  plain.participants = plain.participants.map((p) =>
+    p && isSupportUser(p._id) ? { ...p, isSupport: true, verified: true } : p
+  );
+  return plain;
+}

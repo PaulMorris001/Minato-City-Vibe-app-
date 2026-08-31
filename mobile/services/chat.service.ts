@@ -68,6 +68,12 @@ export interface User {
   isVendor?: boolean;
   businessName?: string;
   businessPicture?: string;
+  /**
+   * Set by the server on the official support account. Prefer it over the
+   * bundled SUPPORT_USER_ID, which has drifted from the configured id before.
+   */
+  isSupport?: boolean;
+  verified?: boolean;
 }
 
 export interface Message {
