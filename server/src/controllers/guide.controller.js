@@ -208,8 +208,18 @@ export function buildGuideQuery({ city, state, country, topic, minPrice, maxPric
     ...(blockedIds.length > 0 ? { author: { $nin: blockedIds } } : {}),
   };
 
+  const andConditions = [];
+
   // Location filters are anchored exact matches, not substrings.
-  if (city) filter.city = { $regex: exactCaseInsensitive(city) };
+  // The shared browse location sends only a bare city name (no state/country)
+  // and it's often a region-level pick ("Lagos"), while guides are authored
+  // with a locality-level city plus its state (city:"Ikeja", cityState:"Lagos").
+  // Match the city filter against the state name too — same rule as
+  // browseVendors — otherwise those guides never come back.
+  if (city) {
+    const cityRx = exactCaseInsensitive(city);
+    andConditions.push({ $or: [{ city: cityRx }, { cityState: cityRx }] });
+  }
   if (state) filter.cityState = { $regex: exactCaseInsensitive(state) };
   if (country) filter.country = { $regex: exactCaseInsensitive(country) };
 
@@ -220,7 +230,6 @@ export function buildGuideQuery({ city, state, country, topic, minPrice, maxPric
     if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
   }
 
-  const andConditions = [];
   if (search) {
     const safe = escapeRegex(String(search));
     andConditions.push({
