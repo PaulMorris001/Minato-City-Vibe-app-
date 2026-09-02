@@ -7,6 +7,8 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,12 +21,15 @@ import { showError, showSuccess } from "@/utils/toast";
 import { ImagePickerButton } from "@/components/shared";
 import { uploadImage } from "@/utils/imageUpload";
 import GlassBackButton from "@/components/shared/GlassBackButton";
+import { goBack } from "@/utils/navigation";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 
 // Matches the signup wizard's client-side rule; the server (like /register)
 // only enforces 2–30 chars.
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
+
+const cleanUsername = (v: string) => v.trim().replace(/^@+/, "");
 
 type UsernameStatus = "idle" | "invalid" | "checking" | "available" | "taken";
 
@@ -47,13 +52,20 @@ export default function EditProfileScreen() {
   const [gender, setGender] = useState("");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
-
-  const [editingUsername, setEditingUsername] = useState(false);
-  const [usernameDraft, setUsernameDraft] = useState("");
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
-  const [savingUsername, setSavingUsername] = useState(false);
+
+  // Snapshot of the last-saved values. "Save Profile" stays disabled until an
+  // editable field differs from this, and it's refreshed on save so the button
+  // goes quiet again without leaving the screen.
+  const [saved, setSaved] = useState({
+    profilePicture: "",
+    bio: "",
+    gender: "",
+    username: "",
+  });
 
   const loadedRef = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     (async () => {
@@ -63,11 +75,18 @@ export default function EditProfileScreen() {
           headers: { Authorization: `Bearer ${token}` },
         });
         const u = res.data.user;
-        setProfilePicture(u.profilePicture || "");
-        setBio(u.bio || "");
-        setGender(u.gender || "");
+        const initial = {
+          profilePicture: u.profilePicture || "",
+          bio: u.bio || "",
+          gender: u.gender || "",
+          username: u.username || "",
+        };
+        setProfilePicture(initial.profilePicture);
+        setBio(initial.bio);
+        setGender(initial.gender);
         setEmail(u.email || "");
-        setUsername(u.username || "");
+        setUsername(initial.username);
+        setSaved(initial);
       } catch {
         showError("Failed to load your profile");
       } finally {
@@ -77,11 +96,11 @@ export default function EditProfileScreen() {
     })();
   }, []);
 
-  // Debounced live availability check while the username editor is open.
+  // Debounced live availability check whenever the username differs from the
+  // saved one — feeds both the inline hint and the Save button's gate.
   useEffect(() => {
-    if (!editingUsername) return;
-    const raw = usernameDraft.trim().replace(/^@+/, "");
-    if (!raw || raw.toLowerCase() === username.toLowerCase()) {
+    const raw = cleanUsername(username);
+    if (!raw || raw.toLowerCase() === saved.username.toLowerCase()) {
       setUsernameStatus("idle");
       return;
     }
@@ -108,13 +127,7 @@ export default function EditProfileScreen() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [usernameDraft, editingUsername, username]);
-
-  const openUsernameEditor = () => {
-    setUsernameDraft(username);
-    setUsernameStatus("idle");
-    setEditingUsername(true);
-  };
+  }, [username, saved.username]);
 
   const syncCachedUsername = useCallback(async (next: string) => {
     try {
@@ -127,64 +140,75 @@ export default function EditProfileScreen() {
     } catch {}
   }, []);
 
-  const handleSaveUsername = async () => {
-    const next = usernameDraft.trim().replace(/^@+/, "");
-    if (next === username) {
-      setEditingUsername(false);
-      return;
-    }
-    if (!USERNAME_RE.test(next)) {
+  const usernameChanged =
+    cleanUsername(username).toLowerCase() !== saved.username.toLowerCase();
+  const dirty =
+    profilePicture !== saved.profilePicture ||
+    bio !== saved.bio ||
+    gender !== saved.gender ||
+    usernameChanged;
+  // A changed username must be well-formed and not known-taken (an inconclusive
+  // check falls through to the server, same as the old inline editor did), and
+  // we wait for an in-flight check to land before enabling the button.
+  const usernameOk =
+    !usernameChanged ||
+    (USERNAME_RE.test(cleanUsername(username)) &&
+      usernameStatus !== "taken" &&
+      usernameStatus !== "checking");
+  const canSave = dirty && !saving && usernameOk;
+
+  const handleSave = async () => {
+    const nextUsername = cleanUsername(username);
+    if (usernameChanged && !USERNAME_RE.test(nextUsername)) {
       showError("3–20 characters — letters, numbers and underscores only.");
       return;
     }
-    setSavingUsername(true);
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      await axios.put(
-        `${BASE_URL}/profile/picture`,
-        { username: next },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setUsername(next);
-      await syncCachedUsername(next);
-      setEditingUsername(false);
-      showSuccess("Username updated");
-    } catch (error: any) {
-      showError(error.response?.data?.message || "Failed to update username");
-    } finally {
-      setSavingUsername(false);
-    }
-  };
-
-  const handleSave = async () => {
     setSaving(true);
     try {
       const token = await SecureStore.getItemAsync("token");
-      const payload: { profilePicture?: string; bio: string; gender: string } = {
-        bio,
-        gender,
-      };
+      const payload: {
+        profilePicture?: string;
+        bio: string;
+        gender: string;
+        username?: string;
+      } = { bio, gender };
+      if (usernameChanged) payload.username = nextUsername;
 
+      let nextPicture = profilePicture;
       if (profilePicture) {
         if (profilePicture.startsWith("file://")) {
           try {
             const result = await uploadImage(profilePicture, "profiles", token!);
-            payload.profilePicture = result.url;
+            nextPicture = result.url;
             setProfilePicture(result.url);
           } catch {
             showError("Failed to upload image. Please try again.");
             setSaving(false);
             return;
           }
-        } else {
-          payload.profilePicture = profilePicture;
         }
+        payload.profilePicture = nextPicture;
       }
 
       await axios.put(`${BASE_URL}/profile/picture`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (usernameChanged) {
+        setUsername(nextUsername);
+        await syncCachedUsername(nextUsername);
+      }
+      setSaved({
+        profilePicture: nextPicture,
+        bio,
+        gender,
+        username: usernameChanged ? nextUsername : saved.username,
+      });
+      setUsernameStatus("idle");
       showSuccess("Profile updated");
+      // Back to the profile screen it was opened from (falls back to the
+      // profile tab if there's no stack to pop).
+      goBack("/(tabs)/profile");
     } catch (error: any) {
       showError(error.response?.data?.message || "Failed to update profile");
     } finally {
@@ -209,154 +233,125 @@ export default function EditProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={styles.header}>
-        <GlassBackButton style={styles.backButton} />
-        <Text style={styles.headerTitle}>Edit Profile</Text>
-        <View style={styles.backButton} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.photoWrap}>
-          <ImagePickerButton
-            imageUri={profilePicture}
-            onImageSelected={setProfilePicture}
-            label="Profile Photo"
-            size={140}
-            shape="circle"
-            fallbackName={username}
-          />
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <View style={styles.header}>
+          <GlassBackButton style={styles.backButton} />
+          <Text style={styles.headerTitle}>Edit Profile</Text>
+          <View style={styles.backButton} />
         </View>
 
-        <Text style={styles.fieldLabel}>Username</Text>
-        {editingUsername ? (
-          <View>
-            <TextInput
-              style={styles.input}
-              value={usernameDraft}
-              onChangeText={(t) => setUsernameDraft(t.replace(/^@+/, ""))}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoFocus
-              maxLength={20}
-              editable={!savingUsername}
-              placeholder="username"
-              placeholderTextColor={colors.textMuted}
-            />
-            {usernameStatus !== "idle" && (
-              <Text
-                style={[
-                  styles.hint,
-                  usernameStatus === "invalid" && { color: colors.warning },
-                  usernameStatus === "checking" && { color: colors.textMuted },
-                  usernameStatus === "available" && { color: "#22c55e" },
-                  usernameStatus === "taken" && { color: colors.error },
-                ]}
-              >
-                {usernameStatus === "invalid" &&
-                  "3–20 characters — letters, numbers, underscores."}
-                {usernameStatus === "checking" && "Checking availability…"}
-                {usernameStatus === "available" && "Available"}
-                {usernameStatus === "taken" && "That username is taken."}
-              </Text>
-            )}
-            <View style={styles.rowActions}>
-              <TouchableOpacity
-                style={styles.secondaryBtn}
-                onPress={() => setEditingUsername(false)}
-                disabled={savingUsername}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.secondaryBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.smallSaveBtn,
-                  (savingUsername ||
-                    usernameStatus === "taken" ||
-                    usernameStatus === "invalid") &&
-                    styles.disabled,
-                ]}
-                onPress={handleSaveUsername}
-                disabled={
-                  savingUsername ||
-                  usernameStatus === "taken" ||
-                  usernameStatus === "invalid"
-                }
-                activeOpacity={0.8}
-              >
-                {savingUsername ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.smallSaveText}>Save</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.readonlyRow}
-            onPress={openUsernameEditor}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.readonlyValue}>@{username}</Text>
-            <Ionicons name="pencil-outline" size={16} color={Colors.primary} />
-          </TouchableOpacity>
-        )}
-
-        <Text style={styles.fieldLabel}>Email</Text>
-        <View style={styles.readonlyRow}>
-          <Text style={styles.readonlyValue}>{email}</Text>
-        </View>
-
-        <Text style={styles.fieldLabel}>Bio</Text>
-        <TextInput
-          style={styles.bioInput}
-          placeholder="Tell people a bit about yourself..."
-          placeholderTextColor={colors.textMuted}
-          value={bio}
-          onChangeText={setBio}
-          multiline
-          maxLength={500}
-        />
-        <Text style={styles.bioCount}>{bio.length}/500</Text>
-
-        <Text style={styles.fieldLabel}>Gender</Text>
-        <View style={styles.genderRow}>
-          {GENDER_OPTIONS.map((opt) => {
-            const active = gender === opt.value;
-            return (
-              <TouchableOpacity
-                key={opt.value}
-                style={[styles.genderPill, active && styles.genderPillActive]}
-                onPress={() => setGender(active ? "" : opt.value)}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[styles.genderPillText, active && styles.genderPillTextActive]}
-                >
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        <TouchableOpacity
-          style={[styles.saveButton, saving && styles.disabled]}
-          onPress={handleSave}
-          disabled={saving}
-          activeOpacity={0.85}
+        <ScrollView
+          ref={scrollRef}
+          style={styles.flex}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
         >
-          {saving ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <>
-              <Ionicons name="checkmark-circle" size={20} color="#fff" />
-              <Text style={styles.saveButtonText}>Save Profile</Text>
-            </>
+          <View style={styles.photoWrap}>
+            <ImagePickerButton
+              imageUri={profilePicture}
+              onImageSelected={setProfilePicture}
+              label="Profile Photo"
+              size={140}
+              shape="circle"
+              fallbackName={username}
+            />
+          </View>
+
+          <Text style={styles.fieldLabel}>Username</Text>
+          <TextInput
+            style={styles.input}
+            value={username}
+            onChangeText={(t) => setUsername(t.replace(/^@+/, ""))}
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={20}
+            editable={!saving}
+            placeholder="username"
+            placeholderTextColor={colors.textMuted}
+          />
+          {usernameStatus !== "idle" && (
+            <Text
+              style={[
+                styles.hint,
+                usernameStatus === "invalid" && { color: colors.warning },
+                usernameStatus === "checking" && { color: colors.textMuted },
+                usernameStatus === "available" && { color: "#22c55e" },
+                usernameStatus === "taken" && { color: colors.error },
+              ]}
+            >
+              {usernameStatus === "invalid" &&
+                "3–20 characters — letters, numbers, underscores."}
+              {usernameStatus === "checking" && "Checking availability…"}
+              {usernameStatus === "available" && "Available"}
+              {usernameStatus === "taken" && "That username is taken."}
+            </Text>
           )}
-        </TouchableOpacity>
-      </ScrollView>
+
+          <Text style={styles.fieldLabel}>Email</Text>
+          <View style={styles.readonlyRow}>
+            <Text style={styles.readonlyValue}>{email}</Text>
+          </View>
+
+          <Text style={styles.fieldLabel}>Bio</Text>
+          <TextInput
+            style={styles.bioInput}
+            placeholder="Tell people a bit about yourself..."
+            placeholderTextColor={colors.textMuted}
+            value={bio}
+            onChangeText={setBio}
+            multiline
+            maxLength={500}
+            // Bio sits near the bottom; the KeyboardAvoidingView shrinks the
+            // scroll area from below, so pull it back into view on focus.
+            onFocus={() =>
+              setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150)
+            }
+          />
+          <Text style={styles.bioCount}>{bio.length}/500</Text>
+
+          <Text style={styles.fieldLabel}>Gender</Text>
+          <View style={styles.genderRow}>
+            {GENDER_OPTIONS.map((opt) => {
+              const active = gender === opt.value;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.genderPill, active && styles.genderPillActive]}
+                  onPress={() => setGender(active ? "" : opt.value)}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[styles.genderPillText, active && styles.genderPillTextActive]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.saveButton, !canSave && styles.disabled]}
+            onPress={handleSave}
+            disabled={!canSave}
+            activeOpacity={0.85}
+          >
+            {saving ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                <Text style={styles.saveButtonText}>Save Profile</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -364,6 +359,7 @@ export default function EditProfileScreen() {
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: c.background },
+    flex: { flex: 1 },
     header: {
       flexDirection: "row",
       alignItems: "center",
@@ -378,7 +374,7 @@ const createStyles = (c: ThemeColors) =>
       color: c.text,
     },
     loadingBox: { flex: 1, alignItems: "center", justifyContent: "center" },
-    content: { paddingHorizontal: 16, paddingBottom: 48 },
+    content: { paddingHorizontal: 16, paddingBottom: 80 },
     photoWrap: { alignItems: "center", marginTop: 8, marginBottom: 8 },
     fieldLabel: {
       fontSize: 14,
@@ -399,19 +395,6 @@ const createStyles = (c: ThemeColors) =>
       color: c.text,
     },
     hint: { fontSize: 12, fontFamily: Fonts.regular, marginTop: 6 },
-    rowActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 10 },
-    secondaryBtn: { paddingHorizontal: 16, paddingVertical: 10 },
-    secondaryBtnText: { fontSize: 14, fontFamily: Fonts.semiBold, color: c.textSecondary },
-    smallSaveBtn: {
-      backgroundColor: Colors.primary,
-      paddingHorizontal: 20,
-      paddingVertical: 10,
-      borderRadius: 10,
-      alignItems: "center",
-      justifyContent: "center",
-      minWidth: 72,
-    },
-    smallSaveText: { color: "#fff", fontSize: 14, fontFamily: Fonts.semiBold },
     readonlyRow: {
       flexDirection: "row",
       alignItems: "center",

@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
 import { fetchVendorsBrowse } from "@/libs/api";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { ensureAuth } from "@/utils/requireAuth";
@@ -95,14 +95,23 @@ export default function VendorsPage() {
   };
 
   useEffect(() => {
-    fetchUserProfile();
-    checkAuthStatus();
     Animated.timing(headerAnim, {
       toValue: 1,
       duration: 600,
       useNativeDriver: true,
     }).start();
   }, []);
+
+  // Refresh auth + vendor status on every focus, not just first mount: the tab
+  // stays mounted across a login / "become a vendor" done elsewhere, so a
+  // one-shot check leaves this screen showing its signed-out / non-vendor
+  // layout to a user who is now signed in (or a vendor).
+  useFocusEffect(
+    useCallback(() => {
+      checkAuthStatus();
+      fetchUserProfile();
+    }, [])
+  );
 
   useEffect(() => {
     loadVendors(activeCity);

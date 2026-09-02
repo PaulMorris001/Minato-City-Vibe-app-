@@ -277,9 +277,12 @@ export default function ChatListScreen({
   }, [currentUserId]);
 
   // Refetch when the inbox regains focus (e.g. returning from a chat after
-  // deleting a conversation) so hidden chats drop out immediately.
+  // deleting a conversation) so hidden chats drop out immediately. Also
+  // re-read auth: this tab stays mounted across a login done elsewhere, so a
+  // one-shot check would keep showing the guest gate to a signed-in user.
   useFocusEffect(
     useCallback(() => {
+      loadCurrentUser();
       if (currentUserId) fetchChats(true);
     }, [currentUserId])
   );

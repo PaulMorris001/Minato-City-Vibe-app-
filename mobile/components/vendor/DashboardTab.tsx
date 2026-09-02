@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   RefreshControl,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -44,6 +45,9 @@ interface EarningsSummary {
 }
 interface DashboardTabProps {
   stats: VendorStats | null;
+  // True while the parent's /vendor/stats call is still in flight. Folded into
+  // this tab's own loader so the whole screen appears in one step.
+  statsLoading?: boolean;
   onRefresh: () => void;
   refreshing: boolean;
   onGoToServices?: () => void;
@@ -64,6 +68,7 @@ function greeting() {
 
 export default function DashboardTab({
   stats,
+  statsLoading,
   onRefresh,
   refreshing,
   onGoToServices,
@@ -87,6 +92,12 @@ export default function DashboardTab({
   } | null>(null);
   const [payoutOnboardingComplete, setPayoutOnboardingComplete] = useState(false);
   const [payoutSupported, setPayoutSupported] = useState(true);
+  // Everything the dashboard needs (earnings currency + figures, the profile
+  // fields the checklist reads, and the payout-status check that depends on
+  // them) is loaded together and held behind one gate — otherwise the hero
+  // flashes a default-currency figure before /earnings/summary lands and the
+  // "Complete your setup" card pops in a beat after the rest of the screen.
+  const [loading, setLoading] = useState(true);
   // Manual "no thanks" — separate from completion, and temporary (see
   // isChecklistSnoozed): it comes back after a week to remind them. Keyed per
   // user so it can't leak into a different account that later logs in on
@@ -94,11 +105,6 @@ export default function DashboardTab({
   // checklist) since the same person can want one and not the other.
   const [dismissed, setDismissed] = useState(false);
   const dismissKey = profileMeta ? `setupChecklistDismissed:vendorDashboard:${profileMeta.id}` : null;
-
-  useEffect(() => {
-    if (!dismissKey) return;
-    isChecklistSnoozed(dismissKey).then(setDismissed);
-  }, [dismissKey]);
 
   const dismissChecklist = () => {
     setDismissed(true);
@@ -117,72 +123,74 @@ export default function DashboardTab({
     })();
   }, []);
 
-  // Earnings come from /earnings/summary, not /vendor/stats: the latter's
-  // earnings fields sum CONFIRMED BOOKINGS ONLY, so a vendor who also sells
-  // tickets or guides saw a number far below what they'd actually made.
-  useEffect(() => {
-    (async () => {
-      try {
-        const token = await SecureStore.getItemAsync("token");
-        const res = await fetch(`${BASE_URL}/earnings/summary`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) setEarnings(await res.json());
-      } catch {
-        // Non-critical — the hero falls back to zeroes.
-      }
-    })();
-  }, [refreshing]);
+  // One coordinated load so the screen paints once, complete and correct.
+  //  - /earnings/summary drives the hero's figures AND its currency (without it
+  //    the hero would show a default-currency amount first, then swap).
+  //  - /profile supplies the verification / business-photo / country fields the
+  //    "Complete your setup" checklist reads (same source Account tab trusts).
+  //  - the payout-status check keys off that country, so it runs after profile,
+  //    not in parallel — no rail for the country means there's nothing to check.
+  // Its snoozed state is resolved here too so the checklist doesn't flash in.
+  const loadDashboard = useCallback(async () => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const headers = { Authorization: `Bearer ${token}` };
 
-  // Same three fields Account tab reads off /profile for its own status
-  // pills — fetched here too since the checklist needs to know them before
-  // Account tab has ever been opened this session.
-  useEffect(() => {
-    (async () => {
-      try {
-        const token = await SecureStore.getItemAsync("token");
-        const res = await fetch(`${BASE_URL}/profile`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const u = (await res.json()).user;
-          setProfileMeta({
+      const [earningsRes, profileRes] = await Promise.all([
+        fetch(`${BASE_URL}/earnings/summary`, { headers })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetch(`${BASE_URL}/profile`, { headers })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ]);
+
+      if (earningsRes) setEarnings(earningsRes);
+
+      const u = profileRes?.user;
+      const meta = u
+        ? {
             id: u._id,
             verified: !!u.verified,
             businessPicture: u.businessPicture || "",
             country: u.location?.country || "",
-          });
-        }
-      } catch {
-        // Non-critical — checklist just stays hidden until this resolves.
+          }
+        : null;
+      setProfileMeta(meta);
+      if (meta) {
+        setDismissed(
+          await isChecklistSnoozed(
+            `setupChecklistDismissed:vendorDashboard:${meta.id}`
+          )
+        );
       }
-    })();
-  }, [refreshing]);
 
-  // Mirrors AccountTab's fetchPayoutStatus: no rail for this country means
-  // nothing for the vendor to complete, so the checklist item is dropped
-  // rather than left permanently unchecked.
-  useEffect(() => {
-    if (!profileMeta) return;
-    const provider = payoutProviderForCountry(profileMeta.country);
-    if (!provider) {
-      setPayoutSupported(false);
-      setPayoutOnboardingComplete(false);
-      return;
-    }
-    setPayoutSupported(true);
-    (async () => {
-      try {
-        const token = await SecureStore.getItemAsync("token");
-        const res = await fetch(`${BASE_URL}${PAYOUT_STATUS_ENDPOINTS[provider]}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) setPayoutOnboardingComplete((await res.json()).onboardingComplete ?? false);
-      } catch {
-        // Non-critical
+      const provider = meta ? payoutProviderForCountry(meta.country) : null;
+      if (meta && provider) {
+        setPayoutSupported(true);
+        try {
+          const res = await fetch(`${BASE_URL}${PAYOUT_STATUS_ENDPOINTS[provider]}`, { headers });
+          if (res.ok) setPayoutOnboardingComplete((await res.json()).onboardingComplete ?? false);
+        } catch {
+          // Non-critical — leave the payout item unchecked.
+        }
+      } else {
+        setPayoutSupported(false);
+        setPayoutOnboardingComplete(false);
       }
-    })();
-  }, [profileMeta?.country]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  // Pull-to-refresh: refetch in place, without dropping back to the loader.
+  useEffect(() => {
+    if (refreshing) loadDashboard();
+  }, [refreshing, loadDashboard]);
 
   const earningsThis = earnings?.thisMonthNet ?? 0;
   const earningsLast = earnings?.lastMonthNet ?? 0;
@@ -241,6 +249,18 @@ export default function DashboardTab({
     : [];
   const checklistDone = checklist.filter((i) => i.done).length;
   const showChecklist = !dismissed && checklist.length > 0 && checklistDone < checklist.length;
+
+  // One loader for the whole screen: parent's stats fetch and this tab's own
+  // fetches run in parallel and the dashboard is revealed only once they're all
+  // in, so it appears complete rather than filling in piece by piece.
+  if (loading || statsLoading) {
+    return (
+      <View style={[styles.container, styles.loadingBox]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading dashboard...</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView
@@ -492,6 +512,8 @@ export default function DashboardTab({
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
   container: { flex: 1, backgroundColor: c.backgroundDeep },
+  loadingBox: { alignItems: "center", justifyContent: "center" },
+  loadingText: { marginTop: 12, fontSize: 16, color: c.textSecondary },
   aurora: {
     position: "absolute",
     top: -160,

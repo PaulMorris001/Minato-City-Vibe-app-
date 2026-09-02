@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   ScrollView,
   Animated,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { Guide, GUIDE_TOPICS } from "@/libs/interfaces";
@@ -58,13 +58,21 @@ export default function BestsPage() {
   };
 
   useEffect(() => {
-    checkAuthStatus();
     Animated.timing(headerAnim, {
       toValue: 1,
       duration: 600,
       useNativeDriver: true,
     }).start();
   }, [headerAnim]);
+
+  // Re-read auth on every focus, not just first mount: the tabs stay mounted
+  // across a login done on another tab, so a check that only ran once would
+  // leave this screen showing its signed-out layout to a signed-in user.
+  useFocusEffect(
+    useCallback(() => {
+      checkAuthStatus();
+    }, [])
+  );
 
   useEffect(() => {
     loadGuides(activeCity);

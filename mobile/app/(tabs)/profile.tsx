@@ -22,6 +22,7 @@ import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 
 import { Avatar } from "@/components/shared/Avatar";
+import DiscoverPeoplePreview from "@/components/shared/DiscoverPeoplePreview";
 import GuestGate from "@/components/shared/GuestGate";
 import CreateEventModal from "@/components/client/CreateEventModal";
 import ImageViewerModal from "@/components/shared/ImageViewerModal";
@@ -455,17 +456,20 @@ function Header({
       {/* "Complete your setup" checklist — auto-hides once every item is done. */}
       <SetupChecklist user={user} sellsGuides={guidesTotal > 0} />
 
-      {/* Search */}
+      {/* Opens Discover People, which has its own search field at the top. */}
       <View style={styles.searchWrap}>
         <TouchableOpacity
           style={styles.searchField}
-          onPress={() => router.push("/search-users" as any)}
+          onPress={() => router.push("/discover-people" as any)}
           activeOpacity={0.7}
         >
           <Ionicons name="search" size={14} color={colors.textFaint} />
-          <Text style={styles.searchPlaceholder}>Search users…</Text>
+          <Text style={styles.searchPlaceholder}>Discover people…</Text>
         </TouchableOpacity>
       </View>
+
+      {/* People to follow — a taste of the standalone Discover People screen. */}
+      <DiscoverPeoplePreview />
 
       {/* Pending invites. Deliberately above the tabs rather than inside one:
           an unanswered invite is neither hosted nor attended, and it's

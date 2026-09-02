@@ -12,7 +12,7 @@ import {
   Easing,
 } from "react-native";
 import { Image } from "expo-image";
-import { Tabs, useRouter, useSegments } from "expo-router";
+import { Tabs, useRouter, useSegments, useFocusEffect } from "expo-router";
 import { NativeTabs, Icon, Label, Badge } from "expo-router/unstable-native-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -289,6 +289,24 @@ export default function TabsLayout() {
       fetchUserProfile();
     }
   }, [isCheckingAuth, fetchUserProfile]);
+
+  // The tab shell stays mounted while a guest taps "Log in" and comes back
+  // signed in — login does router.replace back into the tabs, it doesn't
+  // remount this layout. Without re-checking on focus, the header keeps
+  // showing the "Log in" pill (and the profile button keeps routing to login)
+  // for an already-signed-in user.
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        const token = await SecureStore.getItemAsync("token");
+        setIsGuest(!token);
+        if (token) {
+          socketService.connect();
+          fetchUserProfile();
+        }
+      })();
+    }, [fetchUserProfile])
+  );
 
   // Check if we should redirect to vendor dashboard only on mount and account changes
   useEffect(() => {

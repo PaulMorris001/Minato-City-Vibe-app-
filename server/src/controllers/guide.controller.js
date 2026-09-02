@@ -258,9 +258,12 @@ export const getTopGuides = async (req, res) => {
         $nin: blockedIds.map((id) => new mongoose.Types.ObjectId(id)),
       };
     }
+    // Match the bare browse city against the state name too — same rule as
+    // buildGuideQuery: "Lagos" is a region-level pick while guides are authored
+    // under a locality within it (city:"Ikeja", cityState:"Lagos").
     if (city) {
-      const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      match.city = { $regex: new RegExp(`^${esc(city)}$`, "i") };
+      const cityRx = exactCaseInsensitive(city);
+      match.$or = [{ city: cityRx }, { cityState: cityRx }];
     }
 
     const guides = await Guide.aggregate([
@@ -708,8 +711,17 @@ export const getGuidesByCity = async (req, res) => {
     if (country) locationFilter.country = { $regex: new RegExp(`^${decodeURIComponent(country)}$`, 'i') };
     if (state) locationFilter.cityState = { $regex: new RegExp(`^${decodeURIComponent(state)}$`, 'i') };
 
+    // With no state given the name may be a region-level pick ("Lagos") while
+    // guides are authored under a locality within it (city:"Ikeja",
+    // cityState:"Lagos") — match the state too, same rule as buildGuideQuery.
+    // An explicit state means the caller already has the exact locality.
+    const cityRx = exactCaseInsensitive(decodedCityName);
+    const cityMatch = state
+      ? { city: cityRx }
+      : { $or: [{ city: cityRx }, { cityState: cityRx }] };
+
     const guides = await Guide.find({
-      city: { $regex: new RegExp(`^${decodedCityName}$`, 'i') },
+      ...cityMatch,
       ...locationFilter,
       isDraft: false,
       isActive: true,
