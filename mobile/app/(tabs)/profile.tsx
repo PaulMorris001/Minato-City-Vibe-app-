@@ -49,6 +49,8 @@ interface UserProfile {
   /** Username slug for share links (e.g. "setemil"); absent on legacy accounts. */
   slug?: string;
   username: string;
+  firstName?: string;
+  lastName?: string;
   profilePicture?: string;
   bio?: string;
   isVendor?: boolean;
@@ -102,6 +104,8 @@ export default function ProfileScreen() {
         // Share sheet silently falls back to the raw _id.
         slug: u.slug,
         username: u.username,
+        firstName: u.firstName || "",
+        lastName: u.lastName || "",
         profilePicture: u.profilePicture || "",
         bio: u.bio || "",
         isVendor: u.isVendor,

@@ -13,6 +13,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as SecureStore from "expo-secure-store";
 import { VendorStats } from "@/libs/interfaces";
 import { isChecklistSnoozed, snoozeChecklist } from "@/utils/setupChecklist";
+import { vendorDisplayName } from "@/utils/displayName";
 import VendorEventInvites from "./VendorEventInvites";
 import {
   VN,
@@ -76,7 +77,10 @@ export default function DashboardTab({
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
-  const [firstName, setFirstName] = useState("");
+  // Business name first — the vendor-side greeting reads as the storefront,
+  // not the person behind it. Falls back to their personal name/username for
+  // an account that hasn't set a business name yet.
+  const [greetingName, setGreetingName] = useState("");
   const [earnings, setEarnings] = useState<EarningsSummary | null>(null);
 
   // Backs the "Complete your setup" checklist. Kept separate from `stats`
@@ -117,7 +121,7 @@ export default function DashboardTab({
         const userJson = await SecureStore.getItemAsync("user");
         if (userJson) {
           const u = JSON.parse(userJson);
-          setFirstName((u.username || "").split(" ")[0]);
+          setGreetingName(vendorDisplayName(u));
         }
       } catch {}
     })();
@@ -281,7 +285,7 @@ export default function DashboardTab({
       <View style={styles.section}>
         <Text style={styles.kicker}>{greeting()}</Text>
         <Text style={styles.greetingHeadline}>
-          Welcome back, <Text style={styles.greetingName}>{firstName || "vendor"}</Text>
+          Welcome back, <Text style={styles.greetingName}>{greetingName || "vendor"}</Text>
         </Text>
       </View>
 

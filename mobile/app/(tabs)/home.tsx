@@ -37,6 +37,7 @@ import { trackEvent } from "@/utils/analytics";
 import { ensureAuth } from "@/utils/requireAuth";
 import { cacheRead, cacheWrite } from "@/utils/offlineCache";
 import { ensureOnline } from "@/utils/requireOnline";
+import { fullName } from "@/utils/displayName";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -699,14 +700,16 @@ export default function Home() {
       const userJson = await SecureStore.getItemAsync("user");
       if (userJson) {
         const u = JSON.parse(userJson);
-        setUsername(u.username || "");
+        setUsername(fullName(u) || u.username || "");
         return;
       }
       const token = await SecureStore.getItemAsync("token");
       if (!token) return;
       const res = await fetch(`${BASE_URL}/profile`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
-      if (res.ok) setUsername(data.user?.username || "");
+      // Greeting prefers the real name, falling back to username for an
+      // account that hasn't completed the "complete your name" gate.
+      if (res.ok) setUsername(fullName(data.user) || data.user?.username || "");
     } catch {}
   };
 

@@ -58,7 +58,7 @@ class ChatService {
       isActive: true,
       ...contextFilter
     })
-      .populate('participants', 'username email profilePicture isVendor businessName businessPicture')
+      .populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture')
       .populate({
         path: 'lastMessage',
         populate: { path: 'sender', select: 'username profilePicture' }
@@ -95,7 +95,7 @@ class ChatService {
       });
 
       await chat.save();
-      await chat.populate('participants', 'username email profilePicture isVendor businessName businessPicture');
+      await chat.populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture');
     } else if (context === 'vendor' && vendorInitiatorId && !chat.vendorInitiator) {
       // Reused an order chat created before this buyer booked in vendor mode —
       // tag it now so it surfaces in their vendor inbox too.
@@ -154,7 +154,7 @@ class ChatService {
     });
 
     await chat.save();
-    await chat.populate('participants', 'username email profilePicture isVendor businessName businessPicture');
+    await chat.populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture');
     await chat.populate('admins', 'username email profilePicture');
     if (eventId) {
       await chat.populate('event', 'title date location image createdBy');
@@ -211,7 +211,7 @@ class ChatService {
       isActive: true,
       deletedFor: { $ne: userId }
     })
-      .populate('participants', 'username email profilePicture isVendor businessName businessPicture')
+      .populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture')
       .populate('admins', 'username email profilePicture')
       .populate('pendingInvites.user', 'username email profilePicture')
       .populate('pendingInvites.invitedBy', 'username email profilePicture')
@@ -954,7 +954,7 @@ class ChatService {
     }
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture isVendor businessName businessPicture")
+      .populate("participants", "username firstName lastName email profilePicture isVendor businessName businessPicture")
       .populate("admins", "username email profilePicture")
       .populate("pendingInvites.user", "username email profilePicture")
       .populate("pendingInvites.invitedBy", "username email profilePicture");
@@ -1026,7 +1026,7 @@ class ChatService {
     }
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture isVendor businessName businessPicture")
+      .populate("participants", "username firstName lastName email profilePicture isVendor businessName businessPicture")
       .populate("admins", "username email profilePicture")
       .populate("pendingInvites.user", "username email profilePicture")
       .populate({
@@ -1050,7 +1050,7 @@ class ChatService {
         this.scopeFilter(userId, scope)
       ]
     })
-      .populate('participants', 'username email profilePicture isVendor businessName businessPicture')
+      .populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture')
       .limit(10);
 
     // Search in messages (only within chats belonging to this inbox)

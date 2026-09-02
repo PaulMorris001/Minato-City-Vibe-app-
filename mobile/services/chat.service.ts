@@ -63,6 +63,8 @@ export interface MessageReaction {
 export interface User {
   _id: string;
   username: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   profilePicture?: string;
   isVendor?: boolean;

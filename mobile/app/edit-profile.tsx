@@ -22,6 +22,7 @@ import { ImagePickerButton } from "@/components/shared";
 import { uploadImage } from "@/utils/imageUpload";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 import { goBack } from "@/utils/navigation";
+import { fullName as composeFullName } from "@/utils/displayName";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 
@@ -48,6 +49,7 @@ export default function EditProfileScreen() {
   const [saving, setSaving] = useState(false);
 
   const [profilePicture, setProfilePicture] = useState("");
+  const [name, setName] = useState("");
   const [bio, setBio] = useState("");
   const [gender, setGender] = useState("");
   const [email, setEmail] = useState("");
@@ -59,6 +61,7 @@ export default function EditProfileScreen() {
   // goes quiet again without leaving the screen.
   const [saved, setSaved] = useState({
     profilePicture: "",
+    name: "",
     bio: "",
     gender: "",
     username: "",
@@ -77,11 +80,13 @@ export default function EditProfileScreen() {
         const u = res.data.user;
         const initial = {
           profilePicture: u.profilePicture || "",
+          name: composeFullName(u),
           bio: u.bio || "",
           gender: u.gender || "",
           username: u.username || "",
         };
         setProfilePicture(initial.profilePicture);
+        setName(initial.name);
         setBio(initial.bio);
         setGender(initial.gender);
         setEmail(u.email || "");
@@ -129,21 +134,25 @@ export default function EditProfileScreen() {
     };
   }, [username, saved.username]);
 
-  const syncCachedUsername = useCallback(async (next: string) => {
+  // Keeps the cached "user" blob (home greeting, own profile header, etc.)
+  // in step with a save here, so those don't show the stale value until the
+  // next full profile refetch.
+  const syncCachedFields = useCallback(async (patch: Record<string, unknown>) => {
     try {
       const cached = await SecureStore.getItemAsync("user");
       if (cached) {
         const parsed = JSON.parse(cached);
-        parsed.username = next;
-        await SecureStore.setItemAsync("user", JSON.stringify(parsed));
+        await SecureStore.setItemAsync("user", JSON.stringify({ ...parsed, ...patch }));
       }
     } catch {}
   }, []);
 
   const usernameChanged =
     cleanUsername(username).toLowerCase() !== saved.username.toLowerCase();
+  const nameChanged = name.trim() !== saved.name.trim();
   const dirty =
     profilePicture !== saved.profilePicture ||
+    nameChanged ||
     bio !== saved.bio ||
     gender !== saved.gender ||
     usernameChanged;
@@ -155,12 +164,20 @@ export default function EditProfileScreen() {
     (USERNAME_RE.test(cleanUsername(username)) &&
       usernameStatus !== "taken" &&
       usernameStatus !== "checking");
-  const canSave = dirty && !saving && usernameOk;
+  // A changed name can't be cleared to blank — everyone completes this once
+  // (see complete-name.tsx) and Edit Profile shouldn't be a way back out of it.
+  const nameOk = !nameChanged || name.trim().length >= 2;
+  const canSave = dirty && !saving && usernameOk && nameOk;
 
   const handleSave = async () => {
     const nextUsername = cleanUsername(username);
     if (usernameChanged && !USERNAME_RE.test(nextUsername)) {
       showError("3–20 characters — letters, numbers and underscores only.");
+      return;
+    }
+    const nextName = name.trim().replace(/\s+/g, " ");
+    if (nameChanged && nextName.length < 2) {
+      showError("Enter your full name.");
       return;
     }
     setSaving(true);
@@ -171,8 +188,10 @@ export default function EditProfileScreen() {
         bio: string;
         gender: string;
         username?: string;
+        fullName?: string;
       } = { bio, gender };
       if (usernameChanged) payload.username = nextUsername;
+      if (nameChanged) payload.fullName = nextName;
 
       let nextPicture = profilePicture;
       if (profilePicture) {
@@ -190,16 +209,24 @@ export default function EditProfileScreen() {
         payload.profilePicture = nextPicture;
       }
 
-      await axios.put(`${BASE_URL}/profile/picture`, payload, {
+      const res = await axios.put(`${BASE_URL}/profile/picture`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
+      const cachePatch: Record<string, unknown> = {};
       if (usernameChanged) {
         setUsername(nextUsername);
-        await syncCachedUsername(nextUsername);
+        cachePatch.username = nextUsername;
       }
+      if (nameChanged) {
+        cachePatch.firstName = res.data.user?.firstName ?? "";
+        cachePatch.lastName = res.data.user?.lastName ?? "";
+      }
+      if (Object.keys(cachePatch).length > 0) await syncCachedFields(cachePatch);
+
       setSaved({
         profilePicture: nextPicture,
+        name: nextName,
         bio,
         gender,
         username: usernameChanged ? nextUsername : saved.username,
@@ -258,9 +285,22 @@ export default function EditProfileScreen() {
               label="Profile Photo"
               size={140}
               shape="circle"
-              fallbackName={username}
+              fallbackName={name || username}
             />
           </View>
+
+          <Text style={styles.fieldLabel}>Full name</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            autoCapitalize="words"
+            autoCorrect={false}
+            maxLength={60}
+            editable={!saving}
+            placeholder="Your full name"
+            placeholderTextColor={colors.textMuted}
+          />
 
           <Text style={styles.fieldLabel}>Username</Text>
           <TextInput

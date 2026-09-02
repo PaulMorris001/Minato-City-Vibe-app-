@@ -20,6 +20,7 @@ import * as SecureStore from "expo-secure-store";
 import { unregisterForPushNotifications } from "@/utils/pushNotifications";
 import axios from "axios";
 import { capitalize } from "@/libs/helpers";
+import { vendorDisplayName } from "@/utils/displayName";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useAccount } from "@/contexts/AccountContext";
@@ -59,12 +60,16 @@ export default function VendorLayout() {
   const [user, setUser] = useState<{
     id: string;
     username: string;
+    firstName?: string;
+    businessName?: string;
     email: string;
     profilePicture?: string;
     isVendor?: boolean;
   }>({
     id: "",
     username: "",
+    firstName: "",
+    businessName: "",
     email: "",
     profilePicture: "",
     isVendor: false,
@@ -84,6 +89,8 @@ export default function VendorLayout() {
         setUser({
           id: userData._id,
           username: userData.username,
+          firstName: userData.firstName || "",
+          businessName: userData.businessName || "",
           email: userData.email,
           profilePicture: userData.profilePicture || "",
           isVendor: userData.isVendor || false,
@@ -93,6 +100,14 @@ export default function VendorLayout() {
         if (!userData.isVendor) {
           setActiveAccount("client");
           router.replace("/(tabs)/home" as any);
+          return;
+        }
+
+        // Same one-time "complete your name" stop as the client tabs — a
+        // vendor can land here directly (role picker, become-vendor) without
+        // ever passing through login.tsx's own check.
+        if (!userData.firstName) {
+          router.replace("/complete-name" as any);
         }
       }
     } catch (error) {
@@ -196,7 +211,7 @@ export default function VendorLayout() {
           </LinearGradient>
         )}
         <Text style={styles.usernameText}>
-          {capitalize(user.username)}
+          {capitalize(vendorDisplayName(user))}
         </Text>
         <Text style={styles.emailText}>{user.email}</Text>
         <LinearGradient

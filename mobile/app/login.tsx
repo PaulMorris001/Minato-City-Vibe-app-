@@ -69,6 +69,14 @@ export default function Login() {
       await SecureStore.setItemAsync("user", JSON.stringify(user));
       registerForPushNotifications();
 
+      // Accounts created before firstName/lastName existed (or whose OAuth
+      // provider didn't hand us a name) get one un-skippable stop here before
+      // anything else — see complete-name.tsx.
+      if (!user.firstName) {
+        router.replace("/complete-name" as any);
+        return;
+      }
+
       if (user.isVendor) {
         setUserData(user);
         setShowRolePicker(true);

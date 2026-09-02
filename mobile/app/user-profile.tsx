@@ -43,6 +43,8 @@ interface UserData {
   /** Username slug for share links (e.g. "setemil"); absent on legacy accounts. */
   slug?: string;
   username: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   profilePicture?: string;
   bio?: string;
@@ -276,6 +278,13 @@ export default function UserProfileScreen() {
               </TouchableOpacity>
             )}
           </View>
+          {/* The full name above is the headline; the handle stays visible
+              underneath so the account is still identifiable by @username. */}
+          {!!user?.username && (
+            <Text style={styles.handleText} numberOfLines={1}>
+              @{user.username}
+            </Text>
+          )}
           {/* Stats inline */}
           <View style={styles.statsRow}>
             <TouchableOpacity
@@ -599,6 +608,11 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.bold,
     color: c.text,
     flexShrink: 1,
+  },
+  handleText: {
+    fontSize: 13,
+    fontFamily: Fonts.regular,
+    color: c.textSecondary,
   },
   vendorBadge: {
     flexDirection: "row",

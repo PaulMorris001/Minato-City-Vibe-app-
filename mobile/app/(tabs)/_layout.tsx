@@ -193,12 +193,14 @@ export default function TabsLayout() {
   const [user, setUser] = useState<{
     id: string;
     username: string;
+    firstName?: string;
     email: string;
     profilePicture?: string;
     isVendor?: boolean;
   }>({
     id: "",
     username: "",
+    firstName: "",
     email: "",
     profilePicture: "",
     isVendor: false,
@@ -234,10 +236,19 @@ export default function TabsLayout() {
         setUser({
           id: userData._id,
           username: userData.username,
+          firstName: userData.firstName || "",
           email: userData.email,
           profilePicture: userData.profilePicture || "",
           isVendor: userData.isVendor || false,
         });
+
+        // Safety net for a session that reached the tabs without going
+        // through login.tsx's own check (e.g. the app relaunching on a
+        // persisted token) — same "complete your name" gate, once per stop.
+        if (!userData.firstName) {
+          router.replace("/complete-name" as any);
+          return;
+        }
       } else {
         // Guest — nothing to fetch, leave the empty user state in place.
         return;
