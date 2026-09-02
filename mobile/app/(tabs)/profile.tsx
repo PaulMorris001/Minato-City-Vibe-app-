@@ -346,15 +346,6 @@ function Header({
         <Text style={styles.kicker}>PROFILE</Text>
         <View style={styles.topActions}>
           <TouchableOpacity
-            onPress={handleShareProfile}
-            activeOpacity={0.7}
-            style={styles.settingsBtn}
-            accessibilityLabel="Share profile"
-            disabled={!user?._id}
-          >
-            <Ionicons name="share-outline" size={16} color={colors.textBright} />
-          </TouchableOpacity>
-          <TouchableOpacity
             onPress={() => router.push("/settings")}
             activeOpacity={0.7}
             style={styles.settingsBtn}
@@ -438,6 +429,27 @@ function Header({
             <Text style={styles.statLabel}>Guides</Text>
           </View>
         </View>
+      </View>
+
+      {/* Profile actions */}
+      <View style={styles.profileActions}>
+        <TouchableOpacity
+          style={styles.profileActionBtn}
+          activeOpacity={0.8}
+          onPress={() => router.push("/edit-profile" as any)}
+        >
+          <Ionicons name="create-outline" size={16} color={colors.textBright} />
+          <Text style={styles.profileActionText}>Edit Profile</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.profileActionBtn}
+          activeOpacity={0.8}
+          onPress={handleShareProfile}
+          disabled={!user?._id}
+        >
+          <Ionicons name="share-outline" size={16} color={colors.textBright} />
+          <Text style={styles.profileActionText}>Share Profile</Text>
+        </TouchableOpacity>
       </View>
 
       {/* "Complete your setup" checklist — auto-hides once every item is done. */}
@@ -1011,6 +1023,29 @@ const createStyles = (c: ThemeColors) =>
     borderColor: c.glassFill,
     alignItems: "center",
     justifyContent: "center",
+  },
+  profileActions: {
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 18,
+    marginTop: 18,
+  },
+  profileActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: c.glassFillSubtle,
+    borderWidth: 1,
+    borderColor: c.glassFill,
+  },
+  profileActionText: {
+    fontFamily: Fonts.semiBold,
+    fontSize: 14,
+    color: c.textBright,
   },
 
   // Hero

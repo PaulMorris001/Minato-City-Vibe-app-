@@ -33,6 +33,15 @@ const chatSchema = mongoose.Schema({
     default: null
   },
 
+  // For context 'vendor': the customer who placed the order from their own
+  // vendor dashboard. They're the buyer, not the business, but they booked
+  // while in vendor mode, so this thread also belongs in *their* vendor inbox.
+  vendorInitiator: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "user",
+    default: null
+  },
+
   // Group chat specific fields
   name: {
     type: String,

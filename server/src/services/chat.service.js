@@ -29,7 +29,12 @@ class ChatService {
   async getOrCreateDirectChat(userId1, userId2, options = {}) {
     // Legacy boolean third argument meant skipMutualCheck.
     const opts = typeof options === 'boolean' ? { skipMutualCheck: options } : options;
-    const { skipMutualCheck = false, context = 'personal', vendorUserId = null } = opts;
+    const {
+      skipMutualCheck = false,
+      context = 'personal',
+      vendorUserId = null,
+      vendorInitiatorId = null,
+    } = opts;
 
     if (context === 'vendor') {
       const vendorStr = vendorUserId && vendorUserId.toString();
@@ -83,6 +88,7 @@ class ChatService {
         participants: [userId1, userId2],
         context: context === 'vendor' ? 'vendor' : 'personal',
         vendorParticipant: context === 'vendor' ? vendorUserId : null,
+        vendorInitiator: context === 'vendor' ? vendorInitiatorId : null,
         unreadCount: new Map([[userId1.toString(), 0], [userId2.toString(), 0]]),
         isArchived: new Map([[userId1.toString(), false], [userId2.toString(), false]]),
         isMuted: new Map([[userId1.toString(), false], [userId2.toString(), false]])
@@ -90,6 +96,11 @@ class ChatService {
 
       await chat.save();
       await chat.populate('participants', 'username email profilePicture isVendor businessName businessPicture');
+    } else if (context === 'vendor' && vendorInitiatorId && !chat.vendorInitiator) {
+      // Reused an order chat created before this buyer booked in vendor mode —
+      // tag it now so it surfaces in their vendor inbox too.
+      chat.vendorInitiator = vendorInitiatorId;
+      await chat.save();
     }
 
     return chat;
@@ -100,11 +111,13 @@ class ChatService {
    * are vendor-context, so they land in the vendor's business inbox and stay
    * separate from any personal thread between the same two users.
    */
-  async getOrCreateDirectChatForOrder(clientId, vendorId) {
+  async getOrCreateDirectChatForOrder(clientId, vendorId, { fromVendor = false } = {}) {
     return this.getOrCreateDirectChat(clientId, vendorId, {
       skipMutualCheck: true,
       context: 'vendor',
-      vendorUserId: vendorId
+      vendorUserId: vendorId,
+      // Buyer booked from their vendor dashboard — see Chat.vendorInitiator.
+      vendorInitiatorId: fromVendor ? clientId : null
     });
   }
 
@@ -152,19 +165,29 @@ class ChatService {
 
   /**
    * Filter for which conversations belong in a user's inbox for a scope.
-   * - 'vendor': vendor-context chats where this user is the business.
+   * - 'vendor': vendor-context chats where this user is the business, OR order
+   *   chats this user placed from their own vendor dashboard (vendorInitiator).
    * - 'client': everything else — personal chats, groups, and vendor-context
-   *   chats where this user is the customer. `$ne`/`$or` shapes keep matching
-   *   legacy chats that predate the context field.
+   *   chats where this user is the customer, EXCEPT the ones they initiated in
+   *   vendor mode (those moved to the vendor inbox above). `$ne`/`$or` shapes
+   *   keep matching legacy chats that predate these fields.
    */
   scopeFilter(userId, scope) {
     if (scope === 'vendor') {
-      return { context: 'vendor', vendorParticipant: userId };
+      return {
+        context: 'vendor',
+        $or: [{ vendorParticipant: userId }, { vendorInitiator: userId }]
+      };
     }
     return {
-      $or: [
-        { context: { $ne: 'vendor' } },
-        { vendorParticipant: { $ne: userId } }
+      $and: [
+        {
+          $or: [
+            { context: { $ne: 'vendor' } },
+            { vendorParticipant: { $ne: userId } }
+          ]
+        },
+        { vendorInitiator: { $ne: userId } }
       ]
     };
   }

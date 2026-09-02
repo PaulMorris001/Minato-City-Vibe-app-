@@ -403,6 +403,9 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [username, setUsername] = useState("");
+  // Drives the create-event coachmark: it shows only while the feed is at the
+  // top and slides away once the user scrolls down.
+  const [feedAtTop, setFeedAtTop] = useState(true);
   const selectedCity = useActiveCity();
   // Set when the home feed is showing an IP-approximated location rather than
   // a precise device one — surfaces a nudge to grant location permission.
@@ -944,6 +947,11 @@ export default function Home() {
         // Let content run under the floating native tab bar on iOS; the system
         // inset keeps the last item scrollable above it.
         contentInsetAdjustmentBehavior="automatic"
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          const atTop = e.nativeEvent.contentOffset.y <= 220;
+          setFeedAtTop((prev) => (prev === atTop ? prev : atTop));
+        }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
         }
@@ -968,9 +976,14 @@ export default function Home() {
       >
         {/* Greeting */}
         <View style={styles.greetingSection}>
-          <Text style={styles.greetingText}>
-            {getGreeting()}{username ? `, ${username}` : ""} {getGreetingEmoji()}
-          </Text>
+          <View style={styles.greetingRow}>
+            {/* Long usernames ellipsize here rather than wrapping the line or
+                pushing the emoji off-screen. */}
+            <Text style={styles.greetingText} numberOfLines={1}>
+              {getGreeting()}{username ? `, ${username}` : ""}
+            </Text>
+            <Text style={styles.greetingEmoji}> {getGreetingEmoji()}</Text>
+          </View>
           {/* Date and city read as one line — "here's when and where you're
               browsing". The chip was in the navbar; it belongs with the date. */}
           <View style={styles.greetingDateRow}>
@@ -1413,7 +1426,7 @@ export default function Home() {
 
       {/* Rendered after the FAB so it layers above it; pointerEvents="none"
           keeps the FAB tappable through it. */}
-      <CreateEventTooltip />
+      <CreateEventTooltip hidden={!feedAtTop} />
 
       <CreateEventModal
         visible={isModalVisible}
@@ -1523,11 +1536,21 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 14,
     color: c.white,
   },
+  greetingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   greetingText: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 28,
     color: c.textBright,
     letterSpacing: -0.5,
+    lineHeight: 34,
+    // Yield space to the emoji so a long username truncates instead of wrapping.
+    flexShrink: 1,
+  },
+  greetingEmoji: {
+    fontSize: 28,
     lineHeight: 34,
   },
   greetingDate: {

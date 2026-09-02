@@ -645,7 +645,8 @@ export async function getProfile(req, res) {
 
 // Update profile picture and/or bio (for both clients and vendors)
 export async function updateProfilePicture(req, res) {
-  const { profilePicture, bio, preferences, location, username } = req.body;
+  const { profilePicture, bio, preferences, location, username, gender } = req.body;
+  const GENDERS = ["", "male", "female", "non-binary", "prefer-not-to-say"];
 
   try {
     const user = await User.findById(req.user.id);
@@ -725,6 +726,13 @@ export async function updateProfilePicture(req, res) {
       user.bio = bio;
     }
 
+    if (gender !== undefined) {
+      if (!GENDERS.includes(gender)) {
+        return res.status(400).json({ message: "Invalid gender value." });
+      }
+      user.gender = gender;
+    }
+
     if (Array.isArray(preferences)) {
       user.preferences = preferences;
     }
@@ -752,6 +760,7 @@ export async function updateProfilePicture(req, res) {
         email: user.email,
         profilePicture: user.profilePicture,
         bio: user.bio,
+        gender: user.gender,
         location: user.location,
         isVendor: user.isVendor
       }

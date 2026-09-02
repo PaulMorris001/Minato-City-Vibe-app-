@@ -176,7 +176,16 @@ export default function TabsLayout() {
   // keeps the solid card.
   const isTranslucentModal = Platform.OS === "ios";
   const segments = useSegments();
+  const inTabs = segments[0] === "(tabs)";
   const currentTab = segments[1]; // Gets the current tab name (home, vendors, bests, etc.)
+  // While a full-screen route (event, chat, vendor-details…) is pushed over the
+  // tabs, `segments` no longer points at a tab. Without this the home navbar —
+  // gated on `activeTab === "home"` below — would unmount on the way out and
+  // visibly pop back in when you return. Freeze the last tab we were on so the
+  // navbar's mount state doesn't change across that round-trip.
+  const lastTabRef = useRef(currentTab);
+  if (inTabs && currentTab) lastTabRef.current = currentTab;
+  const activeTab = inTabs ? currentTab : lastTabRef.current;
   const insets = useSafeAreaInsets();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
@@ -492,7 +501,7 @@ export default function TabsLayout() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
-      {currentTab === "home" && (
+      {activeTab === "home" && (
         // On iPad the native tab bar renders as a capsule centered at the TOP
         // of the screen, in this same row. The navbar goes transparent there —
         // logo left, actions right, capsule in the middle — and box-none lets

@@ -45,6 +45,13 @@ const userSchema = mongoose.Schema({
   // Short bio shown on the user's profile
   bio: { type: String, default: "", maxlength: 500 },
 
+  // Self-reported gender. Optional — "" means unset (every existing account).
+  gender: {
+    type: String,
+    enum: ["", "male", "female", "non-binary", "prefer-not-to-say"],
+    default: "",
+  },
+
   // Client-specific fields (everyone has these)
   preferences: {
     type: [String],

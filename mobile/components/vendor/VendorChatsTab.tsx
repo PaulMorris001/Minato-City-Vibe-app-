@@ -302,7 +302,7 @@ export default function VendorChatsTab() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Customer Messages</Text>
+        <Text style={styles.headerTitle}>Messages</Text>
         <TouchableOpacity
           style={styles.newChatButton}
           onPress={() => setNewChatModalVisible(true)}

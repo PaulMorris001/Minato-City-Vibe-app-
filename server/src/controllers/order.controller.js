@@ -7,6 +7,7 @@ import chatService from "../services/chat.service.js";
 import { currencyForUser } from "../services/payments/resolveProvider.js";
 import { notifyUser } from "../services/notification.service.js";
 import { formatAmountText } from "../services/payments/fulfillment.js";
+import { invalidateCachePattern } from "../utils/cache.js";
 
 /** Recompute server-authoritative totals from the item snapshots + vendor fees. */
 function computeTotals(order) {
@@ -45,7 +46,7 @@ async function populateOrder(order) {
  */
 export async function createOrder(req, res) {
   try {
-    const { vendorId, items } = req.body;
+    const { vendorId, items, fromVendor } = req.body;
     const clientId = req.user.id;
 
     if (!vendorId || !Array.isArray(items) || items.length === 0) {
@@ -88,7 +89,11 @@ export async function createOrder(req, res) {
     }
 
     // Open (or reuse) the client↔vendor chat — commerce bypasses mutual-follow.
-    const chat = await chatService.getOrCreateDirectChatForOrder(clientId, vendorUserId);
+    // `fromVendor` keeps the thread in the buyer's vendor inbox when they booked
+    // from their own dashboard.
+    const chat = await chatService.getOrCreateDirectChatForOrder(clientId, vendorUserId, {
+      fromVendor: fromVendor === true,
+    });
 
     const order = new Order({
       client: clientId,
@@ -109,6 +114,11 @@ export async function createOrder(req, res) {
     });
     order.requestMessage = message._id;
     await order.save();
+
+    // The chat may be new (or newly tagged with vendorInitiator), so both
+    // parties' cached chat lists are stale.
+    invalidateCachePattern(`user_chats_${clientId}`);
+    invalidateCachePattern(`user_chats_${vendorUserId}`);
 
     await populateOrder(order);
     res.status(201).json({ message: "Order sent to vendor", order, chatId: chat._id });

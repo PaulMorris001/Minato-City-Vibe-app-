@@ -228,7 +228,7 @@ export default function DashboardTab({
           label: "Add a business photo",
           icon: "camera-outline" as const,
           done: !!profileMeta.businessPicture,
-          onPress: () => router.push("/(vendor)/account" as any),
+          onPress: () => router.push("/vendor-account" as any),
         },
         {
           key: "service",

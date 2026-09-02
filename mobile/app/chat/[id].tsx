@@ -57,7 +57,7 @@ import { trackEvent } from "@/utils/analytics";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { currencyPrefix } from "@/constants/payments";
 import { Service } from "@/libs/interfaces";
-import { showError, showSuccess } from "@/utils/toast";
+import { showError } from "@/utils/toast";
 
 import type { ThemeColors } from "@/constants/theme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -137,6 +137,46 @@ function mergeMessages(
   );
 }
 
+type MessageItem = Message & { showSender: boolean };
+type MessageSection = MessageItem | { type: "date"; label: string; _id: string };
+
+// Pure over its argument — kept at module scope so it isn't a hook dependency
+// and doesn't get rebuilt every render.
+function buildMessageSections(msgs: Message[]): MessageSection[] {
+  const sections: MessageSection[] = [];
+  let lastDateLabel = "";
+  let lastSenderId: string | null | undefined = null;
+  msgs.forEach((msg) => {
+    const msgDate = new Date(msg.createdAt);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    let label: string;
+    if (msgDate.toDateString() === today.toDateString()) {
+      label = "Today";
+    } else if (msgDate.toDateString() === yesterday.toDateString()) {
+      label = "Yesterday";
+    } else {
+      label = msgDate.toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+    }
+    if (label !== lastDateLabel) {
+      lastDateLabel = label;
+      sections.push({ type: "date", label, _id: `date-${msg._id}` });
+    }
+    // showSender: first message in a contiguous run from the same sender.
+    // Computed here (not per-row by index) so it's stable under FlashList
+    // cell recycling.
+    const showSender = lastSenderId !== msg.sender?._id;
+    lastSenderId = msg.sender?._id;
+    sections.push({ ...msg, showSender });
+  });
+  return sections;
+}
+
 export default function ChatScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -213,8 +253,6 @@ export default function ChatScreen() {
   const [loadingMutuals, setLoadingMutuals] = useState(false);
   const [selectedToAdd, setSelectedToAdd] = useState<FollowUser[]>([]);
   const [invitingMembers, setInvitingMembers] = useState(false);
-
-  const [pinning, setPinning] = useState(false);
 
   // Responding to a pending invite (when the viewer was invited to this group)
   const [respondingInvite, setRespondingInvite] = useState(false);
@@ -886,14 +924,11 @@ export default function ChatScreen() {
     if (!chat) return;
     const isPinned = (chat.pinnedMessage as any)?._id === message._id;
     const newMessageId = isPinned ? null : message._id;
-    setPinning(true);
     try {
       const updated = await chatService.pinMessage(chat._id, newMessageId);
       setChat((prev) => prev ? { ...prev, pinnedMessage: updated.pinnedMessage } : prev);
     } catch (e: any) {
       Alert.alert("Couldn't pin message", e?.message || "Please try again.");
-    } finally {
-      setPinning(false);
     }
   }, [chat]);
 
@@ -1162,44 +1197,6 @@ export default function ChatScreen() {
     if (chat.type === "group") return chat.groupImage || null;
     const otherParticipant = chat.participants.find((p) => p._id !== currentUserId);
     return chatParticipantAvatar(chat, otherParticipant) || null;
-  };
-
-  type MessageItem = Message & { showSender: boolean };
-  type MessageSection = MessageItem | { type: "date"; label: string; _id: string };
-
-  const buildMessageSections = (msgs: Message[]): MessageSection[] => {
-    const sections: MessageSection[] = [];
-    let lastDateLabel = "";
-    let lastSenderId: string | null | undefined = null;
-    msgs.forEach((msg) => {
-      const msgDate = new Date(msg.createdAt);
-      const today = new Date();
-      const yesterday = new Date();
-      yesterday.setDate(today.getDate() - 1);
-      let label: string;
-      if (msgDate.toDateString() === today.toDateString()) {
-        label = "Today";
-      } else if (msgDate.toDateString() === yesterday.toDateString()) {
-        label = "Yesterday";
-      } else {
-        label = msgDate.toLocaleDateString("en-US", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-        });
-      }
-      if (label !== lastDateLabel) {
-        lastDateLabel = label;
-        sections.push({ type: "date", label, _id: `date-${msg._id}` });
-      }
-      // showSender: first message in a contiguous run from the same sender.
-      // Computed here (not per-row by index) so it's stable under FlashList
-      // cell recycling.
-      const showSender = lastSenderId !== msg.sender?._id;
-      lastSenderId = msg.sender?._id;
-      sections.push({ ...msg, showSender });
-    });
-    return sections;
   };
 
   const isGroup = chat?.type === "group";
@@ -2029,7 +2026,7 @@ export default function ChatScreen() {
               return (
                 <ScrollView keyboardShouldPersistTaps="handled">
                   <View style={styles.quoteRow}>
-                    <Text style={styles.quoteSubLabel}>Client's items</Text>
+                    <Text style={styles.quoteSubLabel}>Client&apos;s items</Text>
                     <Text style={styles.quoteSubValue}>
                       {prefix}
                       {formatPrice(subtotal)}
@@ -2037,7 +2034,7 @@ export default function ChatScreen() {
                   </View>
 
                   {/* Items the vendor is adding from their catalogue */}
-                  <Text style={styles.quoteSectionLabel}>Items you're adding</Text>
+                  <Text style={styles.quoteSectionLabel}>Items you&apos;re adding</Text>
                   {addedItems.map((it) => (
                     <View key={it.serviceId} style={styles.addedItemRow}>
                       <View style={{ flex: 1 }}>
@@ -2417,7 +2414,7 @@ export default function ChatScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.toggleLabel}>Mute notifications</Text>
                   <Text style={styles.toggleHint}>
-                    Don't get push alerts for this chat.
+                    Don&apos;t get push alerts for this chat.
                   </Text>
                 </View>
                 <Switch
