@@ -46,6 +46,19 @@ export default function CompleteNameScreen() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
+      // The server should always echo back what it just saved. If it comes
+      // back empty, the request was accepted but the name never actually
+      // persisted (e.g. a server still running a build from before this
+      // field existed) — fail loudly here instead of silently bouncing the
+      // user right back to this screen from the tabs/vendor layout gate.
+      if (!res.data?.user?.firstName) {
+        Alert.alert(
+          "Couldn't save your name",
+          "Something went wrong on our end — please try again in a moment."
+        );
+        return;
+      }
+
       // Keep the cached user in step so every screen reading it (home
       // greeting, own profile) sees the name immediately, not after a refetch.
       try {
