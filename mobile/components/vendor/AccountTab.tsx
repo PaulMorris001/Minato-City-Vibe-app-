@@ -15,14 +15,8 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as SecureStore from "expo-secure-store";
-import { unregisterForPushNotifications } from "@/utils/pushNotifications";
 import axios from "axios";
 import { useRouter } from "expo-router";
-import socketService from "@/services/socket.service";
-import { clearLocalData } from "@/utils/localData";
-import { useAccount } from "@/contexts/AccountContext";
-import { useCart } from "@/contexts/CartContext";
-import { useUnread } from "@/contexts/UnreadContext";
 import { BASE_URL } from "@/constants/constants";
 import {
   payoutCountryKnown,
@@ -53,9 +47,6 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
-  const { setActiveAccount } = useAccount();
-  const cart = useCart();
-  const { reset: resetUnread } = useUnread();
   const [loading, setLoading] = useState(false);
   const [payoutOnboardingComplete, setPayoutOnboardingComplete] = useState(false);
   // Whether any payout rail reaches this vendor's country. Distinct from the
@@ -253,29 +244,6 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
   const selectVendorType = (type: VendorType) => {
     setProfile({ ...profile, vendorType: type._id, vendorTypeName: type.name });
     setShowTypePicker(false);
-  };
-
-  const handleLogout = () => {
-    Alert.alert("Log out", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Log out",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await unregisterForPushNotifications();
-            await SecureStore.deleteItemAsync("user");
-            await SecureStore.deleteItemAsync("token");
-            await setActiveAccount("client");
-            cart.clear();
-            resetUnread();
-            await clearLocalData();
-          } catch {}
-          socketService.disconnect();
-          router.replace("/login");
-        },
-      },
-    ]);
   };
 
   if (loading) {
@@ -520,17 +488,6 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
               })}
             </View>
           </View>
-
-          {/* Log out */}
-          <View style={styles.logoutWrap}>
-            <TouchableOpacity style={styles.logoutRow} activeOpacity={0.8} onPress={handleLogout}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <Ionicons name="log-out-outline" size={16} color={colors.textDim} />
-                <Text style={styles.logoutText}>Log out</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
-            </TouchableOpacity>
-          </View>
         </>
       )}
 
@@ -595,9 +552,6 @@ const createStyles = (c: ThemeColors) =>
   socialIconSet: { backgroundColor: c.primaryFadedStrong, borderColor: "rgba(192,132,252,0.3)" },
   socialIconEmpty: { backgroundColor: c.glassFillSubtle, borderColor: c.glassStroke },
 
-  logoutWrap: { paddingHorizontal: 18, paddingTop: 4, paddingBottom: 8 },
-  logoutRow: { height: 48, paddingHorizontal: 14, borderRadius: 14, backgroundColor: c.glassFillSubtle, borderWidth: 1, borderColor: c.glassStrokeStrong, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  logoutText: { fontFamily: VNF.bold, fontSize: 13.5, color: c.textBright },
 
   // Edit mode
   editWrap: { paddingHorizontal: 18, paddingTop: 4 },

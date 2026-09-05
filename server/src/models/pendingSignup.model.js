@@ -15,6 +15,12 @@ import mongoose from "mongoose";
 const pendingSignupSchema = new mongoose.Schema(
   {
     username: { type: String, required: true, trim: true },
+    // Split into firstName/lastName (see utils/personName.js) when the real
+    // User is created in verifySignup. Optional so an app build older than
+    // this field can still complete /register — that account just lands on
+    // the "complete your name" gate on its next login, like any pre-existing
+    // account (see login.tsx / (tabs)/_layout.tsx).
+    fullName: { type: String, default: "", trim: true },
     // Unique so a second attempt for the same address replaces the first
     // (upsert) rather than accumulating stale pending rows with live codes.
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },

@@ -224,7 +224,10 @@ const eventSchema = mongoose.Schema({
   // `raffleWinnerRank` is the one piece of state that doesn't derive from
   // anything else — an admin sets it by hand once the campaign ends.
   isBirthdayRaffle: { type: Boolean, default: false },
-  raffleWinnerRank: { type: Number, enum: [1, 2, 3, null], default: null },
+  // 1..N where N is the owning campaign's prize-tier count (raffleCampaign
+  // .prizes). Validated against that count in admin.controller setRaffleWinner,
+  // so no fixed enum here.
+  raffleWinnerRank: { type: Number, default: null, min: 1 },
 }, {
   timestamps: true
 });

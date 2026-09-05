@@ -21,6 +21,7 @@ import {
   PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
 import { rejectIfCannotSell } from "../services/payments/sellingEligibility.js";
+import { getCurrentCampaign, isCampaignOpen } from "../services/raffleCampaign.service.js";
 import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { findEventByAnyId } from "../utils/resolveEvent.js";
 import { toGeoPoint } from "../utils/geo.js";
@@ -173,6 +174,13 @@ export const createEvent = async (req, res) => {
       { field: "Location", value: location },
       { field: "Address", value: address },
     ]);
+
+    // Birthday-raffle entry is only open while a campaign is running. Between a
+    // campaign ending and the next one starting, reject the flag outright
+    // rather than quietly create an event that can never qualify.
+    if (Boolean(isBirthdayRaffle) && !isCampaignOpen(await getCurrentCampaign())) {
+      return res.status(400).json({ message: "The Birthday Raffle isn't running right now." });
+    }
 
     // Ticket currency defaults to the organizer's local currency (set below for
     // paid events once we've loaded the organizer).

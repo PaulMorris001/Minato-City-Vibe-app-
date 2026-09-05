@@ -33,7 +33,7 @@ import { AU } from "@/components/auth/tokens";
 import { SocialAuthButtons } from "@/components/auth/SocialAuthButtons";
 
 import { darkColors, type ThemeColors } from "@/constants/theme";
-type StepKey = "username" | "email" | "password" | "confirm";
+type StepKey = "fullName" | "username" | "email" | "password" | "confirm";
 
 type AvailStatus = "idle" | "checking" | "available" | "taken" | "error";
 
@@ -48,10 +48,18 @@ type StepDef = {
   placeholder: string;
   secure?: boolean;
   keyboardType?: "default" | "email-address";
-  autoComplete?: "username" | "email" | "new-password";
+  autoComplete?: "name" | "username" | "email" | "new-password";
 };
 
 const STEPS: StepDef[] = [
+  {
+    key: "fullName",
+    question: "What's your\nname?",
+    hint: "So people know who's RSVPing.",
+    vendorHint: "The name behind the business — a business name comes next.",
+    placeholder: "Ade Bello",
+    autoComplete: "name",
+  },
   {
     key: "username",
     question: "What's your\nuser name?",
@@ -117,6 +125,7 @@ export default function Signup() {
   const [accountType, setAccountType] = useState<AccountType | null>(null);
   const [step, setStep] = useState(0);
   const [values, setValues] = useState<Record<StepKey, string>>({
+    fullName: "",
     username: "",
     email: "",
     password: "",
@@ -214,6 +223,8 @@ export default function Signup() {
   const validateCurrent = (): string | null => {
     const v = values[current.key].trim();
     if (!v) return "This field is required.";
+    if (current.key === "fullName" && v.length < 2)
+      return "Enter your full name.";
     if (current.key === "username" && !USERNAME_RE.test(v))
       return "3–20 characters, letters / numbers / underscores only.";
     if (current.key === "email" && !EMAIL_RE.test(v))
@@ -235,6 +246,7 @@ export default function Signup() {
     });
     try {
       const res = await axios.post(`${BASE_URL}/register`, {
+        fullName: values.fullName.trim(),
         username: values.username,
         email: values.email,
         password: values.password,
@@ -452,15 +464,17 @@ export default function Signup() {
                     placeholderTextColor={AU.textMute}
                     secureTextEntry={!!current.secure && !showPassword}
                     keyboardType={current.keyboardType ?? "default"}
-                    autoCapitalize="none"
+                    autoCapitalize={current.key === "fullName" ? "words" : "none"}
                     autoCorrect={false}
                     autoComplete={current.autoComplete}
                     textContentType={
-                      current.key === "username"
-                        ? "username"
-                        : current.key === "email"
-                          ? "emailAddress"
-                          : "newPassword"
+                      current.key === "fullName"
+                        ? "name"
+                        : current.key === "username"
+                          ? "username"
+                          : current.key === "email"
+                            ? "emailAddress"
+                            : "newPassword"
                     }
                     returnKeyType={isFinal ? "done" : "next"}
                     onSubmitEditing={handleNext}

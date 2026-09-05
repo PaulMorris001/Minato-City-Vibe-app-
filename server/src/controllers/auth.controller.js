@@ -26,6 +26,7 @@ import { SUPPORT_USER_ID, isSupportUser } from "../utils/supportAccount.js";
 import { countFollows } from "../utils/followCounts.js";
 import { slugify, generateUniqueSlug } from "../utils/slug.js";
 import { resolveUserId } from "../utils/resolveUser.js";
+import { splitFullName } from "../utils/personName.js";
 import { searchUsersQuery } from "../services/userSearch.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -87,7 +88,7 @@ const PENDING_SIGNUP_TTL_MS = 30 * 60 * 1000;
  * abandoned signup never squats on an email or username.
  */
 export async function register(req, res) {
-  const { username, email, password, termsAccepted, accountType } = req.body;
+  const { username, email, password, termsAccepted, accountType, fullName } = req.body;
 
   try {
     if (!termsAccepted) {
@@ -102,6 +103,19 @@ export async function register(req, res) {
         .json({ message: "Username, email, and password are required." });
     }
 
+    // Optional so an app build that predates this field can still sign up —
+    // once every client is on a version that sends it, this can go back to
+    // required and drop the "" fallback (see verifySignup / the
+    // "complete your name" gate, which is what backfills these accounts).
+    const normalizedFullName = fullName
+      ? String(fullName).trim().replace(/\s+/g, " ")
+      : "";
+    if (normalizedFullName && (normalizedFullName.length < 2 || normalizedFullName.length > 60)) {
+      return res
+        .status(400)
+        .json({ message: "Full name must be between 2 and 60 characters." });
+    }
+
     const normalizedUsername = String(username).trim();
     if (normalizedUsername.length < 2 || normalizedUsername.length > 30) {
       return res
@@ -109,7 +123,10 @@ export async function register(req, res) {
         .json({ message: "Username must be between 2 and 30 characters." });
     }
 
-    assertClean([{ field: "Username", value: normalizedUsername }]);
+    assertClean([
+      ...(normalizedFullName ? [{ field: "Full name", value: normalizedFullName }] : []),
+      { field: "Username", value: normalizedUsername },
+    ]);
 
     // Normalize email to lowercase and trim whitespace
     const normalizedEmail = email.toLowerCase().trim();
@@ -163,6 +180,7 @@ export async function register(req, res) {
       { email: normalizedEmail },
       {
         username: normalizedUsername,
+        fullName: normalizedFullName,
         email: normalizedEmail,
         passwordHash,
         vendorSignupPending: wantsVendor,
@@ -310,6 +328,8 @@ export async function login(req, res) {
       user: {
         id: user._id,
         username: user.username,
+        firstName: user.firstName,
+        lastName: user.lastName,
         email: user.email,
         isVendor: user.isVendor,
         // Signed up as a business but never finished the details form — the
@@ -645,7 +665,8 @@ export async function getProfile(req, res) {
 
 // Update profile picture and/or bio (for both clients and vendors)
 export async function updateProfilePicture(req, res) {
-  const { profilePicture, bio, preferences, location, username } = req.body;
+  const { profilePicture, bio, preferences, location, username, gender, fullName } = req.body;
+  const GENDERS = ["", "male", "female", "non-binary", "prefer-not-to-say"];
 
   try {
     const user = await User.findById(req.user.id);
@@ -698,6 +719,22 @@ export async function updateProfilePicture(req, res) {
       user.slug = newSlug || undefined;
     }
 
+    // Name change — required non-empty when explicitly sent (this is also how
+    // the "complete your name" gate on the client is cleared), content-filtered
+    // like username.
+    if (fullName !== undefined) {
+      const normalizedFullName = String(fullName).trim().replace(/\s+/g, " ");
+      if (normalizedFullName.length < 2 || normalizedFullName.length > 60) {
+        return res
+          .status(400)
+          .json({ message: "Full name must be between 2 and 60 characters." });
+      }
+      assertClean([{ field: "Full name", value: normalizedFullName }]);
+      const { firstName, lastName } = splitFullName(normalizedFullName);
+      user.firstName = firstName;
+      user.lastName = lastName;
+    }
+
     // Only touch the picture when the client actually sends one — otherwise a
     // bio-only update would wipe the existing photo.
     if (profilePicture !== undefined) {
@@ -725,6 +762,13 @@ export async function updateProfilePicture(req, res) {
       user.bio = bio;
     }
 
+    if (gender !== undefined) {
+      if (!GENDERS.includes(gender)) {
+        return res.status(400).json({ message: "Invalid gender value." });
+      }
+      user.gender = gender;
+    }
+
     if (Array.isArray(preferences)) {
       user.preferences = preferences;
     }
@@ -749,9 +793,12 @@ export async function updateProfilePicture(req, res) {
       user: {
         id: user._id,
         username: user.username,
+        firstName: user.firstName,
+        lastName: user.lastName,
         email: user.email,
         profilePicture: user.profilePicture,
         bio: user.bio,
+        gender: user.gender,
         location: user.location,
         isVendor: user.isVendor
       }
@@ -808,7 +855,7 @@ export async function getUserById(req, res) {
     }
 
     const PUBLIC_PROFILE_FIELDS =
-      "_id username email profilePicture bio isVendor businessName verified isBanned blockedUsers slug";
+      "_id username firstName lastName email profilePicture bio isVendor businessName verified isBanned blockedUsers slug";
     let user;
     if (mongoose.isValidObjectId(req.params.userId)) {
       user = await User.findById(req.params.userId)
@@ -1062,8 +1109,14 @@ export async function googleAuth(req, res) {
     } else {
       console.log(`[google-auth ${reqId}] no existing user — creating new account email=${normalizedEmail}`);
       // Create new user — Google sign-in implies acceptance of Terms via the in-app prompt
+      // Google shares the account's real name — use it so this signup path
+      // doesn't land the user on the same "complete your name" gate that
+      // catches pre-existing accounts.
+      const { firstName, lastName } = splitFullName(name);
       user = new User({
         username: await generateUniqueUsername(name || normalizedEmail.split('@')[0]),
+        firstName,
+        lastName,
         email: normalizedEmail,
         authProvider: 'google',
         googleId,
@@ -1092,6 +1145,8 @@ export async function googleAuth(req, res) {
       user: {
         id: user._id,
         username: user.username,
+        firstName: user.firstName,
+        lastName: user.lastName,
         email: user.email,
         profilePicture: user.profilePicture,
         isVendor: user.isVendor,
@@ -1380,8 +1435,11 @@ export async function googleWebCallback(req, res) {
         await user.save();
       }
     } else {
+      const { firstName, lastName } = splitFullName(name);
       user = new User({
         username: await generateUniqueUsername(name || normalizedEmail.split("@")[0]),
+        firstName,
+        lastName,
         email: normalizedEmail,
         authProvider: "google",
         googleId,
@@ -1526,9 +1584,15 @@ export async function appleAuth(req, res) {
       const username = await generateUniqueUsername(
         (fullName && fullName.trim()) || normalizedEmail.split("@")[0]
       );
+      // Apple only shares the name on the very first sign-in (the client
+      // captures it then and sends it here) — use it so this signup path
+      // skips the "complete your name" gate like Google's does.
+      const { firstName, lastName } = splitFullName(fullName);
 
       user = new User({
         username,
+        firstName,
+        lastName,
         email: normalizedEmail,
         authProvider: "apple",
         appleId,
@@ -1550,6 +1614,8 @@ export async function appleAuth(req, res) {
       user: {
         id: user._id,
         username: user.username,
+        firstName: user.firstName,
+        lastName: user.lastName,
         email: user.email,
         profilePicture: user.profilePicture,
         isVendor: user.isVendor,
@@ -1624,8 +1690,11 @@ export async function verifySignup(req, res) {
       });
     }
 
+    const { firstName, lastName } = splitFullName(pending.fullName);
     const user = new User({
       username: pending.username,
+      firstName,
+      lastName,
       email: pending.email,
       // Already hashed by register — never re-hash.
       password: pending.passwordHash,
@@ -1649,6 +1718,8 @@ export async function verifySignup(req, res) {
       user: {
         id: user._id,
         username: user.username,
+        firstName: user.firstName,
+        lastName: user.lastName,
         email: user.email,
         isVendor: user.isVendor,
         vendorSignupPending: user.vendorSignupPending,

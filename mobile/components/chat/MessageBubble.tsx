@@ -242,7 +242,10 @@ function MessageBubble({
     );
   }
 
-  const senderName = message.sender?.username || "";
+  // Group messages outlive their author's account — the deleted user is pulled
+  // from the participants but the message stays, so `sender` populates to null.
+  const senderDeleted = !message.sender;
+  const senderName = senderDeleted ? "Deleted user" : message.sender?.username || "";
   const senderInitial = senderName.charAt(0).toUpperCase() || "?";
   const senderTint = senderColor(message.sender?._id || senderName);
 
@@ -769,19 +772,23 @@ function MessageBubble({
           <View style={[styles.row, rowAlign]}>
             {showAvatarSlot && (
               <View style={styles.avatarSlot}>
-                {showSender && (
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => openUserProfile(message.sender?._id)}
-                  >
-                    <Avatar
-                      uri={message.sender.profilePicture}
-                      name={senderName}
-                      size={26}
-                      bgColor={senderTint}
-                    />
-                  </TouchableOpacity>
-                )}
+                {showSender &&
+                  (senderDeleted ? (
+                    // No account left to open — don't offer the tap.
+                    <Avatar name={senderName} size={26} bgColor={senderTint} />
+                  ) : (
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => openUserProfile(message.sender?._id)}
+                    >
+                      <Avatar
+                        uri={message.sender?.profilePicture}
+                        name={senderName}
+                        size={26}
+                        bgColor={senderTint}
+                      />
+                    </TouchableOpacity>
+                  ))}
               </View>
             )}
 
@@ -789,7 +796,11 @@ function MessageBubble({
               {isGroup && !isOwnMessage && showSender && (
                 <Text
                   style={[styles.senderLabel, { color: senderTint }]}
-                  onPress={() => openUserProfile(message.sender?._id)}
+                  onPress={
+                    senderDeleted
+                      ? undefined
+                      : () => openUserProfile(message.sender?._id)
+                  }
                 >
                   {senderName}
                 </Text>

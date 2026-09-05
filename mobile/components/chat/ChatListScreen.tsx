@@ -25,6 +25,7 @@ import * as SecureStore from "expo-secure-store";
 import { capitalize } from "@/libs/helpers";
 import { displayName } from "@/utils/displayName";
 import socketService from "@/services/socket.service";
+import { removeChat } from "@/db/chatRepo";
 import ChatListItemSkeleton from "@/components/skeletons/ChatListItemSkeleton";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -188,7 +189,8 @@ export default function ChatListScreen({
         setChats((prev) =>
           prev.map((chat) => {
             if (chat._id !== chatId || !chat.lastMessage) return chat;
-            if (chat.lastMessage.sender._id !== currentUserId) return chat;
+            // A group's last message can outlive its author's account.
+            if (chat.lastMessage.sender?._id !== currentUserId) return chat;
             const unreadObj = (chat.unreadCount as unknown as Record<string, number>) || {};
             return {
               ...chat,
@@ -263,15 +265,24 @@ export default function ChatListScreen({
         // Removed from a group (or declined an invite) — drop it from the inbox.
         fetchChats(true);
       },
+      onChatRemoved: ({ chatId }) => {
+        // The other account was deleted, taking the conversation with it. Drop
+        // the cached copy too, or it stays readable offline.
+        removeChat(chatId);
+        setChats((prev) => prev.filter((c) => c._id !== chatId));
+      },
     });
 
     return () => socketService.off("messages-screen");
   }, [currentUserId]);
 
   // Refetch when the inbox regains focus (e.g. returning from a chat after
-  // deleting a conversation) so hidden chats drop out immediately.
+  // deleting a conversation) so hidden chats drop out immediately. Also
+  // re-read auth: this tab stays mounted across a login done elsewhere, so a
+  // one-shot check would keep showing the guest gate to a signed-in user.
   useFocusEffect(
     useCallback(() => {
+      loadCurrentUser();
       if (currentUserId) fetchChats(true);
     }, [currentUserId])
   );

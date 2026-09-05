@@ -11,7 +11,7 @@ import {
   rateVendor,
   getVendorReviews,
 } from "../controllers/vendors.controller.js";
-import { authenticate } from "../middleware/auth.middleware.js";
+import { authenticate, optionalAuth } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
@@ -19,8 +19,9 @@ router.get("/cities", getAllCities);
 router.get("/vendor-types", getAllVendorTypes);
 router.get("/cities/:cityId/vendor-types", getVendorTypesByCity);
 router.get("/cities/:cityId/vendors/:vendorTypeId", getVendorsByCityAndType);
-router.get("/vendors/search", searchVendors);
-router.get("/vendors/browse", browseVendors);
+// optionalAuth so a signed-in vendor can be filtered out of their own results.
+router.get("/vendors/search", optionalAuth, searchVendors);
+router.get("/vendors/browse", optionalAuth, browseVendors);
 // Must stay above /vendors/:vendorId — "top" would otherwise be read as an id.
 router.get("/vendors/top", getTopVendors);
 router.get("/vendors/:vendorId", getVendorById);

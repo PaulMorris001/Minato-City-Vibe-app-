@@ -24,7 +24,7 @@ import { Guide } from "@/libs/interfaces";
 import { priceLabel } from "@/constants/payments";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
-import followService from "@/services/follow.service";
+import followService, { FollowUser } from "@/services/follow.service";
 import { Avatar } from "@/components/shared/Avatar";
 import chatService from "@/services/chat.service";
 import ProfileHeaderSkeleton from "@/components/skeletons/ProfileHeaderSkeleton";
@@ -43,6 +43,8 @@ interface UserData {
   /** Username slug for share links (e.g. "setemil"); absent on legacy accounts. */
   slug?: string;
   username: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   profilePicture?: string;
   bio?: string;
@@ -74,6 +76,9 @@ export default function UserProfileScreen() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollowedBy, setIsFollowedBy] = useState(false);
   const [isMutual, setIsMutual] = useState(false);
+  // People the viewer follows who also follow this profile.
+  const [mutualPreview, setMutualPreview] = useState<FollowUser[]>([]);
+  const [mutualCount, setMutualCount] = useState(0);
   const [events, setEvents] = useState<UserEvent[]>([]);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,10 +138,13 @@ export default function UserProfileScreen() {
       if (!userId) return;
       const token = await SecureStore.getItemAsync("token");
 
-      // Fetch follow status, counts, user profile, events and guides in parallel
-      const [countsRes, statusRes, userRes, eventsRes, guidesRes] = await Promise.all([
+      // Fetch follow status, counts, mutual connections, profile, events and guides in parallel
+      const [countsRes, statusRes, mutualRes, userRes, eventsRes, guidesRes] = await Promise.all([
         followService.getFollowCounts(userId),
         followService.getFollowStatus(userId),
+        followService
+          .getMutualConnections(userId)
+          .catch(() => ({ users: [], total: 0, page: 1, pages: 0 })),
         axios.get(`${BASE_URL}/users/${userId}`, {
           headers: { Authorization: `Bearer ${token}` },
         }).catch(() => null),
@@ -153,6 +161,8 @@ export default function UserProfileScreen() {
       setIsFollowing(statusRes.isFollowing);
       setIsFollowedBy(statusRes.isFollowedBy);
       setIsMutual(statusRes.isMutual);
+      setMutualPreview(mutualRes.users);
+      setMutualCount(mutualRes.total);
 
       // Server-authoritative fallback: if the configured support ID differs
       // from the one baked into this build, the marker still redirects us.
@@ -268,6 +278,13 @@ export default function UserProfileScreen() {
               </TouchableOpacity>
             )}
           </View>
+          {/* The full name above is the headline; the handle stays visible
+              underneath so the account is still identifiable by @username. */}
+          {!!user?.username && (
+            <Text style={styles.handleText} numberOfLines={1}>
+              @{user.username}
+            </Text>
+          )}
           {/* Stats inline */}
           <View style={styles.statsRow}>
             <TouchableOpacity
@@ -341,6 +358,32 @@ export default function UserProfileScreen() {
           <Ionicons name="person-add" size={16} color={colors.primary} />
           <Text style={styles.followsYouText}>Follows you</Text>
         </View>
+      )}
+
+      {mutualCount > 0 && (
+        <TouchableOpacity
+          style={styles.mutualRow}
+          activeOpacity={0.7}
+          onPress={() =>
+            router.push({ pathname: "/mutual-connections", params: { userId } } as any)
+          }
+        >
+          <View style={styles.mutualAvatars}>
+            {mutualPreview.slice(0, 3).map((m, i) => (
+              <Avatar
+                key={m._id}
+                uri={m.profilePicture}
+                name={displayName(m)}
+                size={24}
+                style={{ marginLeft: i === 0 ? 0 : -8, borderWidth: 2, borderColor: colors.background }}
+              />
+            ))}
+          </View>
+          <Text style={styles.mutualText} numberOfLines={1}>
+            {mutualCount} mutual connection{mutualCount === 1 ? "" : "s"}
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
       )}
 
       {events.length > 0 && (
@@ -566,6 +609,11 @@ const createStyles = (c: ThemeColors) =>
     color: c.text,
     flexShrink: 1,
   },
+  handleText: {
+    fontSize: 13,
+    fontFamily: Fonts.regular,
+    color: c.textSecondary,
+  },
   vendorBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -732,5 +780,19 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 14,
     fontFamily: Fonts.medium,
     color: c.primary,
+  },
+  mutualRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  mutualAvatars: { flexDirection: "row", alignItems: "center" },
+  mutualText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: Fonts.medium,
+    color: c.textSecondary,
   },
 });

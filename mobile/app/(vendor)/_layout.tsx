@@ -20,6 +20,7 @@ import * as SecureStore from "expo-secure-store";
 import { unregisterForPushNotifications } from "@/utils/pushNotifications";
 import axios from "axios";
 import { capitalize } from "@/libs/helpers";
+import { vendorDisplayName } from "@/utils/displayName";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useAccount } from "@/contexts/AccountContext";
@@ -43,9 +44,10 @@ export default function VendorLayout() {
   const { reset: resetUnread } = useUnread();
   const isGlassAvailable = Platform.OS === "ios" && isLiquidGlassAvailable();
   const isIpad = Platform.OS === "ios" && Platform.isPad;
-  // The profile modal sits on a translucent surface on any iOS (real glass on
-  // 26+, blur below). Android keeps the solid card.
-  const isTranslucentModal = Platform.OS === "ios";
+  // The profile modal sits on a translucent surface on iOS in dark mode (real
+  // glass on 26+, blur below). Light mode and Android keep the solid card —
+  // a translucent material over the black scrim reads dark in light mode.
+  const isTranslucentModal = Platform.OS === "ios" && isDark;
   // Icon tones for that modal. These used to be pinned to "#fff" on any iOS,
   // which only ever read against a dark card. Both surfaces now carry a themed
   // background (see glassModalContent), so the palette's own tokens are correct
@@ -58,12 +60,16 @@ export default function VendorLayout() {
   const [user, setUser] = useState<{
     id: string;
     username: string;
+    firstName?: string;
+    businessName?: string;
     email: string;
     profilePicture?: string;
     isVendor?: boolean;
   }>({
     id: "",
     username: "",
+    firstName: "",
+    businessName: "",
     email: "",
     profilePicture: "",
     isVendor: false,
@@ -83,6 +89,8 @@ export default function VendorLayout() {
         setUser({
           id: userData._id,
           username: userData.username,
+          firstName: userData.firstName || "",
+          businessName: userData.businessName || "",
           email: userData.email,
           profilePicture: userData.profilePicture || "",
           isVendor: userData.isVendor || false,
@@ -92,6 +100,14 @@ export default function VendorLayout() {
         if (!userData.isVendor) {
           setActiveAccount("client");
           router.replace("/(tabs)/home" as any);
+          return;
+        }
+
+        // Same one-time "complete your name" stop as the client tabs — a
+        // vendor can land here directly (role picker, become-vendor) without
+        // ever passing through login.tsx's own check.
+        if (!userData.firstName) {
+          router.replace("/complete-name" as any);
         }
       }
     } catch (error) {
@@ -195,7 +211,7 @@ export default function VendorLayout() {
           </LinearGradient>
         )}
         <Text style={styles.usernameText}>
-          {capitalize(user.username)}
+          {capitalize(vendorDisplayName(user))}
         </Text>
         <Text style={styles.emailText}>{user.email}</Text>
         <LinearGradient
@@ -215,13 +231,13 @@ export default function VendorLayout() {
         style={styles.menuItem}
         onPress={() => {
           setIsProfileModalVisible(false);
-          // Navigate to dashboard
+          router.push("/vendor-account");
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="grid-outline" size={20} color={colors.primary} />
+          <Ionicons name="person-outline" size={20} color={colors.primary} />
         </View>
-        <Text style={styles.menuItemText}>Dashboard</Text>
+        <Text style={styles.menuItemText}>Account</Text>
         <Ionicons
           name="chevron-forward"
           size={20}
@@ -307,6 +323,20 @@ export default function VendorLayout() {
           </View>
         </View>
         <View style={styles.navRight}>
+          {cart.count > 0 && (
+            <TouchableOpacity
+              style={styles.iconButton}
+              activeOpacity={0.7}
+              onPress={() => router.push("/cart" as any)}
+            >
+              <Ionicons name="cart-outline" size={17} color={colors.textBright} />
+              <View style={styles.cartBadge}>
+                <Text style={styles.cartBadgeText}>
+                  {cart.count > 99 ? "99+" : cart.count}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.iconButton}
             activeOpacity={0.7}
@@ -337,14 +367,18 @@ export default function VendorLayout() {
         onRequestClose={() => setIsProfileModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          {isGlassAvailable ? (
+          {/* The translucent materials sample the black overlay scrim, so they
+              only ever read right on a dark card. In light mode the glass/blur
+              surface came out dark while the text followed the theme and went
+              near-black — unreadable. Light mode uses the plain opaque card. */}
+          {isGlassAvailable && isDark ? (
             <GlassView style={[styles.modalContent, styles.glassModalContent]}>
               {renderModalContent()}
             </GlassView>
-          ) : Platform.OS === "ios" ? (
+          ) : Platform.OS === "ios" && isDark ? (
             <BlurView
               intensity={80}
-              tint={isDark ? "dark" : "light"}
+              tint="dark"
               style={[styles.modalContent, styles.glassModalContent]}
             >
               {renderModalContent()}
@@ -372,6 +406,10 @@ export default function VendorLayout() {
             <Label>Services</Label>
             <Icon sf={{ default: "briefcase", selected: "briefcase.fill" }} />
           </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="discover">
+            <Label>Discover</Label>
+            <Icon sf={{ default: "magnifyingglass", selected: "magnifyingglass" }} />
+          </NativeTabs.Trigger>
           <NativeTabs.Trigger name="bookings">
             <Label>Bookings</Label>
             <Icon sf="calendar" />
@@ -386,10 +424,6 @@ export default function VendorLayout() {
               }}
             />
             {vendorUnread > 0 && <Badge>{vendorUnreadLabel}</Badge>}
-          </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="account">
-            <Label>Account</Label>
-            <Icon sf={{ default: "person", selected: "person.fill" }} />
           </NativeTabs.Trigger>
         </NativeTabs>
       ) : (
@@ -433,6 +467,15 @@ export default function VendorLayout() {
             }}
           />
           <Tabs.Screen
+            name="discover"
+            options={{
+              title: "Discover",
+              tabBarIcon: ({ focused, color }) => (
+                <Ionicons name={focused ? "search" : "search-outline"} size={20} color={color} />
+              ),
+            }}
+          />
+          <Tabs.Screen
             name="bookings"
             options={{
               title: "Bookings",
@@ -451,15 +494,6 @@ export default function VendorLayout() {
               tabBarBadgeStyle: { backgroundColor: colors.accentPink, color: "#fff", fontSize: 10 },
               tabBarIcon: ({ focused, color }) => (
                 <Ionicons name={focused ? "chatbubbles" : "chatbubbles-outline"} size={20} color={color} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="account"
-            options={{
-              title: "Account",
-              tabBarIcon: ({ focused, color }) => (
-                <Ionicons name={focused ? "person" : "person-outline"} size={20} color={color} />
               ),
             }}
           />
@@ -522,6 +556,23 @@ const createStyles = (c: ThemeColors) =>
     borderColor: c.glassFill,
     alignItems: "center",
     justifyContent: "center",
+  },
+  cartBadge: {
+    position: "absolute",
+    top: -3,
+    right: -3,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    backgroundColor: c.accentPink,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cartBadgeText: {
+    color: "#fff",
+    fontSize: 9.5,
+    fontFamily: Fonts.bold,
   },
   logoText: {
     fontFamily: "BricolageGrotesque_800ExtraBold",

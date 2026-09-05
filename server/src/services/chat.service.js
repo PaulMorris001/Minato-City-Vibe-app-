@@ -8,7 +8,7 @@ import { uploadBase64Image, deleteImage } from "./image.service.js";
 import { isVideoUrl } from "../config/cloudinary.js";
 import { sendPushNotification } from "./notification.service.js";
 import { areMutualFollows } from "../utils/followCheck.js";
-import { involvesSupport } from "../utils/supportAccount.js";
+import { involvesSupport, withSupportMarkers } from "../utils/supportAccount.js";
 
 /**
  * Chat Service - Business logic layer for chat operations
@@ -29,7 +29,12 @@ class ChatService {
   async getOrCreateDirectChat(userId1, userId2, options = {}) {
     // Legacy boolean third argument meant skipMutualCheck.
     const opts = typeof options === 'boolean' ? { skipMutualCheck: options } : options;
-    const { skipMutualCheck = false, context = 'personal', vendorUserId = null } = opts;
+    const {
+      skipMutualCheck = false,
+      context = 'personal',
+      vendorUserId = null,
+      vendorInitiatorId = null,
+    } = opts;
 
     if (context === 'vendor') {
       const vendorStr = vendorUserId && vendorUserId.toString();
@@ -53,7 +58,7 @@ class ChatService {
       isActive: true,
       ...contextFilter
     })
-      .populate('participants', 'username email profilePicture isVendor businessName businessPicture')
+      .populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture')
       .populate({
         path: 'lastMessage',
         populate: { path: 'sender', select: 'username profilePicture' }
@@ -83,13 +88,19 @@ class ChatService {
         participants: [userId1, userId2],
         context: context === 'vendor' ? 'vendor' : 'personal',
         vendorParticipant: context === 'vendor' ? vendorUserId : null,
+        vendorInitiator: context === 'vendor' ? vendorInitiatorId : null,
         unreadCount: new Map([[userId1.toString(), 0], [userId2.toString(), 0]]),
         isArchived: new Map([[userId1.toString(), false], [userId2.toString(), false]]),
         isMuted: new Map([[userId1.toString(), false], [userId2.toString(), false]])
       });
 
       await chat.save();
-      await chat.populate('participants', 'username email profilePicture isVendor businessName businessPicture');
+      await chat.populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture');
+    } else if (context === 'vendor' && vendorInitiatorId && !chat.vendorInitiator) {
+      // Reused an order chat created before this buyer booked in vendor mode —
+      // tag it now so it surfaces in their vendor inbox too.
+      chat.vendorInitiator = vendorInitiatorId;
+      await chat.save();
     }
 
     return chat;
@@ -100,11 +111,13 @@ class ChatService {
    * are vendor-context, so they land in the vendor's business inbox and stay
    * separate from any personal thread between the same two users.
    */
-  async getOrCreateDirectChatForOrder(clientId, vendorId) {
+  async getOrCreateDirectChatForOrder(clientId, vendorId, { fromVendor = false } = {}) {
     return this.getOrCreateDirectChat(clientId, vendorId, {
       skipMutualCheck: true,
       context: 'vendor',
-      vendorUserId: vendorId
+      vendorUserId: vendorId,
+      // Buyer booked from their vendor dashboard — see Chat.vendorInitiator.
+      vendorInitiatorId: fromVendor ? clientId : null
     });
   }
 
@@ -141,7 +154,7 @@ class ChatService {
     });
 
     await chat.save();
-    await chat.populate('participants', 'username email profilePicture isVendor businessName businessPicture');
+    await chat.populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture');
     await chat.populate('admins', 'username email profilePicture');
     if (eventId) {
       await chat.populate('event', 'title date location image createdBy');
@@ -152,19 +165,29 @@ class ChatService {
 
   /**
    * Filter for which conversations belong in a user's inbox for a scope.
-   * - 'vendor': vendor-context chats where this user is the business.
+   * - 'vendor': vendor-context chats where this user is the business, OR order
+   *   chats this user placed from their own vendor dashboard (vendorInitiator).
    * - 'client': everything else — personal chats, groups, and vendor-context
-   *   chats where this user is the customer. `$ne`/`$or` shapes keep matching
-   *   legacy chats that predate the context field.
+   *   chats where this user is the customer, EXCEPT the ones they initiated in
+   *   vendor mode (those moved to the vendor inbox above). `$ne`/`$or` shapes
+   *   keep matching legacy chats that predate these fields.
    */
   scopeFilter(userId, scope) {
     if (scope === 'vendor') {
-      return { context: 'vendor', vendorParticipant: userId };
+      return {
+        context: 'vendor',
+        $or: [{ vendorParticipant: userId }, { vendorInitiator: userId }]
+      };
     }
     return {
-      $or: [
-        { context: { $ne: 'vendor' } },
-        { vendorParticipant: { $ne: userId } }
+      $and: [
+        {
+          $or: [
+            { context: { $ne: 'vendor' } },
+            { vendorParticipant: { $ne: userId } }
+          ]
+        },
+        { vendorInitiator: { $ne: userId } }
       ]
     };
   }
@@ -188,7 +211,7 @@ class ChatService {
       isActive: true,
       deletedFor: { $ne: userId }
     })
-      .populate('participants', 'username email profilePicture isVendor businessName businessPicture')
+      .populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture')
       .populate('admins', 'username email profilePicture')
       .populate('pendingInvites.user', 'username email profilePicture')
       .populate('pendingInvites.invitedBy', 'username email profilePicture')
@@ -199,7 +222,7 @@ class ChatService {
       })
       .sort({ updatedAt: -1 });
 
-    return chats;
+    return chats.map(withSupportMarkers);
   }
 
   /**
@@ -931,7 +954,7 @@ class ChatService {
     }
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture isVendor businessName businessPicture")
+      .populate("participants", "username firstName lastName email profilePicture isVendor businessName businessPicture")
       .populate("admins", "username email profilePicture")
       .populate("pendingInvites.user", "username email profilePicture")
       .populate("pendingInvites.invitedBy", "username email profilePicture");
@@ -1003,7 +1026,7 @@ class ChatService {
     }
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username email profilePicture isVendor businessName businessPicture")
+      .populate("participants", "username firstName lastName email profilePicture isVendor businessName businessPicture")
       .populate("admins", "username email profilePicture")
       .populate("pendingInvites.user", "username email profilePicture")
       .populate({
@@ -1027,7 +1050,7 @@ class ChatService {
         this.scopeFilter(userId, scope)
       ]
     })
-      .populate('participants', 'username email profilePicture isVendor businessName businessPicture')
+      .populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture')
       .limit(10);
 
     // Search in messages (only within chats belonging to this inbox)
@@ -1049,6 +1072,83 @@ class ChatService {
       .sort({ createdAt: -1 });
 
     return { chats, messages };
+  }
+
+  /**
+   * Remove a deleted account's conversations. Called from every account
+   * deletion path so the other side can't go back and re-read the thread.
+   *
+   * Direct chats (personal, vendor and support alike) are hard-deleted with
+   * every message in them — hiding via `deletedFor` would leave the history
+   * one query away. Group chats keep their messages so the rest of the group
+   * still has a readable thread; the account is only detached from the
+   * membership arrays. That also means a group's `lastMessage` and
+   * `pinnedMessage` still point at live documents and need no repointing.
+   */
+  async purgeUserChats(userId) {
+    const chats = await Chat.find({
+      $or: [{ participants: userId }, { "pendingInvites.user": userId }]
+    }).select("_id type participants");
+
+    const directIds = [];
+    const groupIds = [];
+    const notify = [];
+
+    for (const chat of chats) {
+      if (chat.type === "direct") {
+        directIds.push(chat._id);
+        for (const participantId of chat.participants) {
+          if (participantId.toString() !== userId.toString()) {
+            notify.push({ userId: participantId.toString(), chatId: chat._id.toString() });
+          }
+        }
+      } else {
+        groupIds.push(chat._id);
+      }
+    }
+
+    if (directIds.length) {
+      await Message.deleteMany({ chat: { $in: directIds } });
+      await Chat.deleteMany({ _id: { $in: directIds } });
+    }
+
+    if (groupIds.length) {
+      await Chat.updateMany(
+        { _id: { $in: groupIds } },
+        {
+          $pull: {
+            participants: userId,
+            admins: userId,
+            pinnedBy: userId,
+            blockedBy: userId,
+            deletedFor: userId,
+            pendingInvites: { user: userId }
+          },
+          $unset: { [`unreadCount.${userId}`]: "" }
+        }
+      );
+
+      // Scrub the refs left inside the messages we're keeping, or every
+      // populate on them yields a null user. Scoped to those chats — an
+      // unfiltered updateMany here would walk the whole messages collection.
+      await Message.updateMany(
+        { chat: { $in: groupIds } },
+        {
+          $pull: {
+            reactions: { user: userId },
+            mentions: userId,
+            readBy: { user: userId }
+          }
+        }
+      );
+    }
+
+    const io = getSocketInstance();
+    if (io) {
+      for (const { userId: participantId, chatId } of notify) {
+        io.to(`user:${participantId}`).emit("chat:removed", { chatId });
+      }
+    }
   }
 }
 

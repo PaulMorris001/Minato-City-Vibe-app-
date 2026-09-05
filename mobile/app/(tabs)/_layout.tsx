@@ -12,7 +12,7 @@ import {
   Easing,
 } from "react-native";
 import { Image } from "expo-image";
-import { Tabs, useRouter, useSegments } from "expo-router";
+import { Tabs, useRouter, useSegments, useFocusEffect } from "expo-router";
 import { NativeTabs, Icon, Label, Badge } from "expo-router/unstable-native-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -25,6 +25,7 @@ import { capitalize } from "@/libs/helpers";
 import { remoteLog } from "@/utils/remoteLog";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
+import { navbarTopPad } from "@/constants/homeChrome";
 import { useAccount } from "@/contexts/AccountContext";
 import { useCart } from "@/contexts/CartContext";
 import { useUnread } from "@/contexts/UnreadContext";
@@ -118,32 +119,44 @@ function SupportNavButton({ glass }: { glass: boolean }) {
     <TouchableOpacity
       onPress={handlePress}
       disabled={opening}
-      style={styles.chatButton}
+      style={styles.supportButton}
       activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel="Chat with support"
       accessibilityHint="Opens a conversation with the OurCityvibe support team"
     >
-      <PillSurface
-        glass={glass}
-        tintColor={colors.primary}
-        gradientColors={[colors.primary, colors.primaryDark]}
-      >
-        <Animated.View
-          // Decorative only — the accessibility label carries the meaning.
-          pointerEvents="none"
-          style={[
-            styles.supportHalo,
-            {
-              transform: [
-                { scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2] }) },
-              ],
-              opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0] }),
-            },
-          ]}
-        />
-        <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
-      </PillSurface>
+      {/* A headset on its own still reads as ambiguous chrome, so the label
+          stays put rather than appearing on some first-run condition — same
+          call as CreateEventTooltip. It sits inside the touchable so tapping
+          the word works too. */}
+      <View style={styles.helpTip}>
+        <Text style={styles.helpTipText}>Help</Text>
+      </View>
+      <View style={styles.helpTipCaret} />
+      {/* chatButton carries the pill's glow — on the row it would halo the
+          label too. */}
+      <View style={styles.chatButton}>
+        <PillSurface
+          glass={glass}
+          tintColor={colors.primary}
+          gradientColors={[colors.primary, colors.primaryDark]}
+        >
+          <Animated.View
+            // Decorative only — the accessibility label carries the meaning.
+            pointerEvents="none"
+            style={[
+              styles.supportHalo,
+              {
+                transform: [
+                  { scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2] }) },
+                ],
+                opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0] }),
+              },
+            ]}
+          />
+          <Ionicons name="headset" size={20} color="#fff" />
+        </PillSurface>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -163,7 +176,16 @@ export default function TabsLayout() {
   // keeps the solid card.
   const isTranslucentModal = Platform.OS === "ios";
   const segments = useSegments();
+  const inTabs = segments[0] === "(tabs)";
   const currentTab = segments[1]; // Gets the current tab name (home, vendors, bests, etc.)
+  // While a full-screen route (event, chat, vendor-details…) is pushed over the
+  // tabs, `segments` no longer points at a tab. Without this the home navbar —
+  // gated on `activeTab === "home"` below — would unmount on the way out and
+  // visibly pop back in when you return. Freeze the last tab we were on so the
+  // navbar's mount state doesn't change across that round-trip.
+  const lastTabRef = useRef(currentTab);
+  if (inTabs && currentTab) lastTabRef.current = currentTab;
+  const activeTab = inTabs ? currentTab : lastTabRef.current;
   const insets = useSafeAreaInsets();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
@@ -171,12 +193,14 @@ export default function TabsLayout() {
   const [user, setUser] = useState<{
     id: string;
     username: string;
+    firstName?: string;
     email: string;
     profilePicture?: string;
     isVendor?: boolean;
   }>({
     id: "",
     username: "",
+    firstName: "",
     email: "",
     profilePicture: "",
     isVendor: false,
@@ -212,10 +236,19 @@ export default function TabsLayout() {
         setUser({
           id: userData._id,
           username: userData.username,
+          firstName: userData.firstName || "",
           email: userData.email,
           profilePicture: userData.profilePicture || "",
           isVendor: userData.isVendor || false,
         });
+
+        // Safety net for a session that reached the tabs without going
+        // through login.tsx's own check (e.g. the app relaunching on a
+        // persisted token) — same "complete your name" gate, once per stop.
+        if (!userData.firstName) {
+          router.replace("/complete-name" as any);
+          return;
+        }
       } else {
         // Guest — nothing to fetch, leave the empty user state in place.
         return;
@@ -267,6 +300,24 @@ export default function TabsLayout() {
       fetchUserProfile();
     }
   }, [isCheckingAuth, fetchUserProfile]);
+
+  // The tab shell stays mounted while a guest taps "Log in" and comes back
+  // signed in — login does router.replace back into the tabs, it doesn't
+  // remount this layout. Without re-checking on focus, the header keeps
+  // showing the "Log in" pill (and the profile button keeps routing to login)
+  // for an already-signed-in user.
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        const token = await SecureStore.getItemAsync("token");
+        setIsGuest(!token);
+        if (token) {
+          socketService.connect();
+          fetchUserProfile();
+        }
+      })();
+    }, [fetchUserProfile])
+  );
 
   // Check if we should redirect to vendor dashboard only on mount and account changes
   useEffect(() => {
@@ -479,7 +530,7 @@ export default function TabsLayout() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
-      {currentTab === "home" && (
+      {activeTab === "home" && (
         // On iPad the native tab bar renders as a capsule centered at the TOP
         // of the screen, in this same row. The navbar goes transparent there —
         // logo left, actions right, capsule in the middle — and box-none lets
@@ -488,12 +539,18 @@ export default function TabsLayout() {
           pointerEvents={isIpad ? "box-none" : "auto"}
           style={[
             styles.navbar,
+            { paddingTop: navbarTopPad(insets.top) },
             Platform.OS === "ios" && styles.navbarOverlay,
             isIpad && [styles.navbarIpad, { paddingTop: insets.top + 10 }],
           ]}
         >
           <View style={styles.navbarBrand}>
-            <Text style={styles.logoText}>OurCityvibe</Text>
+            {/* numberOfLines: the Help label beside the support pill takes real
+                width out of this row, and a wrapped logo would double the
+                navbar height on the narrowest phones. */}
+            <Text style={styles.logoText} numberOfLines={1}>
+              OurCityvibe
+            </Text>
             {/* The city chip lives beside the greeting date in home.tsx now —
                 it reads as a property of "what you're looking at today" rather
                 than as brand chrome. */}
@@ -756,8 +813,10 @@ const createStyles = (c: ThemeColors) =>
     flex: 1,
     backgroundColor: c.backgroundDeep,
   },
+  // paddingTop comes in inline from navbarTopPad(insets.top) — the safe-area
+  // inset can't be read in a stylesheet, and the hardcoded value that used to
+  // live here sat inside the Dynamic Island cutout.
   navbar: {
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight! + 10 : 50,
     paddingBottom: 16,
     paddingHorizontal: 20,
     backgroundColor: c.backgroundDeep,
@@ -812,6 +871,40 @@ const createStyles = (c: ThemeColors) =>
     color: c.white,
     fontFamily: Fonts.bold,
     fontSize: 13.5,
+  },
+  // The support button carries its "Help" label beside the pill, so it lays
+  // its children out in a row. The pill keeps its own chatButton glow.
+  supportButton: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  helpTip: {
+    backgroundColor: c.card,
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  helpTipText: {
+    fontFamily: Fonts.bold,
+    fontSize: 11,
+    color: c.textBright,
+  },
+  // Rotated square rather than a border triangle so it carries the same fill
+  // and border as the bubble on both themes (same trick as CreateEventTooltip).
+  helpTipCaret: {
+    width: 8,
+    height: 8,
+    // Tucks its left half under the bubble's edge so only the point shows;
+    // the right margin is the clearance to the pill.
+    marginLeft: -5,
+    marginRight: 5,
+    backgroundColor: c.card,
+    borderTopWidth: 1,
+    borderRightWidth: 1,
+    borderColor: c.border,
+    transform: [{ rotate: "45deg" }],
   },
   chatButton: {
     // No overflow clipping — the pill surfaces round themselves so the

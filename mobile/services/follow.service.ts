@@ -128,6 +128,25 @@ class FollowService {
     return response.json();
   }
 
+  // People the current user follows who also follow `userId` — the count shown
+  // on Discover People cards, listed out.
+  async getMutualConnections(
+    userId: string,
+    page: number = 1
+  ): Promise<FollowListResponse> {
+    const headers = await this.getAuthHeader();
+    const response = await fetch(
+      `${BASE_URL}/follow/${userId}/mutual-connections?page=${page}`,
+      { headers }
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch mutual connections");
+    }
+
+    return response.json();
+  }
+
   async getMutualFollows(
     query: string = "",
     page: number = 1

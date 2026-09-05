@@ -360,7 +360,10 @@ export default function SearchScreen() {
   };
 
   const listFooter = () => {
-    if (isSearching) return loading ? <ActivityIndicator style={styles.footer} color={colors.primary} /> : null;
+    // Search isn't paginated, so its only spinner is the one above the list
+    // (see the ActivityIndicator in the return). A footer one here just made it
+    // show two wheels per keystroke.
+    if (isSearching) return null;
     if (discover.loadingMore) return <ActivityIndicator style={styles.footer} color={colors.primary} />;
     // The nearby fallback: this city is quiet, here's the nearest one that isn't.
     if (discover.nearby && discover.nearby.events.length > 0) {
@@ -410,25 +413,32 @@ export default function SearchScreen() {
         </View>
       </View>
 
-      {(loading && isSearching) || (discover.loading && !isSearching) ? (
-        <ActivityIndicator style={styles.loader} size="large" color={colors.primary} />
-      ) : null}
+      <View style={styles.body}>
+        <SectionList
+          sections={sections as any}
+          keyExtractor={(item: any, index) => `${item._id || item.id || index}`}
+          renderItem={renderItem as any}
+          renderSectionHeader={renderSectionHeader as any}
+          ListHeaderComponent={listHeader}
+          ListEmptyComponent={listEmpty}
+          ListFooterComponent={listFooter}
+          onEndReached={!isSearching ? discover.loadMore : undefined}
+          onEndReachedThreshold={0.5}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+          stickySectionHeadersEnabled={false}
+        />
 
-      <SectionList
-        sections={sections as any}
-        keyExtractor={(item: any, index) => `${item._id || item.id || index}`}
-        renderItem={renderItem as any}
-        renderSectionHeader={renderSectionHeader as any}
-        ListHeaderComponent={listHeader}
-        ListEmptyComponent={listEmpty}
-        ListFooterComponent={listFooter}
-        onEndReached={!isSearching ? discover.loadMore : undefined}
-        onEndReachedThreshold={0.5}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
-        stickySectionHeadersEnabled={false}
-      />
+        {/* Centred over the results area rather than wedged under the search
+            bar; stale results stay visible underneath while the next query
+            resolves. */}
+        {((loading && isSearching) || (discover.loading && !isSearching)) && (
+          <View style={styles.loaderOverlay} pointerEvents="none">
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
@@ -436,6 +446,12 @@ export default function SearchScreen() {
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: c.background },
+    body: { flex: 1 },
+    loaderOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     header: {
       flexDirection: "row",
       alignItems: "center",
@@ -514,7 +530,6 @@ const createStyles = (c: ThemeColors) =>
     seeAll: { fontSize: 13, fontFamily: Fonts.semiBold, color: c.primary },
     cardWrap: { marginBottom: 12 },
     rowWrap: { marginBottom: 4 },
-    loader: { marginTop: 24 },
     footer: { marginVertical: 20 },
     nearbyBlock: { marginTop: 20 },
     nearbyTitle: {

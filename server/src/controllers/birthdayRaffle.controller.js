@@ -1,5 +1,5 @@
 import Event from "../models/event.model.js";
-import { RAFFLE_CAMPAIGN_END } from "../config/birthdayRaffle.js";
+import { getCurrentCampaign, campaignPrizes } from "../services/raffleCampaign.service.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -20,9 +20,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * pendingInvites) — it's "how many people were reached out to", which
  * shouldn't un-count just because one of them later backs out of going.
  */
-function scoreEntry(event) {
+function scoreEntry(event, campaign) {
   const verifiedRsvps = event.rsvpUsers.length;
   const totalInvites = event.invitedUsers.length + event.pendingInvites.length;
+  const campaignOver = Date.now() > new Date(campaign.endDate).getTime();
   return {
     eventId: event._id,
     eventTitle: event.title,
@@ -34,32 +35,39 @@ function scoreEntry(event) {
     totalInvites,
     eligibilityScore: 1 + verifiedRsvps, // base entry + one point per verified RSVP
     isEligible: true,
-    status: event.raffleWinnerRank ? "winner" : Date.now() > RAFFLE_CAMPAIGN_END.getTime() ? "eligible" : "active",
+    status: event.raffleWinnerRank ? "winner" : campaignOver ? "eligible" : "active",
     winnerRank: event.raffleWinnerRank || null,
   };
 }
 
 /**
  * GET /raffle/status — whether the current user has a qualifying birthday
- * event and, if so, their entry stats. Backs both the raffle landing page
- * (which only needs `hasQualifyingEvent`) and the status page (which needs
- * everything).
+ * event in the current campaign and, if so, their entry stats. Backs both the
+ * raffle landing page (which only needs `hasQualifyingEvent`) and the status
+ * page (which needs everything).
  */
 export async function getRaffleStatus(req, res) {
   try {
+    const campaign = await getCurrentCampaign();
+
     const events = await Event.find({
       createdBy: req.user.id,
       isBirthdayRaffle: true,
-      // Only events created during the campaign qualify — created after the
-      // deadline is as good as not entering.
-      createdAt: { $lte: RAFFLE_CAMPAIGN_END },
+      // Only events created inside this campaign's window qualify.
+      createdAt: { $gte: campaign.startDate, $lte: campaign.endDate },
     });
 
-    const daysLeft = Math.max(0, Math.ceil((RAFFLE_CAMPAIGN_END.getTime() - Date.now()) / DAY_MS));
-    const campaignDeadline = RAFFLE_CAMPAIGN_END.toISOString();
+    const daysLeft = Math.max(
+      0,
+      Math.ceil((new Date(campaign.endDate).getTime() - Date.now()) / DAY_MS)
+    );
+    const campaignDeadline = new Date(campaign.endDate).toISOString();
+    // Prize tiers for this campaign so the app can render real rewards instead
+    // of its hardcoded copy.
+    const prizes = campaignPrizes(campaign);
 
     if (events.length === 0) {
-      return res.json({ hasQualifyingEvent: false, daysLeft, campaignDeadline });
+      return res.json({ hasQualifyingEvent: false, daysLeft, campaignDeadline, prizes });
     }
 
     // Multiple qualifying events are allowed (more parties, more chances) —
@@ -68,9 +76,10 @@ export async function getRaffleStatus(req, res) {
 
     res.json({
       hasQualifyingEvent: true,
-      ...scoreEntry(best),
+      ...scoreEntry(best, campaign),
       daysLeft,
       campaignDeadline,
+      prizes,
     });
   } catch (error) {
     console.error("Get raffle status error:", error);
