@@ -287,7 +287,7 @@ export default function VendorDetails() {
   }, [cart.items, cart.hasVendorItems, vId]);
 
   const addToCart = (item: Service) => {
-    const doAdd = () =>
+    const doAdd = () => {
       cart.addItem(vId, vName, {
         serviceId: item._id,
         name: item.name,
@@ -297,6 +297,11 @@ export default function VendorDetails() {
         section: item.section,
         quantity: 1,
       });
+      showSuccess(
+        `${item.name} added — open your cart to review and check out.`,
+        "Added to cart"
+      );
+    };
 
     if (cart.isDifferentVendor(vId)) {
       const existingVendors = Array.from(

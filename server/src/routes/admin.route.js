@@ -19,6 +19,10 @@ import {
   toggleEventActive,
   deleteEvent,
   getRaffleEntries,
+  getRaffleCampaigns,
+  createRaffleCampaign,
+  updateRaffleCampaign,
+  endRaffleCampaign,
   setRaffleWinner,
   getGuides,
   toggleGuideActive,
@@ -81,7 +85,12 @@ router.get("/admin/events", authenticateAdmin, getEvents);
 router.patch("/admin/events/:id/toggle", authenticateAdmin, toggleEventActive);
 router.delete("/admin/events/:id", authenticateAdmin, deleteEvent);
 
-// Birthday Raffle
+// Birthday Raffle — campaigns (register above the :id winner route)
+router.get("/admin/raffle/campaigns", authenticateAdmin, getRaffleCampaigns);
+router.post("/admin/raffle/campaigns", authenticateAdmin, createRaffleCampaign);
+router.patch("/admin/raffle/campaigns/:id", authenticateAdmin, updateRaffleCampaign);
+router.post("/admin/raffle/campaigns/:id/end", authenticateAdmin, endRaffleCampaign);
+// Birthday Raffle — entries + winner selection
 router.get("/admin/raffle/entries", authenticateAdmin, getRaffleEntries);
 router.patch("/admin/raffle/:id/winner", authenticateAdmin, setRaffleWinner);
 

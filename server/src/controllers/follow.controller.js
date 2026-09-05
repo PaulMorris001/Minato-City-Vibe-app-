@@ -394,3 +394,64 @@ export const getMutualFollows = async (req, res) => {
     res.status(500).json({ message: "Error fetching mutual follows", error: error.message });
   }
 };
+
+/**
+ * GET /follow/:userId/mutual-connections
+ * People the viewer follows who also follow :userId — the "N mutual
+ * connections" shown on Discover People cards, made viewable from the profile.
+ * Empty for self and the support account.
+ */
+export const getMutualConnections = async (req, res) => {
+  try {
+    const targetId = await resolveUserId(req.params.userId);
+    if (!targetId) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    const currentUserId = req.user.id;
+    if (String(targetId) === String(currentUserId) || isSupportUser(targetId)) {
+      return res.status(200).json({ users: [], total: 0, page: 1, pages: 0 });
+    }
+
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
+
+    const viewerFollowing = await Follow.find({ follower: currentUserId })
+      .select("following")
+      .lean();
+    const viewerFollowingIds = viewerFollowing.map((f) => f.following);
+    if (viewerFollowingIds.length === 0) {
+      return res.status(200).json({ users: [], total: 0, page, pages: 0 });
+    }
+
+    const filter = { follower: { $in: viewerFollowingIds }, following: targetId };
+    const [rows, total] = await Promise.all([
+      Follow.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate("follower", "username email profilePicture isVendor businessName")
+        .lean(),
+      Follow.countDocuments(filter),
+    ]);
+
+    const users = rows
+      .filter((r) => r.follower)
+      .map((r) => ({
+        _id: r.follower._id,
+        username: r.follower.username,
+        email: r.follower.email,
+        profilePicture: r.follower.profilePicture,
+        isVendor: r.follower.isVendor,
+        businessName: r.follower.businessName,
+        // The viewer follows every one of these by definition.
+        isFollowing: true,
+      }));
+
+    res.status(200).json({ users, total, page, pages: Math.ceil(total / limit) });
+  } catch (error) {
+    console.error("Get mutual connections error:", error);
+    res
+      .status(500)
+      .json({ message: "Error fetching mutual connections", error: error.message });
+  }
+};

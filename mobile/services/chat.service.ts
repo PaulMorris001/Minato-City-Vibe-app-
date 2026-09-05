@@ -3,6 +3,7 @@ import { BASE_URL } from "@/constants/constants";
 import {
   getChats,
   getMessagesPage,
+  pruneChatsNotIn,
   upsertChats,
   upsertMessages,
 } from "@/db/chatRepo";
@@ -62,17 +63,26 @@ export interface MessageReaction {
 export interface User {
   _id: string;
   username: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   profilePicture?: string;
   isVendor?: boolean;
   businessName?: string;
   businessPicture?: string;
+  /**
+   * Set by the server on the official support account. Prefer it over the
+   * bundled SUPPORT_USER_ID, which has drifted from the configured id before.
+   */
+  isSupport?: boolean;
+  verified?: boolean;
 }
 
 export interface Message {
   _id: string;
   chat: string;
-  sender: User;
+  /** Null when the author's account was deleted; the message survives in group chats. */
+  sender: User | null;
   type: "text" | "image" | "event" | "guide" | "system" | "order";
   content?: string;
   imageUrl?: string;
@@ -123,11 +133,27 @@ class ChatService {
    */
   async getUserChats(scope: ChatScope = "client"): Promise<Chat[]> {
     try {
-      const headers = await this.getAuthHeader();
-      const response = await fetch(`${BASE_URL}/chats?scope=${scope}`, { headers });
+      // On a fresh login/signup this can fire before the token is readable, or
+      // while the just-issued token is still settling. There's nothing to fetch
+      // for a brand-new account anyway — fall back to the (empty) local copy
+      // instead of throwing a red error into the terminal.
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) return getChats(scope);
 
+      const response = await fetch(`${BASE_URL}/chats?scope=${scope}`, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.status === 401) {
+        // Auth not ready yet (see above) — transient, not a failure worth
+        // surfacing. The next refresh (socket connect / focus) will succeed.
+        return getChats(scope);
+      }
       if (!response.ok) {
-        throw new Error("Failed to fetch chats");
+        throw new Error(`Failed to fetch chats (${response.status})`);
       }
 
       const data = await response.json();
@@ -135,9 +161,16 @@ class ChatService {
       // Write-through: the inbox can paint from SQLite on the next open before
       // any network call returns.
       upsertChats(chats, scope);
+      // ...and drop what the server no longer has. A conversation with a
+      // deleted account is gone server-side; without this the local copy
+      // outlives it and stays readable offline.
+      pruneChatsNotIn(chats.map((c) => c._id), scope);
       return chats;
     } catch (error) {
-      console.error("Get user chats error:", error);
+      // Callers (ChatListScreen / VendorChatsTab) already fall back to the
+      // local copy and decide whether to surface anything — keep this at warn
+      // so a transient network blip doesn't read like a crash.
+      console.warn("getUserChats failed, using local copy:", error);
       throw error;
     }
   }
@@ -251,9 +284,13 @@ class ChatService {
           const body = await response.json();
           serverMessage = body?.message;
         } catch {}
-        throw new Error(
+        const err: any = new Error(
           `Chat fetch failed (${response.status}${serverMessage ? `: ${serverMessage}` : ""})`
         );
+        // Callers need to tell "gone" from "offline" — a 404 must not fall
+        // back to cached history the way a dead network does.
+        err.status = response.status;
+        throw err;
       }
 
       const data = await response.json();

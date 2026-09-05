@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Alert,
   ActivityIndicator,
   Linking,
@@ -28,13 +27,11 @@ import {
   payoutUnavailableMessage,
 } from "@/constants/payments";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
-import { ImagePickerButton } from "@/components/shared";
 import { getAddressFromCurrentPosition } from "@/hooks/useLocation";
 import { useActiveCity, setActiveCity } from "@/hooks/useActiveCity";
 import type { LocationSelection } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { useAccount } from "@/contexts/AccountContext";
-import { uploadImage } from "@/utils/imageUpload";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -48,12 +45,6 @@ const THEME_OPTIONS = [
   { value: "dark", label: "Dark", icon: "moon-outline" },
 ] as const;
 
-// Same format rule as the signup wizard — new usernames stay clean even though
-// the server (matching /register) only enforces 2–30 chars.
-const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
-
-type UsernameStatus = "idle" | "invalid" | "checking" | "available" | "taken";
-
 export default function SettingsScreen() {
   const { colors, preference, setPreference } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -61,9 +52,6 @@ export default function SettingsScreen() {
   const navigation = useNavigation();
   const { activeAccount, switchAccount } = useAccount();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [profilePicture, setProfilePicture] = useState("");
-  const [bio, setBio] = useState("");
   // The single location the user's account is set to — used both as the
   // home feed's default filter city and to derive selling currency/payout.
   // Only ever set via device GPS (or an IP-based guess on first visit,
@@ -91,91 +79,7 @@ export default function SettingsScreen() {
   // reaches their country (they can still publish free listings).
   const payoutRoute = payoutOnboardingRoute(user.country);
 
-  // Inline username editing (client account only).
-  const [editingUsername, setEditingUsername] = useState(false);
-  const [usernameDraft, setUsernameDraft] = useState("");
-  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
-  const [savingUsername, setSavingUsername] = useState(false);
   const [clearingLocalData, setClearingLocalData] = useState(false);
-
-  // Debounced live availability check while the username editor is open —
-  // same flow as the signup wizard. A network hiccup stays non-blocking; the
-  // final PUT is authoritative and surfaces a clear 409.
-  useEffect(() => {
-    if (!editingUsername) return;
-    const raw = usernameDraft.trim().replace(/^@+/, "");
-    // Unchanged (ignoring case) means "no rename" — nothing to check.
-    if (!raw || raw.toLowerCase() === user.username.toLowerCase()) {
-      setUsernameStatus("idle");
-      return;
-    }
-    if (!USERNAME_RE.test(raw)) {
-      setUsernameStatus("invalid");
-      return;
-    }
-    setUsernameStatus("checking");
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      try {
-        const res = await axios.get(`${BASE_URL}/auth/check-availability`, {
-          params: { username: raw },
-        });
-        const info = res.data?.username;
-        if (!cancelled) {
-          setUsernameStatus(info ? (info.available ? "available" : "taken") : "idle");
-        }
-      } catch {
-        if (!cancelled) setUsernameStatus("idle");
-      }
-    }, 450);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [usernameDraft, editingUsername, user.username]);
-
-  const openUsernameEditor = () => {
-    setUsernameDraft(user.username);
-    setUsernameStatus("idle");
-    setEditingUsername(true);
-  };
-
-  const handleSaveUsername = async () => {
-    const next = usernameDraft.trim().replace(/^@+/, "");
-    if (next === user.username) {
-      setEditingUsername(false);
-      return;
-    }
-    if (!USERNAME_RE.test(next)) {
-      showError("3–20 characters — letters, numbers and underscores only.");
-      return;
-    }
-    setSavingUsername(true);
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      await axios.put(
-        `${BASE_URL}/profile/picture`,
-        { username: next },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setUser((prev) => ({ ...prev, username: next }));
-      // Keep the cached user JSON (home greeting etc.) in sync.
-      try {
-        const cached = await SecureStore.getItemAsync("user");
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          parsed.username = next;
-          await SecureStore.setItemAsync("user", JSON.stringify(parsed));
-        }
-      } catch {}
-      setEditingUsername(false);
-      showSuccess("Username updated");
-    } catch (error: any) {
-      showError(error.response?.data?.message || "Failed to update username");
-    } finally {
-      setSavingUsername(false);
-    }
-  };
 
   // Fetches on mount and again every time the screen regains focus (e.g.
   // returning from /verify-email, /earnings, /blocked-users) so state stays
@@ -241,7 +145,7 @@ export default function SettingsScreen() {
       const token = await SecureStore.getItemAsync("token");
       await axios.put(
         `${BASE_URL}/profile/picture`,
-        { bio, location: resolved },
+        { location: resolved },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -276,8 +180,6 @@ export default function SettingsScreen() {
         emailVerifiedAt: userData.emailVerifiedAt || null,
         country: userData.location?.country || "",
       });
-      setProfilePicture(userData.profilePicture || "");
-      setBio(userData.bio || "");
       setEventReminderEmails(
         userData.notificationPrefs?.eventReminderEmails !== false
       );
@@ -396,61 +298,6 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleSaveProfile = async () => {
-    setSaving(true);
-    try {
-      const token = await SecureStore.getItemAsync("token");
-
-      const payload: {
-        profilePicture?: string;
-        bio: string;
-        location?: Partial<LocationSelection>;
-      } = { bio };
-
-      // Only send location once a country is chosen — never wipe a saved one.
-      if (location?.country) {
-        payload.location = {
-          country: location.country,
-          state: location.state || "",
-          city: location.city || "",
-        };
-      }
-
-      // Upload a newly-picked photo, otherwise keep the existing URL
-      if (profilePicture) {
-        if (profilePicture.startsWith("file://")) {
-          try {
-            const result = await uploadImage(profilePicture, "profiles", token!);
-            payload.profilePicture = result.url;
-            setProfilePicture(result.url);
-          } catch (uploadError: any) {
-            console.error("Upload error:", uploadError);
-            showError("Failed to upload image. Please try again.");
-            setSaving(false);
-            return;
-          }
-        } else {
-          payload.profilePicture = profilePicture;
-        }
-      }
-
-      await axios.put(`${BASE_URL}/profile/picture`, payload, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      // Keep the Payouts row's provider routing in sync with the new country.
-      if (payload.location?.country) {
-        setUser((prev) => ({ ...prev, country: payload.location!.country! }));
-      }
-      showSuccess("Profile updated successfully");
-    } catch (error: any) {
-      const errorMessage =
-        error.response?.data?.message || "Failed to update profile";
-      showError(errorMessage);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -468,50 +315,6 @@ export default function SettingsScreen() {
           <Text style={styles.headerTitle}>Settings</Text>
           <Text style={styles.headerSubtitle}>Manage your account preferences</Text>
         </View>
-      </View>
-
-      {/* Profile Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Profile</Text>
-        <Text style={styles.sectionDescription}>
-          Add a photo and a short bio to personalize your account
-        </Text>
-
-        <ImagePickerButton
-          imageUri={profilePicture}
-          onImageSelected={setProfilePicture}
-          label="Profile Photo"
-          size={140}
-          shape="circle"
-          fallbackName={user.username}
-        />
-
-        <Text style={styles.fieldLabel}>Bio</Text>
-        <TextInput
-          style={styles.bioInput}
-          placeholder="Tell people a bit about yourself..."
-          placeholderTextColor={colors.textMuted}
-          value={bio}
-          onChangeText={setBio}
-          multiline
-          maxLength={500}
-        />
-        <Text style={styles.bioCount}>{bio.length}/500</Text>
-
-        <TouchableOpacity
-          style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-          onPress={handleSaveProfile}
-          disabled={saving}
-        >
-          {saving ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <>
-              <Ionicons name="checkmark-circle" size={20} color="#fff" />
-              <Text style={styles.saveButtonText}>Save Profile</Text>
-            </>
-          )}
-        </TouchableOpacity>
       </View>
 
       {/* Location — one single value used both as the home feed's default
@@ -545,105 +348,9 @@ export default function SettingsScreen() {
         <Text style={styles.homeLocationCity}>{location?.city || homeCity || "Not set"}</Text>
       </View>
 
-      {/* Account Information */}
+      {/* Account */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account Information</Text>
-
-        <View style={styles.infoRow}>
-          <View style={styles.infoIconContainer}>
-            <Ionicons name="person-outline" size={20} color={Colors.primary} />
-          </View>
-          <View style={styles.infoContent}>
-            <Text style={styles.infoLabel}>Username</Text>
-            {editingUsername ? (
-              <View style={styles.usernameEditWrap}>
-                <TextInput
-                  style={styles.usernameInput}
-                  value={usernameDraft}
-                  onChangeText={(t) => setUsernameDraft(t.replace(/^@+/, ""))}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoFocus
-                  maxLength={20}
-                  editable={!savingUsername}
-                  placeholder="username"
-                  placeholderTextColor={colors.textMuted}
-                />
-                {usernameStatus !== "idle" && (
-                  <Text
-                    style={[
-                      styles.usernameHint,
-                      usernameStatus === "invalid" && { color: colors.warning },
-                      usernameStatus === "checking" && { color: colors.textMuted },
-                      usernameStatus === "available" && { color: "#22c55e" },
-                      usernameStatus === "taken" && { color: colors.error },
-                    ]}
-                  >
-                    {usernameStatus === "invalid" &&
-                      "3–20 characters — letters, numbers, underscores."}
-                    {usernameStatus === "checking" && "Checking availability…"}
-                    {usernameStatus === "available" && "Available"}
-                    {usernameStatus === "taken" && "That username is taken."}
-                  </Text>
-                )}
-                <View style={styles.usernameActions}>
-                  <TouchableOpacity
-                    style={styles.usernameCancelBtn}
-                    onPress={() => setEditingUsername(false)}
-                    disabled={savingUsername}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.usernameCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.usernameSaveBtn,
-                      (savingUsername ||
-                        usernameStatus === "taken" ||
-                        usernameStatus === "invalid") &&
-                        styles.saveButtonDisabled,
-                    ]}
-                    onPress={handleSaveUsername}
-                    disabled={
-                      savingUsername ||
-                      usernameStatus === "taken" ||
-                      usernameStatus === "invalid"
-                    }
-                    activeOpacity={0.8}
-                  >
-                    {savingUsername ? (
-                      <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                      <Text style={styles.usernameSaveText}>Save</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <Text style={styles.infoValue}>{user.username}</Text>
-            )}
-          </View>
-          {activeAccount === "client" && !editingUsername && (
-            <TouchableOpacity
-              style={styles.usernameEditBtn}
-              onPress={openUsernameEditor}
-              activeOpacity={0.7}
-              accessibilityLabel="Change username"
-            >
-              <Ionicons name="pencil-outline" size={16} color={Colors.primary} />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View style={styles.infoRow}>
-          <View style={styles.infoIconContainer}>
-            <Ionicons name="mail-outline" size={20} color={Colors.primary} />
-          </View>
-          <View style={styles.infoContent}>
-            <Text style={styles.infoLabel}>Email</Text>
-            <Text style={styles.infoValue}>{user.email}</Text>
-          </View>
-        </View>
+        <Text style={styles.sectionTitle}>Account</Text>
 
         <View style={[styles.infoRow, { borderBottomWidth: 0, marginBottom: 4 }]}>
           <View style={styles.infoIconContainer}>
@@ -868,7 +575,7 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Preferences</Text>
 
-        <View style={styles.preferenceItem}>
+        <View style={styles.appearanceBlock}>
           <View style={styles.preferenceLeft}>
             <Ionicons name="color-palette-outline" size={22} color={colors.textBody} />
             <Text style={styles.preferenceText}>Appearance</Text>
@@ -1028,32 +735,6 @@ const createStyles = (c: ThemeColors) =>
     color: c.textSecondary,
     marginBottom: 20,
   },
-  fieldLabel: {
-    fontSize: 14,
-    fontFamily: Fonts.semiBold,
-    color: c.textBody,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  bioInput: {
-    backgroundColor: c.card,
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 15,
-    fontFamily: Fonts.regular,
-    color: c.text,
-    minHeight: 90,
-    textAlignVertical: "top",
-  },
-  bioCount: {
-    fontSize: 12,
-    fontFamily: Fonts.regular,
-    color: c.textMuted,
-    alignSelf: "flex-end",
-    marginTop: 4,
-  },
   homeLocationCity: {
     fontSize: 15,
     fontFamily: Fonts.medium,
@@ -1114,65 +795,6 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.regular,
     color: c.textSecondary,
   },
-  usernameEditWrap: {
-    marginTop: 2,
-  },
-  usernameInput: {
-    backgroundColor: c.card,
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    fontFamily: Fonts.medium,
-    color: c.text,
-  },
-  usernameHint: {
-    fontSize: 12,
-    fontFamily: Fonts.regular,
-    marginTop: 6,
-  },
-  usernameActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 10,
-    marginTop: 10,
-  },
-  usernameCancelBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: c.border,
-  },
-  usernameCancelText: {
-    fontSize: 13,
-    fontFamily: Fonts.semiBold,
-    color: c.textSecondary,
-  },
-  usernameSaveBtn: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    minWidth: 64,
-    alignItems: "center",
-  },
-  usernameSaveText: {
-    fontSize: 13,
-    fontFamily: Fonts.semiBold,
-    color: c.white,
-  },
-  usernameEditBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: c.primaryFaded,
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 8,
-  },
   preferenceItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -1203,6 +825,12 @@ const createStyles = (c: ThemeColors) =>
     color: c.textSecondary,
     marginTop: 2,
   },
+  appearanceBlock: {
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: c.border,
+    gap: 12,
+  },
   themeToggle: {
     flexDirection: "row",
     backgroundColor: c.glassFillSubtle,
@@ -1211,11 +839,13 @@ const createStyles = (c: ThemeColors) =>
     gap: 2,
   },
   themeOption: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 4,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 8,
   },
   themeOptionActive: {

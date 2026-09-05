@@ -52,11 +52,12 @@ import { isVideoUrl } from "@/utils/media";
 import { saveRemoteMediaToGallery, saveWithFeedback } from "@/utils/saveToGallery";
 import MediaTile from "@/components/shared/MediaTile";
 import { openUserProfile } from "@/utils/userNavigation";
+import { isSupportUser } from "@/constants/support";
 import { trackEvent } from "@/utils/analytics";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { currencyPrefix } from "@/constants/payments";
 import { Service } from "@/libs/interfaces";
-import { showError, showSuccess } from "@/utils/toast";
+import { showError } from "@/utils/toast";
 
 import type { ThemeColors } from "@/constants/theme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -67,6 +68,7 @@ import {
   enqueueOutbox,
   listOutbox,
   newestCreatedAt,
+  removeChat,
 } from "@/db/chatRepo";
 import { isOnline } from "@/utils/reachability";
 import { useIsOnline } from "@/hooks/useIsOnline";
@@ -121,7 +123,7 @@ function mergeMessages(
     // One of our own messages we hadn't seen resolve — it raced the send
     // response, so swap it in for the oldest optimistic bubble rather than
     // leaving both on screen.
-    if (msg.sender._id === currentUserId) {
+    if (msg.sender?._id === currentUserId) {
       const tempKey = [...byId.keys()].find((k) => k.startsWith("temp_"));
       if (tempKey) byId.delete(tempKey);
     }
@@ -133,6 +135,46 @@ function mergeMessages(
   return [...byId.values()].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
+}
+
+type MessageItem = Message & { showSender: boolean };
+type MessageSection = MessageItem | { type: "date"; label: string; _id: string };
+
+// Pure over its argument — kept at module scope so it isn't a hook dependency
+// and doesn't get rebuilt every render.
+function buildMessageSections(msgs: Message[]): MessageSection[] {
+  const sections: MessageSection[] = [];
+  let lastDateLabel = "";
+  let lastSenderId: string | null | undefined = null;
+  msgs.forEach((msg) => {
+    const msgDate = new Date(msg.createdAt);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    let label: string;
+    if (msgDate.toDateString() === today.toDateString()) {
+      label = "Today";
+    } else if (msgDate.toDateString() === yesterday.toDateString()) {
+      label = "Yesterday";
+    } else {
+      label = msgDate.toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+    }
+    if (label !== lastDateLabel) {
+      lastDateLabel = label;
+      sections.push({ type: "date", label, _id: `date-${msg._id}` });
+    }
+    // showSender: first message in a contiguous run from the same sender.
+    // Computed here (not per-row by index) so it's stable under FlashList
+    // cell recycling.
+    const showSender = lastSenderId !== msg.sender?._id;
+    lastSenderId = msg.sender?._id;
+    sections.push({ ...msg, showSender });
+  });
+  return sections;
 }
 
 export default function ChatScreen() {
@@ -211,8 +253,6 @@ export default function ChatScreen() {
   const [loadingMutuals, setLoadingMutuals] = useState(false);
   const [selectedToAdd, setSelectedToAdd] = useState<FollowUser[]>([]);
   const [invitingMembers, setInvitingMembers] = useState(false);
-
-  const [pinning, setPinning] = useState(false);
 
   // Responding to a pending invite (when the viewer was invited to this group)
   const [respondingInvite, setRespondingInvite] = useState(false);
@@ -320,6 +360,22 @@ export default function ChatScreen() {
         socketService.markMessagesAsRead(id, currentUserId);
       }
     } catch (error: any) {
+      // The conversation is gone server-side — the other account was deleted,
+      // or the chat was. This check must come BEFORE the offline fallback:
+      // otherwise we'd keep showing a cached copy of a thread nobody is
+      // supposed to be able to reach any more.
+      if (error?.status === 404) {
+        await removeChat(id);
+        Alert.alert(
+          "Conversation unavailable",
+          "This conversation is no longer available."
+        );
+        // Same fallback as handleBack, which is declared further down: a
+        // notification or deep link can make this the first screen on the stack.
+        if (router.canGoBack()) router.back();
+        else router.replace("/messages");
+        return;
+      }
       // Already showing saved history — a dead network is not worth an alert
       // over a screen the user can read perfectly well.
       if (cached.length) {
@@ -368,7 +424,7 @@ export default function ChatScreen() {
       );
       const overlaps = knownIds.size === 0 || fetched.some((m) => knownIds.has(m._id));
       const hasNewIncoming = fetched.some(
-        (m) => !knownIds.has(m._id) && m.sender._id !== currentUserId
+        (m) => !knownIds.has(m._id) && m.sender?._id !== currentUserId
       );
 
       if (!overlaps) {
@@ -463,7 +519,7 @@ export default function ChatScreen() {
         if (pendingInviteeRef.current) return;
         if (message.chat === id) {
           setMessages((prev) => mergeMessages(prev, [message], currentUserId));
-          if (message.sender._id !== currentUserId && currentUserId) {
+          if (message.sender?._id !== currentUserId && currentUserId) {
             chatService.markMessagesAsRead(id);
             socketService.markMessagesAsRead(id, currentUserId);
           }
@@ -486,7 +542,7 @@ export default function ChatScreen() {
           // re-anchor/jump — on every redundant read receipt.
           let changed = false;
           const next = prev.map((m) => {
-            if (m.sender._id === currentUserId && m.status !== "read") {
+            if (m.sender?._id === currentUserId && m.status !== "read") {
               changed = true;
               return { ...m, status: "read" as const };
             }
@@ -868,14 +924,11 @@ export default function ChatScreen() {
     if (!chat) return;
     const isPinned = (chat.pinnedMessage as any)?._id === message._id;
     const newMessageId = isPinned ? null : message._id;
-    setPinning(true);
     try {
       const updated = await chatService.pinMessage(chat._id, newMessageId);
       setChat((prev) => prev ? { ...prev, pinnedMessage: updated.pinnedMessage } : prev);
     } catch (e: any) {
       Alert.alert("Couldn't pin message", e?.message || "Please try again.");
-    } finally {
-      setPinning(false);
     }
   }, [chat]);
 
@@ -1146,45 +1199,19 @@ export default function ChatScreen() {
     return chatParticipantAvatar(chat, otherParticipant) || null;
   };
 
-  type MessageItem = Message & { showSender: boolean };
-  type MessageSection = MessageItem | { type: "date"; label: string; _id: string };
-
-  const buildMessageSections = (msgs: Message[]): MessageSection[] => {
-    const sections: MessageSection[] = [];
-    let lastDateLabel = "";
-    let lastSenderId: string | null = null;
-    msgs.forEach((msg) => {
-      const msgDate = new Date(msg.createdAt);
-      const today = new Date();
-      const yesterday = new Date();
-      yesterday.setDate(today.getDate() - 1);
-      let label: string;
-      if (msgDate.toDateString() === today.toDateString()) {
-        label = "Today";
-      } else if (msgDate.toDateString() === yesterday.toDateString()) {
-        label = "Yesterday";
-      } else {
-        label = msgDate.toLocaleDateString("en-US", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-        });
-      }
-      if (label !== lastDateLabel) {
-        lastDateLabel = label;
-        sections.push({ type: "date", label, _id: `date-${msg._id}` });
-      }
-      // showSender: first message in a contiguous run from the same sender.
-      // Computed here (not per-row by index) so it's stable under FlashList
-      // cell recycling.
-      const showSender = lastSenderId !== msg.sender._id;
-      lastSenderId = msg.sender._id;
-      sections.push({ ...msg, showSender });
-    });
-    return sections;
-  };
-
   const isGroup = chat?.type === "group";
+  const otherParticipant = chat?.participants.find((p) => p._id !== currentUserId);
+  // The server flag is the authority: EXPO_PUBLIC_SUPPORT_USER_ID is unset, so
+  // the bundled constant falls back to a literal that no longer matches the
+  // configured SUPPORT_USER_ID. It stays as a fallback for the case where the
+  // app updates ahead of the server.
+  const isSupportChat =
+    !isGroup && (!!otherParticipant?.isSupport || isSupportUser(otherParticipant?._id));
+  // Support has no profile page: openUserProfile bounces the tap straight back
+  // into this same conversation via openSupportChat, which pushes a second
+  // copy of this screen — tap the header enough times and the stack fills with
+  // duplicate support chats. Nothing to open, so nothing to tap.
+  const headerTappable = !isGroup && !isSupportChat;
   // Usernames in this chat, used so multi-word @mentions ("@setemi Loye") get
   // tagged and highlighted in full rather than just the first word.
   const participantUsernames = useMemo(() => {
@@ -1593,7 +1620,7 @@ export default function ChatScreen() {
         );
       }
       const msg = item as MessageItem;
-      const isOwnMessage = msg.sender._id === currentUserId;
+      const isOwnMessage = msg.sender?._id === currentUserId;
 
       return (
         <MessageBubble
@@ -1672,22 +1699,37 @@ export default function ChatScreen() {
 
             <TouchableOpacity
               style={styles.headerCenter}
-              activeOpacity={isGroup ? 1 : 0.7}
+              activeOpacity={headerTappable ? 0.7 : 1}
               onPress={() => {
-                if (isGroup) return;
-                const other = chat?.participants.find((p) => p._id !== currentUserId);
-                openUserProfile(other?._id);
+                if (!headerTappable) return;
+                openUserProfile(otherParticipant?._id);
               }}
             >
               <Avatar uri={getChatAvatar()} name={getChatName()} size={38} />
               <View style={styles.headerText}>
-                <Text style={styles.headerTitle} numberOfLines={1}>
-                  {capitalize(getChatName())}
-                </Text>
-                {isGroup && (
-                  <Text style={styles.headerSubtitle}>
-                    {chat?.participants.length ?? 0} participants
+                <View style={styles.headerTitleRow}>
+                  <Text style={styles.headerTitle} numberOfLines={1}>
+                    {capitalize(getChatName())}
                   </Text>
+                  {/* Support is the one account users can't check out for
+                      themselves — the header doesn't open a profile — so the
+                      badge has to say it here. */}
+                  {isSupportChat && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={15}
+                      color={colors.info}
+                    />
+                  )}
+                </View>
+                {isSupportChat ? (
+                  <Text style={styles.headerSubtitle}>Official account</Text>
+                ) : (
+                  isGroup && (
+                    <Text style={styles.headerSubtitle}>
+                      {chat?.participants.length ?? 0} participants
+                    </Text>
+                  )
                 )}
               </View>
             </TouchableOpacity>
@@ -1984,7 +2026,7 @@ export default function ChatScreen() {
               return (
                 <ScrollView keyboardShouldPersistTaps="handled">
                   <View style={styles.quoteRow}>
-                    <Text style={styles.quoteSubLabel}>Client's items</Text>
+                    <Text style={styles.quoteSubLabel}>Client&apos;s items</Text>
                     <Text style={styles.quoteSubValue}>
                       {prefix}
                       {formatPrice(subtotal)}
@@ -1992,7 +2034,7 @@ export default function ChatScreen() {
                   </View>
 
                   {/* Items the vendor is adding from their catalogue */}
-                  <Text style={styles.quoteSectionLabel}>Items you're adding</Text>
+                  <Text style={styles.quoteSectionLabel}>Items you&apos;re adding</Text>
                   {addedItems.map((it) => (
                     <View key={it.serviceId} style={styles.addedItemRow}>
                       <View style={{ flex: 1 }}>
@@ -2372,7 +2414,7 @@ export default function ChatScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.toggleLabel}>Mute notifications</Text>
                   <Text style={styles.toggleHint}>
-                    Don't get push alerts for this chat.
+                    Don&apos;t get push alerts for this chat.
                   </Text>
                 </View>
                 <Switch
@@ -2815,11 +2857,18 @@ const createStyles = (c: ThemeColors) =>
     flex: 1,
     minWidth: 0,
   },
+  headerTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
   headerTitle: {
     fontFamily: "BricolageGrotesque_700Bold",
     fontSize: 15,
     color: c.textBright,
     letterSpacing: -0.15,
+    // Shrinks rather than shoving the official badge off the row.
+    flexShrink: 1,
   },
   headerSubtitle: {
     fontFamily: "Outfit_500Medium",

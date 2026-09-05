@@ -1,5 +1,5 @@
 import type { Chat, User } from "@/services/chat.service";
-import { displayName } from "@/utils/displayName";
+import { displayName, vendorDisplayName } from "@/utils/displayName";
 
 /**
  * Per-chat identity for a participant, so each conversation reads like the
@@ -18,8 +18,8 @@ export function isBusinessSide(chat: Chat, userId?: string | null): boolean {
 
 export function chatParticipantName(chat: Chat, user?: User | null): string {
   if (!user) return "";
-  if (isBusinessSide(chat, user._id)) return displayName(user);
-  return user.username || "";
+  if (isBusinessSide(chat, user._id)) return vendorDisplayName(user);
+  return displayName(user);
 }
 
 export function chatParticipantAvatar(

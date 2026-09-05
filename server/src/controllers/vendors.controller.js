@@ -74,6 +74,9 @@ export async function browseVendors(req, res) {
       vendorQuery.city = { $in: matchingCities.map((c) => c._id) };
     }
 
+    // A signed-in vendor shouldn't see their own storefront in a browse list.
+    if (req.user?.id) vendorQuery.user = { $ne: req.user.id };
+
     const vendors = await Vendor.find(vendorQuery)
       .populate("city", "name state country")
       .populate("vendorType", "name icon")
@@ -233,6 +236,9 @@ export async function searchVendors(req, res) {
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
 
     const vendorQuery = await buildVendorSearchQuery({ q: query, city });
+
+    // A signed-in vendor shouldn't see their own storefront in search results.
+    if (req.user?.id) vendorQuery.user = { $ne: req.user.id };
 
     const vendors = await Vendor.find(vendorQuery)
       .populate("city", "name state country")

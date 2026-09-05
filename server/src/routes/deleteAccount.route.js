@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import User from '../models/user.model.js';
 import Follow from '../models/follow.model.js';
 import Notification from '../models/notification.model.js';
+import chatService from '../services/chat.service.js';
 
 const router = express.Router();
 
@@ -169,6 +170,7 @@ async function deleteAccountByCredentials(email, password) {
   await Promise.all([
     Follow.deleteMany({ $or: [{ follower: userId }, { following: userId }] }),
     Notification.deleteMany({ $or: [{ recipient: userId }, { sender: userId }] }),
+    chatService.purgeUserChats(userId),
     User.findByIdAndDelete(userId),
   ]);
 

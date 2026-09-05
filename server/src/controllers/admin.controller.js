@@ -11,6 +11,7 @@ import VerificationRequest from "../models/verification.model.js";
 import Notification from "../models/notification.model.js";
 import Report from "../models/report.model.js";
 import Message from "../models/message.model.js";
+import chatService from "../services/chat.service.js";
 import { sendPushNotification } from "../services/notification.service.js";
 import { markVerified } from "../services/verification.service.js";
 import { getSocketInstance } from "../services/socket.service.js";
@@ -18,6 +19,8 @@ import {
   hasPayoutOnboarding,
   PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
+import RaffleCampaign from "../models/raffleCampaign.model.js";
+import { getCurrentCampaign, campaignPrizes } from "../services/raffleCampaign.service.js";
 
 /**
  * Constant-time string comparison. Guards the username check against timing
@@ -117,6 +120,7 @@ export async function deleteUser(req, res) {
     await Promise.all([
       User.findByIdAndDelete(id),
       Vendor.deleteOne({ user: id }),
+      chatService.purgeUserChats(id),
     ]);
     res.json({ message: "User deleted" });
   } catch (error) {
@@ -301,13 +305,67 @@ export async function deleteEvent(req, res) {
 
 // ── Birthday Raffle ────────────────────────────────────────────────────────
 // Scores are computed the same way birthdayRaffle.controller.js computes
-// them for a user's own status — kept in sync by hand since this is a small,
-// campaign-scoped feature, not by sharing a module (the two call sites want
-// different shapes: one entry vs a whole leaderboard).
+// them for a user's own status — kept in sync by hand since this is a small
+// feature, not by sharing a module (the two call sites want different shapes:
+// one entry vs a whole leaderboard).
+//
+// A campaign is a [startDate, endDate] window managed here. An event belongs to
+// the campaign whose window contains its createdAt — there is no ref — so the
+// windows are kept non-overlapping on create/update.
+
+/** Resolve the campaign a raffle request targets: an explicit ?campaignId, else
+ *  the current one. Returns null when an explicit id doesn't exist. */
+async function resolveRaffleCampaign(req) {
+  if (req.query.campaignId) {
+    return RaffleCampaign.findById(req.query.campaignId);
+  }
+  return getCurrentCampaign();
+}
+
+/** Normalise a prizes payload (array of `{ reward }` or plain strings) into
+ *  `[{ rank, reward }]` with ranks 1..N in array order. Returns { prizes } or
+ *  { error }. `undefined` input means "leave unchanged" -> { prizes: undefined }. */
+function normalizePrizes(input) {
+  if (input === undefined) return { prizes: undefined };
+  if (!Array.isArray(input) || input.length === 0) {
+    return { error: "prizes must be a non-empty array" };
+  }
+  if (input.length > 20) return { error: "a campaign can have at most 20 winners" };
+  const prizes = [];
+  for (let i = 0; i < input.length; i++) {
+    const raw = input[i];
+    const reward = (typeof raw === "string" ? raw : raw?.reward ?? "").trim();
+    if (!reward) return { error: `prize ${i + 1} needs a reward description` };
+    prizes.push({ rank: i + 1, reward });
+  }
+  return { prizes };
+}
+
+/** Reject a window that's inverted or overlaps another campaign. Returns an
+ *  error message, or null when the window is fine. */
+async function windowConflict(startDate, endDate, excludeId) {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (isNaN(start) || isNaN(end)) return "startDate and endDate must be valid dates";
+  if (end <= start) return "endDate must be after startDate";
+  const others = await RaffleCampaign.find(
+    excludeId ? { _id: { $ne: excludeId } } : {}
+  );
+  const clash = others.find((c) => start <= c.endDate && c.startDate <= end);
+  return clash ? `Window overlaps campaign "${clash.name}"` : null;
+}
 
 export async function getRaffleEntries(req, res) {
   try {
-    const events = await Event.find({ isBirthdayRaffle: true })
+    const campaign = await resolveRaffleCampaign(req);
+    if (!campaign) {
+      return res.status(404).json({ message: "Campaign not found" });
+    }
+
+    const events = await Event.find({
+      isBirthdayRaffle: true,
+      createdAt: { $gte: campaign.startDate, $lte: campaign.endDate },
+    })
       .populate("createdBy", "username email profilePicture")
       .sort({ createdAt: -1 });
 
@@ -328,7 +386,90 @@ export async function getRaffleEntries(req, res) {
       }))
       .sort((a, b) => b.eligibilityScore - a.eligibilityScore);
 
-    res.json({ entries });
+    res.json({ entries, campaign });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function getRaffleCampaigns(req, res) {
+  try {
+    const campaigns = await RaffleCampaign.find().sort({ startDate: -1 });
+    res.json({ campaigns });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function createRaffleCampaign(req, res) {
+  try {
+    const { name, startDate, endDate } = req.body;
+    if (!name || !startDate || !endDate) {
+      return res.status(400).json({ message: "name, startDate and endDate are required" });
+    }
+    // One live campaign at a time — the previous one must be ended first so its
+    // entries stop qualifying before the next window opens.
+    const active = await RaffleCampaign.findOne({ status: "active" });
+    if (active) {
+      return res.status(400).json({ message: `End the current campaign ("${active.name}") first` });
+    }
+    const conflict = await windowConflict(startDate, endDate);
+    if (conflict) return res.status(400).json({ message: conflict });
+
+    // Default to the legacy 3 tiers when the client doesn't send any.
+    const { prizes, error: prizeError } = normalizePrizes(req.body.prizes ?? campaignPrizes(null));
+    if (prizeError) return res.status(400).json({ message: prizeError });
+
+    const campaign = await new RaffleCampaign({
+      name: name.trim(),
+      startDate,
+      endDate,
+      prizes,
+      status: "active",
+      createdByAdmin: req.user?.username || "admin",
+    }).save();
+    res.status(201).json({ campaign });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function updateRaffleCampaign(req, res) {
+  try {
+    const { id } = req.params;
+    const campaign = await RaffleCampaign.findById(id);
+    if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+
+    const name = req.body.name ?? campaign.name;
+    const startDate = req.body.startDate ?? campaign.startDate;
+    const endDate = req.body.endDate ?? campaign.endDate;
+
+    const conflict = await windowConflict(startDate, endDate, campaign._id);
+    if (conflict) return res.status(400).json({ message: conflict });
+
+    const { prizes, error: prizeError } = normalizePrizes(req.body.prizes);
+    if (prizeError) return res.status(400).json({ message: prizeError });
+
+    campaign.name = String(name).trim();
+    campaign.startDate = startDate;
+    campaign.endDate = endDate;
+    if (prizes !== undefined) campaign.prizes = prizes;
+    await campaign.save();
+    res.json({ campaign });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// Closes entry until the next campaign is created. Winners already picked stay
+// put — ending is not the same as clearing the leaderboard.
+export async function endRaffleCampaign(req, res) {
+  try {
+    const campaign = await RaffleCampaign.findById(req.params.id);
+    if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+    campaign.status = "ended";
+    await campaign.save();
+    res.json({ campaign });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -341,12 +482,34 @@ export async function setRaffleWinner(req, res) {
   try {
     const { id } = req.params;
     const { rank } = req.body;
-    if (rank !== null && ![1, 2, 3].includes(rank)) {
-      return res.status(400).json({ message: "rank must be 1, 2, 3, or null" });
-    }
+
     const event = await Event.findById(id);
     if (!event || !event.isBirthdayRaffle) {
       return res.status(404).json({ message: "Raffle entry not found" });
+    }
+
+    // The campaign that owns this entry (by date window), used both to bound
+    // the valid ranks and to scope the "one holder per place" reset.
+    const owning = await RaffleCampaign.findOne({
+      startDate: { $lte: event.createdAt },
+      endDate: { $gte: event.createdAt },
+    });
+    const maxRank = campaignPrizes(owning).length;
+
+    if (rank !== null && !(Number.isInteger(rank) && rank >= 1 && rank <= maxRank)) {
+      return res.status(400).json({ message: `rank must be 1-${maxRank}, or null` });
+    }
+
+    // A place is held by at most one entry, but only within the same campaign —
+    // a past campaign's 1st place isn't cleared when the new one picks theirs.
+    if (rank !== null) {
+      const sameWindow = owning
+        ? { createdAt: { $gte: owning.startDate, $lte: owning.endDate } }
+        : {};
+      await Event.updateMany(
+        { _id: { $ne: event._id }, isBirthdayRaffle: true, raffleWinnerRank: rank, ...sameWindow },
+        { $set: { raffleWinnerRank: null } }
+      );
     }
     event.raffleWinnerRank = rank;
     await event.save();

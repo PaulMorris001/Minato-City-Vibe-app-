@@ -22,6 +22,7 @@ import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 
 import { Avatar } from "@/components/shared/Avatar";
+import DiscoverPeoplePreview from "@/components/shared/DiscoverPeoplePreview";
 import GuestGate from "@/components/shared/GuestGate";
 import CreateEventModal from "@/components/client/CreateEventModal";
 import ImageViewerModal from "@/components/shared/ImageViewerModal";
@@ -48,6 +49,8 @@ interface UserProfile {
   /** Username slug for share links (e.g. "setemil"); absent on legacy accounts. */
   slug?: string;
   username: string;
+  firstName?: string;
+  lastName?: string;
   profilePicture?: string;
   bio?: string;
   isVendor?: boolean;
@@ -101,6 +104,8 @@ export default function ProfileScreen() {
         // Share sheet silently falls back to the raw _id.
         slug: u.slug,
         username: u.username,
+        firstName: u.firstName || "",
+        lastName: u.lastName || "",
         profilePicture: u.profilePicture || "",
         bio: u.bio || "",
         isVendor: u.isVendor,
@@ -346,15 +351,6 @@ function Header({
         <Text style={styles.kicker}>PROFILE</Text>
         <View style={styles.topActions}>
           <TouchableOpacity
-            onPress={handleShareProfile}
-            activeOpacity={0.7}
-            style={styles.settingsBtn}
-            accessibilityLabel="Share profile"
-            disabled={!user?._id}
-          >
-            <Ionicons name="share-outline" size={16} color={colors.textBright} />
-          </TouchableOpacity>
-          <TouchableOpacity
             onPress={() => router.push("/settings")}
             activeOpacity={0.7}
             style={styles.settingsBtn}
@@ -440,20 +436,44 @@ function Header({
         </View>
       </View>
 
+      {/* Profile actions */}
+      <View style={styles.profileActions}>
+        <TouchableOpacity
+          style={styles.profileActionBtn}
+          activeOpacity={0.8}
+          onPress={() => router.push("/edit-profile" as any)}
+        >
+          <Ionicons name="create-outline" size={16} color={colors.textBright} />
+          <Text style={styles.profileActionText}>Edit Profile</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.profileActionBtn}
+          activeOpacity={0.8}
+          onPress={handleShareProfile}
+          disabled={!user?._id}
+        >
+          <Ionicons name="share-outline" size={16} color={colors.textBright} />
+          <Text style={styles.profileActionText}>Share Profile</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* "Complete your setup" checklist — auto-hides once every item is done. */}
       <SetupChecklist user={user} sellsGuides={guidesTotal > 0} />
 
-      {/* Search */}
+      {/* Opens Discover People, which has its own search field at the top. */}
       <View style={styles.searchWrap}>
         <TouchableOpacity
           style={styles.searchField}
-          onPress={() => router.push("/search-users" as any)}
+          onPress={() => router.push("/discover-people" as any)}
           activeOpacity={0.7}
         >
           <Ionicons name="search" size={14} color={colors.textFaint} />
-          <Text style={styles.searchPlaceholder}>Search users…</Text>
+          <Text style={styles.searchPlaceholder}>Discover people…</Text>
         </TouchableOpacity>
       </View>
+
+      {/* People to follow — a taste of the standalone Discover People screen. */}
+      <DiscoverPeoplePreview />
 
       {/* Pending invites. Deliberately above the tabs rather than inside one:
           an unanswered invite is neither hosted nor attended, and it's
@@ -1011,6 +1031,29 @@ const createStyles = (c: ThemeColors) =>
     borderColor: c.glassFill,
     alignItems: "center",
     justifyContent: "center",
+  },
+  profileActions: {
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 18,
+    marginTop: 18,
+  },
+  profileActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: c.glassFillSubtle,
+    borderWidth: 1,
+    borderColor: c.glassFill,
+  },
+  profileActionText: {
+    fontFamily: Fonts.semiBold,
+    fontSize: 14,
+    color: c.textBright,
   },
 
   // Hero

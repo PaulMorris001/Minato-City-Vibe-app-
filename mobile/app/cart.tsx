@@ -18,6 +18,7 @@ import { Fonts } from "@/constants/fonts";
 import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
 import { useCart } from "@/contexts/CartContext";
+import { useAccount } from "@/contexts/AccountContext";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { currencyPrefix } from "@/constants/payments";
 import { showError } from "@/utils/toast";
@@ -32,6 +33,7 @@ export default function CartScreen() {
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const cart = useCart();
+  const { activeAccount } = useAccount();
   const formatPrice = useFormatPrice();
   const [submitting, setSubmitting] = useState(false);
 
@@ -56,6 +58,7 @@ export default function CartScreen() {
   const handleCheckout = async () => {
     if (!singleVendorGroup) return;
     if (!ensureOnline("place an order")) return;
+    const fromVendor = activeAccount === "vendor";
     setSubmitting(true);
     try {
       const token = await SecureStore.getItemAsync("token");
@@ -67,6 +70,7 @@ export default function CartScreen() {
         },
         body: JSON.stringify({
           vendorId: singleVendorGroup.vendorId,
+          fromVendor,
           items: singleVendorGroup.items.map((i) => ({
             serviceId: i.serviceId,
             quantity: i.quantity,
@@ -77,7 +81,9 @@ export default function CartScreen() {
       const data = await res.json();
       if (res.ok && data.chatId) {
         cart.clear();
-        // Land in the vendor chat where the order card now lives.
+        // Open the order thread directly. `fromVendor` (sent above) already tells
+        // the server to file it in the buyer's vendor inbox; the chat screen
+        // renders the thread regardless of which inbox it belongs to.
         router.replace(`/chat/${data.chatId}`);
       } else {
         showError(data.message || "Couldn't send your order. Please try again.");

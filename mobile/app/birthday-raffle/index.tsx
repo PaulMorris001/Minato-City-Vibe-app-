@@ -21,13 +21,28 @@ import { BASE_URL } from "@/constants/constants";
 import { useCountdown } from "@/hooks/useCountdown";
 
 // Prizes and rules are static marketing copy — safe to hardcode. The deadline
-// instant below MUST match RAFFLE_CAMPAIGN_END in
-// server/src/config/birthdayRaffle.js — that's the value that actually gates
-// eligibility. This client-side copy only exists so the countdown can start
-// ticking immediately (including for guests, who can't hit the authenticated
-// /raffle/status endpoint) instead of waiting on a fetch; a logged-in user's
-// fetch overwrites it with the server's own value once it resolves.
+// below is only a pre-fetch seed so the countdown ticks immediately (guests
+// included, since /raffle/status needs auth). The real deadline is the active
+// campaign's endDate, managed in the admin dashboard; a logged-in user's
+// /raffle/status fetch overwrites this with that value. Keep it roughly current
+// so guests don't see a wildly stale countdown, but it no longer has to match
+// the server exactly.
 const CAMPAIGN_DEADLINE_MS = new Date("2026-09-30T23:59:59.999Z").getTime();
+
+type PrizeRow = { place: string; reward: string; icon: "trophy" | "medal" | "ribbon" };
+
+const PRIZE_ICONS: PrizeRow["icon"][] = ["trophy", "medal", "ribbon"];
+const ordinal = (n: number) => {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+};
+// Server sends [{ rank, reward }] for the active campaign; fall back to the
+// static copy below until that resolves (and for guests, who can't fetch it).
+const toPrizeRows = (prizes: { rank: number; reward: string }[]): PrizeRow[] =>
+  [...prizes]
+    .sort((a, b) => a.rank - b.rank)
+    .map((p, i) => ({ place: ordinal(p.rank), reward: p.reward, icon: PRIZE_ICONS[i] ?? "ribbon" }));
 
 const CAMPAIGN = {
   title: "Birthday Raffle Campaign",
@@ -36,7 +51,7 @@ const CAMPAIGN = {
     { place: "1st", reward: "₦150,000 Cash + Premium Event Pass", icon: "trophy" as const },
     { place: "2nd", reward: "₦75,000 Cash", icon: "medal" as const },
     { place: "3rd", reward: "₦40,000 Cash", icon: "ribbon" as const },
-  ],
+  ] as PrizeRow[],
   rules: [
     "Create a birthday event on CityVibe during the campaign period.",
     "Share your unique tracking link with friends.",
@@ -58,6 +73,7 @@ export default function BirthdayRaffleScreen() {
   // (guests included); overwritten by the server's own value below for a
   // logged-in user, which is the one that actually gates eligibility.
   const [deadlineMs, setDeadlineMs] = useState(CAMPAIGN_DEADLINE_MS);
+  const [prizes, setPrizes] = useState<PrizeRow[]>(CAMPAIGN.prizes);
   const countdown = useCountdown(deadlineMs);
 
   useEffect(() => {
@@ -75,6 +91,7 @@ export default function BirthdayRaffleScreen() {
         if (res.ok) {
           setHasBirthdayEvent(!!data.hasQualifyingEvent);
           if (data.campaignDeadline) setDeadlineMs(new Date(data.campaignDeadline).getTime());
+          if (Array.isArray(data.prizes) && data.prizes.length) setPrizes(toPrizeRows(data.prizes));
         } else {
           setHasBirthdayEvent(false);
         }
@@ -175,7 +192,7 @@ const handlePrimaryCTA = async () => {
         {/* Prizes */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Prizes</Text>
-          {CAMPAIGN.prizes.map((prize) => (
+          {prizes.map((prize) => (
             <View key={prize.place} style={styles.prizeCard}>
               <View style={styles.prizeIconWrap}>
                 <Ionicons name={prize.icon} size={22} color={colors.primary} />

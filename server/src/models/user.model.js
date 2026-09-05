@@ -9,6 +9,13 @@ const userSchema = mongoose.Schema({
   // enforce at the DB layer, dedupe existing rows then add a unique index with
   // collation { locale: "en", strength: 2 }.
   username: { type: String, required: true, trim: true },
+  // Real name, split from the single "full name" field collected at signup
+  // (see utils/personName.js). Empty on any account created before this field
+  // existed — the client forces a one-time "complete your name" screen on
+  // next login when firstName is unset, so old accounts backfill themselves
+  // instead of needing a migration script.
+  firstName: { type: String, default: "", trim: true },
+  lastName: { type: String, default: "", trim: true },
   // Human-readable share slug generated from the username. Regenerated on
   // username change (see auth.controller updateProfilePicture), with the old
   // slug pushed onto slugHistory so already-shared profile links keep
@@ -44,6 +51,13 @@ const userSchema = mongoose.Schema({
 
   // Short bio shown on the user's profile
   bio: { type: String, default: "", maxlength: 500 },
+
+  // Self-reported gender. Optional — "" means unset (every existing account).
+  gender: {
+    type: String,
+    enum: ["", "male", "female", "non-binary", "prefer-not-to-say"],
+    default: "",
+  },
 
   // Client-specific fields (everyone has these)
   preferences: {

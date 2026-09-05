@@ -49,6 +49,18 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX IF NOT EXISTS idx_outbox_chat ON outbox(chatId, createdAt ASC);
   `,
+  // v2 — one-time wipe of cached conversations.
+  //
+  // Accounts deleted before the server started purging their chats left those
+  // threads readable on every phone that had them cached, and nothing removes
+  // a cached chat the server never mentions again. Rather than try to work out
+  // which ones are stale on-device, drop the lot once: the store is a cache,
+  // and it refills from the server on the next inbox fetch. The outbox is
+  // deliberately spared — those are the user's own unsent messages.
+  `
+  DELETE FROM messages;
+  DELETE FROM chats;
+  `,
 ];
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;

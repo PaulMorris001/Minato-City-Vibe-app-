@@ -7,6 +7,7 @@ import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { currencyPrefix, priceLabel } from "@/constants/payments";
 import { setActiveCity as setSharedActiveCity, useActiveCity } from "@/hooks/useActiveCity";
+import { NAVBAR_ROW_HEIGHT, navbarTopPad } from "@/constants/homeChrome";
 import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useLocation";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { ExternalEvent, externalEventService } from "@/services/externalEvent.service";
@@ -14,6 +15,7 @@ import { trackEvent } from "@/utils/analytics";
 import { cacheRead, cacheWrite } from "@/utils/offlineCache";
 import { ensureAuth } from "@/utils/requireAuth";
 import { ensureOnline } from "@/utils/requireOnline";
+import { fullName } from "@/utils/displayName";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -152,12 +154,6 @@ const TOPIC_EMOJI: Record<string, string> = {
   "Hair and Nail Salons": "💅",
   "Barber Shops": "💈",
 };
-
-// Height of the tab layout's home navbar (paddingTop 50 + 40pt row + 16).
-// On iOS the navbar overlays this screen (see navbarOverlay in the tab
-// layout), so the scroll content pads itself below it; the automatic content
-// inset already contributes the top safe area, hence the subtraction.
-const NAVBAR_OVERLAY_HEIGHT = 106;
 
 function SectionHeader({ title, subtitle, onAction, actionLabel }: { title: string; subtitle?: string; onAction?: () => void; actionLabel?: string }) {
   const styles = useThemedStyles(createStyles);
@@ -480,6 +476,9 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [username, setUsername] = useState("");
+  // Drives the create-event coachmark: it shows only while the feed is at the
+  // top and slides away once the user scrolls down.
+  const [feedAtTop, setFeedAtTop] = useState(true);
   const selectedCity = useActiveCity();
   // Set when the home feed is showing an IP-approximated location rather than
   // a precise device one — surfaces a nudge to grant location permission.
@@ -754,14 +753,16 @@ export default function Home() {
       const userJson = await SecureStore.getItemAsync("user");
       if (userJson) {
         const u = JSON.parse(userJson);
-        setUsername(u.username || "");
+        setUsername(fullName(u) || u.username || "");
         return;
       }
       const token = await SecureStore.getItemAsync("token");
       if (!token) return;
       const res = await fetch(`${BASE_URL}/profile`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
-      if (res.ok) setUsername(data.user?.username || "");
+      // Greeting prefers the real name, falling back to username for an
+      // account that hasn't completed the "complete your name" gate.
+      if (res.ok) setUsername(fullName(data.user) || data.user?.username || "");
     } catch {}
   };
 
@@ -1014,17 +1015,27 @@ export default function Home() {
         // Let content run under the floating native tab bar on iOS; the system
         // inset keeps the last item scrollable above it.
         contentInsetAdjustmentBehavior="automatic"
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          const atTop = e.nativeEvent.contentOffset.y <= 220;
+          setFeedAtTop((prev) => (prev === atTop ? prev : atTop));
+        }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
         }
         contentContainerStyle={[
           styles.scrollContent,
           Platform.OS === "ios" && {
-            // iPad's navbar is insets-driven (insets.top + 10 + ~56 row), so
-            // pad just past the row; phones keep the fixed-height overlay math.
+            // The navbar overlays this screen on iOS, so pad out from under
+            // it. contentInsetAdjustmentBehavior="automatic" already
+            // contributes the top safe area, hence the subtraction. iPad's
+            // navbar has its own inset maths, so pad just past the row.
             paddingTop: isIpad
               ? 10
-              : Math.max(0, NAVBAR_OVERLAY_HEIGHT - insets.top),
+              : Math.max(
+                  0,
+                  navbarTopPad(insets.top) + NAVBAR_ROW_HEIGHT - insets.top
+                ),
           },
           // Phones: tighter tail — the FAB floats over the last few px of
           // content instead of reserving a full empty band.
@@ -1033,9 +1044,14 @@ export default function Home() {
       >
         {/* Greeting */}
         <View style={styles.greetingSection}>
-          <Text style={styles.greetingText}>
-            {getGreeting()}{username ? `, ${username}` : ""} {getGreetingEmoji()}
-          </Text>
+          <View style={styles.greetingRow}>
+            {/* Long usernames ellipsize here rather than wrapping the line or
+                pushing the emoji off-screen. */}
+            <Text style={styles.greetingText} numberOfLines={1}>
+              {getGreeting()}{username ? `, ${username}` : ""}
+            </Text>
+            <Text style={styles.greetingEmoji}> {getGreetingEmoji()}</Text>
+          </View>
           {/* Date and city read as one line — "here's when and where you're
               browsing". The chip was in the navbar; it belongs with the date. */}
           <View style={styles.greetingDateRow}>
@@ -1442,7 +1458,7 @@ export default function Home() {
 
       {/* Rendered after the FAB so it layers above it; pointerEvents="none"
           keeps the FAB tappable through it. */}
-      <CreateEventTooltip />
+      <CreateEventTooltip hidden={!feedAtTop} />
 
         <CreateEventModal
           visible={isModalVisible}
@@ -1556,11 +1572,21 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 14,
     color: c.white,
   },
+  greetingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   greetingText: {
     fontFamily: "BricolageGrotesque_800ExtraBold",
     fontSize: 28,
     color: c.textBright,
     letterSpacing: -0.5,
+    lineHeight: 34,
+    // Yield space to the emoji so a long username truncates instead of wrapping.
+    flexShrink: 1,
+  },
+  greetingEmoji: {
+    fontSize: 28,
     lineHeight: 34,
   },
   greetingDate: {
