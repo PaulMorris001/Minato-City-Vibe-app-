@@ -19,7 +19,7 @@ router.get("/stripe/config", getStripeConfig);
 // before express.json(), so req.body here is already a Buffer
 router.post("/stripe/webhook", stripeWebhook);
 
-// Refunds + cancellation
+// Refunds + cancellation — provider-agnostic despite living here.
 router.post("/tickets/:ticketId/refund", authenticate, refundOwnTicket);
 router.post("/events/:eventId/cancel", authenticate, cancelEventByOrganizer);
 router.post("/admin/tickets/:ticketId/refund", authenticateAdmin, adminRefundTicket);

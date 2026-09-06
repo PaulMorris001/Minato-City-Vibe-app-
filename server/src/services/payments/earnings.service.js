@@ -14,9 +14,10 @@
  *   booking — paid Bookings where they're the vendor
  *   order   — paid Orders where they're the vendor
  *
- * UNITS ARE THE HAZARD HERE. Stripe collects in cents, Paystack in major local
- * units, and both write to the same `sellerNetCents` / `vendorNet` fields. Every
- * conversion goes through `toMajorNet` and nowhere else.
+ * UNITS ARE THE HAZARD HERE. PayPal and Stripe amounts are stored in cents,
+ * Paystack in major local units, and all of them write to the same
+ * `sellerNetCents` / `vendorNet` fields. Every conversion goes through
+ * `toMajorNet` and nowhere else.
  *
  * Payout status is attached by loading this seller's payouts once and indexing
  * them by `reference` — the same key scheme createPayout writes, reused rather
@@ -42,13 +43,14 @@ import {
 /**
  * Normalize a stored seller-net into MAJOR units of its currency.
  *
- * Paystack collects and stores major local units already; everything else was
- * Stripe-collected, i.e. cents. Dividing a Paystack amount here would under-
- * report a Nigerian seller's earnings by 100×, which is the single most likely
- * bug in this file — keep this the only place the conversion happens.
+ * Paystack stores major local units already; everything else (PayPal now,
+ * Stripe historically) is stored in cents. Dividing a Paystack amount here would
+ * under-report a Nigerian seller's earnings by 100×, which is the single most
+ * likely bug in this file — keep this the only place the conversion happens.
  *
  * @param {number} net              stored net, provider-native units
- * @param {string} [provider]       the COLLECTION provider ("stripe"|"paystack")
+ * @param {string} [provider]       the COLLECTION provider
+ *                                  ("paypal"|"paystack"|"stripe")
  * @returns {number} major units
  */
 export function toMajorNet(net, provider) {

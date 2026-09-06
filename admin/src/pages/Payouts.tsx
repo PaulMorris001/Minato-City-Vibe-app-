@@ -29,6 +29,7 @@ const statusColor: Record<string, string> = {
 const providerColor: Record<string, string> = {
   wise: "#9c40ff",
   paystack: "#09a5db",
+  paypal: "#0070ba",
   stripe: "#635bff",
   flutterwave: "#f5a623",
 };
@@ -108,7 +109,7 @@ export default function Payouts() {
           <p style={styles.subtitle}>
             Vendor earnings are held in the platform balance until you approve them.
             Approving runs the actual transfer{" "}
-            <strong style={{ color: colors.text }}>(Paystack / Stripe)</strong>.
+            <strong style={{ color: colors.text }}>(PayPal / Paystack)</strong>.
             Nothing leaves the platform without approval.
           </p>
         </div>

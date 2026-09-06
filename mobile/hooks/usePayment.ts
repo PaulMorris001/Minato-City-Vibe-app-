@@ -18,13 +18,14 @@ type PurchaseType = "ticket" | "guide" | "booking" | "order";
  * One flow for every purchase: ask the server which provider the seller uses,
  * run that provider's checkout, then confirm server-side to grant access.
  *  - Stripe: native payment sheet (all non-Nigerian sellers, USD).
- *  - Paystack: hosted checkout opened in a web browser session (Nigerian
- *    sellers, NGN) — no native SDK required.
+ *  - Paystack: hosted checkout in a web browser session (Nigerian sellers, NGN).
+ *  - PayPal: hosted approval in a web browser session. Built, but the server
+ *    never selects it until PAYPAL_ENABLED is on, so this branch is currently
+ *    unreachable.
  *
- * The name is kept as `useStripePayment` for backward compatibility with
- * existing imports; it now covers both providers.
+ * The server owns the choice — this only runs whatever `init.provider` names.
  */
-export function useStripePayment() {
+export function usePayment() {
   const { initPaymentSheet, presentPaymentSheet } = usePaymentSheet();
 
   const pay = async (
@@ -70,36 +71,41 @@ export function useStripePayment() {
     }
 
     // 2. Run the provider checkout to obtain a payment reference.
-    let reference: string;
-    if (init.provider === "paystack") {
-      const ps = await payWithPaystack(init);
-      if (!ps.success) {
-        // The browser session can close without handing back the redirect
-        // (user tapped Done on the receipt page, return page failed to load…)
-        // even though the charge went through. Probe confirm once with the
-        // init-time reference — the server verifies with Paystack, so a
-        // genuine cancel just comes back unsuccessful and stays quiet.
-        if (!ps.error && init.reference) {
-          const rescued = await confirmPurchase(type, id, token, {
-            provider: "paystack",
-            reference: init.reference,
-            tierId,
-          });
-          if (rescued.success) return rescued;
-        }
-        return ps;
-      }
-      reference = ps.reference!;
-    } else {
+    if (init.provider === "stripe") {
       const stripeRes = await payWithStripe(init.clientSecret);
       if (!stripeRes.success) return stripeRes;
-      reference = stripeRes.reference!;
+      return confirmPurchase(type, id, token, {
+        provider: "stripe",
+        reference: stripeRes.reference!,
+        tierId,
+      });
     }
 
-    // 3. Confirm server-side — this grants access / issues the ticket.
+    // Paystack and PayPal are both hosted checkouts in a browser session, so
+    // they share one flow from here.
+    const hosted = await payWithHostedCheckout(init);
+    if (!hosted.success) {
+      // The browser session can close without handing back the redirect
+      // (user tapped Done on the receipt page, return page failed to load…)
+      // even though the payment went through. Probe confirm once with the
+      // init-time reference — the server verifies with the provider, so a
+      // genuine cancel just comes back unsuccessful and stays quiet.
+      if (!hosted.error && init.reference) {
+        const rescued = await confirmPurchase(type, id, token, {
+          provider: init.provider,
+          reference: init.reference,
+          tierId,
+        });
+        if (rescued.success) return rescued;
+      }
+      return hosted;
+    }
+
+    // 3. Confirm server-side — this grants access / issues the ticket, and on
+    // PayPal it is also what captures the money.
     return confirmPurchase(type, id, token, {
-      provider: init.provider || "stripe",
-      reference,
+      provider: init.provider,
+      reference: hosted.reference!,
       tierId,
     });
   };
@@ -155,8 +161,8 @@ export function useStripePayment() {
     return { success: true, reference: clientSecret.split("_secret_")[0] };
   };
 
-  // ── Paystack hosted checkout ───────────────────────────────────────────────
-  const payWithPaystack = async (
+  // ── Hosted checkout (Paystack, and PayPal once enabled) ────────────────────
+  const payWithHostedCheckout = async (
     init: any
   ): Promise<PaymentResult & { reference?: string }> => {
     if (!init.paymentLink) return { success: false, error: "Couldn't start checkout." };
@@ -166,10 +172,18 @@ export function useStripePayment() {
         // User dismissed the browser without finishing.
         return { success: false };
       }
-      // Paystack's redirect carries ?trxref=&reference= and no status param —
-      // success is decided server-side when confirm verifies the charge.
       const params = parseQuery(result.url);
-      const reference = params.reference || params.trxref || init.reference;
+
+      // PayPal's cancel_url is the same bounce page with ?cancelled=1, so
+      // backing out of the approval still comes back as a "success" redirect.
+      // Without this it would look like a completed payment and be confirmed.
+      if (params.cancelled === "1") return { success: false };
+
+      // Neither redirect carries a status we can trust: Paystack sends
+      // ?trxref=&reference=, PayPal sends ?token=&PayerID=. Whether money moved
+      // is decided server-side when confirm verifies (and, for PayPal, captures)
+      // the payment.
+      const reference = params.reference || params.trxref || params.token || init.reference;
       if (!reference) return { success: false, error: "Payment reference missing." };
       return { success: true, reference };
     } catch {

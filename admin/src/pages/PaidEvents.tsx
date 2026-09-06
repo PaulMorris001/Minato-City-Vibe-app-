@@ -15,7 +15,7 @@ interface PaidEvent {
   image?: string;
   venueProofImage?: string;
   ticketPrice: number;
-  /** Currency the organizer prices in — USD for Stripe sellers, NGN for Paystack. */
+  /** Currency the organizer prices in — USD for PayPal sellers, NGN for Paystack. */
   currency?: string;
   /** Named price tiers, when the organizer used them. `ticketPrice` is then the cheapest. */
   ticketTiers?: { _id?: string; name: string; price: number; quantity?: number }[];
@@ -36,7 +36,7 @@ interface PaidEvent {
     verified?: boolean;
     paidEventsApproved?: boolean;
     paidEventsCount?: number;
-    /** Computed server-side: vendor has completed Paystack or Stripe Connect payout setup. */
+    /** Computed server-side: vendor has completed Paystack or PayPal payout setup. */
     payoutOnboarded?: boolean;
     emailVerifiedAt?: string;
     contactInfo?: { phone?: string };

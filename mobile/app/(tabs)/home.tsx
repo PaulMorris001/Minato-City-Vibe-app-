@@ -30,7 +30,7 @@ import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCar
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
-import { useStripePayment } from "@/hooks/useStripePayment";
+import { usePayment } from "@/hooks/usePayment";
 import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useLocation";
 import { useActiveCity, setActiveCity as setSharedActiveCity } from "@/hooks/useActiveCity";
 import { trackEvent } from "@/utils/analytics";
@@ -386,7 +386,7 @@ export default function Home() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isIpad = Platform.OS === "ios" && Platform.isPad;
-  const { payForTicket } = useStripePayment();
+  const { payForTicket } = usePayment();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
   const [highlights, setHighlights] = useState<{

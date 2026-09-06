@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
+import { SELLER_SHARE_PERCENT } from "@/constants/payments";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -264,7 +265,7 @@ export default function PaystackOnboardingScreen() {
             <Ionicons name="cash-outline" size={20} color={colors.primary} />
             <Text style={styles.infoText}>
               <Text style={styles.infoLabel}>Your cut: </Text>
-              90% of every sale is paid to your bank
+              {SELLER_SHARE_PERCENT}% of every sale is paid to your bank
             </Text>
           </View>
           <View style={styles.infoRow}>

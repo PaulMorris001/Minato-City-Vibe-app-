@@ -1,10 +1,14 @@
 /**
- * Stripe controller — collection-side only.
+ * Stripe controller — collection-side, plus the shared refund path.
  *
- * Stripe's job in this architecture is to CHARGE buyers into the platform
- * balance (via the unified /payments dispatcher) and to REFUND those charges.
- * It never moves money to sellers: settlement runs through the admin-approved
- * Payout queue (Stripe Connect for Stripe-collected sales, Paystack for NGN).
+ * Stripe's job is to CHARGE buyers into the platform balance (via the unified
+ * /payments dispatcher) and to REFUND those charges. It never moves money to
+ * sellers: settlement runs through the admin-approved Payout queue (Stripe
+ * Connect for Stripe-collected sales, Paystack for NGN).
+ *
+ * `refundTicket` is provider-agnostic despite living here — it dispatches on
+ * whichever provider collected the ticket, including PayPal once that rail is
+ * switched on.
  */
 
 import stripe from "../config/stripe.js";
@@ -15,6 +19,7 @@ import Ticket from "../models/ticket.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
 import { settleStripePurchase } from "../services/payments/settleStripePayment.js";
 import { refundPaystackCharge } from "./paystack.controller.js";
+import { refundPaypalCapture, findPaypalCaptureId } from "./paypal.controller.js";
 
 /**
  * Return the publishable key that matches THIS server's secret key (same
@@ -49,7 +54,7 @@ async function refundTicket(ticket, { reason } = {}) {
         "Payout for this ticket has already been released to the organizer. Contact support to coordinate a refund.",
     };
   }
-  // Paystack tickets refund through the Paystack API instead of Stripe.
+  // Paystack tickets refund through the Paystack API.
   if (ticket.provider === "paystack") {
     if (!ticket.paystackReference) {
       return { ok: false, message: "No payment record found for this ticket." };
@@ -58,6 +63,25 @@ async function refundTicket(ticket, { reason } = {}) {
     ticket.refunded = true;
     ticket.refundedAt = new Date();
     ticket.paystackRefundId = refund.id;
+    ticket.isValid = false;
+    await ticket.save();
+    return { ok: true, refund };
+  }
+
+  // PayPal refunds address the CAPTURE, but tickets record the ORDER id (that's
+  // what both settlement paths key off), so the capture is looked up here.
+  if (ticket.provider === "paypal") {
+    if (!ticket.paypalOrderId) {
+      return { ok: false, message: "No payment record found for this ticket." };
+    }
+    const captureId = await findPaypalCaptureId(ticket.paypalOrderId);
+    if (!captureId) {
+      return { ok: false, message: "No completed payment found for this ticket." };
+    }
+    const refund = await refundPaypalCapture({ captureId });
+    ticket.refunded = true;
+    ticket.refundedAt = new Date();
+    ticket.paypalRefundId = refund.id;
     ticket.isValid = false;
     await ticket.save();
     return { ok: true, refund };

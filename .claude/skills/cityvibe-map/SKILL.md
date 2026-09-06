@@ -24,9 +24,10 @@ Mobile layout: `app/` (routes), `components/`, `contexts/`, `hooks/`, `services/
 1. **Model exports are mixed.** `Booking`, `CatalogueCategory`, `Order`, `Service`, and `City`/`VendorType`/`Vendor` (all three in `vendor.model.js`) are **named** exports. Everything else is `export default`. A wrong import shape fails only at runtime — it has silently broken a migration script before.
 2. **Every router mounts at `/api/`.** Auth is applied **per route** (`router.post("/x", authenticate, handler)`), never `router.use(authenticate)` — a router-level guard would 401 requests merely passing through to a later router.
 3. **Route order matters.** Specific paths must be registered above parameterized ones (`/payments/init/tickets/:eventId` before `/payments/init/:type/:id`; `/guides/topics` before `/guides/:id`).
-4. **Webhook raw-body parsers are registered before `express.json()`** in `src/index.js` for `/api/stripe/webhook`, `/api/stripe/connect/webhook`, `/api/paystack/webhook`. Moving them breaks signature verification.
+4. **Webhook raw-body parsers are registered before `express.json()`** in `src/index.js` for `/api/paypal/webhook`, `/api/paystack/webhook`, `/api/stripe/webhook`. Moving them breaks signature verification.
 5. **`:eventId` / `:userId` params may be a slug or a shareToken**, not just an ObjectId — website share links depend on this. Use `utils/resolveEvent.js` (`findEventByAnyId`) and `utils/resolveUser.js` (`resolveUserId`). A bare `findById` 500s or fake-404s that traffic.
 6. **`utils/response.js` (`sendSuccess`/`sendError`/`asyncHandler`) is dead code** — zero controllers use it, despite what the README claims. Match the real pattern: `try/catch` + `res.status(n).json({ message })`.
+7. **Per-sale amounts are stored in CENTS for PayPal and Stripe, MAJOR units for Paystack**, all in the same `sellerNetCents` / `vendorNet` fields. PayPal's API speaks major units, so `settlePaypalPayment.js` converts on the way in *on purpose*: `currency` is USD for both PayPal and legacy Stripe sales and cannot tell them apart, so a major-unit PayPal net would be divided again by `toMajorNet` and `ticketPayoutAmount` and pay the seller 1% of what they are owed. `Payout.amount` is always major.
 
 ## Auth & accounts
 
@@ -70,6 +71,7 @@ One unified concept: **every** RSVP and every paid ticket issues a QR entry pass
 
 - Server: `routes/chat.route.js`, `controllers/chat.controller.js`, `services/chat.service.js` (1022 lines), `services/socket.service.js`, `models/chat.model.js`, `models/message.model.js`
 - **Client and vendor inboxes are separate.** `Chat.context` + `vendorParticipant` split them; `/chats` takes a `scope` param. Do not merge them.
+- `POST /chats/direct` with `{ otherUserId, context: "vendor", vendorUserId }` opens a business thread. A vendor-context chat is **exempt from the mutual-follow gate** that blocks ordinary DMs, so a customer can message a business cold. Entry points: the vendor profile's Message button and the order flow.
 - Mobile: `app/chat/[id].tsx` (3130 lines), `app/(tabs)/chats.tsx`, `app/(vendor)/chats.tsx`, `app/messages.tsx`, `components/chat/*`, `components/vendor/VendorChatsTab.tsx`, `services/chat.service.ts`, `services/socket.service.ts`, `utils/chatHelpers.ts`, `chatDisplay.ts`, `messageText.ts`, `reactions.ts`, `contexts/UnreadContext.tsx`
 
 ## Vendor discovery & vendor account
@@ -82,6 +84,7 @@ Discovery is three levels: **City → VendorType → Vendor** (all in `models/ve
 - Onboarding: `app/vendor-setup.tsx`, `components/client/BecomeVendorModal.tsx`
 - Web/admin: `web/src/pages/VendorProfile.tsx`, `admin/src/pages/Vendors.tsx`, `VendorTypes.tsx`, `Cities.tsx`, `Verifications.tsx`
 - The vendor-details screen uses its **own** palette (`mobile/constants/vendorServicesTheme.ts`), not the global theme tokens
+- Its header carries the **Message** button that opens the client↔vendor chat (see Chat & messaging); it sits there rather than in the about card because that card only renders when the vendor has a description or social links
 
 ## Catalogue → cart → order → booking
 
@@ -97,13 +100,17 @@ Two-level catalogue: `CatalogueCategory` (`kind: "product" | "service"`) contain
 **Two independent decisions**, both in `services/payments/resolveProvider.js`:
 
 - **Collection** (`getPayoutProvider`) — how the buyer is charged. Stripe (card/USD, into the platform balance) or Paystack (NGN local methods, Nigeria only at launch).
-- **Settlement** (`getSettlementProvider`) — how the seller is paid out after admin approval. Only two rails: **Paystack transfers** (Nigeria) and **Stripe Connect** (US/UK/EEA/CA/CH). Everywhere else returns `null` — an honest "not available yet", not a fallback. Wise was deleted in Aug 2026; do not reintroduce a default rail. There is no `STRIPE_CONNECT_ENABLED` flag.
-- The mobile mirror of these rollout knobs is `mobile/constants/payments.ts` — **keep them in sync**.
+- **Settlement** (`getSettlementProvider`) — how the seller is paid out after admin approval. Two live rails: **Paystack transfers** (Nigeria) and **Stripe Connect** (US/UK/EEA/CA/CH). Everywhere else returns `null` — an honest "not available yet", not a fallback. Wise was deleted Aug 2026; do not reintroduce a default rail.
+- **PayPal is built but OFF.** `PAYPAL_ENABLED=true` plus both credentials turns it on for collection AND settlement at once; until then nothing routes to it and every function behaves as it did before PayPal existed. Server + mobile only — the web checkout has no PayPal path yet.
+- **When the flag is thrown, a seller already onboarded on Connect keeps Connect.** Moving them would read as un-onboarded and block their paid listings. That rule is in `getSettlementProvider` and pinned by a test.
+- The mobile mirror of these rollout knobs is `mobile/constants/payments.ts` — **keep them in sync**, including the PayPal exclusion list when it goes live.
 
 Unified purchase API (`routes/payments.route.js`):
 
 ```
-GET  /payments/config                      publishable keys for both providers
+GET  /payments/config                      paystack public key only; hosted flows need no key
+GET  /payments/paypal/return               bounce page → app scheme (?web=1 closes the popup)
+GET  /payments/paystack/return             same, for Paystack
 POST /payments/guest/start-otp | verify-otp guest checkout, rate-limited
 POST /payments/discount/preview             no side effects, accepts guest tokens
 POST /payments/init/tickets/:eventId        batch/gift tickets — MUST stay above the generic route
@@ -112,15 +119,20 @@ POST /payments/init/:type/:id               :type ∈ ticket | guide | booking |
 POST /payments/confirm/:type/:id
 ```
 
-- Controllers: `payments.controller.js` (1080 lines), `stripe.controller.js`, `stripeConnect.controller.js`, `paystack.controller.js`
+- Controllers: `payments.controller.js`, `paypal.controller.js`, `paypalPayout.controller.js`, `paystack.controller.js`, `stripe.controller.js` (refunds only)
+- PayPal REST client: `config/paypal.js` (`paypalRequest`, cached OAuth token, `toPaypalAmount`). No SDK — same reasoning as `config/paystack.js`.
+- **`confirm` on PayPal captures the money**, it doesn't just verify it. An approved-but-uncaptured order expires and nobody is charged, which is why the web poll and the mobile rescue re-probe are safe to retry.
 - `services/payments/fulfillment.js` — `fulfillTicket`, `issueRecipientTicket`, `fulfillGuide`, `fulfillBooking`, `fulfillOrder`, `formatAmountText`. **Every** successful payment lands here; new purchasable types get a `fulfill*` function.
+- `services/payments/settlePaypalPayment.js` — the one settlement path shared by the confirm call and the capture webhook, so the two can race safely. `settleStripePayment.js` is its draining equivalent.
 - `services/payments/split.js` — `computeSplit()` in **major** currency units; subunit conversion (cents/kobo) happens at each provider boundary.
-- `services/payments/{settleStripePayment,sellingEligibility,discount,earnings,payout}.service.js`
+- `services/payments/{sellingEligibility,discount,earnings,payout}.service.js`
 - Unit tests actually run here: `node --test server/src/services/payments/*.test.mjs`
 - Discounts: `models/discountCode.model.js`, `discountRedemption.model.js`, `controllers/discountAdmin.controller.js`, `jobs/discountReservation.job.js`, `admin/src/pages/DiscountCodes.tsx`
 - Earnings & payouts: `routes/earnings.route.js` (`/earnings/{summary,sales,payouts}`, seller is always `req.user.id`, never a param), `controllers/payoutAdmin.controller.js`, `models/payout.model.js`, `jobs/payoutRelease.job.js` → `mobile/app/earnings.tsx`, `components/shared/EarningsHero.tsx`, `admin/src/pages/Payouts.tsx`
-- Onboarding screens: `mobile/app/stripe-connect-onboarding.tsx`, `app/paystack-onboarding.tsx`, `hooks/useStripePayment.ts`
-- Web checkout: `web/src/pages/Pay.tsx` (Stripe.js + Paystack Inline `resumeTransaction`; provider inferred from the event currency)
+- PayPal payout onboarding is one email field — no hosted KYC flow, no account id: `controllers/paypalPayout.controller.js` → `mobile/app/paypal-payout-onboarding.tsx`. Paystack's is a bank capture: `app/paystack-onboarding.tsx`.
+- **A PayPal payout marked "paid" only means "submitted"** — the Payouts API accepts a batch as PENDING and moves money later. `reconcilePaypalPayouts()` in `jobs/payoutRelease.job.js` polls for the terminal state, stamps `Payout.settledAt` on success and reopens the payout on a DENIED/RETURNED.
+- Mobile checkout: `hooks/usePayment.ts` (was `useStripePayment.ts`) — Stripe native sheet, or a browser session for Paystack/PayPal; branches on `init.provider`
+- Web checkout: `web/src/pages/Pay.tsx` (Stripe.js + Paystack popup-and-poll; provider inferred from the event currency)
 - **Deploy order: server before mobile.**
 
 ## Guides (city guides, purchasable)
@@ -159,10 +171,12 @@ Started from `server/src/index.js`: `eventReminder.job.js`, `payoutRelease.job.j
 
 Migrations — **these must actually be run against each environment**, they are not automatic:
 `server/scripts/{backfill-slugs,migrate-catalogue-categories,ingest-eventbrite,hash-admin-password,verify-oauth-accounts}.mjs`
-and `server/src/scripts/{migrateVendorChatContext,migrateGuideSalesLedger,migrateDropWise,setupSupportAccount}.mjs`.
+and `server/src/scripts/{migrateVendorChatContext,migrateGuideSalesLedger,migrateDropWise,migratePayoutProvider,setupSupportAccount}.mjs`.
+
+`migratePayoutProvider.mjs` is the Stripe→PayPal cutover script: it reports the sellers who lose payout capability until they add a PayPal address (no script can add it for them) and the Stripe payouts still to drain. Run it with `--dry-run` first.
 
 ## Config
 
-- Server: `src/config/env.js` is the single source of truth (also `db.js`, `stripe.js`, `paystack.js`, `cloudinary.js`). Read env through it, not `process.env` — the one deliberate exception is `services/payments/resolveProvider.js`, which reads `process.env` directly to stay test-setup-free.
+- Server: `src/config/env.js` is the single source of truth (also `db.js`, `paypal.js`, `paystack.js`, `stripe.js`, `cloudinary.js`). Read env through it, not `process.env` — the one deliberate exception is `services/payments/resolveProvider.js`, which reads `process.env` directly to stay test-setup-free.
 - Mobile: `constants/constants.ts` (`BASE_URL`), `constants/theme.ts`, `colors.ts`, `payments.ts`, `fonts.ts`, `support.ts`, `vendorChrome.ts`, `vendorServicesTheme.ts`
 - Web/admin: `web/src/config.ts`, `admin/src/api/client.ts`
