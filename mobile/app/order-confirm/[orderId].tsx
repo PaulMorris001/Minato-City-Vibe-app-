@@ -18,7 +18,7 @@ import { Order } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { currencyPrefix } from "@/constants/payments";
-import { useStripePayment } from "@/hooks/useStripePayment";
+import { usePayment } from "@/hooks/usePayment";
 import { showError, showSuccess } from "@/utils/toast";
 import { ensureOnline } from "@/utils/requireOnline";
 import GlassBackButton from "@/components/shared/GlassBackButton";
@@ -37,7 +37,7 @@ export default function OrderConfirm() {
   const styles = useThemedStyles(createStyles);
   const { orderId } = useLocalSearchParams();
   const formatPrice = useFormatPrice();
-  const { payForOrder } = useStripePayment();
+  const { payForOrder } = usePayment();
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);

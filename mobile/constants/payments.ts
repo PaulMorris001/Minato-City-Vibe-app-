@@ -5,17 +5,21 @@
  *
  * The architecture: Nigerian sellers collect NGN via Paystack and are paid out
  * by Paystack transfers. Everyone else collects via Stripe (USD, into the
- * platform balance) and is paid out through Stripe Connect — but only if they're
- * inside Stripe's cross-border-payouts footprint. Sellers outside both get
- * `null`: there is no rail that reaches them, so they can publish free listings
- * but not paid ones.
+ * platform balance) and is paid out through Stripe Connect — but only inside
+ * its cross-border-payouts footprint. Sellers outside both get `null`: no rail
+ * reaches them, so they can publish free listings but not paid ones.
+ *
+ * PayPal is built on the server but OFF pending live credentials, so nothing
+ * here routes to it yet. `PAYPAL_ENABLED` on the server is the single switch;
+ * when it is thrown, this file needs the matching exclusion-list check added
+ * back and the two must be turned on together.
  *
  * This mirror is exact because settlement routing is a pure function of country
  * on both sides. Keep it that way — the moment the server needs per-seller state
  * to decide, this file has to be replaced by a value handed down from the API.
  */
 
-export type PayoutProvider = "paystack" | "stripe";
+export type PayoutProvider = "paystack" | "stripe" | "paypal";
 
 // Paystack rollout — mirrors the server's PAYSTACK_ENABLED +
 // PAYSTACK_LAUNCH_COUNTRIES knobs (services/payments/resolveProvider.js).
@@ -34,9 +38,9 @@ function isPaystackCountry(country: string): boolean {
 // `location.country` the app stores. The client doesn't need the ISO2 values the
 // server maps to, only membership.
 //
-// There is no enable/disable flag: Connect is the only rail outside Nigeria, so
-// turning it off would strand every non-Nigerian seller at once. To pause a
-// country, remove it here and on the server together.
+// There is no enable/disable flag: while PayPal is off, Connect is the only rail
+// outside Nigeria, so turning it off would strand every non-Nigerian seller at
+// once. To pause a country, remove it here and on the server together.
 const CONNECT_COUNTRIES = new Set([
   // North America
   "united states", "united states of america", "usa", "us", "canada", "ca",
@@ -61,8 +65,8 @@ function isConnectCountry(country: string): boolean {
 
 /**
  * Which payout provider a vendor in `country` uses. Mirrors the server's
- * getSettlementProvider: Nigeria → Paystack, the cross-border footprint →
- * Stripe Connect, everyone else → null (no rail reaches them).
+ * getSettlementProvider while PayPal is off: Nigeria → Paystack, the
+ * cross-border footprint → Stripe Connect, everyone else → null.
  */
 export function payoutProviderForCountry(country?: string): PayoutProvider | null {
   const c = (country || "").trim().toLowerCase();
@@ -109,15 +113,27 @@ export function sellingCurrencyForCountry(country?: string): string {
   return COUNTRY_CURRENCY[c] || "USD";
 }
 
+/**
+ * What the seller keeps, as a percentage, for the "your cut" line on both payout
+ * onboarding screens.
+ *
+ * The authority is the server's `PLATFORM_FEE_PERCENT` (5%), applied by
+ * `computeSplit` — this is display copy, not the number any money is calculated
+ * from. It lives here rather than inline in each screen so the two can't drift
+ * apart or from the server. Change all three together.
+ */
+export const SELLER_SHARE_PERCENT = 95;
+
 /** Provider names as a seller should read them. */
 const PAYOUT_PROVIDER_LABELS: Record<PayoutProvider, string> = {
   paystack: "Paystack",
   stripe: "Stripe",
+  paypal: "PayPal",
 };
 
 /**
  * How to refer to a seller's payout destination in copy — "your Paystack
- * account", "your Stripe account", or a neutral "your payout account" when the
+ * account", "your PayPal account", or a neutral "your payout account" when the
  * rail is unknown or no rail reaches them.
  *
  * Exists because payout banners used to hardcode "your Stripe account", which
@@ -137,12 +153,14 @@ export function payoutAccountLabel(provider?: PayoutProvider | null): string {
 export const PAYOUT_ONBOARDING_ROUTES: Record<PayoutProvider, string> = {
   paystack: "/paystack-onboarding",
   stripe: "/stripe-connect-onboarding",
+  paypal: "/paypal-payout-onboarding",
 };
 
 /** Onboarding-status endpoint for each rail. Both return the same shape. */
 export const PAYOUT_STATUS_ENDPOINTS: Record<PayoutProvider, string> = {
   paystack: "/paystack/connect/status",
   stripe: "/stripe/connect/status",
+  paypal: "/paypal/connect/status",
 };
 
 /**

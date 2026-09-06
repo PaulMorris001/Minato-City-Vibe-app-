@@ -33,7 +33,7 @@ import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCar
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { Avatar } from "@/components/shared/Avatar";
-import { useStripePayment } from "@/hooks/useStripePayment";
+import { usePayment } from "@/hooks/usePayment";
 import { trackEvent as trackAnalyticsEvent } from "@/utils/analytics";
 import { LocationSelection } from "@/libs/interfaces";
 import { useActiveCity } from "@/hooks/useActiveCity";
@@ -111,7 +111,7 @@ export default function EventsPage() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
-  const { payForTicket } = useStripePayment();
+  const { payForTicket } = usePayment();
 
   // Tab state
   // Pinned to "private": the Discover half moved to the unified search page.

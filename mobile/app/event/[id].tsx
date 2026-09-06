@@ -31,7 +31,7 @@ import { Fonts } from "@/constants/fonts";
 import { trackEvent } from "@/utils/analytics";
 import { createEventShareLink } from "@/utils/shareLinks";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
-import { useStripePayment } from "@/hooks/useStripePayment";
+import { usePayment } from "@/hooks/usePayment";
 import { currencyPrefix, payoutAccountLabel } from "@/constants/payments";
 import {
   fetchEventDiscountCodes,
@@ -146,7 +146,7 @@ interface Event {
   /** Hold window before ticket money is released. Absent on older events (24). */
   payoutDelayHours?: number;
   /** Settlement rail, organizer-only. Names the account in the payout banners. */
-  payoutProvider?: "paystack" | "stripe" | null;
+  payoutProvider?: "paystack" | "stripe" | "paypal" | null;
   userStatus: "creator" | "accepted" | "pending" | "requested" | "none";
   createdBy: User;
   cohosts?: User[];
@@ -357,7 +357,7 @@ export default function EventDetailsPage() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
-  const { payForTicket } = useStripePayment();
+  const { payForTicket } = usePayment();
 
   // ─── Data fetching ────────────────────────────────────────────────────────
   const authToken = () => SecureStore.getItemAsync("token");
@@ -2679,7 +2679,7 @@ function StickyCTA(props: {
 
   // Paid → Get ticket. If the organizer hasn't finished payout onboarding
   // (or the event isn't approved yet), show a graceful "not on sale" state
-  // instead of letting the user tap into a Stripe failure.
+  // instead of letting the user tap into a checkout that cannot complete.
   if (event.isPaid) {
     if (event.ticketingReady === false) {
       return (
