@@ -19,7 +19,7 @@ import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import TicketCardSkeleton from "@/components/skeletons/TicketCardSkeleton";
 import chatService from "@/services/chat.service";
-import { useStripePayment } from "@/hooks/useStripePayment";
+import { usePayment } from "@/hooks/usePayment";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -51,7 +51,7 @@ export default function BookingsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [chattingWith, setChattingWith] = useState<string | null>(null);
   const [payingFor, setPayingFor] = useState<string | null>(null);
-  const { payForBooking } = useStripePayment();
+  const { payForBooking } = usePayment();
 
   const handlePayBooking = async (bookingId: string) => {
     if (!ensureOnline("pay for a booking")) return;

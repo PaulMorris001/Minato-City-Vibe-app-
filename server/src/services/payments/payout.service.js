@@ -4,8 +4,11 @@
  * Every paid sale collects into the platform balance and creates a Payout
  * record (status "awaiting_approval") instead of transferring money. An admin
  * approves, and only then does `executePayout` run the real provider transfer:
- * Stripe Connect for Stripe-collected (USD) sellers, Paystack for Nigerian
+ * PayPal Payouts for sellers outside Nigeria, Paystack transfers for Nigerian
  * sellers. No vendor money leaves the platform without an explicit approval.
+ *
+ * "stripe" is a draining rail — it takes no new payouts after the Sep 2026
+ * cutover, but docs created before it still execute through the Connect branch.
  */
 
 import config from "../../config/env.js";
@@ -22,6 +25,7 @@ import {
   createPaystackTransfer,
   getPaystackBalance,
 } from "../../controllers/paystack.controller.js";
+import { createPaypalPayout } from "../../controllers/paypal.controller.js";
 import { PAYOUT_ROUTING_FIELDS } from "./resolveProvider.js";
 
 /**
@@ -40,8 +44,8 @@ const CONNECT_REINSTATED_AT = new Date("2026-08-01T00:00:00Z");
  * @param {string} args.vendor        seller user id
  * @param {"ticket"|"guide"|"booking"} args.relatedType
  * @param {string} args.relatedId     event (for tickets) / guide / booking id
- * @param {"paystack"|"stripe"} args.provider  settlement rail
- * @param {number} args.amount        seller net in MAJOR units (USD for stripe,
+ * @param {"paystack"|"paypal"} args.provider  settlement rail
+ * @param {number} args.amount        seller net in MAJOR units (USD for paypal,
  *                                    local currency for paystack)
  * @param {string} args.currency      settlement currency
  * @param {string} args.reference     idempotency key + provider transfer ref
@@ -184,7 +188,34 @@ async function runTransfer(payout, vendor) {
     return t.id;
   }
 
+  if (payout.provider === "paypal") {
+    if (!vendor?.paypalPayoutEmail) throw new Error("Vendor has no PayPal payout address");
+
+    // No balance preflight, unlike the other two rails: PayPal rejects an
+    // underfunded batch outright at submission rather than accepting it and
+    // failing later, and there is no idempotency key to burn on the error.
+    //
+    // `amount` is major units on both sides, so nothing is converted here — the
+    // cents/kobo round trips that the other branches guard against don't exist.
+    const t = await createPaypalPayout({
+      email: vendor.paypalPayoutEmail,
+      amount: payout.amount,
+      currency: payout.currency,
+      reference: payout.reference,
+      note: `OurCityvibe ${payout.relatedType} payout`,
+    });
+
+    // A batch is accepted as PENDING and settles asynchronously — a returned id
+    // means "queued with PayPal", not "money delivered". payoutRelease.job.js
+    // polls getPaypalPayoutStatus for the terminal state.
+    if (!t.id) throw new Error("PayPal accepted the payout but returned no batch id");
+    return t.id;
+  }
+
   if (payout.provider === "stripe") {
+    // Draining rail: Stripe Connect stopped receiving new payouts in Sep 2026,
+    // but docs created before the cutover still execute here.
+    //
     // Pre-2026 "stripe" docs stored CENTS in `amount` — running one through the
     // conversion below would transfer 100× the intended sum. Reject rather than
     // guess; an admin can reject the doc by hand.
@@ -287,6 +318,7 @@ async function markRelatedSettled(payout, transferId) {
  */
 function payoutDestinationLabel(provider) {
   if (provider === "paystack") return "your Paystack account";
+  if (provider === "paypal") return "your PayPal account";
   if (provider === "stripe") return "your Stripe account";
   return "your payout account";
 }

@@ -26,14 +26,16 @@ const payoutSchema = new mongoose.Schema(
     relatedType: { type: String, enum: ["ticket", "guide", "booking", "order"], required: true },
     relatedId: { type: mongoose.Schema.Types.ObjectId, required: true },
 
-    // Settlement rail used to pay the vendor out. Live rails are "stripe"
-    // (Connect, for the cross-border-payouts footprint) and "paystack" (Nigeria).
-    // "wise" and "flutterwave" are legacy-read-only: the rails are gone, but old
-    // docs must still save — an admin has to be able to reject or annotate them —
-    // so they stay in the enum. executePayout refuses to run either.
+    // Settlement rail used to pay the vendor out. Live rails are "paypal"
+    // (everywhere outside Nigeria) and "paystack" (Nigeria). "wise" and
+    // "flutterwave" are legacy-read-only: the rails are gone, but old docs must
+    // still save — an admin has to be able to reject or annotate them — so they
+    // stay in the enum. executePayout refuses to run either. "stripe" is a
+    // draining rail: it no longer receives new payouts, but docs created before
+    // the Sep 2026 cutover still execute through the Connect branch.
     provider: {
       type: String,
-      enum: ["wise", "paystack", "stripe", "flutterwave"],
+      enum: ["wise", "paystack", "stripe", "flutterwave", "paypal"],
       required: true,
     },
 
@@ -56,6 +58,13 @@ const payoutSchema = new mongoose.Schema(
     approvedAt: { type: Date },
     rejectedReason: { type: String },
     error: { type: String },
+
+    // When the PROVIDER confirmed the money actually landed, as opposed to when
+    // we handed it over. PayPal accepts a payout batch as PENDING and settles it
+    // later, so "paid" alone means "submitted"; the reconcile sweep in
+    // payoutRelease.job.js stamps this once PayPal reports a terminal success
+    // and stops polling. Absent on rails that settle synchronously.
+    settledAt: { type: Date },
 
     // Optional context to help execution / the admin view.
     buyer: { type: mongoose.Schema.Types.ObjectId, ref: "user" },

@@ -3,19 +3,22 @@
  *
  * Two distinct decisions:
  *  - COLLECTION provider (`getPayoutProvider`): how we charge the buyer. Stripe
- *    (card, USD, into the PLATFORM balance) or Paystack (NGN local methods).
+ *    (card/USD, into the PLATFORM balance) or Paystack (NGN local methods).
  *  - SETTLEMENT provider (`getSettlementProvider`): how the seller's net is
- *    paid out once an admin approves. Two rails: Paystack transfers for Nigerian
- *    sellers, Stripe Connect for sellers inside Stripe's cross-border-payouts
- *    footprint. Sellers outside both have NO rail — see below.
+ *    paid out once an admin approves. Paystack transfers for Nigerian sellers,
+ *    Stripe Connect for sellers inside its cross-border-payouts footprint.
  *
- * There used to be a third rail (Wise) covering the long tail. It was removed in
- * Aug 2026: it had never worked in any environment (the API credentials were
- * placeholder strings and no seller ever completed its onboarding), so it was
- * silently routing most of the world to a dead-end screen. Countries outside the
- * two live rails now get an honest, explicit "not available yet" instead — they
- * can still publish free listings. Restoring long-tail coverage means adding a
- * rail that works, not re-adding a default that doesn't.
+ * PayPal is built but OFF, waiting on live API credentials. `PAYPAL_ENABLED`
+ * turns it on for both decisions at once; until then every function here behaves
+ * exactly as it did before PayPal existed. The one rule that survives the switch
+ * being thrown: a seller already settled by Connect keeps Connect, because
+ * moving them would read as un-onboarded and block their paid listings.
+ *
+ * History, because it explains the shape of this file. Wise was removed in Aug
+ * 2026 — it had never worked in any environment and was silently routing most of
+ * the world to a dead-end screen. That is why a country this file cannot
+ * actually pay gets an honest `null`, never a rail that fails after the money is
+ * collected. Sellers there can still publish free listings.
  *
  * This module reads its rollout knobs straight from process.env (rather than
  * importing the validated config) so it stays free of env-validation side
@@ -36,13 +39,77 @@ function isPaystackCountry(country) {
   return PAYSTACK_ENABLED && PAYSTACK_LAUNCH_COUNTRIES.has(country);
 }
 
+// ── PayPal rollout ───────────────────────────────────────────────────────────
+// OFF until the live API credentials exist. While it is off, every routing
+// decision below behaves exactly as it did before PayPal was built: Stripe
+// collects and Connect settles outside Nigeria.
+//
+// Gated on the credentials as well as the flag, deliberately. Setting the flag
+// alone on an environment with no keys would route real buyers to a rail that
+// cannot create an order, taking checkout down for everyone outside Nigeria.
+// The switch cannot be thrown before the rail can actually take money.
+const PAYPAL_ENABLED =
+  process.env.PAYPAL_ENABLED === "true" &&
+  !!process.env.PAYPAL_CLIENT_ID &&
+  !!process.env.PAYPAL_CLIENT_SECRET;
+
+// PayPal's country rule is an exclusion list, not an allow list — the opposite
+// shape to the Stripe Connect map below. Payouts reach roughly 200 countries, so
+// enumerating the ones that work would be longer, staler and more likely to
+// wrongly exclude a legitimate seller than naming the ones that don't.
+//
+// Listed below are countries where PayPal does not operate, or operates without
+// the ability to receive a payout. Being wrong in the excluding direction costs
+// a seller their paid listings until we fix it; being wrong in the including
+// direction takes a buyer's money for a sale whose seller can never be paid. So
+// when in doubt, exclude.
+//
+// `location.country` is free text (a CSC API country name, occasionally an
+// ISO2), so each country is keyed by BOTH its lowercased name and its lowercased
+// ISO2 — same convention as PAYSTACK_LAUNCH_COUNTRIES above.
+//
+// RECONCILE THIS AGAINST PayPal's published country list before going live in a
+// new market; it is a point-in-time snapshot, not a maintained feed.
+const PAYPAL_UNSUPPORTED_COUNTRIES = new Set([
+  "afghanistan", "af",
+  "bangladesh", "bd",
+  "belarus", "by",
+  "central african republic", "cf",
+  "cuba", "cu",
+  "democratic republic of the congo", "cd",
+  "haiti", "ht",
+  "iran", "ir",
+  "iraq", "iq",
+  "north korea", "kp",
+  "lebanon", "lb",
+  "liberia", "lr",
+  "libya", "ly",
+  "myanmar", "burma", "mm",
+  "pakistan", "pk",
+  "russia", "russian federation", "ru",
+  "somalia", "so",
+  "south sudan", "ss",
+  "sudan", "sd",
+  "syria", "syrian arab republic", "sy",
+  "turkey", "türkiye", "tr",
+  "uzbekistan", "uz",
+  "zimbabwe", "zw",
+]);
+
+// An EMPTY country is not "supported" — it is unknown, and the two must not
+// collapse. Every caller downstream treats a rail as a promise we can pay, and
+// we cannot promise that about a seller whose country we have never asked for.
+// `payoutCountryKnown` is what tells the UI to ask instead of apologising.
+function isPaypalCountry(country) {
+  return PAYPAL_ENABLED && !!country && !PAYPAL_UNSUPPORTED_COUNTRIES.has(country);
+}
+
 // ── Stripe Connect rollout ───────────────────────────────────────────────────
 // Stripe's cross-border payouts only reach connected accounts in the US, UK,
-// EEA, Canada and Switzerland, and the account must NOT be under a recipient
-// service agreement. The funds flow is "separate charges and transfers (without
-// on_behalf_of)": collection is unchanged (everything lands in the platform
-// balance) and a Transfer to the connected account runs only at admin-approval
-// time. Stripe takes 0.25% per payout.
+// EEA, Canada and Switzerland. The funds flow is "separate charges and transfers
+// (without on_behalf_of)": collection lands in the platform balance and a
+// Transfer to the connected account runs only at admin-approval time. Stripe
+// takes 0.25% per payout.
 //
 // `location.country` is free text (a CSC API country name, occasionally an
 // ISO2), so each country is keyed by BOTH its lowercased name and its lowercased
@@ -90,9 +157,9 @@ const CONNECT_COUNTRIES = {
   norway: "NO", no: "NO",
 };
 
-// There is deliberately no STRIPE_CONNECT_ENABLED flag any more. With Wise gone,
-// Connect is the ONLY rail outside Nigeria, so switching it off would return null
-// for the US, UK and the whole EEA at once: every non-Nigerian seller would
+// There is deliberately no STRIPE_CONNECT_ENABLED flag. While PayPal is off,
+// Connect is the ONLY rail outside Nigeria, so switching it off would return
+// null for the US, UK and the whole EEA at once: every non-Nigerian seller would
 // instantly lose paid listings, queued payouts would fail, and sellers with live,
 // fully-onboarded Stripe accounts would read as un-onboarded. A kill switch whose
 // off position bricks the product is not a kill switch. To pause a country, take
@@ -117,18 +184,20 @@ export function connectCountryCode(user) {
 /**
  * Resolve the COLLECTION provider for a seller (how we charge the buyer).
  *
- * Unaffected by the Connect rail: Connect sellers collect through the PLATFORM
- * Stripe account exactly like Wise sellers, with no transfer_data and no
- * application_fee_amount. (The pre-2026 Connect implementation used per-charge
- * destination transfers — do not reintroduce that; it's incompatible with the
- * admin-approval gate AND with cross-border payouts.)
+ * Both rails collect into the PLATFORM balance, with no per-charge split and no
+ * application fee. Money only leaves at admin-approval time, through
+ * getSettlementProvider's rail. Do not reintroduce per-charge destination
+ * transfers — that shape is incompatible with the admin-approval gate.
  *
  * @param {object} user - a populated user/seller document
- * @returns {"stripe" | "paystack"}
+ * @returns {"stripe" | "paypal" | "paystack"}
  */
 export function getPayoutProvider(user) {
   const country = (user?.location?.country || "").trim().toLowerCase();
   if (isPaystackCountry(country)) return "paystack";
+  // Collection is not country-gated on either rail — both can charge any buyer.
+  // While PayPal is off this is always Stripe, exactly as before.
+  if (PAYPAL_ENABLED) return "paypal";
   return "stripe";
 }
 
@@ -138,26 +207,32 @@ export function getPayoutProvider(user) {
  * Precedence, and why:
  *  1. Nigeria → paystack. Collection and settlement are the same rail; nothing
  *     else here can reach an NGN bank.
- *  2. Connect-eligible country → stripe. Transfers draw from the same platform
- *     balance the charge landed in, and Stripe runs KYC/AML on the connected
- *     account.
+ *  2. Anywhere PayPal operates → paypal. Payouts draw from the same PayPal
+ *     balance the capture landed in, and PayPal runs KYC on the recipient.
  *  3. Everyone else → null. No rail reaches them, and saying so is the point.
  *
  * Returning `null` rather than a placeholder string is deliberate: a string would
- * flow unchecked into Payout.provider, ticket.payoutProvider and PaymentIntent
- * metadata, passing every enum until it finally blew up inside runTransfer with
- * the money already collected. `null` forces each call site to decide.
+ * flow unchecked into Payout.provider and ticket.payoutProvider, passing every
+ * enum until it finally blew up inside runTransfer with the money already
+ * collected. `null` forces each call site to decide.
  *
  * Callers that need to explain the state to a human should use `payoutSupported`
  * to tell "not in your country" (permanent) apart from "finish onboarding"
  * (fixable) — they are different messages with different CTAs.
  *
  * @param {object} user
- * @returns {"paystack" | "stripe" | null}
+ * A seller who has already finished Connect onboarding keeps Stripe even after
+ * PayPal is switched on. Moving them would read as un-onboarded and block their
+ * paid listings until they added a PayPal address, so a working rail always wins
+ * over a newly available one.
+ *
+ * @returns {"paystack" | "stripe" | "paypal" | null}
  */
 export function getSettlementProvider(user) {
   const country = (user?.location?.country || "").trim().toLowerCase();
   if (isPaystackCountry(country)) return "paystack";
+  if (isConnectCountry(country) && user?.stripeOnboardingComplete) return "stripe";
+  if (isPaypalCountry(country)) return "paypal";
   if (isConnectCountry(country)) return "stripe";
   return null;
 }
@@ -196,6 +271,10 @@ export function payoutCountryKnown(user) {
  * Whether a seller has completed onboarding for the provider that settles them.
  * False when no rail reaches them — there is nothing to complete.
  *
+ * "Onboarding" is a much smaller thing on PayPal than on Stripe Connect: a payout
+ * needs the seller's PayPal email and nothing else, so there is no hosted KYC
+ * flow, no account id and no transient capability flag to gate on.
+ *
  * The Connect branch deliberately does NOT require `stripePayoutsEnabled`: that
  * flips false transiently whenever Stripe re-requests KYC, and gating on it
  * would revoke a live organizer's ability to sell mid-season. Transfers still
@@ -213,6 +292,9 @@ export function hasPayoutOnboarding(user) {
   if (provider === "stripe") {
     return !!(user?.stripeAccountId && user?.stripeOnboardingComplete);
   }
+  if (provider === "paypal") {
+    return !!(user?.paypalPayoutEmail && user?.paypalOnboardingComplete);
+  }
   return false;
 }
 
@@ -224,7 +306,8 @@ export function hasPayoutOnboarding(user) {
  */
 export const PAYOUT_ROUTING_FIELDS =
   "location paystackRecipientCode paystackOnboardingComplete " +
-  "stripeAccountId stripeAccountCountry stripeOnboardingComplete stripePayoutsEnabled";
+  "stripeAccountId stripeAccountCountry stripeOnboardingComplete stripePayoutsEnabled " +
+  "paypalPayoutEmail paypalOnboardingComplete";
 
 // Country (lowercased) → default selling currency. Drives the currency a
 // vendor's tickets/guides are priced in when they don't specify one. Only
@@ -243,10 +326,10 @@ const COUNTRY_CURRENCY = {
 /**
  * Default selling currency for a user. Paystack-country sellers price in
  * their local currency (launch scope: Nigeria → NGN); everyone else collects
- * via Stripe in USD.
+ * via PayPal in USD.
  *
- * Connect sellers are NOT an exception — a German seller still prices and
- * collects in USD, and Stripe converts on payout. Making this return EUR for
+ * Eurozone sellers are NOT an exception — a German seller still prices and
+ * collects in USD, and PayPal converts on payout. Making this return EUR for
  * them would break the currency check in event.controller.js and produce
  * EUR-priced tickets charged as USD.
  *

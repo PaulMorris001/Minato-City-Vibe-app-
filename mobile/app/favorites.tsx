@@ -19,7 +19,7 @@ import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
-import { useStripePayment } from "@/hooks/useStripePayment";
+import { usePayment } from "@/hooks/usePayment";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -29,7 +29,7 @@ export default function FavoritesPage() {
   const { colors, isDark } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
-  const { payForTicket } = useStripePayment();
+  const { payForTicket } = usePayment();
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);

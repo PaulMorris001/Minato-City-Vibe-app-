@@ -8,8 +8,8 @@ import { Fonts } from "@/constants/fonts";
 import { currencyPrefix, priceLabel } from "@/constants/payments";
 import { setActiveCity as setSharedActiveCity, useActiveCity } from "@/hooks/useActiveCity";
 import { NAVBAR_ROW_HEIGHT, navbarTopPad } from "@/constants/homeChrome";
+import { usePayment } from "@/hooks/usePayment";
 import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useLocation";
-import { useStripePayment } from "@/hooks/useStripePayment";
 import { ExternalEvent, externalEventService } from "@/services/externalEvent.service";
 import { trackEvent } from "@/utils/analytics";
 import { cacheRead, cacheWrite } from "@/utils/offlineCache";
@@ -454,7 +454,7 @@ export default function Home() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isIpad = Platform.OS === "ios" && Platform.isPad;
-  const { payForTicket } = useStripePayment();
+  const { payForTicket } = usePayment();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isBirthdayRaffle, setIsBirthdayRaffle] = useState(false);
   // Drives the RaffleBanner's two states ("Birthday Raffle is Live" vs "View

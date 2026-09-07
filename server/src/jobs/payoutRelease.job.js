@@ -10,19 +10,24 @@ import {
   PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
 import { createPayout } from "../services/payments/payout.service.js";
+import { getPaypalPayoutStatus } from "../controllers/paypal.controller.js";
 import { notifyUser } from "../services/notification.service.js";
 
 /**
  * Convert a ticket-sales net (held in the COLLECTION provider's units) into the
  * settlement provider's payout units — always major, see payout.model.js.
  *  - Paystack collects in major local units and settles them as-is.
- *  - Everything else was Stripe-collected, i.e. cents, and settles in major USD,
- *    so ÷ 100. payout.service.js re-multiplies to cents at the Transfers API
- *    boundary.
+ *  - Everything else is stored in cents (PayPal today, Stripe historically) and
+ *    settles in major USD, so ÷ 100.
+ *
+ * PayPal storing cents is deliberate even though its API speaks major units:
+ * `currency` is USD for both PayPal and legacy Stripe sales, so it could not
+ * tell them apart, and a major-unit PayPal net divided here would pay the
+ * organizer 1% of what they are owed. See settlePaypalPayment.js.
  */
 function ticketPayoutAmount(totalNet, settlement) {
   if (settlement === "paystack") return totalNet; // already major local units
-  return totalNet / 100; // cents → major USD (stripe/Connect)
+  return totalNet / 100; // cents → major USD
 }
 
 /**
@@ -234,9 +239,90 @@ export async function releaseDuePayouts() {
   }
 }
 
+/**
+ * Confirm that submitted PayPal payouts actually landed.
+ *
+ * PayPal Payouts is asynchronous: the API accepts a batch as PENDING and moves
+ * the money afterwards, so `executePayout` marking a payout "paid" only means
+ * "handed to PayPal". Without this sweep a payout PayPal later DENIED or
+ * RETURNED would sit in the queue reading as paid forever and the seller would
+ * never be told — the exact silent-failure shape the payout queue exists to
+ * prevent.
+ *
+ * Only PayPal is polled: it is the one rail here whose result arrives neither
+ * synchronously nor on a webhook we handle. A terminal success stamps
+ * `settledAt` so the doc is never polled again.
+ */
+export async function reconcilePaypalPayouts() {
+  // UNCLAIMED is not terminal — PayPal holds a payout to an address with no
+  // account for 30 days before returning it, and the seller can still claim it.
+  const TERMINAL_FAILURES = new Set(["DENIED", "FAILED", "RETURNED", "BLOCKED", "REFUNDED"]);
+  // Beyond this there is nothing left to learn: an unclaimed payout has been
+  // returned and a successful one long since stamped.
+  const OLDEST = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
+
+  const submitted = await Payout.find({
+    provider: "paypal",
+    status: "paid",
+    settledAt: { $exists: false },
+    transferId: { $exists: true, $ne: null },
+    updatedAt: { $gte: OLDEST },
+  }).lean();
+
+  if (submitted.length === 0) return;
+
+  for (const payout of submitted) {
+    try {
+      const { status, itemStatus, error } = await getPaypalPayoutStatus(payout.transferId);
+      const outcome = itemStatus || status;
+
+      if (outcome === "SUCCESS") {
+        await Payout.updateOne({ _id: payout._id }, { settledAt: new Date() });
+        continue;
+      }
+
+      if (TERMINAL_FAILURES.has(outcome)) {
+        await Payout.updateOne(
+          { _id: payout._id },
+          {
+            status: "failed",
+            error: `PayPal payout ${outcome}${error ? `: ${error}` : ""}`,
+          }
+        );
+        console.error(
+          `[PayoutRelease] PayPal payout ${payout._id} came back ${outcome} — ` +
+            `reopened for admin action`
+        );
+        // Same wording as executePayout's failure path: the seller learns
+        // something went wrong, never the raw provider message.
+        await notifyUser(payout.vendor, {
+          type: "payout_failed",
+          title: "There was a problem with your payout",
+          body:
+            `We couldn't complete your payout just yet. Our team has been alerted ` +
+            `and will sort it out — your money is safe.`,
+          data: { payoutId: String(payout._id) },
+        });
+      }
+      // PENDING / PROCESSING / UNCLAIMED: still in flight, check again next sweep.
+    } catch (err) {
+      // A failed status lookup says nothing about the payout — leave it alone
+      // and retry next sweep rather than guessing.
+      console.error(
+        `[PayoutRelease] Couldn't check PayPal payout ${payout._id}:`,
+        err?.message ?? err
+      );
+    }
+  }
+}
+
 export function startPayoutReleaseJob() {
   // Run once on startup, then every 30 minutes
-  releaseDuePayouts().catch(console.error);
-  setInterval(() => releaseDuePayouts().catch(console.error), 30 * 60 * 1000);
+  const sweep = () =>
+    releaseDuePayouts()
+      .catch(console.error)
+      .then(() => reconcilePaypalPayouts().catch(console.error));
+  sweep();
+  setInterval(sweep, 30 * 60 * 1000);
   console.log("[PayoutRelease] Job started — queuing due payouts every 30 minutes");
 }

@@ -12,6 +12,15 @@ Invoke them via the Skill tool (`session-efficiency`, `cityvibe-map`,
 `code-standards`). They live in `.claude/skills/`. Re-read `cityvibe-map` before
 any exploration and `code-standards` before any edit.
 
+## Session end — before you say the work is done
+
+If the task changed the shape of the repo — added, moved, renamed or deleted a
+file, changed a route or endpoint, added a migration, or turned up a non-obvious
+invariant — invoke `map-sync` and update `cityvibe-map` to match. The map is the
+first thing every session reads, so a stale one sends the next session
+confidently to files that no longer exist. Skip it for changes that touch only
+the inside of an existing function.
+
 ## Repo shape
 
 Four deployables in one repo:
@@ -33,5 +42,6 @@ Four deployables in one repo:
 - `server/src/utils/response.js` is dead code despite the README. Controllers use `try/catch` + `res.status().json({ message })`.
 - Mobile styling goes through `useThemedStyles` + `constants/theme.ts` tokens. No hardcoded hex in new code.
 - Mobile HTTP goes through the plain `axios` default import — global timeout/retry/token-refresh live in `utils/apiClient.ts`.
-- Payments: two collection providers (Stripe, Paystack) and only two settlement rails (Paystack NG, Stripe Connect US/UK/EEA/CA/CH); everywhere else has no rail by design. Deploy **server before mobile**.
+- Payments: collection is Stripe (outside Nigeria) or Paystack (Nigeria); settlement is Stripe Connect (US/UK/EEA/CA/CH) or Paystack (Nigeria), and everywhere else has no rail by design. PayPal is built but gated behind `PAYPAL_ENABLED` + credentials. Deploy **server before mobile**.
+- Per-sale amounts are stored in **cents** for PayPal and Stripe, **major units** for Paystack, in the same `sellerNetCents`/`vendorNet` fields. `Payout.amount` is always major. Getting this wrong pays a seller 1% or 100× what they're owed.
 - Migrations in `server/scripts/` and `server/src/scripts/` are manual — say so when a change needs one.

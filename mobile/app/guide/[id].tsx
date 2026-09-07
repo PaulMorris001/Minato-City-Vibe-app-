@@ -21,7 +21,7 @@ import { Guide } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
-import { useStripePayment } from "@/hooks/useStripePayment";
+import { usePayment } from "@/hooks/usePayment";
 import { currencyPrefix } from "@/constants/payments";
 import GuideCardSkeleton from "@/components/skeletons/GuideCardSkeleton";
 import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
@@ -100,7 +100,7 @@ export default function GuideDetailPage() {
         ? rawParams.id[0]
         : undefined;
   const formatPrice = useFormatPrice();
-  const { payForGuide } = useStripePayment();
+  const { payForGuide } = usePayment();
 
   const [guide, setGuide] = useState<Guide | null>(null);
   const [loading, setLoading] = useState(true);

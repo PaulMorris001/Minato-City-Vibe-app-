@@ -53,7 +53,7 @@ type PayoutStatus =
 
 interface EarningsSummary {
   currency: string;
-  payoutRail: "paystack" | "stripe" | null;
+  payoutRail: "paystack" | "stripe" | "paypal" | null;
   payoutSupported: boolean;
   payoutCountryKnown: boolean;
   payoutOnboarded: boolean;

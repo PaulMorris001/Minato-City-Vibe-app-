@@ -9,17 +9,19 @@ import {
 } from "../controllers/payments.controller.js";
 import { startGuestOtp, verifyGuestOtp } from "../controllers/guestCheckout.controller.js";
 import { paystackReturn } from "../controllers/paystack.controller.js";
+import { paypalReturn } from "../controllers/paypal.controller.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { otpLimiter } from "../middleware/rateLimit.middleware.js";
 
 const router = express.Router();
 
-// Public — both providers' publishable keys, fetched at runtime.
+// Public — the client-side provider keys, fetched at runtime.
 router.get("/payments/config", getPaymentsConfig);
 
-// Public — Paystack redirects the checkout browser here after payment; the
-// mobile app intercepts the URL to read the result, this page is a fallback.
+// Public — each provider redirects the checkout browser here after payment; the
+// mobile app intercepts the URL to read the result, these pages are a fallback.
 router.get("/payments/paystack/return", paystackReturn);
+router.get("/payments/paypal/return", paypalReturn);
 
 // Guest checkout — confirm an email with a one-time code, get a short-lived
 // guest token, then buy without an account. Rate-limited like other OTP flows.
