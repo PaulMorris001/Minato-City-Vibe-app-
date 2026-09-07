@@ -133,11 +133,27 @@ class ChatService {
    */
   async getUserChats(scope: ChatScope = "client"): Promise<Chat[]> {
     try {
-      const headers = await this.getAuthHeader();
-      const response = await fetch(`${BASE_URL}/chats?scope=${scope}`, { headers });
+      // On a fresh login/signup this can fire before the token is readable, or
+      // while the just-issued token is still settling. There's nothing to fetch
+      // for a brand-new account anyway — fall back to the (empty) local copy
+      // instead of throwing a red error into the terminal.
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) return getChats(scope);
 
+      const response = await fetch(`${BASE_URL}/chats?scope=${scope}`, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.status === 401) {
+        // Auth not ready yet (see above) — transient, not a failure worth
+        // surfacing. The next refresh (socket connect / focus) will succeed.
+        return getChats(scope);
+      }
       if (!response.ok) {
-        throw new Error("Failed to fetch chats");
+        throw new Error(`Failed to fetch chats (${response.status})`);
       }
 
       const data = await response.json();
@@ -151,7 +167,10 @@ class ChatService {
       pruneChatsNotIn(chats.map((c) => c._id), scope);
       return chats;
     } catch (error) {
-      console.error("Get user chats error:", error);
+      // Callers (ChatListScreen / VendorChatsTab) already fall back to the
+      // local copy and decide whether to surface anything — keep this at warn
+      // so a transient network blip doesn't read like a crash.
+      console.warn("getUserChats failed, using local copy:", error);
       throw error;
     }
   }

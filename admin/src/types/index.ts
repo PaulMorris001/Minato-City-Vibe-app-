@@ -119,3 +119,37 @@ export interface AnalyticsSummary {
   dailySeries: { date: string; count: number }[];
   topUsers: { _id: string; count: number; username: string; email: string }[];
 }
+
+export interface AdminRaffleEntry {
+  eventId: string;
+  title: string;
+  date: string;
+  createdAt: string;
+  host: { _id: string; username: string; email: string; profilePicture?: string } | null;
+  // rsvpUsers count — the live "going" toggle, not the one-way invited list.
+  verifiedRsvps: number;
+  totalInvites: number;
+  eligibilityScore: number;
+  // 1..N where N is the campaign's prize-tier count.
+  winnerRank: number | null;
+}
+
+export interface RafflePrize {
+  rank: number;
+  reward: string;
+}
+
+export interface AdminRaffleCampaign {
+  // null when no campaign row exists yet — the server returns a synthetic
+  // default from the old hardcoded deadline until the seed script runs.
+  _id: string | null;
+  name: string;
+  startDate: string;
+  endDate: string;
+  status: "active" | "ended";
+  // Ordered prize tiers; length is the winner count.
+  prizes: RafflePrize[];
+  createdByAdmin?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}

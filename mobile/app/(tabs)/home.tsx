@@ -1,46 +1,46 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import {
-  ScrollView,
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  RefreshControl,
-  AppState,
-  FlatList,
-  Animated,
-  Platform,
-  Linking,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import { Image } from "expo-image";
-import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
-import * as Location from "expo-location";
+import CreateEventModal from "@/components/client/CreateEventModal";
+import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
+import ExternalEventCard from "@/components/shared/ExternalEventCard";
+import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
+import CreateEventTooltip from "@/components/shared/CreateEventTooltip";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { currencyPrefix, priceLabel } from "@/constants/payments";
-import CreateEventModal from "@/components/client/CreateEventModal";
-import CreateEventTooltip from "@/components/shared/CreateEventTooltip";
+import { setActiveCity as setSharedActiveCity, useActiveCity } from "@/hooks/useActiveCity";
 import { NAVBAR_ROW_HEIGHT, navbarTopPad } from "@/constants/homeChrome";
-import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
-import ExternalEventCard from "@/components/shared/ExternalEventCard";
-import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
-import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { usePayment } from "@/hooks/usePayment";
 import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useLocation";
-import { useActiveCity, setActiveCity as setSharedActiveCity } from "@/hooks/useActiveCity";
+import { ExternalEvent, externalEventService } from "@/services/externalEvent.service";
 import { trackEvent } from "@/utils/analytics";
-import { ensureAuth } from "@/utils/requireAuth";
 import { cacheRead, cacheWrite } from "@/utils/offlineCache";
+import { ensureAuth } from "@/utils/requireAuth";
 import { ensureOnline } from "@/utils/requireOnline";
 import { fullName } from "@/utils/displayName";
+import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
+import * as Location from "expo-location";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  Animated,
+  AppState,
+  FlatList,
+  Linking,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
+import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 
 function Skeleton({ width, height, borderRadius = 10, style }: { width: number | string; height: number; borderRadius?: number; style?: any }) {
   const { colors } = useTheme();
@@ -169,6 +169,73 @@ function SectionHeader({ title, subtitle, onAction, actionLabel }: { title: stri
         </TouchableOpacity>
       )}
     </View>
+  );
+}
+
+function RaffleBanner({
+  hasBirthdayEvent = false,
+}: {
+  hasBirthdayEvent?: boolean;
+}) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  const router = useRouter();
+
+  const handlePress = () => {
+    if (hasBirthdayEvent) {
+      router.push("/birthday-raffle/status" as any);
+    } else {
+      router.push("/birthday-raffle" as any);
+    }
+  };
+  return (
+    <TouchableOpacity
+     style={styles.raffleBanner}
+      onPress={handlePress}
+      activeOpacity={0.85}
+      >
+      <LinearGradient
+        colors={
+          hasBirthdayEvent
+            ? [colors.primary, colors.primaryDark || "#1a0f3d"]
+            : ["#2D1B69", colors.primaryDark || "#1a0f3d"]
+        }
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.raffleBannerInner}
+      >
+        <View style={styles.raffleBannerContent}>
+          <View style={styles.raffleBadge}>
+            <Ionicons
+              name={hasBirthdayEvent ? "checkmark-circle" : "gift"}
+              size={12}
+              color="#fff"
+            />
+            <Text style={styles.raffleBadgeText}>
+              {hasBirthdayEvent ? "YOU’RE IN" : "NEW"}
+            </Text>
+          </View>
+
+          <Text style={styles.raffleTitle}>
+            {hasBirthdayEvent
+              ? "View Your Raffle Status"
+              : "Birthday Raffle is Live 🎉"}
+          </Text>
+
+          <Text style={styles.raffleSubtitle}>
+            {hasBirthdayEvent
+              ? "See your verified RSVPs, tracking link & eligibility"
+              : "Create a birthday event & stand a chance to win cash prizes"}
+          </Text>
+        </View>
+
+        <Ionicons
+          name="chevron-forward"
+          size={20}
+          color="rgba(255,255,255,0.8)"
+        />
+      </LinearGradient>
+    </TouchableOpacity>
   );
 }
 
@@ -389,6 +456,12 @@ export default function Home() {
   const isIpad = Platform.OS === "ios" && Platform.isPad;
   const { payForTicket } = usePayment();
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isBirthdayRaffle, setIsBirthdayRaffle] = useState(false);
+  // Drives the RaffleBanner's two states ("Birthday Raffle is Live" vs "View
+  // Your Raffle Status"). Guests and the not-yet-loaded case both read as
+  // false, which is the right default — nothing to view yet either way.
+  const [hasBirthdayRaffleEvent, setHasBirthdayRaffleEvent] = useState(false);
+  const { openCreate } = useLocalSearchParams<{ openCreate?: string }>();
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
   const [highlights, setHighlights] = useState<{
     trending: PublicEvent[];
@@ -399,7 +472,6 @@ export default function Home() {
   // Currently surfaced in the "Trending Now" carousel mixed with native events.
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [topVendors, setTopVendors] = useState<Vendor[]>([]);
   const [topGuides, setTopGuides] = useState<TopGuide[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -643,38 +715,19 @@ export default function Home() {
     }
   };
 
-  const fetchVendors = async (city?: string | null) => {
+  const fetchVendors = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
       const headers: Record<string, string> = {};
       if (token) headers.Authorization = `Bearer ${token}`;
-      const cityParam = city ? `&city=${encodeURIComponent(city)}` : "";
-      const response = await fetch(`${BASE_URL}/vendors/search?query=${cityParam}&limit=10`, {
+      const response = await fetch(`${BASE_URL}/vendors/search?query=&limit=10`, {
         headers,
       });
       const data = await response.json();
-      if (response.ok && activeCityRef.current === (city ?? null)) {
+      if (response.ok) {
         setVendors(data.vendors || data || []);
       }
     } catch {}
-  };
-
-  const fetchTopVendors = async (city?: string | null) => {
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      const headers: Record<string, string> = {};
-      if (token) headers.Authorization = `Bearer ${token}`;
-      const cityParam = city ? `&city=${encodeURIComponent(city)}` : "";
-      const response = await fetch(`${BASE_URL}/vendors/top?limit=10${cityParam}`, { headers });
-      const data = await response.json();
-      if (response.ok && activeCityRef.current === (city ?? null)) {
-        setTopVendors(data.vendors || []);
-        cacheWrite(`home:topVendors:${city ?? "all"}`, data.vendors || []);
-      }
-    } catch {
-      const cached = await cacheRead<Vendor[]>(`home:topVendors:${city ?? "all"}`);
-      if (cached && activeCityRef.current === (city ?? null)) setTopVendors(cached.data);
-    }
   };
 
   const fetchTopGuides = async (city?: string | null) => {
@@ -718,15 +771,6 @@ export default function Home() {
     setIsModalVisible(true);
   };
 
-  // Prefer vendors the rail above isn't already showing. A city with fewer than
-  // ~10 vendors would otherwise dedupe this section out of existence entirely,
-  // so fall back to the ranked list unfiltered rather than hiding it.
-  const rankedVendors = useMemo(() => {
-    const shown = new Set(vendors.map((v) => v._id));
-    const fresh = topVendors.filter((v) => !shown.has(v._id));
-    return fresh.length >= 3 ? fresh : topVendors;
-  }, [vendors, topVendors]);
-
   const onRefresh = async () => {
     setRefreshing(true);
     activeCityRef.current = selectedCity ?? null;
@@ -734,8 +778,7 @@ export default function Home() {
       fetchPublicEvents(selectedCity, true),
       fetchExternalEvents(selectedCity),
       fetchHighlights(selectedCity),
-      fetchVendors(selectedCity),
-      fetchTopVendors(selectedCity),
+      fetchVendors(),
       fetchTopGuides(selectedCity),
     ]);
     setRefreshing(false);
@@ -773,8 +816,7 @@ export default function Home() {
         fetchPublicEvents(cityToUse),
         fetchExternalEvents(cityToUse),
         fetchHighlights(cityToUse),
-        fetchVendors(cityToUse),
-        fetchTopVendors(cityToUse),
+        fetchVendors(),
         fetchTopGuides(cityToUse),
       ]).finally(() => {
         if (!cancelled) setInitialLoading(false);
@@ -791,14 +833,8 @@ export default function Home() {
 
       const subscription = AppState.addEventListener("change", (nextState) => {
         if (nextState === "active") {
-          // Mirrors onRefresh's full set — a quiet, no-spinner update so the
-          // home tab is current the moment the app comes back to foreground.
           fetchPublicEvents(selectedCity, true);
-          fetchExternalEvents(selectedCity);
           fetchHighlights(selectedCity);
-          fetchVendors(selectedCity);
-          fetchTopVendors(selectedCity);
-          fetchTopGuides(selectedCity);
         }
       });
 
@@ -826,6 +862,35 @@ export default function Home() {
       });
     };
   }, [selectedCity, resolveHomeLocation]);
+
+  useEffect(() => {
+  if (openCreate === "birthday") {
+    setIsBirthdayRaffle(true);
+    setIsModalVisible(true);
+
+    // Clear the param so it doesn't re-trigger
+    router.setParams({ openCreate: undefined });
+  }
+}, [openCreate]);
+
+  // Checked once per mount rather than tied to `refreshing` — the banner only
+  // needs to flip from "join" to "view status" after a birthday event is
+  // created, which already re-navigates through this same param above.
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await SecureStore.getItemAsync("token");
+        if (!token) return;
+        const res = await fetch(`${BASE_URL}/raffle/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (res.ok) setHasBirthdayRaffleEvent(!!data.hasQualifyingEvent);
+      } catch {
+        // Non-critical — banner just falls back to "join" copy.
+      }
+    })();
+  }, []);
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
     if (!(await ensureAuth("buy a ticket"))) return;
@@ -999,6 +1064,9 @@ export default function Home() {
 
         {/* The search bar that used to sit here moved into the unified search
             page. */}
+
+            {/* Temporary Raffle Entry Point */}
+        <RaffleBanner hasBirthdayEvent={hasBirthdayRaffleEvent} />
 
         {locationBanner === "approximate" && (
           <View style={styles.locationBanner}>
@@ -1332,44 +1400,6 @@ export default function Home() {
           </View>
         )}
 
-            {/* Top vendors — ranked by review count, so a lone 5-star review
-                can't outrank a vendor with fifty. */}
-            {initialLoading ? (
-              <View style={styles.section}>
-                <SectionHeader title="Top vendors" subtitle="Highest rated in your city" />
-                <FlatList
-                  horizontal
-                  data={[1, 2, 3, 4]}
-                  keyExtractor={(item) => String(item)}
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}
-                  renderItem={() => <VendorCardSkeleton />}
-                />
-              </View>
-            ) : rankedVendors.length > 0 && (
-              <View style={styles.section}>
-                <SectionHeader
-                  title="Top vendors"
-                  subtitle="Highest rated in your city"
-                  onAction={() => router.push("/(tabs)/vendors")}
-                  actionLabel="All"
-                />
-                <FlatList
-                  horizontal
-                  data={rankedVendors}
-                  keyExtractor={(item) => item._id}
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}
-                  renderItem={({ item }) => (
-                    <VendorCard
-                      vendor={item}
-                      onPress={() => router.push(`/vendor-details/${item._id}` as any)}
-                    />
-                  )}
-                />
-              </View>
-            )}
-
             {/* Top guides — best-selling city guides */}
             {initialLoading ? (
               <View style={styles.section}>
@@ -1400,7 +1430,6 @@ export default function Home() {
               renderItem={({ item }) => (
                 <GuideCard
                   guide={item}
-                  style={styles.guideCardCarousel}
                   onPress={() => router.push(`/guide/${item._id}` as any)}
                 />
               )}
@@ -1431,11 +1460,15 @@ export default function Home() {
           keeps the FAB tappable through it. */}
       <CreateEventTooltip hidden={!feedAtTop} />
 
-      <CreateEventModal
-        visible={isModalVisible}
-        onClose={() => setIsModalVisible(false)}
-        onEventCreated={() => fetchPublicEvents(selectedCity)}
-      />
+        <CreateEventModal
+          visible={isModalVisible}
+          onClose={() => {
+            setIsModalVisible(false);
+            setIsBirthdayRaffle(false);
+          }}
+          onEventCreated={() => fetchPublicEvents(selectedCity)}
+          isBirthdayRaffle={isBirthdayRaffle}
+        />
     </>
   );
 }
@@ -1709,13 +1742,6 @@ const createStyles = (c: ThemeColors) =>
     paddingHorizontal: 20,
     paddingBottom: 2,
   },
-  // GuideCard has no width of its own — it stretches to fill a vertical
-  // list, which doesn't work in a horizontal FlatList (there's nothing to
-  // stretch to), so the carousel gives it one explicitly.
-  guideCardCarousel: {
-    width: 160,
-    marginRight: 12,
-  },
   smallCard: {
     width: 160,
     marginRight: 12,
@@ -1956,4 +1982,50 @@ const createStyles = (c: ThemeColors) =>
     justifyContent: "center",
     alignItems: "center",
   },
+
+  raffleBanner: {
+  marginHorizontal: 20,
+  marginBottom: 20,
+  borderRadius: 18,
+  overflow: "hidden",
+},
+raffleBannerInner: {
+  flexDirection: "row",
+  alignItems: "center",
+  paddingVertical: 16,
+  paddingHorizontal: 16,
+  gap: 12,
+},
+raffleBannerContent: {
+  flex: 1,
+},
+raffleBadge: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 4,
+  alignSelf: "flex-start",
+  backgroundColor: "rgba(255,255,255,0.15)",
+  paddingHorizontal: 8,
+  paddingVertical: 3,
+  borderRadius: 999,
+  marginBottom: 8,
+},
+raffleBadgeText: {
+  fontFamily: Fonts.bold,
+  fontSize: 10,
+  color: "#fff",
+  letterSpacing: 0.5,
+},
+raffleTitle: {
+  fontFamily: Fonts.bold,
+  fontSize: 16,
+  color: "#fff",
+  marginBottom: 4,
+},
+raffleSubtitle: {
+  fontFamily: Fonts.regular,
+  fontSize: 13,
+  color: "rgba(255,255,255,0.8)",
+  lineHeight: 18,
+},
 });
