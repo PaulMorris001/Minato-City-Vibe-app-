@@ -98,10 +98,18 @@ const userSchema = mongoose.Schema({
   paystackRecipientCode: { type: String },
   paystackOnboardingComplete: { type: Boolean, default: false },
 
-  // Stripe Connect payout fields (sellers inside Stripe's cross-border-payouts
-  // footprint: US, UK, EEA, CA, CH). They COLLECT via the platform Stripe
-  // account; settlement is a Transfer from the platform balance to their Express
-  // account once an admin approves the payout.
+  // PayPal payout field (every seller outside Nigeria). Settlement sends a
+  // PayPal Payout to this address once an admin approves. There is no account id
+  // or KYC state to mirror here: PayPal addresses a recipient by email and runs
+  // its own checks at payout time, which is why this replaced the six Stripe
+  // Connect fields below with one.
+  paypalPayoutEmail: { type: String },
+  paypalOnboardingComplete: { type: Boolean, default: false },
+
+  // Stripe Connect payout fields — LEGACY. The Connect rail was retired in Sep
+  // 2026 and nothing writes these any more; they are kept because payouts
+  // created before the cutover still execute against them, and because they are
+  // the only record of where a pre-cutover seller was paid.
   stripeAccountId: { type: String },
   // ISO-3166-1 alpha-2 the Express account was opened in. Immutable on Stripe's
   // side, so it's kept here to detect a later country change on the profile.

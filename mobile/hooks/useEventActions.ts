@@ -3,7 +3,7 @@ import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
-import { useStripePayment } from "@/hooks/useStripePayment";
+import { usePayment } from "@/hooks/usePayment";
 import { trackEvent as trackAnalyticsEvent } from "@/utils/analytics";
 
 /**
@@ -16,7 +16,7 @@ import { trackEvent as trackAnalyticsEvent } from "@/utils/analytics";
  */
 export function useEventActions({ onDone }: { onDone?: () => void } = {}) {
   const router = useRouter();
-  const { payForTicket } = useStripePayment();
+  const { payForTicket } = usePayment();
 
   const purchaseTicket = useCallback(
     async (eventId: string, eventTitle: string) => {

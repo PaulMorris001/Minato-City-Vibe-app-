@@ -2,17 +2,23 @@
  * Payout unit-contract tests.
  *
  * Payout.amount is stored in MAJOR units for every live rail (payout.model.js),
- * but collection is denominated in the collection provider's units — cents for
- * Stripe. So a Stripe-collected sale makes a cents → major → cents round trip:
+ * but per-sale amounts are denominated in the collection provider's storage
+ * units — cents for PayPal and Stripe, major local units for Paystack. So a
+ * PayPal-collected sale makes this trip:
  *
- *   payoutRelease.job.js  ticketPayoutAmount()  cents ÷ 100  → stored major
- *   payout.service.js     runTransfer()         major × 100  → Transfers API
+ *   settlePaypalPayment.js  major × 100  → stored cents
+ *   payoutRelease.job.js    ticketPayoutAmount()  cents ÷ 100  → stored major
+ *   payout.service.js       runTransfer()         major as-is  → Payouts API
  *
- * Floating point makes that round trip lossy if either side is done naively
+ * PayPal's API speaks major units, so unlike Stripe it does NOT multiply back at
+ * the boundary. That asymmetry is the thing most likely to be "tidied up" by
+ * someone later, so both halves are asserted here.
+ *
+ * Floating point makes any such round trip lossy if done naively
  * (12345 / 100 * 100 === 12344.999999999998). This is the only place in the
  * payout path where an off-by-a-cent reaches real money, so it gets its own
- * test. The two functions are re-implemented here rather than imported —
- * importing either would drag in Mongoose models and the Stripe SDK.
+ * test. The functions are re-implemented here rather than imported — importing
+ * them would drag in Mongoose models and the provider SDKs.
  *
  * Run:  node src/services/payments/payoutUnits.test.mjs
  */
@@ -32,6 +38,9 @@ const toMajor = (totalNet, settlement) =>
 
 /** Mirrors the cents conversion in runTransfer()'s stripe branch. */
 const toCents = (major) => Math.round(major * 100);
+
+/** Mirrors toPaypalAmount() in config/paypal.js — the PayPal API boundary. */
+const toPaypalAmount = (major) => Number(major).toFixed(2);
 
 // Values chosen to hit the awkward cases: sub-cent-rounding neighbours, the
 // classic 12345 float trap, and a large sum where drift would compound.
@@ -71,6 +80,30 @@ console.log("\npaystack rail (already major — must NOT be divided):");
 check("passes major local units through untouched", () => {
   assert.equal(toMajor(1500, "paystack"), 1500);
   assert.equal(toMajor(99.5, "paystack"), 99.5);
+});
+
+console.log("\npaypal rail (stored cents → major, sent as major):");
+check("stored cents divide down to an exact 2dp amount", () => {
+  for (const cents of CENT_AMOUNTS) {
+    const major = toMajor(cents, "paypal");
+    // The string PayPal receives must round-trip back to the stored cents, or
+    // the seller is paid a different number from the one the admin approved.
+    assert.equal(
+      Math.round(Number(toPaypalAmount(major)) * 100),
+      cents,
+      `${cents} cents → "${toPaypalAmount(major)}"`
+    );
+  }
+});
+check("does NOT re-multiply at the boundary the way Stripe does", () => {
+  // The asymmetry, pinned. Sending toCents() to the Payouts API would pay 100×.
+  assert.equal(toPaypalAmount(toMajor(4500, "paypal")), "45.00");
+  assert.notEqual(toPaypalAmount(toMajor(4500, "paypal")), "4500.00");
+});
+check("renders whole amounts with two decimals, as PayPal requires", () => {
+  assert.equal(toPaypalAmount(45), "45.00");
+  assert.equal(toPaypalAmount(0.5), "0.50");
+  assert.equal(toPaypalAmount(123.456), "123.46");
 });
 
 console.log(`\n✅ All ${passed} payout unit-contract checks passed.`);

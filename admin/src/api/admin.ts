@@ -230,10 +230,11 @@ export interface AdminPayout {
   };
   relatedType: "ticket" | "guide" | "booking" | "order";
   relatedId: string;
-  // Live rails are "paystack" and "stripe". "wise" / "flutterwave" only appear
+  // Live rails are "paystack" and "paypal". "wise" / "flutterwave" only appear
   // on legacy docs whose rails no longer exist — they can be rejected but never
-  // executed.
-  provider: "wise" | "paystack" | "stripe" | "flutterwave";
+  // executed. "stripe" is draining: no new payouts, but pre-cutover docs still
+  // execute through the Connect branch.
+  provider: "wise" | "paystack" | "stripe" | "flutterwave" | "paypal";
   amount: number;
   currency: string;
   displayAmount?: number;

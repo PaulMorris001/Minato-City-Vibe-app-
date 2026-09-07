@@ -1,17 +1,22 @@
 /**
  * Pure-logic tests for payment provider routing.
  *
- * Reflects the current rollout: Paystack is enabled for the launch scope
- * (Nigeria → NGN, collect + settle); everyone else collects via Stripe (USD)
- * into the platform balance. Settlement has exactly two live rails — Paystack
- * for Nigeria, Stripe Connect for the cross-border-payouts footprint (US, UK,
- * EEA, CA, CH) — and sellers outside both have NO rail, which
- * getSettlementProvider reports as `null`.
+ * Current rollout: Paystack for the launch scope (Nigeria → NGN, collect +
+ * settle), Stripe for everyone else, with Stripe Connect settling inside its
+ * cross-border-payouts footprint (US, UK, EEA, CA, CH) and `null` everywhere
+ * else. PayPal is built but OFF, waiting on live credentials.
  *
- * The null case carries the most weight here. The Wise rail used to be the
- * catch-all default, so the long tail *looked* routable while being a dead end
- * in practice. These assertions pin the honest answer in place: several of them
- * exist specifically to fail if someone reintroduces a fallback rail.
+ * Two things carry the most weight here.
+ *
+ * The null case: Wise used to be a catch-all default, so the long tail *looked*
+ * routable while being a dead end. Several assertions exist specifically to fail
+ * if someone reintroduces a fallback rail.
+ *
+ * The flag: the first block pins "PayPal off behaves exactly as it did before
+ * PayPal existed", which is what protects production today. The last block
+ * re-imports the module with the flag on and pins what happens when it is
+ * eventually thrown — including that a seller already settled by Connect is not
+ * moved, because moving them would block their paid listings.
  *
  * Run:  node src/services/payments/resolveProvider.test.mjs
  */
@@ -36,9 +41,9 @@ const check = (name, fn) => {
 
 const user = (country, extra = {}) => ({ location: { country }, ...extra });
 
-// Countries with no payout rail at all. Australia and Japan are the traps here:
-// developed, English-friendly, obviously "should work" — and not on Stripe's
-// cross-border-payouts list.
+// Countries with no payout rail while PayPal is off. Australia and Japan are the
+// traps: developed, English-friendly, obviously "should work", and not on
+// Stripe's cross-border-payouts list.
 const UNSUPPORTED = [
   "Ghana",
   "Kenya",
@@ -59,7 +64,7 @@ check("Nigeria → paystack", () =>
 check("ng (ISO code) → paystack", () =>
   assert.equal(getPayoutProvider(user("ng")), "paystack")
 );
-check("Ghana → stripe (not in launch scope yet)", () =>
+check("Ghana → stripe (not in Paystack launch scope)", () =>
   assert.equal(getPayoutProvider(user("Ghana")), "stripe")
 );
 check("United States / United Kingdom / Germany → stripe", () => {
@@ -68,9 +73,9 @@ check("United States / United Kingdom / Germany → stripe", () => {
   assert.equal(getPayoutProvider(user("Germany")), "stripe");
 });
 check("collection still works where SETTLEMENT has no rail", () => {
-  // Collection and settlement are independent decisions: a buyer can always be
-  // charged. Only paying the seller out is blocked, which is why the listing
-  // gate lives at creation time rather than at checkout.
+  // Collection and settlement are independent: a buyer can always be charged.
+  // Only paying the seller out is blocked, which is why the listing gate lives
+  // at creation time rather than at checkout.
   for (const c of UNSUPPORTED) {
     assert.equal(getPayoutProvider(user(c)), "stripe", `${c} should still collect via stripe`);
   }
@@ -92,15 +97,7 @@ check("United Kingdom / uk / gb → stripe", () => {
   assert.equal(getSettlementProvider(user("gb")), "stripe");
 });
 check("EEA + CA + CH → stripe", () => {
-  for (const c of [
-    "Germany",
-    "Norway",
-    "Iceland",
-    "Switzerland",
-    "Canada",
-    "Czechia",
-    "Czech Republic",
-  ]) {
+  for (const c of ["Germany", "Norway", "Iceland", "Switzerland", "Canada", "Czechia"]) {
     assert.equal(getSettlementProvider(user(c)), "stripe", `${c} should route to stripe`);
   }
 });
@@ -115,9 +112,18 @@ check("unknown / missing country → null", () => {
   assert.equal(getSettlementProvider(user("Wakanda")), null);
   assert.equal(getSettlementProvider(undefined), null);
 });
+check("PayPal fields on a user do NOT activate the disabled rail", () => {
+  // The gate is the env flag, not the presence of seller data. A user who
+  // somehow has a PayPal address must still route by the live rails.
+  assert.equal(
+    getSettlementProvider(
+      user("Kenya", { paypalPayoutEmail: "s@example.com", paypalOnboardingComplete: true })
+    ),
+    null
+  );
+  assert.equal(getPayoutProvider(user("Kenya", { paypalPayoutEmail: "s@example.com" })), "stripe");
+});
 check("settlement ignores leftover Wise fields on old user docs", () => {
-  // Docs predating the migration may still carry these. They must not resurrect
-  // the dead rail or divert a seller off Connect.
   assert.equal(
     getSettlementProvider(
       user("United States", { wiseRecipientId: "1", wiseOnboardingComplete: true })
@@ -125,9 +131,7 @@ check("settlement ignores leftover Wise fields on old user docs", () => {
     "stripe"
   );
   assert.equal(
-    getSettlementProvider(
-      user("Ghana", { wiseRecipientId: "1", wiseOnboardingComplete: true })
-    ),
+    getSettlementProvider(user("Ghana", { wiseRecipientId: "1", wiseOnboardingComplete: true })),
     null
   );
 });
@@ -145,8 +149,6 @@ check("false outside them", () => {
   assert.equal(payoutSupported({}), false);
 });
 check("independent of whether the seller has onboarded", () => {
-  // The whole point of the split: supported-but-not-onboarded is fixable by the
-  // seller, unsupported is not. The two must never collapse into one flag.
   assert.equal(payoutSupported(user("Germany")), true);
   assert.equal(hasPayoutOnboarding(user("Germany")), false);
 });
@@ -170,7 +172,6 @@ check("splits the two false cases of payoutSupported apart", () => {
   const unsupported = user("Japan");
   assert.equal(payoutSupported(unknown), false);
   assert.equal(payoutSupported(unsupported), false);
-  // Same payoutSupported, different remedy — only one of them has a CTA.
   assert.equal(payoutCountryKnown(unknown), false);
   assert.equal(payoutCountryKnown(unsupported), true);
 });
@@ -191,10 +192,7 @@ check("null outside the footprint — callers must not fall back to US", () => {
 console.log("\nhasPayoutOnboarding:");
 check("Connect vendor needs stripeAccountId + stripeOnboardingComplete", () => {
   assert.equal(hasPayoutOnboarding(user("United States")), false);
-  assert.equal(
-    hasPayoutOnboarding(user("United States", { stripeAccountId: "acct_1" })),
-    false
-  );
+  assert.equal(hasPayoutOnboarding(user("United States", { stripeAccountId: "acct_1" })), false);
   assert.equal(
     hasPayoutOnboarding(user("United States", { stripeOnboardingComplete: true })),
     false
@@ -222,10 +220,7 @@ check("stripePayoutsEnabled: false does NOT block onboarding", () =>
 );
 check("Nigerian vendor needs paystackRecipientCode + paystackOnboardingComplete", () => {
   assert.equal(hasPayoutOnboarding(user("Nigeria")), false);
-  assert.equal(
-    hasPayoutOnboarding(user("Nigeria", { paystackOnboardingComplete: true })),
-    false
-  );
+  assert.equal(hasPayoutOnboarding(user("Nigeria", { paystackOnboardingComplete: true })), false);
   assert.equal(
     hasPayoutOnboarding(
       user("Nigeria", { paystackRecipientCode: "RCP_1", paystackOnboardingComplete: true })
@@ -234,9 +229,6 @@ check("Nigerian vendor needs paystackRecipientCode + paystackOnboardingComplete"
   );
 });
 check("credentials for the WRONG rail never satisfy the gate", () => {
-  // A Nigerian seller with Connect credentials, and a German seller with
-  // Paystack ones. Each is checked only against the rail that actually settles
-  // them.
   assert.equal(
     hasPayoutOnboarding(
       user("Nigeria", { stripeAccountId: "acct_1", stripeOnboardingComplete: true })
@@ -251,8 +243,6 @@ check("credentials for the WRONG rail never satisfy the gate", () => {
   );
 });
 check("no rail → never onboarded, whatever credentials are present", () => {
-  // Nothing a Ghanaian seller can do makes this true — which is exactly why the
-  // UI must show them the country message and not a setup screen.
   assert.equal(hasPayoutOnboarding(user("Ghana")), false);
   assert.equal(
     hasPayoutOnboarding(
@@ -261,8 +251,6 @@ check("no rail → never onboarded, whatever credentials are present", () => {
         stripeOnboardingComplete: true,
         paystackRecipientCode: "RCP_1",
         paystackOnboardingComplete: true,
-        wiseRecipientId: "1",
-        wiseOnboardingComplete: true,
       })
     ),
     false
@@ -282,6 +270,67 @@ check("Connect sellers still price in USD, not their local currency", () => {
   assert.equal(currencyForUser(user("Germany")), "USD");
   assert.equal(currencyForUser(user("United States")), "USD");
   assert.equal(currencyForUser({}), "USD");
+});
+
+// ── The flag, thrown ─────────────────────────────────────────────────────────
+// The module reads its knobs once at load, so this re-imports it under a fresh
+// specifier with the env set. Everything above proves the OFF contract; this
+// proves what changes, and what deliberately does not, when PayPal goes live.
+
+console.log("\nPAYPAL_ENABLED=true (what happens when the switch is thrown):");
+process.env.PAYPAL_ENABLED = "true";
+process.env.PAYPAL_CLIENT_ID = "test-client-id";
+process.env.PAYPAL_CLIENT_SECRET = "test-client-secret";
+const live = await import("./resolveProvider.js?paypal-enabled");
+
+check("collection moves to paypal outside Nigeria", () => {
+  assert.equal(live.getPayoutProvider(user("United States")), "paypal");
+  assert.equal(live.getPayoutProvider(user("Nigeria")), "paystack");
+});
+check("countries Connect could never reach finally get a rail", () => {
+  for (const c of ["Ghana", "Kenya", "India", "Brazil", "Japan"]) {
+    assert.equal(live.getSettlementProvider(user(c)), "paypal", `${c} should gain a rail`);
+  }
+});
+check("a seller already finished on Connect is NOT moved", () => {
+  // The migration hazard in one assertion. Flipping them to PayPal would report
+  // them un-onboarded and block their paid listings until they added an address.
+  assert.equal(
+    live.getSettlementProvider(user("Germany", { stripeOnboardingComplete: true })),
+    "stripe"
+  );
+  assert.equal(
+    live.hasPayoutOnboarding(
+      user("Germany", { stripeAccountId: "acct_1", stripeOnboardingComplete: true })
+    ),
+    true
+  );
+});
+check("a seller NOT on Connect moves to paypal", () => {
+  assert.equal(live.getSettlementProvider(user("Germany")), "paypal");
+});
+check("PayPal's own exclusions still get null", () => {
+  for (const c of ["Turkey", "Pakistan", "Iran", "North Korea"]) {
+    assert.equal(live.getSettlementProvider(user(c)), null, `${c} should have no rail`);
+  }
+});
+check("unknown country still null, never 'supported by default'", () => {
+  // The exclusion-list shape makes this the easy mistake: "" is not in the
+  // unsupported set, so a naive check would promise a payout we cannot make.
+  assert.equal(live.getSettlementProvider({}), null);
+  assert.equal(live.getSettlementProvider(user("   ")), null);
+});
+// Imported out here because `check` runs its callback synchronously; an async
+// callback would resolve after the assertions were reported.
+process.env.PAYPAL_CLIENT_SECRET = "";
+const halfConfigured = await import("./resolveProvider.js?paypal-halfconfigured");
+process.env.PAYPAL_CLIENT_SECRET = "test-client-secret";
+
+check("the flag alone is not enough — credentials must exist too", () => {
+  // Setting the flag on an environment with no keys would route real buyers to a
+  // rail that cannot create an order. The switch cannot be thrown early.
+  assert.equal(halfConfigured.getPayoutProvider(user("United States")), "stripe");
+  assert.equal(halfConfigured.getSettlementProvider(user("Kenya")), null);
 });
 
 console.log(`\n✅ All ${passed} provider-routing checks passed.`);

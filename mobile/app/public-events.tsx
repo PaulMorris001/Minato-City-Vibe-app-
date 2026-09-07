@@ -23,7 +23,7 @@ import { LocationSelection } from "@/libs/interfaces";
 import { LocationPicker } from "@/components/shared";
 import { PublicEvent } from "@/components/shared/PublicEventCard";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
-import { useStripePayment } from "@/hooks/useStripePayment";
+import { usePayment } from "@/hooks/usePayment";
 import { currencyPrefix } from "@/constants/payments";
 import { heroEmojiFor } from "@/utils/eventDetails";
 import { AU_FONT } from "@/components/auth/tokens";
@@ -81,7 +81,7 @@ export default function PublicEventsPage() {
   const { isDark, colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
-  const { payForTicket } = useStripePayment();
+  const { payForTicket } = usePayment();
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
   // External provider events (Ticketmaster, etc) shown alongside native ones.
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);

@@ -3,6 +3,8 @@
 
 # Environment variables
 .env
+.env.*
+!.env.production.enc
 .env.local
 .env.*.local
 **/.env

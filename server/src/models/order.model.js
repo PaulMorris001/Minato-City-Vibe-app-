@@ -84,9 +84,10 @@ const orderSchema = new mongoose.Schema(
       enum: ["unpaid", "paid", "refunded"],
       default: "unpaid",
     },
-    provider: { type: String, enum: ["stripe", "paystack"] },
-    // "wise" is legacy-readable only (that rail is gone).
-    payoutProvider: { type: String, enum: ["wise", "paystack", "stripe"] },
+    // "stripe" is legacy-readable only (it stopped collecting in Sep 2026).
+    provider: { type: String, enum: ["stripe", "paystack", "paypal"] },
+    // "wise" and "stripe" are legacy-readable only (those rails are gone).
+    payoutProvider: { type: String, enum: ["wise", "paystack", "stripe", "paypal"] },
     platformFee: { type: Number, default: 0 },
     vendorNet: { type: Number, default: 0 },
     paymentRef: { type: String },

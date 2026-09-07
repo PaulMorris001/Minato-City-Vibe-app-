@@ -35,10 +35,11 @@ const ticketOrderSchema = mongoose.Schema(
     discountCode: { type: String },
     discountAmount: { type: Number, default: 0 },
     // "none" = a fully discounted order — nothing was charged anywhere.
-    provider: { type: String, enum: ["stripe", "paystack", "none"], required: true },
+    // "stripe" is legacy-readable only (it stopped collecting in Sep 2026).
+    provider: { type: String, enum: ["stripe", "paystack", "paypal", "none"], required: true },
 
-    // Stripe PaymentIntent id / Paystack transaction reference. Unique so a
-    // duplicate confirm can't double-fulfill.
+    // PayPal order id / Paystack transaction reference / legacy Stripe
+    // PaymentIntent id. Unique so a duplicate confirm can't double-fulfill.
     reference: { type: String, unique: true, sparse: true },
 
     items: { type: [ticketOrderItemSchema], required: true },

@@ -6,10 +6,10 @@
  *   POST /payments/init/:type/:id     -> { provider, ...params }
  *   POST /payments/confirm/:type/:id  -> grants access + queues the payout
  *
- * The flow both providers implement: charge the buyer into the PLATFORM
+ * The flow every provider implements: charge the buyer into the PLATFORM
  * balance, then create a Payout(awaiting_approval) — an admin approves before
  * any money moves out (Stripe Connect for Stripe-collected sales, Paystack for
- * NGN).
+ * NGN). The PayPal branch is built but unreachable until PAYPAL_ENABLED is on.
  */
 
 import stripe from "../config/stripe.js";
@@ -28,8 +28,10 @@ import {
 import { fulfillTicket, fulfillTicketOrder, fulfillGuide, fulfillBooking, fulfillOrder } from "../services/payments/fulfillment.js";
 import { computeSplit } from "../services/payments/split.js";
 import { buildPaystackInit, verifyPaystackCharge, paystackReturnUrl } from "./paystack.controller.js";
+import { buildPaypalInit, capturePaypalOrder, paypalReturnUrl } from "./paypal.controller.js";
 import { createPayout } from "../services/payments/payout.service.js";
 import { settleStripePurchase } from "../services/payments/settleStripePayment.js";
+import { settlePaypalPurchase } from "../services/payments/settlePaypalPayment.js";
 import TicketOrder from "../models/ticketOrder.model.js";
 import DiscountRedemption from "../models/discountRedemption.model.js";
 import {
@@ -45,6 +47,16 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const PLATFORM_FEE_PERCENT = config.stripe.platformFeePercent;
 const TYPES = new Set(["ticket", "guide", "booking", "order"]);
+
+// Shown when a confirm call presents a payment that was created for a different
+// item — the check that stops a buyer confirming a cheap purchase against an
+// expensive one.
+const PURCHASE_MISMATCH = {
+  ticket: "Payment does not match this event",
+  guide: "Payment does not match this guide",
+  booking: "Payment does not match this booking",
+  order: "Payment does not match this order",
+};
 
 /**
  * Resolve which tier a ticket purchase is for. Tiered events REQUIRE a valid
@@ -326,6 +338,33 @@ export const initPayment = async (req, res) => {
       return res.status(200).json(init);
     }
 
+    // Tickets require the seller to have a working payout account so the
+    // approved payout can actually be sent later. Other purchase types don't:
+    // their money sits in the platform balance until approval, so the seller can
+    // finish payout setup after the sale.
+    if (type === "ticket" && !hasPayoutOnboarding(seller)) {
+      return res.status(409).json({ message: "Tickets aren't on sale yet — check back soon." });
+    }
+
+    if (provider === "paypal") {
+      // Charged into the PLATFORM PayPal balance; an approved Payout sends the
+      // seller's share on to their PayPal email. Unreachable until
+      // PAYPAL_ENABLED is on — see resolveProvider.js.
+      const buyer = await User.findById(userId).select("email username");
+      const init = await buildPaypalInit({
+        type,
+        id,
+        amount: chargeAmount,
+        currency,
+        buyer,
+        ...(tier ? { meta: { tierId: tier.tierId.toString() } } : {}),
+      });
+      // The reference is PayPal's order id, which only exists after the order is
+      // created — unlike Paystack, where we mint it ourselves before the call.
+      if (redemption) await updateRedemptionReference(redemption._id, init.reference);
+      return res.status(200).json(init);
+    }
+
     // Stripe branch — always charge to the PLATFORM account (no transfer_data /
     // application_fee). Every sale's funds are held in the platform balance and
     // only leave once an admin approves the resulting Payout, which Stripe
@@ -334,12 +373,6 @@ export const initPayment = async (req, res) => {
     const amountCents = Math.round(chargeAmount * 100);
     const feeCents = Math.round(amountCents * (PLATFORM_FEE_PERCENT / 100));
     const sellerNetCents = amountCents - feeCents;
-
-    // Tickets still require the seller to have a working payout account so the
-    // approved payout can actually be sent later.
-    if (type === "ticket" && !hasPayoutOnboarding(seller)) {
-      return res.status(409).json({ message: "Tickets aren't on sale yet — check back soon." });
-    }
 
     const params = {
       amount: amountCents,
@@ -397,19 +430,31 @@ export const confirmPayment = async (req, res) => {
     if (provider === "paystack") {
       return confirmPaystack(type, id, reference, userId, res, req.body?.tierId);
     }
+    if (provider === "paypal") {
+      return confirmPaypal(type, id, reference, userId, res, req.body?.tierId);
+    }
     if (provider === "none") {
       // 100%-off discount purchase — no charge exists to verify.
       return confirmFreeTicket(type, id, reference, userId, res, req.body?.tierId);
     }
     if (provider && provider !== "stripe") {
       // e.g. a stale client sending the retired "flutterwave" — never let it
-      // fall through to the Stripe path.
+      // fall through to a live path.
       return res.status(400).json({ message: "Unsupported payment provider" });
     }
+    // Stripe stopped collecting in Sep 2026. This path remains only so a payment
+    // started by a pre-cutover app build can still be confirmed; nothing creates
+    // new Stripe PaymentIntents.
     return confirmStripe(type, id, reference, userId, res);
   } catch (error) {
     console.error("confirmPayment error:", error);
-    res.status(500).json({ message: "Failed to confirm payment" });
+    // Provider verification failures carry a 4xx statusCode and a message meant
+    // for the buyer ("that card was declined"). Flattening those to a generic
+    // 500 told someone whose payment simply bounced that our server broke.
+    const status = error.statusCode >= 400 && error.statusCode < 500 ? error.statusCode : 500;
+    res.status(status).json({
+      message: status === 500 ? "Failed to confirm payment" : error.message,
+    });
   }
 };
 
@@ -434,22 +479,81 @@ async function confirmStripe(type, id, paymentIntentId, userId, res) {
   // The PI must be for the item the client says it is, or a buyer could confirm
   // a cheap purchase against an expensive one.
   const ID_FIELD = { ticket: "eventId", guide: "guideId", booking: "bookingId", order: "orderId" };
-  const MISMATCH = {
-    ticket: "Payment does not match this event",
-    guide: "Payment does not match this guide",
-    booking: "Payment does not match this booking",
-    order: "Payment does not match this order",
-  };
   const idField = ID_FIELD[type];
   if (!idField) return res.status(400).json({ message: "Unknown purchase type" });
   if (pi.metadata?.[idField] !== id) {
-    return res.status(403).json({ message: MISMATCH[type] });
+    return res.status(403).json({ message: PURCHASE_MISMATCH[type] });
   }
   if (pi.metadata?.type !== type) {
     return res.status(403).json({ message: "Payment does not match this purchase" });
   }
 
   const { result } = await settleStripePurchase(pi);
+
+  if (type === "ticket") {
+    return res
+      .status(result.alreadyExisted ? 200 : 201)
+      .json({ message: "Ticket confirmed", ticket: result.ticket });
+  }
+  if (type === "guide") {
+    return res.status(200).json({ message: "Guide purchase confirmed", hasPurchased: true });
+  }
+  if (type === "booking") {
+    return res.status(200).json({ message: "Booking paid", booking: result.booking });
+  }
+  return res.status(200).json({ message: "Order paid", order: result.order });
+}
+
+/**
+ * Confirm a PayPal purchase the buyer has just approved.
+ *
+ * PayPal differs from the other rails in one way that matters: the money is not
+ * taken until we capture, which happens HERE. An approved-but-uncaptured order
+ * expires on PayPal's side and nobody is charged, so a buyer who abandons the
+ * browser after approving is never out of pocket.
+ *
+ * Verification lives here; the fulfillment + payout work is delegated to
+ * settlePaypalPurchase, which the capture webhook also calls — one settlement
+ * implementation, so the two paths cannot drift.
+ */
+async function confirmPaypal(type, id, reference, userId, res, tierId) {
+  // A batch reference must never be redeemed as a single purchase. The capture
+  // check only rejects UNDERpayment, so a two-ticket charge would verify happily
+  // against a one-ticket price and issue ONE ticket, crediting the seller for
+  // one sale while the buyer paid for two.
+  if (await TicketOrder.exists({ reference })) {
+    return res.status(400).json({ message: "This payment belongs to a multi-ticket order" });
+  }
+
+  // Re-derive the expected charge from the item (never trust the client — the
+  // tierId only picks WHICH server-known price to verify the charge against).
+  const purchase = await resolvePurchaseForConfirm(type, id, userId, res, tierId);
+  if (!purchase) return;
+  const { amount, currency } = purchase;
+
+  // A discount reserved at init changes the expected charge — recompute it
+  // before verification, or the capture would be rejected for paying the
+  // (correct) discounted amount.
+  let expectedAmount = amount;
+  if (type === "ticket") {
+    const redemption = await DiscountRedemption.findOne({ reference, user: userId }).populate("code");
+    if (redemption?.code) ({ total: expectedAmount } = computeDiscount(redemption.code, amount));
+  }
+
+  const capture = await capturePaypalOrder({
+    reference,
+    expectedAmount,
+    expectedCurrency: currency,
+    expectedBuyerId: userId,
+  });
+
+  // The captured order must be for the item the client claims. capturePaypalOrder
+  // has already checked the buyer and the amount; this closes the last gap.
+  if (capture.custom?.type !== type || capture.custom?.id !== id.toString()) {
+    return res.status(403).json({ message: PURCHASE_MISMATCH[type] });
+  }
+
+  const { result } = await settlePaypalPurchase(capture);
 
   if (type === "ticket") {
     return res
@@ -835,6 +939,26 @@ export const initTicketBatch = async (req, res) => {
       return res.status(200).json({ ...init, orderId: order._id });
     }
 
+    if (provider === "paypal") {
+      const buyer = await User.findById(buyerId).select("email username");
+      const init = await buildPaypalInit({
+        // "ticket_batch" is what settlement branches on to fan the order out
+        // rather than issue a single ticket.
+        type: "ticket_batch",
+        id: eventKey,
+        amount: total,
+        currency,
+        buyer,
+        // This endpoint is web-only (the app buys through /init/:type/:id), so
+        // the popup must land on a page, not the app's custom scheme.
+        callbackUrl: paypalReturnUrl({ web: true }),
+      });
+      order.reference = init.reference;
+      await order.save();
+      if (redemption) await updateRedemptionReference(redemption._id, init.reference);
+      return res.status(200).json({ ...init, orderId: order._id });
+    }
+
     // Stripe — charge the total into the platform balance; an approved Payout
     // settles it to the seller via whichever rail their country routes to.
     const settlement = getSettlementProvider(seller);
@@ -906,23 +1030,33 @@ export const confirmTicketBatch = async (req, res) => {
     // Verify the charge matches the order total. A 100%-off order has no
     // charge at all — its entitlement is the discount reservation made at
     // init, and `order.total` was computed server-side, so zero is trusted.
-    const isPaystack = provider === "paystack";
     const isFree = provider === "none" && order.total === 0;
     if (provider === "none" && order.total !== 0) {
-      // A "none" claim against a real balance would otherwise fall into the
-      // Stripe branch and throw on the fake reference.
+      // A "none" claim against a real balance would otherwise fall into a
+      // provider branch and throw on the fake reference.
       return res.status(400).json({ message: "This order requires payment" });
     }
     if (isFree) {
       // Nothing to verify.
-    } else if (isPaystack) {
+    } else if (provider === "paystack") {
       await verifyPaystackCharge({
         reference,
         expectedAmount: order.total,
         expectedCurrency: order.currency,
         expectedBuyerId: buyerId,
       });
+    } else if (provider === "paypal") {
+      // Takes the money as well as verifying it — see confirmPaypal. Racing the
+      // capture webhook is safe: the second capture is collapsed, not charged.
+      await capturePaypalOrder({
+        reference,
+        expectedAmount: order.total,
+        expectedCurrency: order.currency,
+        expectedBuyerId: buyerId,
+      });
     } else {
+      // Stripe stopped collecting in Sep 2026; this verifies orders started by a
+      // pre-cutover client that has not reloaded yet.
       const pi = await stripe.paymentIntents.retrieve(reference);
       if (pi.status !== "succeeded") {
         return res.status(400).json({ message: "Payment has not been completed" });
@@ -956,9 +1090,11 @@ export const confirmTicketBatch = async (req, res) => {
 };
 
 /**
- * GET /payments/config — the Stripe publishable key, fetched at runtime so it
- * never drifts from the server's secret key. Paystack's hosted checkout needs
- * no client key.
+ * GET /payments/config — client-side provider keys, fetched at runtime so they
+ * never drift from the server's secrets (including test vs live mode).
+ *
+ * PayPal's client id is absent on purpose: its checkout is a hosted link the
+ * server builds, so no client key is needed to start one.
  */
 export const getPaymentsConfig = async (req, res) => {
   res.status(200).json({

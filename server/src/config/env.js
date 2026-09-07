@@ -165,7 +165,12 @@ export const config = {
     // SEPARATE Stripe webhook endpoint with its OWN signing secret — the account
     // webhook secret above will NOT verify them.
     connectWebhookSecret: process.env.STRIPE_CONNECT_WEBHOOK_SECRET || "",
-    platformFeePercent: parseFloat(process.env.PLATFORM_FEE_PERCENT || "10"),
+    // Our cut of every sale, as a percentage. The seller keeps the rest.
+    // PLATFORM_FEE_PERCENT overrides this in every deployed environment, so
+    // changing the default alone does NOT change the live fee — update the env
+    // var too. The seller-facing figure is mirrored in
+    // mobile/constants/payments.ts as SELLER_SHARE_PERCENT; keep them in sync.
+    platformFeePercent: parseFloat(process.env.PLATFORM_FEE_PERCENT || "5"),
     // Public HTTPS base URL of this server — used for provider checkout
     // return/callback URLs (e.g. the Paystack redirect) and the Connect
     // onboarding return/refresh URLs.
@@ -178,6 +183,24 @@ export const config = {
   paystack: {
     secretKey: process.env.PAYSTACK_SECRET_KEY || "",
     publicKey: process.env.PAYSTACK_PUBLIC_KEY || "",
+  },
+
+  // PayPal Configuration — built, but OFF until live credentials exist.
+  // PAYPAL_ENABLED must be the string "true" AND both credentials must be
+  // present before any routing decision picks PayPal; the check lives in
+  // services/payments/resolveProvider.js. Until then Stripe collects and Stripe
+  // Connect settles outside Nigeria, exactly as before.
+  paypal: {
+    enabled: process.env.PAYPAL_ENABLED === "true",
+    clientId: process.env.PAYPAL_CLIENT_ID || "",
+    clientSecret: process.env.PAYPAL_CLIENT_SECRET || "",
+    // Required to verify webhook signatures — PayPal's verify endpoint takes the
+    // webhook id, not a shared signing secret, so there is nothing to compute
+    // locally and no raw-body HMAC to compare.
+    webhookId: process.env.PAYPAL_WEBHOOK_ID || "",
+    // "sandbox" or "live". Anything but "live" resolves to the sandbox host, so
+    // an unset/typo'd value can never charge real cards.
+    mode: process.env.PAYPAL_MODE || "sandbox",
   },
 
   // Sign in with Apple. For native iOS sign-in, the identity token's `aud`

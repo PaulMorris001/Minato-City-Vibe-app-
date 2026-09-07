@@ -31,6 +31,8 @@ import { BASE_URL } from "@/constants/constants";
 import { useCart } from "@/contexts/CartContext";
 import { currencyPrefix } from "@/constants/payments";
 import { openUserProfile } from "@/utils/userNavigation";
+import { ensureAuth } from "@/utils/requireAuth";
+import chatService from "@/services/chat.service";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 import PressScale from "@/components/shared/PressScale";
@@ -156,6 +158,12 @@ export default function VendorDetails() {
   const [reviewText, setReviewText] = useState("");
   const [submittingRating, setSubmittingRating] = useState(false);
 
+  // Viewer identity, so the vendor doesn't see a button to message themselves.
+  // Undefined for a logged-out viewer, which is a legitimate state here — they
+  // still get the button and are prompted to sign in when they tap it.
+  const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
+  const [openingChat, setOpeningChat] = useState(false);
+
   const vId = vendorId as string;
   const vName = (vendorName as string) || vendor?.name || "Vendor";
 
@@ -191,6 +199,14 @@ export default function VendorDetails() {
       })
       .catch(() => setVendorLoadError(true));
   };
+
+  useEffect(() => {
+    SecureStore.getItemAsync("user")
+      .then((json) => {
+        if (json) setCurrentUserId(JSON.parse(json)?._id);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const loadServices = async () => {
@@ -396,6 +412,37 @@ export default function VendorDetails() {
 
   const openProfile = () => owner?._id && openUserProfile(owner._id);
 
+  /**
+   * Open (or reuse) the client↔vendor chat for this business.
+   *
+   * Both ids are the vendor's OWNER account: `otherUserId` is who the message
+   * goes to, `vendorUserId` marks which participant is acting as the business.
+   * That pair is what files the thread in the vendor's business inbox instead of
+   * their personal one, and it exempts the chat from the mutual-follow rule that
+   * gates ordinary direct messages — a customer has no reason to follow a
+   * business before asking it a question.
+   */
+  const handleMessageVendor = async () => {
+    if (!owner?._id || openingChat) return;
+    if (!(await ensureAuth("message this vendor"))) return;
+    setOpeningChat(true);
+    try {
+      const chat = await chatService.getOrCreateDirectChat(owner._id, {
+        context: "vendor",
+        vendorUserId: owner._id,
+      });
+      router.push({ pathname: "/chat/[id]", params: { id: chat._id } });
+    } catch {
+      showError("Couldn't open the chat. Please try again.");
+    } finally {
+      setOpeningChat(false);
+    }
+  };
+
+  // Hidden when the viewer IS this vendor: messaging yourself creates a
+  // one-participant thread the server rejects anyway.
+  const canMessageVendor = !!owner?._id && owner._id !== currentUserId;
+
   // ── Header (fixed, above the scroll area) ────────────────────────────────
 
   const avatarUri = vendor?.images?.[0] || owner?.profilePicture;
@@ -460,6 +507,28 @@ export default function VendorDetails() {
           </Text>
         </View>
       </PressScale>
+
+      {/* Lives in the header rather than the about card's social row: that row
+          only renders when the vendor has a description or social links, so a
+          bare profile would otherwise offer no way to get in touch. */}
+      {canMessageVendor && (
+        <PressScale
+          style={styles.messageButton}
+          onPress={handleMessageVendor}
+          disabled={openingChat}
+          accessibilityRole="button"
+          accessibilityLabel={`Message ${vName}`}
+        >
+          {openingChat ? (
+            <ActivityIndicator size="small" color={Brand.teal} />
+          ) : (
+            <>
+              <Ionicons name="chatbubble-ellipses-outline" size={16} color={Brand.teal} />
+              <Text style={styles.messageButtonText}>Message</Text>
+            </>
+          )}
+        </PressScale>
+      )}
     </View>
   );
 
@@ -894,6 +963,24 @@ const createStyles = (t: ServicesTokens) =>
       flexDirection: "row",
       alignItems: "center",
       gap: 5,
+    },
+    messageButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      minWidth: 104,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderRadius: Radii.pill,
+      borderWidth: 1,
+      borderColor: Brand.teal,
+      backgroundColor: t.card2,
+    },
+    messageButtonText: {
+      fontSize: 13,
+      fontFamily: Fonts.semiBold,
+      color: Brand.teal,
     },
     vendorName: {
       flexShrink: 1,

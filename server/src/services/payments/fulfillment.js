@@ -103,6 +103,7 @@ export async function fulfillTicket({
     ...(discountAmount !== undefined ? { discountAmount } : {}),
   };
   if (provider === "paystack") ticketData.paystackReference = paymentRef;
+  else if (provider === "paypal") ticketData.paypalOrderId = paymentRef;
   else if (provider === "stripe") ticketData.stripePaymentIntentId = paymentRef;
   // provider "none" (100%-discount): no charge exists; the reference lives on
   // the DiscountRedemption, so neither provider field gets a fake value.
@@ -237,6 +238,7 @@ export async function issueRecipientTicket({
     ...(discountAmount !== undefined ? { discountAmount } : {}),
   };
   if (provider === "paystack") ticketData.paystackReference = paymentRef;
+  else if (provider === "paypal") ticketData.paypalOrderId = paymentRef;
   else if (provider === "stripe") ticketData.stripePaymentIntentId = paymentRef;
   // provider "none" (100%-discount): no charge exists; the reference lives on
   // the DiscountRedemption, so neither provider field gets a fake value.
