@@ -17,8 +17,6 @@ import {
   fallbackSubtitle,
   type FallbackResult,
 } from "@/utils/locationFallback";
-import { useActiveCity, setActiveCity as setSharedActiveCity } from "@/hooks/useActiveCity";
-import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useLocation";
 import { ExternalEvent, externalEventService } from "@/services/externalEvent.service";
 import { trackEvent } from "@/utils/analytics";
 import { cacheRead, cacheWrite } from "@/utils/offlineCache";
@@ -31,7 +29,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -244,6 +242,59 @@ function RaffleBanner({
           color="rgba(255,255,255,0.8)"
         />
       </LinearGradient>
+    </TouchableOpacity>
+  );
+}
+
+/**
+ * Cross-promotion for i-Planner, our sister planning app.
+ *
+ * Deliberately thinner and quieter than RaffleBanner above: that promotes
+ * something inside Cityvibe, this sends people out to a different product, and
+ * dressing it up as one of our own event rails would misrepresent it.
+ */
+const IPLANNER_STORE_URL = Platform.select({
+  ios: "https://apps.apple.com/app/i-planner/id6792868417",
+  android: "https://play.google.com/store/apps/details?id=com.obitoventures.iplanner",
+  // Neither branch can be hit on a phone; keeps the type non-optional.
+  default: "https://apps.apple.com/app/i-planner/id6792868417",
+});
+
+const STORE_NAME = Platform.OS === "ios" ? "App Store" : "Play Store";
+
+function IPlannerBanner() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+
+  const openStore = async () => {
+    try {
+      await Linking.openURL(IPLANNER_STORE_URL);
+    } catch {
+      // No store app, or a managed device that blocks it. Nothing useful to
+      // tell the user, and throwing here would take the whole home tab down.
+    }
+  };
+
+  return (
+    <TouchableOpacity
+      style={styles.promoBanner}
+      onPress={openStore}
+      activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityLabel={`Check out i-Planner on the ${STORE_NAME}`}
+    >
+      <View style={styles.promoIcon}>
+        <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+      </View>
+      <View style={styles.promoText}>
+        <Text style={styles.promoTitle} numberOfLines={1}>
+          Try i-Planner, our planning app
+        </Text>
+        <Text style={styles.promoSub} numberOfLines={1}>
+          Free on the {STORE_NAME}
+        </Text>
+      </View>
+      <Ionicons name="arrow-forward" size={16} color={colors.textSecondary} />
     </TouchableOpacity>
   );
 }
@@ -522,6 +573,7 @@ export default function Home() {
   // Currently surfaced in the "Trending Now" carousel mixed with native events.
   const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [topVendors, setTopVendors] = useState<Vendor[]>([]);
   const [topGuides, setTopGuides] = useState<TopGuide[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -873,6 +925,24 @@ export default function Home() {
     } catch {}
   };
 
+  const fetchTopVendors = async (city?: string | null) => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const cityParam = city ? `&city=${encodeURIComponent(city)}` : "";
+      const response = await fetch(`${BASE_URL}/vendors/top?limit=10${cityParam}`, { headers });
+      const data = await response.json();
+      if (response.ok && activeCityRef.current === (city ?? null)) {
+        setTopVendors(data.vendors || []);
+        cacheWrite(`home:topVendors:${city ?? "all"}`, data.vendors || []);
+      }
+    } catch {
+      const cached = await cacheRead<Vendor[]>(`home:topVendors:${city ?? "all"}`);
+      if (cached && activeCityRef.current === (city ?? null)) setTopVendors(cached.data);
+    }
+  };
+
   const fetchTopGuides = async (city?: string | null) => {
     try {
       const token = await SecureStore.getItemAsync("token");
@@ -922,6 +992,7 @@ export default function Home() {
       fetchExternalEvents(selectedCity),
       fetchHighlights(selectedCity),
       fetchVendors(),
+      fetchTopVendors(selectedCity),
       fetchTopGuides(selectedCity),
     ]);
     setRefreshing(false);
@@ -960,6 +1031,7 @@ export default function Home() {
         fetchExternalEvents(cityToUse),
         fetchHighlights(cityToUse),
         fetchVendors(),
+        fetchTopVendors(cityToUse),
         fetchTopGuides(cityToUse),
       ]).finally(() => {
         if (!cancelled) setInitialLoading(false);
@@ -1143,6 +1215,15 @@ export default function Home() {
   // const bindings so TS narrows them inside the hero's onPress closures.
   const heroEvent = resolvedHero;
   const heroExternal = resolvedExternal;
+  // Prefer vendors the rail above isn't already showing. A city with fewer than
+  // ~10 vendors would otherwise dedupe this section out of existence entirely,
+  // so fall back to the ranked list unfiltered rather than hiding it.
+  const rankedVendors = useMemo(() => {
+    const shown = new Set(vendors.map((v) => v._id));
+    const fresh = topVendors.filter((v) => !shown.has(v._id));
+    return fresh.length >= 3 ? fresh : topVendors;
+  }, [vendors, topVendors]);
+
   const mixedFeed = resolvedFeed;
 
   const trendingFeed = [
@@ -1530,6 +1611,8 @@ export default function Home() {
           </View>
         ) : null}
 
+        <IPlannerBanner />
+
             {/* After That */}
             {initialLoading ? (
               <View style={styles.section}>
@@ -1620,6 +1703,10 @@ export default function Home() {
             </View>
           </View>
         )}
+
+            {/* Cross-promo for our sister app. Sits between the feed above and
+                the vendor rails below so it reads as an aside, not a listing. */}
+            <IPlannerBanner />
 
             {/* Where the city's at — vendors */}
             {initialLoading ? (
@@ -2332,6 +2419,32 @@ const createStyles = (c: ThemeColors) =>
     justifyContent: "center",
     alignItems: "center",
   },
+
+  promoBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 20,
+    marginBottom: 20,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: c.card,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  promoIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: c.primaryFaded,
+  },
+  // flex:1 so a long title truncates instead of pushing the arrow off-screen.
+  promoText: { flex: 1, gap: 1 },
+  promoTitle: { fontSize: 13.5, fontFamily: Fonts.semiBold, color: c.text },
+  promoSub: { fontSize: 11.5, fontFamily: Fonts.regular, color: c.textSecondary },
 
   raffleBanner: {
   marginHorizontal: 20,
