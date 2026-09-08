@@ -6,6 +6,8 @@ import type {
   AdminEvent,
   AdminGuide,
   AdminDiscountCode,
+  AdminRaffleEntry,
+  AdminRaffleCampaign,
   City,
   VendorType,
   AnalyticsLog,
@@ -62,6 +64,46 @@ export const adminApi = {
     client.patch<{ isActive: boolean }>(`/admin/events/${id}/toggle`).then((r) => { bustCache("/admin/events"); return r; }),
   deleteEvent: (id: string) =>
     client.delete(`/admin/events/${id}`).then((r) => { bustCache("/admin/events"); bustCache("/admin/stats"); return r; }),
+
+  // Birthday Raffle — entries are campaign-scoped; the whole list for one
+  // campaign comes back at once (no pagination).
+  getRaffleEntries: (campaignId?: string) =>
+    cachedGet<{ entries: AdminRaffleEntry[]; campaign: AdminRaffleCampaign }>(
+      "/admin/raffle/entries",
+      { params: campaignId ? { campaignId } : undefined, ttl: 30_000 }
+    ),
+  // rank is 1..N (N = campaign prize-tier count) or null to clear.
+  setRaffleWinner: (id: string, rank: number | null) =>
+    client
+      .patch<{ eventId: string; winnerRank: number | null }>(
+        `/admin/raffle/${id}/winner`,
+        { rank }
+      )
+      .then((r) => { bustCache("/admin/raffle"); return r; }),
+
+  getRaffleCampaigns: () =>
+    cachedGet<{ campaigns: AdminRaffleCampaign[] }>("/admin/raffle/campaigns", { ttl: 30_000 }),
+  createRaffleCampaign: (data: {
+    name: string;
+    startDate: string;
+    endDate: string;
+    // Ordered rewards; server assigns ranks 1..N by position.
+    prizes?: { reward: string }[];
+  }) =>
+    client
+      .post<{ campaign: AdminRaffleCampaign }>("/admin/raffle/campaigns", data)
+      .then((r) => { bustCache("/admin/raffle"); return r; }),
+  updateRaffleCampaign: (
+    id: string,
+    data: { name?: string; startDate?: string; endDate?: string; prizes?: { reward: string }[] }
+  ) =>
+    client
+      .patch<{ campaign: AdminRaffleCampaign }>(`/admin/raffle/campaigns/${id}`, data)
+      .then((r) => { bustCache("/admin/raffle"); return r; }),
+  endRaffleCampaign: (id: string) =>
+    client
+      .post<{ campaign: AdminRaffleCampaign }>(`/admin/raffle/campaigns/${id}/end`, {})
+      .then((r) => { bustCache("/admin/raffle"); return r; }),
 
   // Guides
   getGuides: (params?: { search?: string; page?: number; limit?: number }) =>
