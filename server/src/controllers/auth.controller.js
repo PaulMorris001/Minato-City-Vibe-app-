@@ -27,6 +27,7 @@ import { countFollows } from "../utils/followCounts.js";
 import { slugify, generateUniqueSlug } from "../utils/slug.js";
 import { resolveUserId } from "../utils/resolveUser.js";
 import { splitFullName } from "../utils/personName.js";
+import { parseDateOfBirth } from "../utils/dateOfBirth.js";
 import { searchUsersQuery } from "../services/userSearch.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -88,7 +89,7 @@ const PENDING_SIGNUP_TTL_MS = 30 * 60 * 1000;
  * abandoned signup never squats on an email or username.
  */
 export async function register(req, res) {
-  const { username, email, password, termsAccepted, accountType, fullName } = req.body;
+  const { username, email, password, termsAccepted, accountType, fullName, dateOfBirth } = req.body;
 
   try {
     if (!termsAccepted) {
@@ -114,6 +115,13 @@ export async function register(req, res) {
       return res
         .status(400)
         .json({ message: "Full name must be between 2 and 60 characters." });
+    }
+
+    // Optional here for the same reason as fullName: an older app build sends
+    // none. When one IS sent it has to clear the 13+ floor the Terms promise.
+    const dob = parseDateOfBirth(dateOfBirth);
+    if (dob.error) {
+      return res.status(400).json({ message: dob.error });
     }
 
     const normalizedUsername = String(username).trim();
@@ -181,6 +189,7 @@ export async function register(req, res) {
       {
         username: normalizedUsername,
         fullName: normalizedFullName,
+        dateOfBirth: dob.date,
         email: normalizedEmail,
         passwordHash,
         vendorSignupPending: wantsVendor,
@@ -665,7 +674,8 @@ export async function getProfile(req, res) {
 
 // Update profile picture and/or bio (for both clients and vendors)
 export async function updateProfilePicture(req, res) {
-  const { profilePicture, bio, preferences, location, username, gender, fullName } = req.body;
+  const { profilePicture, bio, preferences, location, username, gender, fullName, dateOfBirth } =
+    req.body;
   const GENDERS = ["", "male", "female", "non-binary", "prefer-not-to-say"];
 
   try {
@@ -769,6 +779,15 @@ export async function updateProfilePicture(req, res) {
       user.gender = gender;
     }
 
+    // "" clears it back to unset; anything else has to clear the 13+ floor.
+    if (dateOfBirth !== undefined) {
+      const dob = parseDateOfBirth(dateOfBirth);
+      if (dob.error) {
+        return res.status(400).json({ message: dob.error });
+      }
+      user.dateOfBirth = dob.date;
+    }
+
     if (Array.isArray(preferences)) {
       user.preferences = preferences;
     }
@@ -799,6 +818,7 @@ export async function updateProfilePicture(req, res) {
         profilePicture: user.profilePicture,
         bio: user.bio,
         gender: user.gender,
+        dateOfBirth: user.dateOfBirth,
         location: user.location,
         isVendor: user.isVendor
       }
@@ -1695,6 +1715,7 @@ export async function verifySignup(req, res) {
       username: pending.username,
       firstName,
       lastName,
+      dateOfBirth: pending.dateOfBirth,
       email: pending.email,
       // Already hashed by register — never re-hash.
       password: pending.passwordHash,

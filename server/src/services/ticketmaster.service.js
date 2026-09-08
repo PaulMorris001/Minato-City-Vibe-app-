@@ -207,6 +207,7 @@ export async function ingestCity({ city, countryCode = "US", maxPages = 3 }) {
 
   let upserted = 0;
   let skipped = 0;
+  let failed = 0;
 
   for (let page = 0; page < maxPages; page++) {
     const data = await fetchCityPage({ city, countryCode, page, apiKey });
@@ -220,12 +221,19 @@ export async function ingestCity({ city, countryCode = "US", maxPages = 3 }) {
         skipped++;
         continue;
       }
-      await ExternalEvent.updateOne(
-        { source: doc.source, sourceId: doc.sourceId },
-        { $set: doc },
-        { upsert: true }
-      );
-      upserted++;
+      // One malformed upstream record must not abandon the rest of the city
+      // (and every page after it) — count it and move on.
+      try {
+        await ExternalEvent.updateOne(
+          { source: doc.source, sourceId: doc.sourceId },
+          { $set: doc },
+          { upsert: true }
+        );
+        upserted++;
+      } catch (err) {
+        failed++;
+        console.error(`[TM] upsert ${doc.sourceId} failed: ${err.message}`);
+      }
     }
 
     // Stop early if this was the last page
@@ -236,7 +244,7 @@ export async function ingestCity({ city, countryCode = "US", maxPages = 3 }) {
     await new Promise((r) => setTimeout(r, 250));
   }
 
-  return { city, countryCode, upserted, skipped };
+  return { city, countryCode, upserted, skipped, failed };
 }
 
 /**
@@ -248,7 +256,9 @@ export async function ingestCities(cities) {
   for (const { city, countryCode } of cities) {
     try {
       const r = await ingestCity({ city, countryCode });
-      console.log(`[TM] ${city} (${countryCode}): upserted ${r.upserted}, skipped ${r.skipped}`);
+      console.log(
+        `[TM] ${city} (${countryCode}): upserted ${r.upserted}, skipped ${r.skipped}, failed ${r.failed}`
+      );
       results.push({ ok: true, ...r });
     } catch (err) {
       // Surface the real underlying cause (DNS, TLS, timeout) so we can

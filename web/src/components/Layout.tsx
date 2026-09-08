@@ -224,6 +224,28 @@ const css = `
     padding: 12px 16px; border-radius: 12px; font-size: 14px; margin-bottom: 18px;
     background: rgba(34,197,94,0.12); border: 1px solid #22c55e; color: #86efac;
   }
+  /* Floating confirmation, for outcomes that survive a navigation (e.g. the
+     account-deleted bounce to /login). Pinned to the top on narrow screens so
+     it can't sit under a thumb. */
+  .cv-toast {
+    position: fixed; z-index: 60; top: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    max-width: min(420px, calc(100vw - 32px));
+    padding: 13px 18px; border-radius: 14px; font-size: 14px; font-weight: 600;
+    background: rgba(20,32,24,0.96); border: 1px solid #22c55e; color: #86efac;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+    animation: cv-toast-in .22s ease-out;
+  }
+  .cv-toast-icon {
+    flex: none; width: 20px; height: 20px; border-radius: 999px;
+    display: grid; place-items: center; font-size: 12px;
+    background: #22c55e; color: #052e16;
+  }
+  @keyframes cv-toast-in {
+    from { opacity: 0; transform: translate(-50%, -10px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+  }
+  @media (prefers-reduced-motion: reduce) { .cv-toast { animation: none; } }
   .cv-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
   /* ── Pills / chips / badges ──────────────────────────── */

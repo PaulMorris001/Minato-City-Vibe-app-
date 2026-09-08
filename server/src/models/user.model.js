@@ -52,6 +52,12 @@ const userSchema = mongoose.Schema({
   // Short bio shown on the user's profile
   bio: { type: String, default: "", maxlength: 500 },
 
+  // Self-reported date of birth. Optional at the model layer — null means
+  // unset, which is every account created before this field existed. New
+  // signups always supply one (see register + the profile setup checklist,
+  // which is what backfills the rest). Enforced at 13+ by utils/dateOfBirth.js.
+  dateOfBirth: { type: Date, default: null },
+
   // Self-reported gender. Optional — "" means unset (every existing account).
   gender: {
     type: String,

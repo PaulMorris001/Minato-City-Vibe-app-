@@ -38,6 +38,8 @@ Mobile layout: `app/` (routes), `components/`, `contexts/`, `hooks/`, `services/
 - Mobile: `app/login.tsx`, `app/signup.tsx`, `app/verify-otp.tsx`, `app/verify-signup-email.tsx`, `app/verify-email.tsx`, `app/forgot-password.tsx`, `app/reset-password.tsx`, `app/onboarding.tsx`, `app/auth/google.tsx`; helpers `utils/googleAuth.ts`, `utils/appleAuth.ts`, `utils/requireAuth.ts`; UI in `components/auth/`
 - Web: `web/src/pages/Login.tsx`, `Signup.tsx`, `web/src/context/AuthContext.tsx`
 - Account deletion: `routes/deleteAccount.route.js`, `mobile/app/settings.tsx`, `web/src/pages/DeleteAccount.tsx`
+- Both delete surfaces end at the web login's confirmation toast. The React page passes router state `{ notice: "account-deleted" }`; the legacy server-rendered page can only cross origins, so it 303s to `${PUBLIC_WEB_URL}/login?notice=account-deleted`. The `NOTICES` map in `web/src/pages/Login.tsx` is the shared key list — renaming a key there silently breaks the server redirect.
+- Date of birth: `server/src/utils/dateOfBirth.js` + `mobile/utils/dateOfBirth.ts` (mirrored 13+ rule, the floor `mobile/app/terms.tsx` promises). Required by the mobile signup wizard's `dob` step, **optional server-side** so older builds and `web/src/pages/Signup.tsx` still register — those accounts are backfilled through the profile setup checklist tile → `mobile/app/edit-profile.tsx`. Flows register → `PendingSignup.dateOfBirth` → `User.dateOfBirth` at verifySignup. No backfill script exists or can exist.
 
 **Client vs vendor account switch** is a mobile-side concept: `contexts/AccountContext.tsx`
 (`activeAccount: "client" | "vendor"`, persisted in SecureStore) + `utils/navigation.ts`
@@ -54,6 +56,7 @@ Mobile layout: `app/` (routes), `components/`, `contexts/`, `hooks/`, `services/
 
 - Server: `routes/event.route.js`, `controllers/event.controller.js` (2527 lines — grep for the exported handler), `models/event.model.js`
 - External/aggregated events: `controllers/externalEvent.controller.js`, `services/eventbrite.service.js`, `services/ticketmaster.service.js`, `models/externalEvent.model.js`, `models/eventbritePlace.model.js`
+- `ExternalEvent.geo.type` must **not** carry `default: "Point"`. Upserts run with `setDefaultsOnInsert` on, so a default writes `geo: { type: "Point" }` with no coordinates for the many upstream events that ship no lat/lng, and the `2dsphere` index rejects the insert. The same trap applies to any new GeoJSON field.
 - Mobile: `app/event/[id].tsx` (3482 lines), `app/manage-events.tsx`, `app/public-events.tsx`, `app/external-event/[id].tsx`, `app/event-attendees/[eventId].tsx`, `components/client/CreateEventModal.tsx`, `components/shared/PublicEventCard.tsx`, `ExternalEventCard.tsx`, `hooks/useEventActions.ts`, `hooks/useDiscoverFeed.ts`, `utils/eventDetails.ts`
 - Web: `web/src/pages/Events.tsx`, `EventDetails.tsx`, `ExternalEventDetails.tsx`, `MyEvents.tsx`, `EditEvent.tsx`
 - Admin: `admin/src/pages/Events.tsx`, `PaidEvents.tsx`, `EventEdits.tsx`
@@ -154,7 +157,8 @@ POST /payments/confirm/:type/:id
 - Location (CSC API proxied through the server): `routes/location.route.js`, `controllers/location.controller.js` → `mobile/hooks/useLocation.ts`, `useActiveCity.ts`, `utils/location.ts`, `components/shared/{LocationPicker,LocationPickerSheet,LocationFilterBar,ActiveLocationChip}.tsx`
 - Uploads: `routes/upload.route.js` (mounted at `/api/upload`), `middleware/upload.middleware.js`, `config/cloudinary.js`, `services/image.service.js`, `utils/mediaLimit.js` → `mobile/utils/imageUpload.ts`, `media.ts`, `components/shared/{ImagePickerButton,MultiImagePicker,MediaTile}.tsx`
 - Deep links / share: `routes/deepLinks.route.js` (687 lines — server-rendered share pages), `utils/slug.js` → `mobile/app/share/[token].tsx`, `utils/deepLinkParser.ts`, `shareLinks.ts`, `pendingDeepLink.ts`
-- Logging: `routes/log.route.js` (client → server) → `mobile/utils/remoteLog.ts`, `logger.ts`
+- Logging: `routes/log.route.js` (client → server) → `mobile/utils/remoteLog.ts`, `logger.ts`, `errorHandler.ts`
+- `errorHandler.ts` monkey-patches `console.error` / `console.warn` to forward to `remoteLog`, so **a `[MOBILE ERROR]` line in the server log stream is a phone's console, not a server fault**. Production builds strip `console.log`, so this relay is the only device diagnostic there is.
 - Legal/compliance: `routes/{privacy,csae}.route.js`, `mobile/app/{privacy,terms}.tsx`, `web/src/pages/{Privacy,Csae}.tsx`
 
 ## Admin console

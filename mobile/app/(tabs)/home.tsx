@@ -9,6 +9,15 @@ import { currencyPrefix, priceLabel } from "@/constants/payments";
 import { setActiveCity as setSharedActiveCity, useActiveCity } from "@/hooks/useActiveCity";
 import { NAVBAR_ROW_HEIGHT, navbarTopPad } from "@/constants/homeChrome";
 import { usePayment } from "@/hooks/usePayment";
+import { getApproximateLocation, getAddressFromCurrentPosition } from "@/hooks/useLocation";
+import {
+  saveDevicePlace,
+  widenUntilFound,
+  filterQuery,
+  fallbackSubtitle,
+  type FallbackResult,
+} from "@/utils/locationFallback";
+import { useActiveCity, setActiveCity as setSharedActiveCity } from "@/hooks/useActiveCity";
 import { getApproximateLocation, getCityFromCurrentPosition } from "@/hooks/useLocation";
 import { ExternalEvent, externalEventService } from "@/services/externalEvent.service";
 import { trackEvent } from "@/utils/analytics";
@@ -463,6 +472,47 @@ export default function Home() {
   const [hasBirthdayRaffleEvent, setHasBirthdayRaffleEvent] = useState(false);
   const { openCreate } = useLocalSearchParams<{ openCreate?: string }>();
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
+  /**
+   * The server's "nothing here, but this city nearby is busy" answer, returned
+   * by /events/public/explore whenever the active city comes back thin. Null
+   * when the city is full enough, when browsing Anywhere, or when there's no
+   * other active city in the same state/country.
+   */
+  const [nearby, setNearby] = useState<{
+    city: string;
+    state?: string | null;
+    country?: string | null;
+    totalThere?: number;
+    events: PublicEvent[];
+  } | null>(null);
+  /**
+   * Last known device place, used to widen every rail when a city is empty.
+   * `state` matters as much as the coordinates here: /guides/top and
+   * /vendors/top match their `city` param against the state name too, so
+   * re-asking with "Ogun" is a real regional tier for content that has no
+   * geo index to search.
+   */
+  const [deviceGeo, setDeviceGeo] = useState<{
+    lat: number;
+    lng: number;
+    country: string | null;
+    state: string | null;
+  } | null>(null);
+  /**
+   * Last-resort feed so the home tab is never blank: third-party events within
+   * a radius of the device, else anything in the same country, else whatever's
+   * on anywhere. `scope` drives the copy so we never imply "near you" about a
+   * global result.
+   */
+  const [recommended, setRecommended] = useState<{
+    scope: "radius" | "country" | "global";
+    events: ExternalEvent[];
+  } | null>(null);
+  /** Same idea for the guide and vendor rails, which vanish rather than dead-end. */
+  const [recommendedGuides, setRecommendedGuides] =
+    useState<FallbackResult<TopGuide> | null>(null);
+  const [recommendedVendors, setRecommendedVendors] =
+    useState<FallbackResult<Vendor> | null>(null);
   const [highlights, setHighlights] = useState<{
     trending: PublicEvent[];
     upcoming: PublicEvent[];
@@ -518,7 +568,28 @@ export default function Home() {
     } catch {}
   }, []);
 
-  const detectCityFromGPS = getCityFromCurrentPosition;
+  /**
+   * Same contract as before (city name or null) but it also banks the fix the
+   * name came from. A reverse-geocoded city only ever matches content tagged
+   * with that exact name — "Obafemi-Owode" has none — so the coordinates are
+   * what let the empty state fall back to a radius search.
+   */
+  const detectCityFromGPS = useCallback(async (): Promise<string | null> => {
+    const address = await getAddressFromCurrentPosition();
+    if (address?.latitude != null && address?.longitude != null) {
+      const place = {
+        lat: address.latitude,
+        lng: address.longitude,
+        country: address.country ?? null,
+        state: address.state ?? null,
+      };
+      setDeviceGeo(place);
+      // Persisted so the vendors and best-of tabs can widen their own lists
+      // without each running the GPS/permission flow that lives here.
+      saveDevicePlace(place);
+    }
+    return address?.city ?? null;
+  }, []);
 
   // Resolves the home feed's default location on cold start: precise GPS
   // when permission is already granted (or the user accepts our rationale
@@ -594,6 +665,19 @@ export default function Home() {
       const approx = await getApproximateLocation();
       if (approx?.city) {
         setLocationBanner("approximate");
+        // IP coords are coarse but still good enough to anchor a radius
+        // search when the resolved city turns out to have nothing on. They're
+        // optional on the return type — skip the radius tier without them.
+        if (approx.latitude != null && approx.longitude != null) {
+          const place = {
+            lat: approx.latitude,
+            lng: approx.longitude,
+            country: null,
+            state: approx.state ?? null,
+          };
+          setDeviceGeo(place);
+          saveDevicePlace(place);
+        }
         await applyCity(approx.city, "auto");
         return approx.city;
       }
@@ -654,6 +738,11 @@ export default function Home() {
       const data = await response.json();
       if (response.ok && activeCityRef.current === (city ?? null)) {
         setPublicEvents(data.events || []);
+        // The server already works out the next-most-active city in the same
+        // state/country whenever this one comes back thin (findNearbyCityEvents).
+        // Holding onto it is what lets the empty state offer somewhere to look
+        // instead of a dead end.
+        setNearby(data.nearby ?? null);
         cacheWrite(`home:explore:${city ?? "all"}`, data.events || []);
       }
     } catch {
@@ -662,6 +751,10 @@ export default function Home() {
       const cached = await cacheRead<PublicEvent[]>(`home:explore:${city ?? "all"}`);
       if (cached && activeCityRef.current === (city ?? null)) {
         setPublicEvents(cached.data);
+        // The nearby suggestion isn't cached, and the one still in state was
+        // computed for whichever city was active last — dropping it beats
+        // recommending a city on stale grounds.
+        setNearby(null);
       }
     }
   };
@@ -686,6 +779,56 @@ export default function Home() {
         setExternalEvents([]);
       }
     }
+  };
+
+  /**
+   * The "never blank" tier, run only once a city has come back with nothing at
+   * all. Widens in three steps, each strictly broader than the last, and stops
+   * at the first that returns anything:
+   *
+   *   1. a radius around the device — an empty LGA is usually minutes from a
+   *      city that isn't, and only coordinates can find it;
+   *   2. the same country, when we know it but have no usable fix;
+   *   3. anywhere, so the tab always has something on it.
+   */
+  const fetchRecommended = async (city: string | null) => {
+    const tiers: { scope: "radius" | "country" | "global"; run: () => Promise<ExternalEvent[]> }[] = [
+      ...(deviceGeo
+        ? [
+            {
+              scope: "radius" as const,
+              run: async () =>
+                (await externalEventService.nearby(deviceGeo.lat, deviceGeo.lng, 150, 6)).events || [],
+            },
+          ]
+        : []),
+      ...(deviceGeo?.country
+        ? [
+            {
+              scope: "country" as const,
+              run: async () =>
+                (await externalEventService.explore({ country: deviceGeo.country!, limit: 6 })).events || [],
+            },
+          ]
+        : []),
+      { scope: "global" as const, run: async () => (await externalEventService.explore({ limit: 6 })).events || [] },
+    ];
+
+    for (const tier of tiers) {
+      try {
+        const events = await tier.run();
+        // The city may have changed while this was in flight — a recommendation
+        // for the old one would be worse than none.
+        if (activeCityRef.current !== city) return;
+        if (events.length > 0) {
+          setRecommended({ scope: tier.scope, events });
+          return;
+        }
+      } catch {
+        // Try the next, broader tier rather than giving up on the whole thing.
+      }
+    }
+    if (activeCityRef.current === city) setRecommended(null);
   };
 
   const fetchHighlights = async (city?: string | null) => {
@@ -1007,6 +1150,56 @@ export default function Home() {
     ...externalEvents.map((e) => ({ _kind: "external" as const, data: e, sort: new Date(e.date).getTime() })),
   ].sort((a, b) => a.sort - b.sort);
 
+  const feedIsEmpty = mixedFeed.length === 0 && trendingFeed.length === 0;
+
+  // Only reach for a recommendation once the real feed has settled and come
+  // back with nothing AND the server had no nearby city to offer — those two
+  // are better answers whenever they exist.
+  useEffect(() => {
+    if (initialLoading) return;
+    if (feedIsEmpty && !nearby) {
+      fetchRecommended(selectedCity ?? null);
+    } else {
+      setRecommended(null);
+    }
+    // fetchRecommended closes over deviceGeo, which is in the dep list.
+  }, [initialLoading, feedIsEmpty, nearby, selectedCity, deviceGeo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Guides and vendors fall back independently of the event feed and of each
+  // other — a city can easily have vendors but no guides, and widening the
+  // rail that's actually empty beats widening all three together.
+  useEffect(() => {
+    if (initialLoading) return;
+    const city = selectedCity ?? null;
+    if (topGuides.length === 0) {
+      widenUntilFound<TopGuide>(city, deviceGeo, async (f) => {
+        const res = await fetch(`${BASE_URL}/guides/top?limit=6${filterQuery(f)}`);
+        return res.ok ? (await res.json()).guides || [] : [];
+      }).then((r) => {
+        if (activeCityRef.current === city) setRecommendedGuides(r);
+      });
+    } else {
+      setRecommendedGuides(null);
+    }
+  }, [initialLoading, topGuides.length, selectedCity, deviceGeo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (initialLoading) return;
+    const city = selectedCity ?? null;
+    // `vendors` is the search-derived rail, `topVendors` the curated one — the
+    // section only shows when both are empty, so both gate the fallback.
+    if (topVendors.length === 0 && vendors.length === 0) {
+      widenUntilFound<Vendor>(city, deviceGeo, async (f) => {
+        const res = await fetch(`${BASE_URL}/vendors/top?limit=6${filterQuery(f)}`);
+        return res.ok ? (await res.json()).vendors || [] : [];
+      }).then((r) => {
+        if (activeCityRef.current === city) setRecommendedVendors(r);
+      });
+    } else {
+      setRecommendedVendors(null);
+    }
+  }, [initialLoading, topVendors.length, vendors.length, selectedCity, deviceGeo]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <>
       <ScrollView
@@ -1263,12 +1456,77 @@ export default function Home() {
               No events {selectedCity ? `in ${selectedCity}` : "near you"} yet
             </Text>
             <Text style={styles.emptyStateSubtitle}>
-              Be the first to bring something to the calendar.
+              {nearby
+                ? `${nearby.city} is the closest city with something on — have a look, or be the first to bring something to ${selectedCity}.`
+                : recommended
+                  ? recommended.scope === "radius"
+                    ? "Nothing listed here yet — here's what's on around you."
+                    : recommended.scope === "country"
+                      ? "Nothing listed here yet — here's what's on elsewhere."
+                      : "Nothing listed here yet — here's what's popular right now."
+                  : "Be the first to bring something to the calendar."}
             </Text>
             <TouchableOpacity style={styles.emptyStateButton} activeOpacity={0.85} onPress={openCreateEvent}>
               <Ionicons name="add" size={16} color={colors.white} />
               <Text style={styles.emptyStateButtonText}>Create Event</Text>
             </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {/* Recommended elsewhere — only when this city genuinely has nothing,
+            so it reads as a helpful alternative rather than a second feed. */}
+        {!initialLoading &&
+        mixedFeed.length === 0 &&
+        trendingFeed.length === 0 &&
+        nearby &&
+        nearby.events.length > 0 ? (
+          <View style={styles.section}>
+            <SectionHeader
+              title={`Happening in ${nearby.city}`}
+              subtitle={
+                nearby.totalThere
+                  ? `${nearby.totalThere} event${nearby.totalThere === 1 ? "" : "s"} nearby`
+                  : "Nearby recommendation"
+              }
+              onAction={() => applyCity(nearby.city, "manual")}
+              actionLabel="Switch"
+            />
+            <View style={styles.verticalStack}>
+              {nearby.events.map((event) => (
+                <View key={`nearby-${event._id}`} style={styles.verticalCard}>
+                  <PublicEventCard
+                    event={event}
+                    onPurchaseTicket={handlePurchaseTicket}
+                    onJoinFreeEvent={handleJoinFreeEvent}
+                    style={styles.verticalEventCard}
+                  />
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {/* Last resort, so the tab is never blank. Only when the city is empty
+            AND the server had no nearby city to point at. */}
+        {!initialLoading && feedIsEmpty && !nearby && recommended ? (
+          <View style={styles.section}>
+            <SectionHeader
+              title={recommended.scope === "radius" ? "Around you" : "Recommended"}
+              subtitle={
+                recommended.scope === "radius"
+                  ? "Within reach of your location"
+                  : recommended.scope === "country"
+                    ? "Elsewhere in your country"
+                    : "Popular right now"
+              }
+            />
+            <View style={styles.verticalStack}>
+              {recommended.events.map((event) => (
+                <View key={`rec-${event._id}`} style={styles.verticalCard}>
+                  <ExternalEventCard event={event} />
+                </View>
+              ))}
+            </View>
           </View>
         ) : null}
 
@@ -1400,6 +1658,70 @@ export default function Home() {
           </View>
         )}
 
+            {/* Top vendors — ranked by review count, so a lone 5-star review
+                can't outrank a vendor with fifty. */}
+            {initialLoading ? (
+              <View style={styles.section}>
+                <SectionHeader title="Top vendors" subtitle="Highest rated in your city" />
+                <FlatList
+                  horizontal
+                  data={[1, 2, 3, 4]}
+                  keyExtractor={(item) => String(item)}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={() => <VendorCardSkeleton />}
+                />
+              </View>
+            ) : rankedVendors.length > 0 && (
+              <View style={styles.section}>
+                <SectionHeader
+                  title="Top vendors"
+                  subtitle="Highest rated in your city"
+                  onAction={() => router.push("/(tabs)/vendors")}
+                  actionLabel="All"
+                />
+                <FlatList
+                  horizontal
+                  data={rankedVendors}
+                  keyExtractor={(item) => item._id}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={({ item }) => (
+                    <VendorCard
+                      vendor={item}
+                      onPress={() => router.push(`/vendor-details/${item._id}` as any)}
+                    />
+                  )}
+                />
+              </View>
+            )}
+
+            {/* Vendor fallback — stands in for both vendor rails when this
+                city has none, so the row widens instead of disappearing. */}
+            {!initialLoading && recommendedVendors ? (
+              <View style={styles.section}>
+                <SectionHeader
+                  title="Vendors further out"
+                  subtitle={fallbackSubtitle(recommendedVendors.scope, selectedCity)}
+                  onAction={() => router.push("/(tabs)/vendors")}
+                  actionLabel="All"
+                />
+                <FlatList
+                  horizontal
+                  data={recommendedVendors.items}
+                  keyExtractor={(item) => `rec-vendor-${item._id}`}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={({ item }) => (
+                    <VendorCard
+                      vendor={item}
+                      onPress={() => router.push(`/vendor-details/${item._id}` as any)}
+                    />
+                  )}
+                />
+              </View>
+            ) : null}
+
             {/* Top guides — best-selling city guides */}
             {initialLoading ? (
               <View style={styles.section}>
@@ -1436,6 +1758,34 @@ export default function Home() {
             />
           </View>
             )}
+
+            {/* Guide fallback — same idea as the vendor row above. */}
+            {!initialLoading && recommendedGuides ? (
+              <View style={styles.section}>
+                <SectionHeader
+                  title="Guides further out"
+                  subtitle={fallbackSubtitle(recommendedGuides.scope, selectedCity)}
+                  onAction={() => router.push("/(tabs)/bests")}
+                  actionLabel="All"
+                />
+                <FlatList
+                  horizontal
+                  data={recommendedGuides.items}
+                  keyExtractor={(item) => `rec-guide-${item._id}`}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={({ item }) => (
+                    // No `style` prop: home's local GuideCard doesn't accept
+                    // one. The main rail above passes it anyway, where it's a
+                    // type error and a runtime no-op — not worth copying.
+                    <GuideCard
+                      guide={item}
+                      onPress={() => router.push(`/guide/${item._id}` as any)}
+                    />
+                  )}
+                />
+              </View>
+            ) : null}
           </>
 
       </ScrollView>

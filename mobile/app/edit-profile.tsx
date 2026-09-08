@@ -12,12 +12,20 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { showError, showSuccess } from "@/utils/toast";
+import {
+  dobError,
+  formatDob,
+  maxDobDate,
+  parseDobString,
+  toDobString,
+} from "@/utils/dateOfBirth";
 import { ImagePickerButton } from "@/components/shared";
 import { uploadImage } from "@/utils/imageUpload";
 import GlassBackButton from "@/components/shared/GlassBackButton";
@@ -52,6 +60,9 @@ export default function EditProfileScreen() {
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
   const [gender, setGender] = useState("");
+  // "YYYY-MM-DD", or "" when this account predates the field.
+  const [dob, setDob] = useState("");
+  const [dobPickerOpen, setDobPickerOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
@@ -64,6 +75,7 @@ export default function EditProfileScreen() {
     name: "",
     bio: "",
     gender: "",
+    dob: "",
     username: "",
   });
 
@@ -83,12 +95,14 @@ export default function EditProfileScreen() {
           name: composeFullName(u),
           bio: u.bio || "",
           gender: u.gender || "",
+          dob: u.dateOfBirth ? toDobString(new Date(u.dateOfBirth)) : "",
           username: u.username || "",
         };
         setProfilePicture(initial.profilePicture);
         setName(initial.name);
         setBio(initial.bio);
         setGender(initial.gender);
+        setDob(initial.dob);
         setEmail(u.email || "");
         setUsername(initial.username);
         setSaved(initial);
@@ -155,6 +169,7 @@ export default function EditProfileScreen() {
     nameChanged ||
     bio !== saved.bio ||
     gender !== saved.gender ||
+    dob !== saved.dob ||
     usernameChanged;
   // A changed username must be well-formed and not known-taken (an inconclusive
   // check falls through to the server, same as the old inline editor did), and
@@ -167,7 +182,9 @@ export default function EditProfileScreen() {
   // A changed name can't be cleared to blank — everyone completes this once
   // (see complete-name.tsx) and Edit Profile shouldn't be a way back out of it.
   const nameOk = !nameChanged || name.trim().length >= 2;
-  const canSave = dirty && !saving && usernameOk && nameOk;
+  // An untouched empty DOB is fine (older accounts); a set one must be valid.
+  const dobOk = !dob || !dobError(dob);
+  const canSave = dirty && !saving && usernameOk && nameOk && dobOk;
 
   const handleSave = async () => {
     const nextUsername = cleanUsername(username);
@@ -187,9 +204,11 @@ export default function EditProfileScreen() {
         profilePicture?: string;
         bio: string;
         gender: string;
+        dateOfBirth?: string;
         username?: string;
         fullName?: string;
       } = { bio, gender };
+      if (dob !== saved.dob) payload.dateOfBirth = dob;
       if (usernameChanged) payload.username = nextUsername;
       if (nameChanged) payload.fullName = nextName;
 
@@ -229,6 +248,7 @@ export default function EditProfileScreen() {
         name: nextName,
         bio,
         gender,
+        dob,
         username: usernameChanged ? nextUsername : saved.username,
       });
       setUsernameStatus("idle");
@@ -354,6 +374,32 @@ export default function EditProfileScreen() {
           />
           <Text style={styles.bioCount}>{bio.length}/500</Text>
 
+          <Text style={styles.fieldLabel}>Date of birth</Text>
+          <TouchableOpacity
+            style={styles.input}
+            onPress={() => setDobPickerOpen(true)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={dob ? `Date of birth, ${formatDob(dob)}` : "Set your date of birth"}
+          >
+            <Text style={dob ? styles.dobValue : styles.dobPlaceholder}>
+              {dob ? formatDob(dob) : "Select your date of birth"}
+            </Text>
+          </TouchableOpacity>
+          {dobPickerOpen && (
+            <DateTimePicker
+              value={parseDobString(dob) ?? maxDobDate()}
+              mode="date"
+              display={Platform.OS === "ios" ? "spinner" : "default"}
+              maximumDate={maxDobDate()}
+              onChange={(e: DateTimePickerEvent, picked?: Date) => {
+                if (Platform.OS !== "ios") setDobPickerOpen(false);
+                if (e.type === "dismissed" || !picked) return;
+                setDob(toDobString(picked));
+              }}
+            />
+          )}
+
           <Text style={styles.fieldLabel}>Gender</Text>
           <View style={styles.genderRow}>
             {GENDER_OPTIONS.map((opt) => {
@@ -466,6 +512,8 @@ const createStyles = (c: ThemeColors) =>
       alignSelf: "flex-end",
       marginTop: 4,
     },
+    dobValue: { fontSize: 15, fontFamily: Fonts.regular, color: c.text },
+    dobPlaceholder: { fontSize: 15, fontFamily: Fonts.regular, color: c.textMuted },
     genderRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     genderPill: {
       paddingHorizontal: 14,

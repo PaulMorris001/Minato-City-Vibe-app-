@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import axios from "axios";
@@ -31,9 +32,18 @@ import {
 } from "@/components/auth/AuthPrimitives";
 import { AU } from "@/components/auth/tokens";
 import { SocialAuthButtons } from "@/components/auth/SocialAuthButtons";
+import { goBack } from "@/utils/navigation";
+import {
+  MIN_AGE_YEARS,
+  dobError,
+  formatDob,
+  maxDobDate,
+  parseDobString,
+  toDobString,
+} from "@/utils/dateOfBirth";
 
 import { darkColors, type ThemeColors } from "@/constants/theme";
-type StepKey = "fullName" | "username" | "email" | "password" | "confirm";
+type StepKey = "fullName" | "dob" | "username" | "email" | "password" | "confirm";
 
 type AvailStatus = "idle" | "checking" | "available" | "taken" | "error";
 
@@ -49,6 +59,8 @@ type StepDef = {
   secure?: boolean;
   keyboardType?: "default" | "email-address";
   autoComplete?: "name" | "username" | "email" | "new-password";
+  /** "date" swaps the text input for a picker. Everything else is a text field. */
+  kind?: "date";
 };
 
 const STEPS: StepDef[] = [
@@ -57,8 +69,16 @@ const STEPS: StepDef[] = [
     question: "What's your\nname?",
     hint: "So people know who's RSVPing.",
     vendorHint: "The name behind the business — a business name comes next.",
-    placeholder: "Ade Bello",
+    placeholder: "John Doe",
     autoComplete: "name",
+  },
+  {
+    key: "dob",
+    question: "When's your\nbirthday?",
+    hint: `You need to be ${MIN_AGE_YEARS} or over to use OurCityvibe.`,
+    vendorHint: `You need to be ${MIN_AGE_YEARS} or over to run a business here.`,
+    placeholder: "Select your date of birth",
+    kind: "date",
   },
   {
     key: "username",
@@ -126,11 +146,15 @@ export default function Signup() {
   const [step, setStep] = useState(0);
   const [values, setValues] = useState<Record<StepKey, string>>({
     fullName: "",
+    // "YYYY-MM-DD" so it stays a string like every other step's value.
+    dob: "",
     username: "",
     email: "",
     password: "",
     confirm: "",
   });
+  // iOS keeps the spinner inline once opened; Android shows a one-shot modal.
+  const [dobPickerOpen, setDobPickerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   // The username/email steps await a network check before advancing, and the
   // CTA stays on screen for the whole round trip. Without this guard every
@@ -156,11 +180,18 @@ export default function Signup() {
   const value = values[current.key];
 
   useEffect(() => {
-    // Refocus the field every time the step changes.
-    const t = setTimeout(() => inputRef.current?.focus(), 50);
+    // Refocus the field every time the step changes. The date step has no
+    // TextInput to focus, and pulling the keyboard up over its picker would
+    // just cover it.
+    const t =
+      current.kind === "date" ? null : setTimeout(() => inputRef.current?.focus(), 50);
     setShowPassword(false);
-    return () => clearTimeout(t);
-  }, [step]);
+    // Never leave the picker open across a step change.
+    setDobPickerOpen(false);
+    return () => {
+      if (t) clearTimeout(t);
+    };
+  }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const update = (next: string) => {
     const cleaned = current.key === "username" ? next.replace(/^@+/, "") : next;
@@ -225,6 +256,7 @@ export default function Signup() {
     if (!v) return "This field is required.";
     if (current.key === "fullName" && v.length < 2)
       return "Enter your full name.";
+    if (current.key === "dob") return dobError(v);
     if (current.key === "username" && !USERNAME_RE.test(v))
       return "3–20 characters, letters / numbers / underscores only.";
     if (current.key === "email" && !EMAIL_RE.test(v))
@@ -247,6 +279,7 @@ export default function Signup() {
     try {
       const res = await axios.post(`${BASE_URL}/register`, {
         fullName: values.fullName.trim(),
+        dateOfBirth: values.dob,
         username: values.username,
         email: values.email,
         password: values.password,
@@ -411,6 +444,9 @@ export default function Signup() {
       <AccountTypeChooser
         onPick={setAccountType}
         onLogin={() => router.push("/login" as any)}
+        // Falls back to login rather than the default home tabs — nobody on
+        // this screen is signed in yet.
+        onBack={() => goBack("/login")}
       />
     );
   }
@@ -456,6 +492,21 @@ export default function Signup() {
 
               <View style={styles.fieldWrap}>
                 <View style={styles.inputRow}>
+                  {current.kind === "date" ? (
+                    <TouchableOpacity
+                      style={styles.input}
+                      onPress={() => setDobPickerOpen(true)}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        value ? `Date of birth, ${formatDob(value)}` : current.placeholder
+                      }
+                    >
+                      <Text style={value ? styles.dateValue : styles.datePlaceholder}>
+                        {value ? formatDob(value) : current.placeholder}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : (
                   <TextInput
                     ref={inputRef}
                     value={value}
@@ -480,6 +531,7 @@ export default function Signup() {
                     onSubmitEditing={handleNext}
                     style={[styles.input, !!current.secure && styles.inputWithEye]}
                   />
+                  )}
                   {!!current.secure && (
                     <TouchableOpacity
                       onPress={() => setShowPassword((v) => !v)}
@@ -505,6 +557,25 @@ export default function Signup() {
                   />
                 </View>
               </View>
+
+              {current.kind === "date" && dobPickerOpen && (
+                <DateTimePicker
+                  value={parseDobString(value) ?? maxDobDate()}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  // Capped at the day they turn MIN_AGE_YEARS, so the picker
+                  // can't offer a date the next step would reject.
+                  maximumDate={maxDobDate()}
+                  themeVariant="dark"
+                  onChange={(e: DateTimePickerEvent, picked?: Date) => {
+                    // Android fires "dismissed" for a cancelled dialog and
+                    // closes it either way; iOS keeps the spinner mounted.
+                    if (Platform.OS !== "ios") setDobPickerOpen(false);
+                    if (e.type === "dismissed" || !picked) return;
+                    update(toDobString(picked));
+                  }}
+                />
+              )}
 
               {/* Per-step status affordance */}
               {(current.key === "username" || current.key === "email") && (
@@ -667,9 +738,11 @@ export default function Signup() {
 function AccountTypeChooser({
   onPick,
   onLogin,
+  onBack,
 }: {
   onPick: (type: AccountType) => void;
   onLogin: () => void;
+  onBack: () => void;
 }) {
   const options: {
     type: AccountType;
@@ -699,6 +772,12 @@ function AccountTypeChooser({
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {/* Same top bar as the wizard, minus the progress pill — the chooser
+              has no step of its own to report. */}
+          <View style={styles.topBar}>
+            <GlassRoundButton icon="chevron-back" onPress={onBack} />
+          </View>
+
           <View style={styles.wordmarkRow}>
             <Wordmark />
           </View>
@@ -854,6 +933,20 @@ const createStyles = (c: ThemeColors) =>
   },
   inputWithEye: {
     paddingRight: 8,
+  },
+  // The date step swaps the TextInput for a tappable row, so the text styles
+  // that would normally sit on `input` move onto its Text child.
+  dateValue: {
+    fontFamily: "BricolageGrotesque_700Bold",
+    fontSize: 30,
+    color: AU.text,
+    letterSpacing: -0.6,
+  },
+  datePlaceholder: {
+    fontFamily: "BricolageGrotesque_700Bold",
+    fontSize: 30,
+    color: AU.textMute,
+    letterSpacing: -0.6,
   },
   eyeBtn: {
     paddingBottom: 12,

@@ -475,12 +475,13 @@ export async function fetchCityEvents({ city, countryCode, page = 1, placeId }) 
 export async function ingestCity({ city, countryCode = "US", maxPages = 10 }) {
   const placeId = await resolvePlaceId(city, countryCode);
   if (!placeId) {
-    return { city, countryCode, upserted: 0, skipped: 0, seen: 0, noPlace: true };
+    return { city, countryCode, upserted: 0, skipped: 0, failed: 0, seen: 0, noPlace: true };
   }
 
   const referer = `${ORIGIN}/d/${countrySlug(countryCode)}--${slugify(city)}/all-events/`;
   let upserted = 0;
   let skipped = 0;
+  let failed = 0;
   let seen = 0;
 
   for (let page = 1; page <= maxPages; page++) {
@@ -494,12 +495,19 @@ export async function ingestCity({ city, countryCode = "US", maxPages = 10 }) {
         skipped++;
         continue;
       }
-      await ExternalEvent.updateOne(
-        { source: doc.source, sourceId: doc.sourceId },
-        { $set: doc },
-        { upsert: true }
-      );
-      upserted++;
+      // One malformed upstream record must not abandon the rest of the city
+      // (and every page after it) — count it and move on.
+      try {
+        await ExternalEvent.updateOne(
+          { source: doc.source, sourceId: doc.sourceId },
+          { $set: doc },
+          { upsert: true }
+        );
+        upserted++;
+      } catch (err) {
+        failed++;
+        console.error(`[EB] upsert ${doc.sourceId} failed: ${err.message}`);
+      }
     }
 
     if (results.length < PAGE_SIZE) break; // partial page = last page
@@ -508,7 +516,7 @@ export async function ingestCity({ city, countryCode = "US", maxPages = 10 }) {
     await sleep(1000);
   }
 
-  return { city, countryCode, upserted, skipped, seen };
+  return { city, countryCode, upserted, skipped, failed, seen };
 }
 
 /**
@@ -545,7 +553,7 @@ export async function ingestCities(cities, { maxPages } = {}) {
         console.log(`[EB] ${city} (${countryCode}): no Eventbrite destination page`);
       } else {
         console.log(
-          `[EB] ${city} (${countryCode}): upserted ${r.upserted}, skipped ${r.skipped} of ${r.seen} seen`
+          `[EB] ${city} (${countryCode}): upserted ${r.upserted}, skipped ${r.skipped}, failed ${r.failed} of ${r.seen} seen`
         );
       }
       results.push({ ok: true, ...r });

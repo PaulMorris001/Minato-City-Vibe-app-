@@ -49,8 +49,14 @@ const externalEventSchema = new mongoose.Schema(
     state: { type: String, default: "" },
     country: { type: String, default: "", index: true },
     geo: {
-      // GeoJSON Point for $near queries; stored as [lng, lat] per spec
-      type: { type: String, enum: ["Point"], default: "Point" },
+      // GeoJSON Point for $near queries; stored as [lng, lat] per spec.
+      // `type` deliberately has NO default: with one, Mongoose's
+      // setDefaultsOnInsert writes `geo: { type: "Point" }` with no
+      // coordinates for the many upstream events that ship no lat/lng, and the
+      // 2dsphere index below rejects the whole write ("Can't extract geo
+      // keys"). Both ingest mappers set type + coordinates together or omit
+      // geo entirely.
+      type: { type: String, enum: ["Point"] },
       coordinates: { type: [Number], default: undefined }, // [lng, lat]
     },
 

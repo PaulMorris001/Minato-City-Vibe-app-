@@ -21,6 +21,10 @@ const pendingSignupSchema = new mongoose.Schema(
     // the "complete your name" gate on its next login, like any pre-existing
     // account (see login.tsx / (tabs)/_layout.tsx).
     fullName: { type: String, default: "", trim: true },
+    // Carried through to the User in verifySignup. Optional for the same
+    // reason as fullName above — an older app build sends no birthday, and
+    // that account gets nudged by the profile setup checklist instead.
+    dateOfBirth: { type: Date, default: null },
     // Unique so a second attempt for the same address replaces the first
     // (upsert) rather than accumulating stale pending rows with live codes.
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },

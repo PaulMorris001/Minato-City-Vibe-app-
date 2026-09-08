@@ -18,6 +18,12 @@ import MediaTile from "@/components/shared/MediaTile";
 import UserListItemSkeleton from "@/components/skeletons/UserListItemSkeleton";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchGuidesAll } from "@/libs/api";
+import {
+  loadDevicePlace,
+  widenUntilFound,
+  fallbackSubtitle,
+  type FallbackResult,
+} from "@/utils/locationFallback";
 import { formatLocation } from "@/utils/location";
 import { priceLabel } from "@/constants/payments";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
@@ -42,14 +48,29 @@ export default function BestsPage() {
   // wrong-city) response could overwrite the correct one and the guide list
   // would intermittently show guides outside the selected location.
   const requestedCityRef = useRef<string | null>(null);
+  /**
+   * Guides found by widening past an empty city. Held separately from `guides`
+   * so the real list is never quietly replaced by out-of-town results — the UI
+   * labels these as the fallback they are.
+   */
+  const [fallback, setFallback] = useState<FallbackResult<Guide> | null>(null);
 
   const loadGuides = async (city: string | null) => {
     requestedCityRef.current = city;
     setLoading(true);
+    setFallback(null);
     try {
       const data = await fetchGuidesAll({ city: city || undefined });
       if (requestedCityRef.current !== city) return;
-      setGuides(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setGuides(list);
+      // Nothing here — widen (state, then country, then unfiltered) rather
+      // than leaving the tab on a dead end.
+      if (list.length === 0) {
+        const place = await loadDevicePlace();
+        const wider = await widenUntilFound<Guide>(city, place, (f) => fetchGuidesAll(f));
+        if (requestedCityRef.current === city) setFallback(wider);
+      }
     } catch {
       if (requestedCityRef.current === city) setGuides([]);
     } finally {
@@ -195,6 +216,24 @@ export default function BestsPage() {
 
         {loading ? (
           <UserListItemSkeleton count={6} showButton={false} />
+        ) : groups.length === 0 && fallback ? (
+          // Empty here, but not empty everywhere — say so plainly, then show
+          // the widened results rather than nothing.
+          <>
+            <Text style={styles.emptyText}>
+              {fallbackSubtitle(fallback.scope, activeCity)}
+            </Text>
+            <View style={styles.section}>
+              <FlatList
+                horizontal
+                data={fallback.items}
+                keyExtractor={(item) => `fallback-${item._id}`}
+                renderItem={({ item }) => renderGuideCard(item)}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.carousel}
+              />
+            </View>
+          </>
         ) : groups.length === 0 ? (
           <Text style={styles.emptyText}>
             {activeCity
