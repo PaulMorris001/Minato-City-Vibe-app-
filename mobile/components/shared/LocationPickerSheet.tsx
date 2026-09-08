@@ -221,7 +221,9 @@ export default function LocationPickerSheet({
           setError(null);
         } else {
           setSuggestions([{ label: "Anywhere", value: "" }]);
-          setError("No matching places found. Try another city.");
+          // Not a dead end any more — the free-text row below still commits
+          // whatever they typed.
+          setError("No matching places found — you can still use what you typed.");
         }
       } catch (err: any) {
         if (err?.name !== "AbortError") {
@@ -238,6 +240,20 @@ export default function LocationPickerSheet({
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [query, recent, visible]);
+
+  /**
+   * The typed term, offered as its own option whenever the geocoder hasn't
+   * already produced that exact city. Without this, saving a location is only
+   * possible for places Nominatim both reaches and classifies as a settlement
+   * — so a flaky network, a rate-limited response, or a place it ranks as a
+   * region leaves the user typing with nothing to tap. The stored value is
+   * just a city string that the feed filters on, so free text is as valid
+   * here as anything the geocoder returns.
+   */
+  const trimmedQuery = query.trim();
+  const showFreeTextOption =
+    trimmedQuery.length > 0 &&
+    !suggestions.some((s) => s.value.toLowerCase() === trimmedQuery.toLowerCase());
 
   const pick = async (suggestion: LocationSuggestion) => {
     const value = suggestion.value || null;
@@ -283,6 +299,11 @@ export default function LocationPickerSheet({
               onChangeText={setQuery}
               autoCapitalize="words"
               returnKeyType="search"
+              // Return commits what they typed, so the keyboard's own action
+              // works even when no suggestion ever arrives.
+              onSubmitEditing={() => {
+                if (trimmedQuery) pick({ label: trimmedQuery, value: trimmedQuery });
+              }}
             />
             {query ? (
               <TouchableOpacity onPress={() => setQuery("")} activeOpacity={0.7} hitSlop={8}>
@@ -320,6 +341,21 @@ export default function LocationPickerSheet({
                 </TouchableOpacity>
               );
             })}
+
+            {showFreeTextOption && (
+              <TouchableOpacity
+                style={styles.option}
+                onPress={() => pick({ label: trimmedQuery, value: trimmedQuery })}
+                activeOpacity={0.9}
+              >
+                <View style={styles.recentLabelRow}>
+                  <Ionicons name="navigate-outline" size={16} color={colors.primary} />
+                  <Text style={styles.optionText} numberOfLines={1}>
+                    Use “{trimmedQuery}”
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
 
             {!query.trim() && recent.length > 0 && (
               <>

@@ -1,15 +1,16 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { API_BASE } from "../config";
 
 // Mirrors the look of the original server-rendered delete-account page, but
 // submits to the backend's JSON endpoint instead of doing a form POST that
 // returns a full HTML page.
 export default function DeleteAccount() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
 
   useEffect(() => {
     document.title = "Delete Account – OurCityvibe";
@@ -27,7 +28,9 @@ export default function DeleteAccount() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
-        setDone(true);
+        // `replace` so the browser's back button can't return to a delete form
+        // for an account that no longer exists.
+        navigate("/login", { replace: true, state: { notice: "account-deleted" } });
       } else {
         setError(data.message || "Something went wrong. Please try again later.");
       }
@@ -42,51 +45,38 @@ export default function DeleteAccount() {
     <>
       <style>{css}</style>
       <div className="card">
-        {done ? (
-          <div style={{ textAlign: "center" }}>
-            <div className="icon">✓</div>
-            <h1>Account Deleted</h1>
-            <p>
-              Your OurCityvibe account and all associated data have been permanently
-              deleted. We're sorry to see you go.
-            </p>
-          </div>
-        ) : (
-          <>
-            <h1>Delete Account</h1>
-            <p>
-              Permanently delete your OurCityvibe account and all associated data. This
-              action cannot be undone.
-            </p>
-            {error ? <div className="message">{error}</div> : null}
-            <div className="warning">
-              ⚠️ This will permanently delete your profile, event history, messages,
-              and all data linked to your account.
-            </div>
-            <form onSubmit={handleSubmit}>
-              <label>Email address</label>
-              <input
-                type="email"
-                name="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-              <label>Password</label>
-              <input
-                type="password"
-                name="password"
-                placeholder="Your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <button type="submit" disabled={submitting}>
-                {submitting ? "Deleting…" : "Delete My Account"}
-              </button>
-            </form>
-          </>
-        )}
+        <h1>Delete Account</h1>
+        <p>
+          Permanently delete your OurCityvibe account and all associated data. This
+          action cannot be undone.
+        </p>
+        {error ? <div className="message">{error}</div> : null}
+        <div className="warning">
+          ⚠️ This will permanently delete your profile, event history, messages,
+          and all data linked to your account.
+        </div>
+        <form onSubmit={handleSubmit}>
+          <label>Email address</label>
+          <input
+            type="email"
+            name="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <label>Password</label>
+          <input
+            type="password"
+            name="password"
+            placeholder="Your password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button type="submit" disabled={submitting}>
+            {submitting ? "Deleting…" : "Delete My Account"}
+          </button>
+        </form>
       </div>
     </>
   );
@@ -159,5 +149,4 @@ const css = `
     color: #fcd34d;
     margin-bottom: 20px;
   }
-  .icon { font-size: 48px; margin-bottom: 16px; }
 `;

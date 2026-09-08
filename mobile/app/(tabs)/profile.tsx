@@ -53,6 +53,8 @@ interface UserProfile {
   lastName?: string;
   profilePicture?: string;
   bio?: string;
+  /** ISO date, or null/absent on accounts created before the field existed. */
+  dateOfBirth?: string | null;
   isVendor?: boolean;
   businessName?: string;
   verified?: boolean;
@@ -108,6 +110,7 @@ export default function ProfileScreen() {
         lastName: u.lastName || "",
         profilePicture: u.profilePicture || "",
         bio: u.bio || "",
+        dateOfBirth: u.dateOfBirth ?? null,
         isVendor: u.isVendor,
         businessName: u.businessName || "",
         verified: u.verified || false,
@@ -629,6 +632,15 @@ function SetupChecklist({ user, sellsGuides }: { user: UserProfile | null; sells
       icon: "create-outline",
       done: !!user.bio,
       route: "/settings",
+    },
+    // Only ever outstanding for accounts created before signup started asking
+    // — the DOB step is required for every new signup.
+    {
+      key: "dob",
+      label: "Add your date of birth",
+      icon: "calendar-outline",
+      done: !!user.dateOfBirth,
+      route: "/edit-profile",
     },
     // Dropped (not just marked done) when this country has no payout rail —
     // there's nothing to complete, so it shouldn't block the card from

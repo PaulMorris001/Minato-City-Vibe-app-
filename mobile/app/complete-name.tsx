@@ -110,7 +110,7 @@ export default function CompleteNameScreen() {
             <TextInput
               value={fullName}
               onChangeText={setFullName}
-              placeholder="Ade Bello"
+              placeholder="John Doe"
               placeholderTextColor={AU.textMute}
               autoCapitalize="words"
               autoCorrect={false}

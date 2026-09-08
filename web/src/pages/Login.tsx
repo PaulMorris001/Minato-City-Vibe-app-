@@ -1,18 +1,53 @@
-import { useState, type FormEvent } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
+
+/**
+ * Confirmations that other flows can hand off to this page. Keyed rather than
+ * free text because the server-rendered delete page can only pass a query
+ * param across origins, and arbitrary message text in a URL is an injection
+ * vector.
+ */
+const NOTICES: Record<string, string> = {
+  "account-deleted": "Account deleted successfully",
+};
+
+const TOAST_MS = 5000;
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const redirectTo = (location.state as any)?.from || "/events";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Two arrival paths: same-origin router state (the React delete page) and
+  // ?notice= (the legacy server-rendered page redirecting across origins).
+  const [toast, setToast] = useState(
+    () => NOTICES[(location.state as any)?.notice] ?? NOTICES[searchParams.get("notice") ?? ""] ?? ""
+  );
+
+  useEffect(() => {
+    if (!toast) return;
+    // Strip the param and the router state so a refresh or a back-navigation
+    // doesn't replay a confirmation for something that already happened.
+    if (searchParams.has("notice")) {
+      searchParams.delete("notice");
+      setSearchParams(searchParams, { replace: true });
+    }
+    if ((location.state as any)?.notice) {
+      navigate(location.pathname, { replace: true, state: { from: (location.state as any)?.from } });
+    }
+    const t = setTimeout(() => setToast(""), TOAST_MS);
+    return () => clearTimeout(t);
+    // Runs once per toast — the cleanup deps are intentionally just the message.
+  }, [toast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -30,6 +65,12 @@ export default function Login() {
 
   return (
     <Layout>
+      {toast && (
+        <div className="cv-toast" role="status" aria-live="polite">
+          <span className="cv-toast-icon" aria-hidden="true">✓</span>
+          {toast}
+        </div>
+      )}
       <div className="cv-card">
         <h1>Welcome back</h1>
         <p className="sub">Log in to browse and pay for events.</p>

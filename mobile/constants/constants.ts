@@ -27,7 +27,12 @@ console.log("API Base URL:", BASE_URL);
 
 export const config = {
   apiUrl: BASE_URL,
-  socketUrl: BASE_URL.replace("/api", ""),
+  // Anchored to the END of the string on purpose. A bare replace("/api", "")
+  // strips the FIRST match, which in "https://api.ourcityvibe.com/api" is the
+  // `//api` of the host — yielding "https:/.ourcityvibe.com/api", a hostname of
+  // ".ourcityvibe.com" that fails DNS and takes every socket connection with
+  // it. Same pattern as utils/reachability.ts.
+  socketUrl: BASE_URL.replace(/\/api\/?$/, ""),
   isProduction: process.env.NODE_ENV === "production" || !__DEV__,
 };
 

@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fonts } from "@/constants/fonts";
 import { Avatar } from "./Avatar";
 import FollowButton from "./FollowButton";
+import VerifiedBadge from "./VerifiedBadge";
 import { displayName } from "@/utils/displayName";
 import { capitalize } from "@/libs/helpers";
 import { openUserProfile } from "@/utils/userNavigation";
@@ -96,9 +97,12 @@ export default function PersonSuggestionCard({
             has. */}
         <View style={styles.compactBody}>
           <Avatar uri={person.profilePicture} name={name} size={56} />
-          <Text style={styles.compactName} numberOfLines={1}>
-            {name}
-          </Text>
+          <View style={styles.nameRowCentered}>
+            <Text style={styles.compactName} numberOfLines={1}>
+              {name}
+            </Text>
+            <VerifiedBadge verified={person.verified} size={13} />
+          </View>
           <Text style={[styles.handle, styles.centerText]} numberOfLines={1}>
             @{person.username}
           </Text>
@@ -134,9 +138,12 @@ export default function PersonSuggestionCard({
     >
       <Avatar uri={person.profilePicture} name={name} size={52} />
       <View style={styles.info}>
-        <Text style={styles.name} numberOfLines={1}>
-          {name}
-        </Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.name} numberOfLines={1}>
+            {name}
+          </Text>
+          <VerifiedBadge verified={person.verified} />
+        </View>
         <Text style={styles.handle} numberOfLines={1}>
           @{person.username}
         </Text>
@@ -175,7 +182,18 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: 4,
     },
     info: { flex: 1, gap: 2 },
-    name: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.text },
+    name: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.text, flexShrink: 1 },
+    nameRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+    nameRowCentered: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+      alignSelf: "stretch",
+      // Was on compactName; on the row instead so the badge sits on the same
+      // baseline as the text rather than being pushed up by it.
+      marginTop: 8,
+    },
     handle: { fontSize: 13, fontFamily: Fonts.regular, color: c.textSecondary },
     tagline: { fontSize: 12, fontFamily: Fonts.regular, color: c.textSecondary, marginTop: 2 },
     reasonRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 3 },
@@ -202,8 +220,9 @@ const createStyles = (c: ThemeColors) =>
       fontSize: 14,
       fontFamily: Fonts.semiBold,
       color: c.text,
-      marginTop: 8,
       textAlign: "center",
+      // Truncates rather than shoving the badge past the card edge.
+      flexShrink: 1,
     },
     compactButton: { marginTop: "auto", alignSelf: "stretch", paddingTop: 10 },
   });

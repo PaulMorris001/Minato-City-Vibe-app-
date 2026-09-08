@@ -138,6 +138,14 @@ export interface DeviceAddress {
   city: string | null;
   state?: string;
   country?: string;
+  /**
+   * The raw fix the city was derived from. Kept because a reverse-geocoded
+   * name is only useful for exact-match filtering — when a place has no
+   * content of its own (a small LGA, say), coordinates are what let the feed
+   * fall back to a radius search instead of a dead end.
+   */
+  latitude?: number;
+  longitude?: number;
 }
 
 // Resolves the device's current GPS position to a city/state/country via
@@ -159,6 +167,8 @@ export async function getAddressFromCurrentPosition(): Promise<DeviceAddress | n
       city: address?.city || address?.subregion || address?.region || null,
       state: address?.region || undefined,
       country: address?.country || undefined,
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
     };
   } catch {
     return null;

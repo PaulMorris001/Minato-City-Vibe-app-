@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Fonts } from "@/constants/fonts";
 import { Avatar } from "./Avatar";
 import FollowButton from "./FollowButton";
+import VerifiedBadge from "./VerifiedBadge";
 import { displayName } from "@/utils/displayName";
 import { capitalize } from "@/libs/helpers";
 import { openUserProfile } from "@/utils/userNavigation";
@@ -17,6 +18,8 @@ export interface UserRowItem {
   profilePicture?: string;
   isVendor?: boolean;
   businessName?: string;
+  /** ID verification, from the verification queue — not email confirmation. */
+  verified?: boolean;
   isFollowing?: boolean;
   isFollowedBy?: boolean;
   isMutual?: boolean;
@@ -44,9 +47,12 @@ export default function UserRow({
     >
       <Avatar uri={user.profilePicture} name={displayName(user)} size={48} />
       <View style={styles.info}>
-        <Text style={styles.name} numberOfLines={1}>
-          {capitalize(displayName(user))}
-        </Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.name} numberOfLines={1}>
+            {capitalize(displayName(user))}
+          </Text>
+          <VerifiedBadge verified={user.verified} />
+        </View>
         <Text style={styles.sub} numberOfLines={1}>
           {user.isVendor && user.businessName ? `@${user.username}` : user.email}
         </Text>
@@ -74,7 +80,8 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: 4,
     },
     info: { flex: 1, gap: 2 },
-    name: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.text },
+    nameRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+    name: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.text, flexShrink: 1 },
     sub: { fontSize: 13, fontFamily: Fonts.regular, color: c.textSecondary },
     followsYou: { fontSize: 11, fontFamily: Fonts.regular, color: c.textMuted },
   });

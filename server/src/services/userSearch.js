@@ -51,7 +51,7 @@ export async function searchUsersQuery({ viewerId, q, page = 1, limit = 20 }) {
 
   const [users, total] = await Promise.all([
     User.find(filter)
-      .select("_id username email profilePicture isVendor businessName")
+      .select("_id username email profilePicture isVendor businessName verified")
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(),
@@ -79,6 +79,7 @@ export async function searchUsersQuery({ viewerId, q, page = 1, limit = 20 }) {
         profilePicture: user.profilePicture,
         isVendor: user.isVendor,
         businessName: user.businessName,
+        verified: !!user.verified,
         isFollowing,
         isFollowedBy,
         isMutual: isFollowing && isFollowedBy,

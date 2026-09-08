@@ -26,6 +26,12 @@ import { ActiveLocationChip, VendorRow } from "@/components/shared";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 import { scaleFontSize } from "@/utils/responsive";
 import { useActiveCity } from "@/hooks/useActiveCity";
+import {
+  loadDevicePlace,
+  widenUntilFound,
+  fallbackSubtitle,
+  type FallbackResult,
+} from "@/utils/locationFallback";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -45,6 +51,11 @@ export default function VendorsPage() {
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const [vendors, setVendors] = useState<BrowseVendor[]>([]);
+  /**
+   * Vendors found by widening past an empty city. Kept apart from `vendors` so
+   * the real list is never silently swapped for out-of-town results.
+   */
+  const [fallback, setFallback] = useState<FallbackResult<BrowseVendor> | null>(null);
   const [loading, setLoading] = useState(true);
   // The one shared active browsing location (set via Settings' device
   // location, the home feed, or Select Location from any of these screens) —
@@ -83,10 +94,19 @@ export default function VendorsPage() {
   const loadVendors = async (city: string | null) => {
     requestedCityRef.current = city;
     setLoading(true);
+    setFallback(null);
     try {
       const data = await fetchVendorsBrowse({ city: city || undefined });
       if (requestedCityRef.current !== city) return;
-      setVendors(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setVendors(list);
+      // Nothing in this city — widen (state, then country, then unfiltered)
+      // instead of leaving the tab on "No vendors yet".
+      if (list.length === 0) {
+        const place = await loadDevicePlace();
+        const wider = await widenUntilFound<BrowseVendor>(city, place, (f) => fetchVendorsBrowse(f));
+        if (requestedCityRef.current === city) setFallback(wider);
+      }
     } catch {
       if (requestedCityRef.current === city) setVendors([]);
     } finally {
@@ -283,6 +303,30 @@ export default function VendorsPage() {
 
           {loading ? (
             <VendorCardSkeleton count={5} />
+          ) : groups.length === 0 && fallback ? (
+            // Empty here, but not empty everywhere — label the widened results
+            // rather than showing a dead end.
+            <>
+              <View style={styles.emptyContainer}>
+                <Ionicons name="business-outline" size={48} color={colors.borderMuted} />
+                <Text style={styles.emptyTitle}>
+                  No vendors in {activeCity ?? "this location"}
+                </Text>
+                <Text style={styles.emptySubtext}>
+                  {fallbackSubtitle(fallback.scope, activeCity)}
+                </Text>
+              </View>
+              <View style={styles.section}>
+                <FlatList
+                  horizontal
+                  data={fallback.items}
+                  keyExtractor={(item) => `fallback-${item._id}`}
+                  renderItem={({ item }) => renderVendorCard(item)}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.carousel}
+                />
+              </View>
+            </>
           ) : groups.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Ionicons name="business-outline" size={48} color={colors.borderMuted} />
