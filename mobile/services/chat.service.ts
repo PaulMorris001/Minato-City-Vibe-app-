@@ -181,6 +181,19 @@ class ChatService {
   }
 
   /**
+   * One chat from the local store, searched across both inboxes. Lets the chat
+   * screen paint its header instantly and stay usable offline when the
+   * `GET /chats/:id` refresh can't complete.
+   */
+  async getCachedChatById(chatId: string): Promise<Chat | null> {
+    for (const scope of ["client", "vendor"] as ChatScope[]) {
+      const found = (await getChats(scope)).find((c) => c._id === chatId);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  /**
    * Get or create a direct chat with another user. Pass
    * { context: "vendor", vendorUserId } for a business↔customer thread —
    * it stays separate from any personal chat with the same user.

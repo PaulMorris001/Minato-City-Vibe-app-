@@ -6,7 +6,7 @@ import Notification from "../models/notification.model.js";
 import { emitNewMessage, getSocketInstance } from "./socket.service.js";
 import { uploadBase64Image, deleteImage } from "./image.service.js";
 import { isVideoUrl } from "../config/cloudinary.js";
-import { sendPushNotification } from "./notification.service.js";
+import { sendPushNotification, wantsPush } from "./notification.service.js";
 import { areMutualFollows } from "../utils/followCheck.js";
 import { involvesSupport, withSupportMarkers } from "../utils/supportAccount.js";
 
@@ -58,7 +58,7 @@ class ChatService {
       isActive: true,
       ...contextFilter
     })
-      .populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture')
+      .populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture isSupport verified')
       .populate({
         path: 'lastMessage',
         populate: { path: 'sender', select: 'username profilePicture' }
@@ -95,7 +95,7 @@ class ChatService {
       });
 
       await chat.save();
-      await chat.populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture');
+      await chat.populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture isSupport verified');
     } else if (context === 'vendor' && vendorInitiatorId && !chat.vendorInitiator) {
       // Reused an order chat created before this buyer booked in vendor mode —
       // tag it now so it surfaces in their vendor inbox too.
@@ -154,7 +154,7 @@ class ChatService {
     });
 
     await chat.save();
-    await chat.populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture');
+    await chat.populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture isSupport verified');
     await chat.populate('admins', 'username email profilePicture');
     if (eventId) {
       await chat.populate('event', 'title date location image createdBy');
@@ -211,7 +211,7 @@ class ChatService {
       isActive: true,
       deletedFor: { $ne: userId }
     })
-      .populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture')
+      .populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture isSupport verified')
       .populate('admins', 'username email profilePicture')
       .populate('pendingInvites.user', 'username email profilePicture')
       .populate('pendingInvites.invitedBy', 'username email profilePicture')
@@ -347,8 +347,11 @@ class ChatService {
 
     for (const participantId of chat.participants) {
       if (participantId.toString() === senderId.toString()) continue;
-      const recipient = await User.findById(participantId).select("fcmToken");
+      const recipient = await User.findById(participantId).select("fcmToken notificationPrefs");
       if (!recipient?.fcmToken) continue;
+      // Honours the recipient's "Messages" push toggle. The message itself is
+      // still delivered over the socket / on next open — this only mutes push.
+      if (!wantsPush(recipient, "new_message")) continue;
 
       let body;
       if (mentionsAll) {
@@ -954,7 +957,7 @@ class ChatService {
     }
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username firstName lastName email profilePicture isVendor businessName businessPicture")
+      .populate("participants", "username firstName lastName email profilePicture isVendor businessName businessPicture isSupport verified")
       .populate("admins", "username email profilePicture")
       .populate("pendingInvites.user", "username email profilePicture")
       .populate("pendingInvites.invitedBy", "username email profilePicture");
@@ -1026,7 +1029,7 @@ class ChatService {
     }
 
     const updated = await Chat.findById(chatId)
-      .populate("participants", "username firstName lastName email profilePicture isVendor businessName businessPicture")
+      .populate("participants", "username firstName lastName email profilePicture isVendor businessName businessPicture isSupport verified")
       .populate("admins", "username email profilePicture")
       .populate("pendingInvites.user", "username email profilePicture")
       .populate({
@@ -1050,7 +1053,7 @@ class ChatService {
         this.scopeFilter(userId, scope)
       ]
     })
-      .populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture')
+      .populate('participants', 'username firstName lastName email profilePicture isVendor businessName businessPicture isSupport verified')
       .limit(10);
 
     // Search in messages (only within chats belonging to this inbox)

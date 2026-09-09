@@ -54,6 +54,48 @@ export async function sendPushNotification(pushToken, title, body, data = {}) {
 }
 
 /**
+ * Notification type → user.notificationPrefs key. A type with no entry here is
+ * always pushed (account-critical: verification, etc.). The in-app Notification
+ * record is written regardless of the preference — this only gates the push.
+ */
+const TYPE_TO_PREF_KEY = {
+  new_follower: "newFollowers",
+  new_message: "messages",
+
+  event_invite: "eventUpdates",
+  invite_accepted: "eventUpdates",
+  event_update: "eventUpdates",
+
+  ticket_sold: "sales",
+  ticket_purchased: "sales",
+  guide_sold: "sales",
+  guide_purchased: "sales",
+  booking_paid: "sales",
+  order_paid: "sales",
+  order_quoted: "sales",
+  order_purchased: "sales",
+  discount_code_created: "sales",
+
+  payout_queued: "payouts",
+  payout_paid: "payouts",
+  payout_failed: "payouts",
+  payout_rejected: "payouts",
+  payout_blocked: "payouts",
+  payout_action_required: "payouts",
+};
+
+/**
+ * Whether `user` (a doc/lean object carrying `notificationPrefs`) wants a push
+ * for this notification type. Opt-out: an absent flag means yes. Exported so
+ * the direct-push call sites that bypass notifyUser can share the rule.
+ */
+export function wantsPush(user, type, prefKeyOverride) {
+  const prefKey = prefKeyOverride || TYPE_TO_PREF_KEY[type];
+  if (!prefKey) return true;
+  return user?.notificationPrefs?.[prefKey] !== false;
+}
+
+/**
  * Notify a user: write the durable in-app Notification AND (best-effort) push.
  *
  * Use this instead of calling sendPushNotification directly. Push alone is not a
@@ -72,9 +114,11 @@ export async function sendPushNotification(pushToken, title, body, data = {}) {
  * @param {string} n.body
  * @param {object} [n.data]  extra payload; values are stringified for FCM
  * @param {boolean} [n.push] set false for in-app only
+ * @param {string} [n.prefKey] override the type→notificationPrefs key used to
+ *   gate the push; omit to derive it from `type`
  * @returns {Promise<object|null>} the created Notification, or null on failure
  */
-export async function notifyUser(userId, { type, title, body, data = {}, push = true }) {
+export async function notifyUser(userId, { type, title, body, data = {}, push = true, prefKey }) {
   // A falsy recipient is a caller bug, not a user state — it means a field name
   // is wrong upstream. Mongoose would throw a validation error that the caller's
   // catch-all swallows, so the notification vanishes silently. Shout instead.
@@ -103,8 +147,12 @@ export async function notifyUser(userId, { type, title, body, data = {}, push = 
 
   if (push) {
     try {
-      const recipient = await User.findById(userId).select("fcmToken");
-      await sendPushNotification(recipient?.fcmToken, title, body, { type, ...data });
+      const recipient = await User.findById(userId).select("fcmToken notificationPrefs");
+      if (!wantsPush(recipient, type, prefKey)) {
+        console.log(`[notifyUser] Push suppressed by preference for "${type}" → ${userId}`);
+      } else {
+        await sendPushNotification(recipient?.fcmToken, title, body, { type, ...data });
+      }
     } catch (err) {
       console.error(`[notifyUser] Push failed for "${type}" → ${userId}:`, err?.message ?? err);
     }

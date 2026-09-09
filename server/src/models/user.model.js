@@ -160,8 +160,16 @@ const userSchema = mongoose.Schema({
 
   // Email/push channel preferences. Push follows the OS permission; these
   // cover the channels we control. Default on — users opt out, not in.
+  // The category flags gate push delivery per notification type (see the
+  // type→prefKey map in services/notification.service.js); the in-app
+  // Notification record is always written regardless.
   notificationPrefs: {
     eventReminderEmails: { type: Boolean, default: true },
+    newFollowers: { type: Boolean, default: true },
+    messages: { type: Boolean, default: true },
+    eventUpdates: { type: Boolean, default: true },
+    sales: { type: Boolean, default: true },
+    payouts: { type: Boolean, default: true },
   },
   // Minted the first time we email this user, so the reminder footer can carry
   // a one-click unsubscribe that needs no login.

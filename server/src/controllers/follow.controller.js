@@ -2,7 +2,7 @@ import Follow from "../models/follow.model.js";
 import User from "../models/user.model.js";
 import Notification from "../models/notification.model.js";
 import { emitFollowEvent } from "../services/socket.service.js";
-import { sendPushNotification } from "../services/notification.service.js";
+import { sendPushNotification, wantsPush } from "../services/notification.service.js";
 import { isSupportUser } from "../utils/supportAccount.js";
 import { countFollows, supportAudienceFilter } from "../utils/followCounts.js";
 import { resolveUserId } from "../utils/resolveUser.js";
@@ -80,7 +80,9 @@ export const followUser = async (req, res) => {
         .json({ message: "This is the official support account and can't be followed." });
     }
 
-    const targetUser = await User.findById(targetUserId).select("username profilePicture fcmToken");
+    const targetUser = await User.findById(targetUserId).select(
+      "username profilePicture fcmToken notificationPrefs"
+    );
     if (!targetUser) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -123,8 +125,8 @@ export const followUser = async (req, res) => {
       isMutual,
     });
 
-    // Push notification
-    if (targetUser.fcmToken) {
+    // Push notification — honours the recipient's "New followers" toggle.
+    if (targetUser.fcmToken && wantsPush(targetUser, "new_follower")) {
       sendPushNotification(
         targetUser.fcmToken,
         "New Follower",

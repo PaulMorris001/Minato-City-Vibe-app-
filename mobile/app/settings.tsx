@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Linking,
   Platform,
-  Switch,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect, useNavigation } from "expo-router";
@@ -70,16 +69,24 @@ export default function SettingsScreen() {
     emailVerifiedAt: null as string | null,
     country: "",
   });
-  // Reminder emails are opt-out, so the switch starts on until the profile says
-  // otherwise. `savingReminders` blocks a double-tap while the PUT is in flight.
-  const [eventReminderEmails, setEventReminderEmails] = useState(true);
-  const [savingReminders, setSavingReminders] = useState(false);
-
   // Onboarding screen for whichever rail settles this user, or null when no rail
   // reaches their country (they can still publish free listings).
   const payoutRoute = payoutOnboardingRoute(user.country);
 
   const [clearingLocalData, setClearingLocalData] = useState(false);
+  // Opening support hits the network (create-or-resume the thread) before it can
+  // navigate — without this the row just sits dead on tap.
+  const [openingSupport, setOpeningSupport] = useState(false);
+
+  const handleContactSupport = async () => {
+    if (openingSupport) return;
+    setOpeningSupport(true);
+    try {
+      await openSupportChat();
+    } finally {
+      setOpeningSupport(false);
+    }
+  };
 
   // Fetches on mount and again every time the screen regains focus (e.g.
   // returning from /verify-email, /earnings, /blocked-users) so state stays
@@ -180,9 +187,6 @@ export default function SettingsScreen() {
         emailVerifiedAt: userData.emailVerifiedAt || null,
         country: userData.location?.country || "",
       });
-      setEventReminderEmails(
-        userData.notificationPrefs?.eventReminderEmails !== false
-      );
       if (userData.location?.country) {
         setLocation({
           country: userData.location.country,
@@ -196,25 +200,6 @@ export default function SettingsScreen() {
     } finally {
       setLoading(false);
       hasLoadedOnceRef.current = true;
-    }
-  };
-
-  /** Optimistic toggle — reverts if the server rejects the change. */
-  const handleToggleReminderEmails = async (value: boolean) => {
-    setEventReminderEmails(value);
-    setSavingReminders(true);
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      await axios.put(
-        `${BASE_URL}/notifications/preferences`,
-        { eventReminderEmails: value },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-    } catch {
-      setEventReminderEmails(!value);
-      showError("Couldn't update your email preference. Please try again.");
-    } finally {
-      setSavingReminders(false);
     }
   };
 
@@ -472,32 +457,9 @@ export default function SettingsScreen() {
         )}
       </View>
 
-      {/* Notification channels */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notifications</Text>
-        <Text style={styles.sectionDescription}>
-          Push notifications follow your device settings. These control what we
-          send to your inbox.
-        </Text>
-        <View style={[styles.preferenceItem, { borderBottomWidth: 0 }]}>
-          <View style={[styles.preferenceLeft, { flex: 1, paddingRight: 12 }]}>
-            <Ionicons name="mail-outline" size={22} color={Colors.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.preferenceText}>Event reminder emails</Text>
-              <Text style={styles.reminderHint}>
-                {"A reminder the day before an event you're going to."}
-              </Text>
-            </View>
-          </View>
-          <Switch
-            value={eventReminderEmails}
-            onValueChange={handleToggleReminderEmails}
-            disabled={savingReminders}
-            trackColor={{ false: colors.borderMuted, true: Colors.primary }}
-            thumbColor="#fff"
-          />
-        </View>
-      </View>
+      {/* Notifications — the full set of channel/category toggles lives on its
+          own screen (notification-settings.tsx); the Preferences section below
+          links to it. */}
 
       {/* Email Verification status */}
       <View style={styles.section}>
@@ -560,13 +522,18 @@ export default function SettingsScreen() {
 
           <TouchableOpacity
             style={[styles.preferenceItem, { borderBottomWidth: 0 }]}
-            onPress={() => openSupportChat()}
+            onPress={handleContactSupport}
+            disabled={openingSupport}
           >
             <View style={styles.preferenceLeft}>
               <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.textBody} />
               <Text style={styles.preferenceText}>Contact Support</Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            {openingSupport ? (
+              <ActivityIndicator size="small" color={colors.textMuted} />
+            ) : (
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            )}
           </TouchableOpacity>
         </View>
       )}
@@ -608,7 +575,7 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.preferenceItem} onPress={() => router.push("/notifications" as any)}>
+        <TouchableOpacity style={styles.preferenceItem} onPress={() => router.push("/notification-settings" as any)}>
           <View style={styles.preferenceLeft}>
             <Ionicons name="notifications-outline" size={22} color={colors.textBody} />
             <Text style={styles.preferenceText}>Notifications</Text>

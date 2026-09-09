@@ -52,6 +52,24 @@ export const deletePushToken = async (req, res) => {
   }
 };
 
+// The toggles the app exposes. `eventReminderEmails` gates a marketing email;
+// the rest gate push delivery per notification category (see the type→prefKey
+// map in services/notification.service.js). All are opt-out: absent ⇒ on.
+const NOTIFICATION_PREF_KEYS = [
+  "eventReminderEmails",
+  "newFollowers",
+  "messages",
+  "eventUpdates",
+  "sales",
+  "payouts",
+];
+
+/** Shape every key as an explicit boolean, defaulting absent/true to `true`. */
+const serializePrefs = (notificationPrefs = {}) =>
+  Object.fromEntries(
+    NOTIFICATION_PREF_KEYS.map((k) => [k, notificationPrefs?.[k] !== false])
+  );
+
 /**
  * Read the email/push channel preferences for the authenticated user.
  * Absent sub-fields fall back to the schema defaults (opt-out model).
@@ -60,11 +78,7 @@ export const getNotificationPreferences = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("notificationPrefs").lean();
     if (!user) return res.status(404).json({ message: "User not found" });
-    res.json({
-      preferences: {
-        eventReminderEmails: user.notificationPrefs?.eventReminderEmails !== false,
-      },
-    });
+    res.json({ preferences: serializePrefs(user.notificationPrefs) });
   } catch (error) {
     console.error("Get notification preferences error:", error);
     res.status(500).json({ message: "Failed to load notification preferences" });
@@ -77,10 +91,11 @@ export const getNotificationPreferences = async (req, res) => {
  */
 export const updateNotificationPreferences = async (req, res) => {
   try {
-    const { eventReminderEmails } = req.body;
     const update = {};
-    if (typeof eventReminderEmails === "boolean") {
-      update["notificationPrefs.eventReminderEmails"] = eventReminderEmails;
+    for (const key of NOTIFICATION_PREF_KEYS) {
+      if (typeof req.body?.[key] === "boolean") {
+        update[`notificationPrefs.${key}`] = req.body[key];
+      }
     }
     if (Object.keys(update).length === 0) {
       return res.status(400).json({ message: "No supported preference supplied" });
@@ -95,9 +110,7 @@ export const updateNotificationPreferences = async (req, res) => {
 
     res.json({
       message: "Preferences updated",
-      preferences: {
-        eventReminderEmails: user.notificationPrefs?.eventReminderEmails !== false,
-      },
+      preferences: serializePrefs(user.notificationPrefs),
     });
   } catch (error) {
     console.error("Update notification preferences error:", error);
