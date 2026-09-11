@@ -37,6 +37,7 @@ export default function EditEvent() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [date, setDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [location, setLocation] = useState("");
   const [address, setAddress] = useState("");
   const [meetingLink, setMeetingLink] = useState("");
@@ -61,6 +62,7 @@ export default function EditEvent() {
         setTitle(event.title || "");
         setDescription(event.description || "");
         setDate(toLocalInput(event.date));
+        setEndDate(event.endDate ? toLocalInput(event.endDate) : "");
         setLocation(event.location || "");
         setAddress(event.address || "");
         setMeetingLink(event.meetingLink || "");
@@ -104,6 +106,9 @@ export default function EditEvent() {
         title: title.trim(),
         description,
         date: date ? new Date(date).toISOString() : undefined,
+        // Always sent, so clearing the field actually clears the end date —
+        // `undefined` would leave the existing one in place.
+        endDate: endDate ? new Date(endDate).toISOString() : null,
       };
       if (ev.isVirtual) {
         body.meetingLink = meetingLink;
@@ -196,13 +201,28 @@ export default function EditEvent() {
         </div>
 
         <div>
-          <label className="cv-label">Date &amp; time — needs approval</label>
+          <label className="cv-label">Starts — needs approval</label>
           <input
             className="cv-input"
             type="datetime-local"
             value={date}
             onChange={(e) => setDate(e.target.value)}
           />
+        </div>
+
+        <div>
+          <label className="cv-label">Ends (optional) — needs approval</label>
+          <input
+            className="cv-input"
+            type="datetime-local"
+            value={endDate}
+            min={date || undefined}
+            onChange={(e) => setEndDate(e.target.value)}
+          />
+          <p className="cv-muted" style={{ fontSize: 13, marginTop: 6 }}>
+            Only needed for events running across days. Leave it empty and we treat this as a
+            single date.
+          </p>
         </div>
 
         {ev?.isVirtual ? (

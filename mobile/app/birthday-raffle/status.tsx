@@ -179,8 +179,13 @@ export default function RaffleStatusScreen() {
             })}
           </Text>
 
+          {/* Under a weighted random draw the score IS the entry count, so it
+              has to be labelled as one — calling it a "score" implies the
+              highest number wins, which is not how the draw works. */}
           <View style={styles.scoreRow}>
-            <Text style={styles.scoreLabel}>Eligibility Score</Text>
+            <Text style={styles.scoreLabel}>
+              {status.eligibilityScore === 1 ? "Entry in the draw" : "Entries in the draw"}
+            </Text>
             <Text style={styles.scoreValue}>{status.eligibilityScore}</Text>
           </View>
         </LinearGradient>
@@ -312,6 +317,22 @@ export default function RaffleStatusScreen() {
             })}
           </Text>
         </View>
+
+        {/* Guideline 5.3.2: the rules stay one tap away wherever the promotion
+            is shown, not just on its landing screen. */}
+        <TouchableOpacity
+          style={styles.rulesLink}
+          activeOpacity={0.7}
+          onPress={() => router.push("/birthday-raffle/rules" as any)}
+        >
+          <Ionicons name="document-text-outline" size={16} color={colors.primaryLight} />
+          <Text style={styles.rulesLinkText}>Read the official rules</Text>
+          <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
+        </TouchableOpacity>
+
+        <Text style={styles.appleNote}>
+          Apple is not a sponsor of this promotion and is not involved with it in any manner.
+        </Text>
       </ScrollView>
     </View>
   );
@@ -570,7 +591,33 @@ const createStyles = (c: ThemeColors) =>
       gap: 6,
       marginTop: 8,
     },
-    deadlineNoteText: {
+    rulesLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: c.primaryFaded,
+    borderWidth: 1,
+    borderColor: c.primaryBorder,
+  },
+  rulesLinkText: {
+    fontFamily: Fonts.semiBold,
+    fontSize: 13,
+    color: c.primaryLight,
+  },
+  appleNote: {
+    fontFamily: Fonts.regular,
+    fontSize: 12,
+    color: c.textFaint,
+    textAlign: "center",
+    lineHeight: 18,
+    marginTop: 10,
+  },
+  deadlineNoteText: {
       fontFamily: Fonts.regular,
       fontSize: 13,
       color: c.textFaint,

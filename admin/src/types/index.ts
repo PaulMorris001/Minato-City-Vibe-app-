@@ -7,7 +7,7 @@ export interface AdminUser {
   businessName?: string;
   businessDescription?: string;
   vendorType?: string;
-  location?: { city?: string; address?: string };
+  location?: { city?: string; state?: string; country?: string; address?: string };
   contactInfo?: { phone?: string; website?: string };
   verified?: boolean;
   createdAt: string;
@@ -152,4 +152,32 @@ export interface AdminRaffleCampaign {
   createdByAdmin?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface AdminAnnouncement {
+  _id: string;
+  title: string;
+  body: string;
+  audience: "all" | "city" | "targeted";
+  city?: string | null;
+  targets?: {
+    countries: string[];
+    states: { country: string; state: string }[];
+    cities: { country: string; state: string; city: string }[];
+    userIds: string[];
+    groupIds: string[];
+    summary?: string;
+  };
+  deepLink?: string;
+  sentBy?: string;
+  /** Accounts addressed, and how many of them we held a push token for. */
+  recipientCount: number;
+  pushedCount: number;
+  createdAt: string;
+}
+
+export interface AnnouncementGroup {
+  _id: string;
+  name: string;
+  memberCount: number;
 }

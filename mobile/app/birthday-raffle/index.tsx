@@ -52,12 +52,14 @@ const CAMPAIGN = {
     { place: "2nd", reward: "₦75,000 Cash", icon: "medal" as const },
     { place: "3rd", reward: "₦40,000 Cash", icon: "ribbon" as const },
   ] as PrizeRow[],
+  // Plain-language summary only. The binding text is the Official Rules screen
+  // (app/birthday-raffle/rules.tsx) — keep these two consistent.
   rules: [
     "Create a birthday event on CityVibe during the campaign period.",
     "Share your unique tracking link with friends.",
-    "Only unique, verified RSVPs count toward eligibility.",
-    "Base entry for creating the event + points for each verified RSVP.",
-    "Winners are selected randomly from eligible entries by admin.",
+    "Only unique, verified RSVPs count — one per account.",
+    "Your event gets 1 entry, plus 1 more for every verified RSVP.",
+    "Winners are drawn at random from all entries after the campaign closes.",
   ],
 };
 
@@ -242,9 +244,25 @@ const handlePrimaryCTA = async () => {
           </LinearGradient>
         </TouchableOpacity>
 
+        {/* Guideline 5.3.2: the official rules must be reachable from the
+            promotion itself, and Apple's non-involvement stated plainly. */}
+        <TouchableOpacity
+          style={styles.rulesLink}
+          activeOpacity={0.7}
+          onPress={() => router.push("/birthday-raffle/rules" as any)}
+        >
+          <Ionicons name="document-text-outline" size={16} color={colors.primaryLight} />
+          <Text style={styles.rulesLinkText}>Read the official rules</Text>
+          <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
+        </TouchableOpacity>
+
         <Text style={styles.footerNote}>
-          By participating you agree to the campaign rules. Winners will be
-          contacted via the app.
+          No purchase necessary. Open to entrants aged 18 and over; void where prohibited.
+          By entering you agree to the official rules. Winners are contacted in the app and
+          by email.
+        </Text>
+        <Text style={styles.footerNote}>
+          Apple is not a sponsor of this promotion and is not involved with it in any manner.
         </Text>
       </ScrollView>
     </View>
@@ -461,5 +479,24 @@ const createStyles = (c: ThemeColors) =>
       color: c.textFaint,
       textAlign: "center",
       lineHeight: 18,
+      marginTop: 10,
+    },
+    rulesLink: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      marginTop: 18,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      borderRadius: 12,
+      backgroundColor: c.primaryFaded,
+      borderWidth: 1,
+      borderColor: c.primaryBorder,
+    },
+    rulesLinkText: {
+      fontFamily: Fonts.semiBold,
+      fontSize: 13,
+      color: c.primaryLight,
     },
   });

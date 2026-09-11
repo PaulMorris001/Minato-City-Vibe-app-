@@ -3,6 +3,42 @@ import * as Device from "expo-device";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 
+/**
+ * Send a token to the server for the logged-in account.
+ *
+ * Split out of registerForPushNotifications so the FCM token-refresh listener
+ * can reuse it. Registration only runs on cold launch and at login, so without
+ * this a rotated token left the server holding a dead one — and the user
+ * silently stopped receiving anything — until the next cold start.
+ */
+export async function uploadPushToken(token: string) {
+  const authToken = await SecureStore.getItemAsync("token");
+  if (!authToken || !token) {
+    console.log("[PushNotif] Skipped backend save — authToken:", !!authToken, "token:", !!token);
+    return;
+  }
+
+  // Ride along with the city the user is browsing. This is the only route it
+  // takes to the server — useActiveCity keeps it in SecureStore and nothing
+  // else uploads it — and it's what lets server-side pushes name an event
+  // that's actually near them.
+  const city = await SecureStore.getItemAsync("selectedCity");
+
+  try {
+    const res = await fetch(`${BASE_URL}/notifications/token`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ token, ...(city ? { city } : {}) }),
+    });
+    console.log("[PushNotif] FCM token saved to backend, status:", res.status);
+  } catch (err) {
+    console.error("[PushNotif] Failed to save token to backend:", err);
+  }
+}
+
 export async function registerForPushNotifications() {
   console.log("[PushNotif] Starting Firebase registration...");
 
@@ -30,31 +66,29 @@ export async function registerForPushNotifications() {
     return;
   }
 
-  const authToken = await SecureStore.getItemAsync("token");
-  console.log("[PushNotif] Auth token present:", !!authToken);
+  await uploadPushToken(token);
+}
 
-  if (authToken && token) {
-    // Ride along with the city the user is browsing. This is the only route it
-    // takes to the server — useActiveCity keeps it in SecureStore and nothing
-    // else uploads it — and it's what lets server-side pushes name an event
-    // that's actually near them.
-    const city = await SecureStore.getItemAsync("selectedCity");
-
-    try {
-      const res = await fetch(`${BASE_URL}/notifications/token`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({ token, ...(city ? { city } : {}) }),
-      });
-      console.log("[PushNotif] FCM token saved to backend, status:", res.status);
-    } catch (err) {
-      console.error("[PushNotif] Failed to save token to backend:", err);
+/**
+ * Current push permission, for surfacing "notifications are off" in Settings.
+ * `registerForPushNotifications` returns silently when permission is denied, so
+ * without this the app has no way to tell the user why nothing is arriving.
+ */
+export async function getPushPermissionStatus(): Promise<
+  "granted" | "denied" | "undetermined"
+> {
+  try {
+    const status = await messaging().hasPermission();
+    if (
+      status === messaging.AuthorizationStatus.AUTHORIZED ||
+      status === messaging.AuthorizationStatus.PROVISIONAL
+    ) {
+      return "granted";
     }
-  } else {
-    console.log("[PushNotif] Skipped backend save — authToken:", !!authToken, "token:", !!token);
+    if (status === messaging.AuthorizationStatus.NOT_DETERMINED) return "undetermined";
+    return "denied";
+  } catch {
+    return "undetermined";
   }
 }
 

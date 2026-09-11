@@ -24,6 +24,12 @@ import { rejectIfCannotSell } from "../services/payments/sellingEligibility.js";
 import { getCurrentCampaign, isCampaignOpen } from "../services/raffleCampaign.service.js";
 import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { findEventByAnyId } from "../utils/resolveEvent.js";
+import {
+  isEventPast,
+  ticketSalesClosedReason,
+  upcomingFilter,
+  parseEndDate,
+} from "../utils/eventLifecycle.js";
 import { toGeoPoint } from "../utils/geo.js";
 import { issueEventPass } from "../services/pass.service.js";
 import { linkQrDataUrl } from "../utils/qrcode.js";
@@ -83,6 +89,14 @@ function applyAttendanceVisibility(eventObj, { isOrganizer }) {
         : null;
   eventObj.soldOut = !!maxGuests && remaining !== null && remaining <= 0;
 
+  // Availability, not a count — so like `soldOut` these survive the opt-out.
+  // The reason is what lets the client say the true thing ("Event ended" vs
+  // "Sales closed") instead of a generic unavailable state.
+  const closedReason = ticketSalesClosedReason(eventObj);
+  eventObj.salesClosedReason = closedReason;
+  eventObj.salesClosed = closedReason !== null;
+  eventObj.hasEnded = isEventPast(eventObj);
+
   // Per-tier availability collapses to a boolean when counts are hidden. Only
   // rewrite when tiers actually exist — free events have none, and
   // materialising an empty array on every payload is a needless shape change.
@@ -102,6 +116,10 @@ function applyAttendanceVisibility(eventObj, { isOrganizer }) {
 
   // The guest list is never part of the opt-in — it's other attendees' data.
   if (!isOrganizer) delete eventObj.rsvpUsers;
+
+  // A cancellation under review is the organizer's business until it's decided
+  // — same reasoning as `pendingEdits`. Buyers see `salesClosed` instead.
+  if (!isOrganizer) delete eventObj.cancellationRequest;
 
   if (canSeeCounts) return eventObj;
 
@@ -133,6 +151,7 @@ export const createEvent = async (req, res) => {
     let {
       title,
       date,
+      endDate,
       location,
       address,
       city,
@@ -163,6 +182,9 @@ export const createEvent = async (req, res) => {
     if (meetingLink && !isValidMeetingLink(meetingLink)) {
       return res.status(400).json({ message: "Event link must be a valid URL (https://...)" });
     }
+
+    const parsedEnd = parseEndDate(endDate ?? null, date);
+    if (parsedEnd.error) return res.status(400).json({ message: parsedEnd.error });
 
     // Reject JSON/operator payloads and symbol-soup titles before they're stored
     // and displayed as an event name.
@@ -352,6 +374,7 @@ export const createEvent = async (req, res) => {
     const event = new Event({
       title,
       date: new Date(date),
+      endDate: parsedEnd.value,
       location: virtual ? "Online" : location,
       address: virtual ? "" : (address || ""),
       city: virtual ? "" : (city || ""),
@@ -1108,7 +1131,7 @@ export const updateEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
     const {
-      title, date, location, address, city, state, country, image, images,
+      title, date, endDate, location, address, city, state, country, image, images,
       description, isPublic, isVirtual, meetingLink, showAttendance,
       latitude, longitude,
       // Material (pricing/capacity) fields — held for admin approval on public events.
@@ -1254,6 +1277,15 @@ export const updateEvent = async (req, res) => {
       if (isNaN(d.getTime())) return res.status(400).json({ message: "Invalid date" });
       if (!event.date || d.getTime() !== new Date(event.date).getTime()) material.date = d;
     }
+    if (endDate !== undefined) {
+      // Validate against the new start when one is being set in the same edit,
+      // otherwise against the live one.
+      const parsedEnd = parseEndDate(endDate, material.date || event.date);
+      if (parsedEnd.error) return res.status(400).json({ message: parsedEnd.error });
+      const current = event.endDate ? new Date(event.endDate).getTime() : null;
+      const next = parsedEnd.value ? parsedEnd.value.getTime() : null;
+      if (current !== next) material.endDate = parsedEnd.value;
+    }
     // Pricing/capacity edits only apply to paid events.
     if (event.isPaid && (ticketTiers !== undefined || ticketPrice !== undefined || maxGuests !== undefined)) {
       if (ticketTiers !== undefined) {
@@ -1339,6 +1371,66 @@ export const updateEvent = async (req, res) => {
     }
     console.error("Update event error:", error);
     res.status(500).json({ message: "Error updating event", error: error.message });
+  }
+};
+
+/**
+ * PATCH /events/:eventId/ticket-sales
+ * body: { closed: boolean }
+ *
+ * Organizer's stop/resume switch for ticket sales. Applies immediately rather
+ * than going through `pendingEdits` — this is availability, not a price or
+ * capacity change, so it's the same class of edit as `showAttendance`.
+ *
+ * Reopening can't undo the reasons the organizer doesn't control (the event
+ * ended, it was cancelled, a cancellation is under review), so it reports the
+ * effective state back rather than claiming sales are open.
+ */
+export const setTicketSales = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { closed } = req.body;
+    const userId = req.user.id;
+
+    if (typeof closed !== "boolean") {
+      return res.status(400).json({ message: "closed must be true or false" });
+    }
+
+    const event = await Event.findById(eventId);
+    if (!event) return res.status(404).json({ message: "Event not found" });
+
+    const isCohost = (event.cohosts || []).some((c) => c.toString() === userId);
+    if (event.createdBy.toString() !== userId && !isCohost) {
+      return res.status(403).json({ message: "You don't have permission to update this event" });
+    }
+    if (!event.isPaid) {
+      return res.status(400).json({ message: "This event doesn't sell tickets" });
+    }
+    if (event.cancelledAt) {
+      return res.status(400).json({ message: "This event has been cancelled" });
+    }
+    if (event.cancellationRequest?.status === "pending") {
+      return res.status(400).json({
+        message: "Ticket sales stay closed while your cancellation request is under review.",
+      });
+    }
+
+    event.ticketSalesClosedAt = closed ? new Date() : null;
+    event.ticketSalesClosedBy = closed ? userId : undefined;
+    await event.save();
+
+    invalidateCachePattern(`event_detail_${eventId}_`);
+
+    const reason = ticketSalesClosedReason(event);
+    res.status(200).json({
+      message: closed ? "Ticket sales closed" : "Ticket sales reopened",
+      ticketSalesClosedAt: event.ticketSalesClosedAt,
+      salesClosed: reason !== null,
+      salesClosedReason: reason,
+    });
+  } catch (error) {
+    console.error("setTicketSales:", error);
+    res.status(500).json({ message: "Failed to update ticket sales" });
   }
 };
 
@@ -1752,6 +1844,15 @@ export const joinFreePublicEvent = async (req, res) => {
       return res.status(400).json({ message: "This is a paid event. Please purchase a ticket." });
     }
 
+    // Joining mints a QR entry pass (issueEventPass below), so a finished event
+    // has to refuse — same rule as ticket sales, different door.
+    if (event.cancelledAt) {
+      return res.status(400).json({ message: "This event was cancelled." });
+    }
+    if (isEventPast(event)) {
+      return res.status(400).json({ message: "This event has ended." });
+    }
+
     if (event.createdBy.toString() === userId) {
       return res.status(400).json({ message: "You are the creator of this event" });
     }
@@ -1846,9 +1947,9 @@ async function findNearbyCityEvents({ city, state, country, blockedIds, userId }
     isPublic: true,
     isActive: true,
     isVirtual: { $ne: true },
-    date: { $gte: new Date() },
     city: { $exists: true, $nin: [null, ""] },
     $and: [
+      upcomingFilter(),
       { $or: [{ isPaid: { $ne: true } }, { isPaid: true, approvalStatus: "approved" }] },
     ],
     ...(blockedIds.length > 0 ? { createdBy: { $nin: blockedIds } } : {}),
@@ -1950,10 +2051,15 @@ export function buildPublicEventQuery({ city, state, country, date, online, bloc
     });
   }
 
+  // "Still upcoming", honouring an optional endDate so a multi-day event doesn't
+  // drop out of the feed the moment it starts. It's an OR-group, so it goes in
+  // $and like every other one. Skipped when the caller named a specific day —
+  // picking a date is the user saying which day they mean, past or future.
+  if (!date) andConditions.push(upcomingFilter());
+
   const query = {
     isPublic: true,
     isActive: true,
-    date: { $gte: new Date() },
     ...(state && !onlineOnly ? { state: { $regex: exactCaseInsensitive(state) } } : {}),
     ...(country && !onlineOnly ? { country: { $regex: exactCaseInsensitive(country) } } : {}),
     ...(blockedIds.length > 0 ? { createdBy: { $nin: blockedIds } } : {}),
@@ -2121,6 +2227,13 @@ export const rsvpEvent = async (req, res) => {
 
     const alreadyRsvp = event.rsvpUsers.some(id => id.toString() === userId);
 
+    // "going" issues an entry pass, so it can't be set after the event is over.
+    // Withdrawing ("not_going") stays allowed — tidying up your own list after
+    // the fact harms nobody.
+    if (status === "going" && !alreadyRsvp && isEventPast(event)) {
+      return res.status(400).json({ message: "This event has ended." });
+    }
+
     if (status === "going") {
       if (!alreadyRsvp) event.rsvpUsers.push(userId);
     } else {
@@ -2238,12 +2351,21 @@ export const getEventHighlights = async (req, res) => {
       ];
     }
 
+    // "Not over yet" is an OR-group (it has to allow for an optional endDate),
+    // so it merges into $and rather than being spread alongside publicFilter's
+    // own $or / $and — a bare spread would clobber the city clause above.
+    const stillOn = (extra = []) => ({
+      ...publicFilter,
+      $and: [...(publicFilter.$and || []), upcomingFilter(now), ...extra],
+    });
+
     const [trendingRaw, upcoming] = await Promise.all([
-      Event.find({ ...publicFilter, date: { $gte: now } })
+      Event.find(stillOn())
         .populate('createdBy', 'username email profilePicture')
         .sort({ date: 1 })
         .limit(20),
-      Event.find({ ...publicFilter, date: { $gte: now, $lte: sevenDaysFromNow } })
+      // Starting within the week — an event already under way still counts.
+      Event.find(stillOn([{ date: { $lte: sevenDaysFromNow } }]))
         .populate('createdBy', 'username email profilePicture')
         .sort({ date: 1 })
         .limit(5),
@@ -2300,7 +2422,8 @@ export const getEventHighlights = async (req, res) => {
     // same $and city clause rather than being left unfiltered.
     const myUpcomingFilter = {
       isActive: true,
-      date: { $gte: now },
+      // Not over yet — into $and, since this filter already owns its $or.
+      $and: [upcomingFilter(now)],
       $or: [
         { createdBy: userId },
         { rsvpUsers: userId },
@@ -2308,7 +2431,7 @@ export const getEventHighlights = async (req, res) => {
       ],
     };
     if (city) {
-      myUpcomingFilter.$and = [
+      myUpcomingFilter.$and.push(
         {
           $or: [
             { city: { $regex: new RegExp(`^${esc(city)}$`, "i") } },
@@ -2316,7 +2439,7 @@ export const getEventHighlights = async (req, res) => {
           ],
         },
         { isVirtual: { $ne: true } },
-      ];
+      );
     }
     const myUpcoming = userId
       ? await Event.find(myUpcomingFilter)

@@ -960,3 +960,144 @@ export const sendPayoutSentEmail = async (
     return { success: false };
   }
 };
+
+/**
+ * "The event you bought a ticket for was cancelled, here's your refund" email.
+ *
+ * Money mail, so it goes from no-reply with support as Reply-To — a refund is
+ * the single most likely thing someone replies to asking about timing.
+ * `refundAmountText` is preformatted by the caller. Never throws: a mail
+ * failure must not look like a refund failure.
+ */
+export const sendEventCancelledEmail = async (
+  email,
+  { attendeeName, eventTitle, eventDateText, eventLocation, refundAmountText, reason }
+) => {
+  try {
+    const transporter = createTransporter();
+
+    const rows = [
+      ["Event", eventTitle || ""],
+      ...(eventDateText ? [["Was scheduled for", eventDateText]] : []),
+      ...(eventLocation ? [["Location", eventLocation]] : []),
+      ...(refundAmountText ? [["Refund", refundAmountText]] : []),
+    ];
+
+    const mailOptions = {
+      from: FROM_NO_REPLY,
+      replyTo: SUPPORT_EMAIL,
+      to: email,
+      subject: `Cancelled: ${eventTitle}`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+            .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+            .sale-card { background: white; border: 1px solid #e5e7eb; border-radius: 8px; margin: 20px 0; }
+            .sale-card table { width: 100%; border-collapse: collapse; }
+            .note { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 12px 16px; margin: 20px 0; }
+            .footer { text-align: center; margin-top: 20px; color: #6b7280; font-size: 13px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🌙 OurCityvibe</h1>
+            </div>
+            <div class="content">
+              <h2 style="text-align: center;">This event was cancelled</h2>
+              <p>Hello ${attendeeName || "there"},</p>
+              <p>The organizer has cancelled <strong>${eventTitle}</strong>, and your ticket has been refunded in full.</p>
+              <div class="sale-card">
+                <table>${purchaseRowsHtml(rows)}
+                </table>
+              </div>
+              ${reason ? `<div class="note"><strong>From the organizer:</strong> ${reason}</div>` : ""}
+              <p>Refunds go back to the card or account you paid with. Most arrive within a few business days, depending on your bank.</p>
+              <p>Sorry for the disappointment — there's plenty more on.</p>
+              <p>Best regards,<br>The OurCityvibe Team</p>
+            </div>
+            <div class="footer">
+              <p>Questions about your refund? <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></p>
+              <p>© ${new Date().getFullYear()} OurCityvibe. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `This event was cancelled\n\n${rows.map(([label, value]) => `${label}: ${value}`).join("\n")}\n${reason ? `\nFrom the organizer: ${reason}\n` : ""}\nYour ticket has been refunded in full. Refunds go back to the card or account you paid with and usually arrive within a few business days.\n\nQuestions? ${SUPPORT_EMAIL}\n\n— The OurCityvibe Team`,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error(`❌ Error sending cancellation email to ${email}:`, error?.message ?? error);
+    return { success: false };
+  }
+};
+
+/**
+ * Organizer-side confirmation that their cancellation was approved and the
+ * refunds have run. Same money-mail identity as above.
+ */
+export const sendEventCancellationApprovedEmail = async (
+  email,
+  { organizerName, eventTitle, refundedCount, failedCount }
+) => {
+  try {
+    const transporter = createTransporter();
+
+    const mailOptions = {
+      from: FROM_NO_REPLY,
+      replyTo: SUPPORT_EMAIL,
+      to: email,
+      subject: `Cancellation approved — ${eventTitle}`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+            .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+            .note { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 12px 16px; margin: 20px 0; }
+            .footer { text-align: center; margin-top: 20px; color: #6b7280; font-size: 13px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🌙 OurCityvibe</h1>
+            </div>
+            <div class="content">
+              <h2 style="text-align: center;">Your cancellation is approved</h2>
+              <p>Hello ${organizerName || "there"},</p>
+              <p><strong>${eventTitle}</strong> has been cancelled and we've refunded <strong>${refundedCount} ticket${refundedCount === 1 ? "" : "s"}</strong>. Everyone who bought one has been emailed.</p>
+              ${failedCount > 0 ? `<div class="note"><strong>${failedCount} refund${failedCount === 1 ? "" : "s"} couldn't be processed automatically.</strong> Our team is handling those directly — you don't need to do anything.</div>` : ""}
+              <p>Best regards,<br>The OurCityvibe Team</p>
+            </div>
+            <div class="footer">
+              <p>Questions? <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></p>
+              <p>© ${new Date().getFullYear()} OurCityvibe. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `Your cancellation is approved\n\n${eventTitle} has been cancelled and we've refunded ${refundedCount} ticket(s). Everyone who bought one has been emailed.${failedCount > 0 ? `\n\n${failedCount} refund(s) couldn't be processed automatically — our team is handling those directly.` : ""}\n\n— The OurCityvibe Team`,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error(`❌ Error sending cancellation approval email to ${email}:`, error?.message ?? error);
+    return { success: false };
+  }
+};

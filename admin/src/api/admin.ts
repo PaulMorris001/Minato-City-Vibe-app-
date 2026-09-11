@@ -12,6 +12,8 @@ import type {
   VendorType,
   AnalyticsLog,
   AnalyticsSummary,
+  AdminAnnouncement,
+  AnnouncementGroup,
 } from "../types";
 
 export const adminApi = {
@@ -104,6 +106,16 @@ export const adminApi = {
     client
       .post<{ campaign: AdminRaffleCampaign }>(`/admin/raffle/campaigns/${id}/end`, {})
       .then((r) => { bustCache("/admin/raffle"); return r; }),
+  /** Runs the weighted random draw the app's official rules promise entrants. */
+  drawRaffleWinners: (id: string) =>
+    client
+      .post<{
+        campaign: string;
+        totalEntries: number;
+        totalTickets: number;
+        winners: { rank: number; eventId: string; eventTitle: string; username: string | null; tickets: number }[];
+      }>(`/admin/raffle/campaigns/${id}/draw`, {})
+      .then((r) => { bustCache("/admin/raffle"); return r; }),
 
   // Guides
   getGuides: (params?: { search?: string; page?: number; limit?: number }) =>
@@ -169,6 +181,59 @@ export const adminApi = {
     client.patch<{ status: string }>(`/admin/event-edits/${id}/approve`, {}),
   rejectEventEdit: (id: string, reason: string) =>
     client.patch<{ status: string }>(`/admin/event-edits/${id}/reject`, { reason }),
+
+  // Event Cancellation Queue — approving is what actually refunds the buyers
+  getEventCancellations: (params?: { status?: string; page?: number; limit?: number }) =>
+    client.get<{ events: any[]; total: number; page: number; limit: number }>(
+      "/admin/event-cancellations",
+      { params }
+    ),
+  approveEventCancellation: (id: string) =>
+    client.patch<{ status: string; refunded: number; failed: number; failures: any[] }>(
+      `/admin/event-cancellations/${id}/approve`,
+      {}
+    ),
+  rejectEventCancellation: (id: string, reason: string) =>
+    client.patch<{ status: string }>(`/admin/event-cancellations/${id}/reject`, { reason }),
+
+  // Announcements — broadcast to the user base
+  getAnnouncements: () =>
+    client.get<{ announcements: AdminAnnouncement[] }>("/admin/announcements"),
+  getAnnouncementGroups: () =>
+    client.get<{ groups: AnnouncementGroup[] }>("/admin/announcement-groups"),
+  previewAnnouncementAudience: (data: {
+    audience: "all" | "city" | "targeted";
+    city?: string;
+    targets?: {
+      countries: string[];
+      states: { country: string; state: string }[];
+      cities: { country: string; state: string; city: string }[];
+      userIds: string[];
+      groupIds: string[];
+    };
+  }) =>
+    client.post<{ recipientCount: number; pushedCount: number; summary: string }>(
+      "/admin/announcements/preview",
+      data
+    ),
+  sendAnnouncement: (data: {
+    title: string;
+    body: string;
+    audience: "all" | "city" | "targeted";
+    city?: string;
+    targets?: {
+      countries: string[];
+      states: { country: string; state: string }[];
+      cities: { country: string; state: string; city: string }[];
+      userIds: string[];
+      groupIds: string[];
+    };
+    deepLink?: string;
+  }) =>
+    client.post<{ message: string; announcement: AdminAnnouncement }>(
+      "/admin/announcements",
+      data
+    ),
 
   // Payout Approval Queue — release held vendor funds
   getPayouts: (params?: { status?: string; page?: number; limit?: number }) =>

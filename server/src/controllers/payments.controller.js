@@ -42,6 +42,7 @@ import {
   applyRedemptionByReference,
 } from "../services/payments/discount.service.js";
 import { findEventByAnyId } from "../utils/resolveEvent.js";
+import { ticketSalesClosedReason } from "../utils/eventLifecycle.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -101,6 +102,30 @@ export async function ticketsRemaining(event, tier) {
 }
 
 /**
+ * Turn a closed-sales reason into the response the buyer should see. Returns
+ * null when sales are open.
+ *
+ * Both purchase paths (single and batch) go through this so a buyer can never
+ * be told "sold out" by one and "on sale" by the other.
+ */
+function ticketSalesRejection(event) {
+  switch (ticketSalesClosedReason(event)) {
+    case "cancelled":
+      return { status: 400, message: "This event was cancelled." };
+    case "cancellation_pending":
+      return { status: 400, message: "Ticket sales are closed while this event is under review." };
+    case "ended":
+      return { status: 400, message: "This event has ended — tickets are no longer on sale." };
+    case "closed_by_organizer":
+      return { status: 400, message: "The organizer has closed ticket sales for this event." };
+    case "not_approved":
+      return { status: 403, message: "Ticket sales are not available for this event." };
+    default:
+      return null;
+  }
+}
+
+/**
  * Load the item + seller for a purchase and run the type-specific validation.
  * Returns the normalized charge ({ seller, amount, currency, item }) or sends an
  * error response and returns null.
@@ -112,8 +137,9 @@ async function resolvePurchase(type, id, userId, res, tierId) {
     if (!event.isPublic || !event.isPaid) {
       return res.status(400).json({ message: "This event does not require payment" }) && null;
     }
-    if (event.approvalStatus !== "approved") {
-      return res.status(403).json({ message: "Ticket sales are not available for this event." }) && null;
+    const rejection = ticketSalesRejection(event);
+    if (rejection) {
+      return res.status(rejection.status).json({ message: rejection.message }) && null;
     }
     const existing = await Ticket.findOne({ event: id, user: userId, isValid: true });
     if (existing) return res.status(400).json({ message: "You already have a ticket for this event" }) && null;
@@ -819,8 +845,9 @@ export const initTicketBatch = async (req, res) => {
     if (!event.isPublic || !event.isPaid) {
       return res.status(400).json({ message: "This event does not require payment" });
     }
-    if (event.approvalStatus !== "approved") {
-      return res.status(403).json({ message: "Ticket sales are not available for this event." });
+    const rejection = ticketSalesRejection(event);
+    if (rejection) {
+      return res.status(rejection.status).json({ message: rejection.message });
     }
     const seller = event.createdBy;
     if (!seller) return res.status(400).json({ message: "Seller not found" });

@@ -7,6 +7,7 @@ import {
   getEventByShareToken,
   getEventQr,
   updateEvent,
+  setTicketSales,
   deleteEvent,
   inviteUserByUsername,
   requestToJoinEvent,
@@ -57,6 +58,10 @@ router.post("/events/:eventId/join", authenticate, joinFreePublicEvent);
 
 // Get ticket sales for an event (organizer only)
 router.get("/events/:eventId/tickets", authenticate, getEventTicketSales);
+
+// Organizer's stop/resume switch for ticket sales. Above "/events/:eventId"
+// like every other specific path here.
+router.patch("/events/:eventId/ticket-sales", authenticate, setTicketSales);
 
 // Discount codes for an event (organizer only) — admins create the codes;
 // the creator can view them and toggle their own disable flag.

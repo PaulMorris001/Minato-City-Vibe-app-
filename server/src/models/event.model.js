@@ -4,7 +4,12 @@ import { slugify, generateUniqueSlug } from "../utils/slug.js";
 
 const eventSchema = mongoose.Schema({
   title: { type: String, required: true },
+  // Start of the event.
   date: { type: Date, required: true },
+  // Optional end. When unset the event is a single moment: `date` is the only
+  // date it has, and it counts as over a day later (see utils/eventLifecycle.js).
+  // Organizers routinely sell at the door, so the grace is deliberate.
+  endDate: { type: Date, default: null },
   location: { type: String, required: true },
   // Precise street address / venue so attendees know exactly where to go
   address: { type: String, default: "" },
@@ -196,11 +201,42 @@ const eventSchema = mongoose.Schema({
   // at creation time; surfaced to admins in the approval queue.
   venueProofImage: { type: String, default: "" },
 
+  // Organizer's manual stop switch for ticket sales. Distinct from cancelling:
+  // it stops NEW sales, refunds nothing, and can be flipped back on.
+  ticketSalesClosedAt: { type: Date, default: null },
+  ticketSalesClosedBy: { type: mongoose.Schema.Types.ObjectId, ref: "user" },
+
   // Event cancellation tracking — set when the organizer (or admin) cancels.
   // Triggers automatic refunds for all valid tickets.
   cancelledAt: { type: Date },
   cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: "user" },
   cancellationReason: { type: String },
+
+  // A cancellation the organizer asked for while tickets were outstanding,
+  // held for admin review. Refunding real buyers is a decision someone signs
+  // off on, not a one-tap action — so the live event keeps its state (minus
+  // ticket sales, which close on request) until an admin approves and the
+  // refunds run. Shape mirrors `pendingEdits`, including `reviewedBy` being
+  // the admin USERNAME string: the admin JWT carries no user id.
+  cancellationRequest: {
+    status: {
+      type: String,
+      enum: ["none", "pending", "approved", "rejected"],
+      default: "none",
+    },
+    reason: { type: String },
+    requestedAt: { type: Date },
+    requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: "user" },
+    // Outstanding refundable tickets when the request was made — what the
+    // reviewer is actually deciding about.
+    ticketsAtRequest: { type: Number },
+    // True when the request itself closed ticket sales, so a rejection can put
+    // them back exactly as the organizer had them.
+    closedSalesOnRequest: { type: Boolean, default: false },
+    reviewedAt: { type: Date },
+    reviewedBy: { type: String },
+    rejectReason: { type: String },
+  },
 
   // Delayed-payout tracking. For paid events we charge the platform account
   // first and transfer to the seller's Connect account `payoutDelayHours`
