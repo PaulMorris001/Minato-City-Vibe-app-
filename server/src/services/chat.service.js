@@ -6,7 +6,7 @@ import Notification from "../models/notification.model.js";
 import { emitNewMessage, getSocketInstance } from "./socket.service.js";
 import { uploadBase64Image, deleteImage } from "./image.service.js";
 import { isVideoUrl } from "../config/cloudinary.js";
-import { sendPushNotification } from "./notification.service.js";
+import { sendPushNotification, notifyUser } from "./notification.service.js";
 import { areMutualFollows } from "../utils/followCheck.js";
 import { involvesSupport, withSupportMarkers } from "../utils/supportAccount.js";
 
@@ -346,34 +346,53 @@ class ChatService {
     const mentionedIds = new Set(mentions.map((id) => id.toString()));
 
     for (const participantId of chat.participants) {
-      if (participantId.toString() === senderId.toString()) continue;
-      const recipient = await User.findById(participantId).select("fcmToken");
-      if (!recipient?.fcmToken) continue;
+      const participantIdStr = participantId.toString();
+      if (participantIdStr === senderId.toString()) continue;
+      // Muting a thread has to actually mute it — this loop used to ignore
+      // isMuted entirely, so the setting did nothing.
+      if (chat.isMuted?.get(participantIdStr)) continue;
 
       let body;
       if (mentionsAll) {
         body = `${senderName} mentioned all: ${rawContent}`;
-      } else if (mentionedIds.has(participantId.toString())) {
+      } else if (mentionedIds.has(participantIdStr)) {
         body = `${senderName} mentioned you: ${rawContent}`;
       } else {
         body = isGroup ? `${senderName}: ${rawContent}` : rawContent;
       }
 
+      // Which inbox this thread belongs to for the recipient, so the app can
+      // open the right account context from a notification tap.
+      const chatScope =
+        chat.context === "vendor" && chat.vendorParticipant?.toString() === participantIdStr
+          ? "vendor"
+          : "client";
+
+      // Support threads also get a durable in-app Notification. Ordinary chat
+      // pushes are deliberately push-only (the inbox is their own surface), but
+      // that leaves NO trace when a push is missed — and a support reply the
+      // user never sees is the one case where that actually costs them. Scoped
+      // to support so normal DMs don't duplicate the whole inbox into the
+      // notifications list.
+      if (involvesSupport(senderId, participantId)) {
+        await notifyUser(participantId, {
+          type: "support_message",
+          title: notificationTitle,
+          body,
+          data: { chatId: chatId.toString(), chatScope },
+        });
+        continue;
+      }
+
+      const recipient = await User.findById(participantId).select("fcmToken");
+      if (!recipient?.fcmToken) continue;
+
       await sendPushNotification(
         recipient.fcmToken,
         notificationTitle,
         body,
-        {
-          type: "new_message",
-          chatId: chatId.toString(),
-          // Which inbox this thread belongs to for the recipient, so the app
-          // can open the right account context from a notification tap.
-          chatScope:
-            chat.context === "vendor" &&
-            chat.vendorParticipant?.toString() === participantId.toString()
-              ? "vendor"
-              : "client"
-        }
+        { type: "new_message", chatId: chatId.toString(), chatScope },
+        { userId: participantId }
       );
     }
 
@@ -948,7 +967,8 @@ class ChatService {
           target.fcmToken,
           "Group Invitation",
           `${admin?.username || "Someone"} invited you to join "${chat.name}"`,
-          { type: "group_invite", chatId: chat._id.toString() }
+          { type: "group_invite", chatId: chat._id.toString() },
+          { userId: target._id }
         );
       }
     }

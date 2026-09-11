@@ -12,7 +12,18 @@ import Notification from "../models/notification.model.js";
 import Report from "../models/report.model.js";
 import Message from "../models/message.model.js";
 import chatService from "../services/chat.service.js";
-import { sendPushNotification } from "../services/notification.service.js";
+import { sendPushNotification, notifyUser } from "../services/notification.service.js";
+import {
+  refundAllEventTickets,
+  outstandingTicketFilter,
+} from "./stripe.controller.js";
+import Ticket from "../models/ticket.model.js";
+import {
+  sendEventCancelledEmail,
+  sendEventCancellationApprovedEmail,
+} from "../services/email.service.js";
+import { formatAmountText } from "../services/payments/fulfillment.js";
+import { invalidateCachePattern } from "../utils/cache.js";
 import { markVerified } from "../services/verification.service.js";
 import { getSocketInstance } from "../services/socket.service.js";
 import {
@@ -475,9 +486,115 @@ export async function endRaffleCampaign(req, res) {
   }
 }
 
-// Manual by design — "Winners are selected randomly from eligible entries by
-// admin" per the campaign rules, not an automated draw. Set rank to null to
-// undo a pick.
+/**
+ * POST /admin/raffle/campaigns/:id/draw
+ *
+ * Run the weighted random draw for a campaign and record the winners.
+ *
+ * The official rules published in the app (mobile/app/birthday-raffle/rules.tsx)
+ * promise entrants a random draw in which each qualifying event holds one entry
+ * plus one per verified RSVP. That promise is only true if the draw actually
+ * happens here — an admin eyeballing the entry table and picking the biggest
+ * numbers is a different promotion from the one entrants agreed to. This is the
+ * implementation of that rule, which is why the weighting below mirrors
+ * `scoreEntry` in birthdayRaffle.controller.js exactly.
+ *
+ * Refuses to run while the campaign is still open: drawing early would exclude
+ * entries that rule 5 says are still eligible.
+ */
+export async function drawRaffleWinners(req, res) {
+  try {
+    const { id } = req.params;
+    const campaign = await RaffleCampaign.findById(id);
+    if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+
+    if (Date.now() <= new Date(campaign.endDate).getTime()) {
+      return res.status(400).json({
+        message: "This campaign is still open — the draw can only run once it has closed.",
+      });
+    }
+
+    const entries = await Event.find({
+      isBirthdayRaffle: true,
+      createdAt: { $gte: campaign.startDate, $lte: campaign.endDate },
+    }).populate("createdBy", "_id username");
+    if (entries.length === 0) {
+      return res.status(400).json({ message: "No entries in this campaign" });
+    }
+
+    // One ticket per entry, plus one per verified RSVP — the same count the
+    // entrant was shown as "entries in the draw".
+    const tickets = [];
+    for (const entry of entries) {
+      const count = 1 + entry.rsvpUsers.length;
+      for (let i = 0; i < count; i += 1) tickets.push(entry);
+    }
+
+    const prizeCount = campaignPrizes(campaign).length;
+    const winners = [];
+    const wonBy = new Set(); // one prize per entrant, per rule 8
+    let pool = tickets;
+
+    for (let rank = 1; rank <= prizeCount && pool.length > 0; rank += 1) {
+      // crypto.randomInt is uniform over the range; Math.random is not, and a
+      // draw that decides real money should not be the place we accept bias.
+      const picked = pool[crypto.randomInt(pool.length)];
+      winners.push({ rank, event: picked });
+      wonBy.add(String(picked.createdBy?._id ?? picked.createdBy));
+      // Remove every ticket held by that entrant so nobody wins twice.
+      pool = pool.filter(
+        (t) => !wonBy.has(String(t.createdBy?._id ?? t.createdBy))
+      );
+    }
+
+    // Clear this campaign's previous result before writing the new one, so a
+    // re-draw can't leave a stale rank behind.
+    const window = { createdAt: { $gte: campaign.startDate, $lte: campaign.endDate } };
+    await Event.updateMany(
+      { isBirthdayRaffle: true, raffleWinnerRank: { $ne: null }, ...window },
+      { $set: { raffleWinnerRank: null } }
+    );
+    for (const { rank, event } of winners) {
+      await Event.updateOne({ _id: event._id }, { $set: { raffleWinnerRank: rank } });
+    }
+
+    // Tell the winners. Best-effort: a notification failure must not undo a draw.
+    for (const { rank, event } of winners) {
+      notifyUser(event.createdBy?._id, {
+        type: "raffle_winner",
+        title: `You won the Birthday Raffle! 🎉`,
+        body: `"${event.title}" was drawn at position ${rank}. Check your raffle status for what happens next.`,
+        data: { eventId: String(event._id) },
+      });
+    }
+
+    console.log(
+      `[Raffle] Drew ${winners.length} winner(s) for "${campaign.name}" from ${tickets.length} entries across ${entries.length} events`
+    );
+
+    res.json({
+      campaign: campaign.name,
+      totalEntries: entries.length,
+      totalTickets: tickets.length,
+      winners: winners.map(({ rank, event }) => ({
+        rank,
+        eventId: event._id,
+        eventTitle: event.title,
+        username: event.createdBy?.username ?? null,
+        tickets: 1 + event.rsvpUsers.length,
+      })),
+    });
+  } catch (error) {
+    console.error("drawRaffleWinners:", error);
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// Manual override for a single place — used to correct a draw (a winner turns
+// out to be ineligible, or forfeits under rule 10), not to pick winners in the
+// first place. The draw itself is drawRaffleWinners above; the published rules
+// promise entrants a random draw, so hand-picking a fresh result would not
+// match what they agreed to. Set rank to null to undo a pick.
 export async function setRaffleWinner(req, res) {
   try {
     const { id } = req.params;
@@ -1174,6 +1291,217 @@ export async function getReportTarget(req, res) {
     res.json({ report, target });
   } catch (error) {
     console.error("getReportTarget error:", error);
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// ─── Event cancellation review ───────────────────────────────────────────────
+//
+// An organizer with tickets outstanding can't cancel outright — the request
+// lands here (see cancelEventByOrganizer) and an admin decides. Approving is
+// what actually moves the money back to buyers.
+
+/**
+ * GET /admin/event-cancellations?status=pending&page=&limit=
+ * The review queue. Mirrors getPendingEventEdits.
+ */
+export async function getEventCancellations(req, res) {
+  try {
+    const { status = "pending", page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+    const query = { "cancellationRequest.status": status };
+
+    const [events, total] = await Promise.all([
+      Event.find(query)
+        .sort({ "cancellationRequest.requestedAt": -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .populate("createdBy", "username email profilePicture verified"),
+      Event.countDocuments(query),
+    ]);
+
+    // The reviewer is deciding about money, so give them the live numbers
+    // rather than the count captured when the request was filed — tickets can
+    // have been refunded individually since.
+    const enriched = await Promise.all(
+      events.map(async (e) => {
+        const obj = e.toObject();
+        const tickets = await Ticket.find(outstandingTicketFilter(e._id))
+          .select("ticketPrice")
+          .lean();
+        const gross = tickets.reduce((sum, t) => sum + (t.ticketPrice || 0), 0);
+        return {
+          _id: obj._id,
+          title: obj.title,
+          date: obj.date,
+          endDate: obj.endDate,
+          location: obj.location,
+          currency: obj.currency,
+          createdBy: obj.createdBy,
+          cancellationRequest: obj.cancellationRequest,
+          outstandingTickets: tickets.length,
+          refundTotalText: formatAmountText(gross, obj.currency),
+        };
+      })
+    );
+
+    res.json({ events: enriched, total, page: Number(page), limit: Number(limit) });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+/**
+ * PATCH /admin/event-cancellations/:id/approve
+ *
+ * Runs the refunds, then cancels the event. Partial failure is expected (a
+ * transferred ticket, a dead provider charge) and is reported rather than
+ * rolled back — a buyer whose refund failed must NOT be emailed a confirmation.
+ */
+export async function approveEventCancellation(req, res) {
+  try {
+    const { id } = req.params;
+    const event = await Event.findById(id).populate(
+      "createdBy",
+      "_id fcmToken username email"
+    );
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    if (event.cancellationRequest?.status !== "pending") {
+      return res.status(400).json({ message: "No pending cancellation request for this event" });
+    }
+
+    const { refunded, failed, refundedTickets, failures } = await refundAllEventTickets(event);
+
+    event.cancelledAt = new Date();
+    event.cancelledBy = event.cancellationRequest.requestedBy;
+    event.cancellationReason = event.cancellationRequest.reason;
+    event.isActive = false;
+    event.payoutStatus = "released"; // nothing left to release
+    event.cancellationRequest.status = "approved";
+    event.cancellationRequest.reviewedAt = new Date();
+    event.cancellationRequest.reviewedBy = req.user?.username || "admin";
+    await event.save();
+
+    invalidateCachePattern(`event_detail_${event._id}_`);
+    invalidateCachePattern("public_events_");
+    invalidateCachePattern("event_highlights_");
+
+    const eventDateText = new Date(event.date).toLocaleString("en-US", {
+      dateStyle: "full",
+      timeStyle: "short",
+    });
+
+    // Tell the people whose money actually moved. Mail is best-effort and
+    // bounded — a slow SMTP server must not hold the admin's request open, and
+    // a failure here can't undo a completed refund.
+    notifyRefundedHolders(refundedTickets, event, eventDateText).catch((err) =>
+      console.error("approveEventCancellation: holder notifications failed:", err)
+    );
+
+    if (event.createdBy?.email) {
+      sendEventCancellationApprovedEmail(event.createdBy.email, {
+        organizerName: event.createdBy.username,
+        eventTitle: event.title,
+        refundedCount: refunded,
+        failedCount: failed,
+      }).catch(() => {});
+    }
+    notifyUser(event.createdBy?._id, {
+      type: "event_cancellation_approved",
+      title: "Your event was cancelled",
+      body: `"${event.title}" is cancelled and ${refunded} ticket${refunded === 1 ? "" : "s"} refunded.`,
+      data: { eventId: String(event._id) },
+    });
+
+    res.json({ status: "approved", refunded, failed, failures });
+  } catch (error) {
+    console.error("approveEventCancellation:", error);
+    res.status(500).json({ message: error.message });
+  }
+}
+
+/** Batch size for holder mail — same bound the engagement push job uses. */
+const HOLDER_NOTIFY_BATCH = 25;
+
+/**
+ * In-app notification + refund email for every holder whose refund succeeded.
+ * `recipientEmail` is the address the QR pass went to, which is the right one
+ * for gifts and guest checkout; the account email is the fallback.
+ */
+async function notifyRefundedHolders(tickets, event, eventDateText) {
+  const holders = await User.find({ _id: { $in: tickets.map((t) => t.user) } })
+    .select("_id username email")
+    .lean();
+  const byId = new Map(holders.map((u) => [String(u._id), u]));
+
+  const jobs = tickets.map((ticket) => async () => {
+    const holder = byId.get(String(ticket.user));
+    const email = ticket.recipientEmail || holder?.email;
+
+    await notifyUser(ticket.user, {
+      type: "event_cancelled",
+      title: "Event cancelled — you've been refunded",
+      body: `"${event.title}" was cancelled. Your ticket has been refunded in full.`,
+      data: { eventId: String(event._id) },
+    });
+
+    if (!email) return;
+    await sendEventCancelledEmail(email, {
+      attendeeName: holder?.username,
+      eventTitle: event.title,
+      eventDateText,
+      eventLocation: event.location,
+      refundAmountText: formatAmountText(ticket.ticketPrice, event.currency),
+      reason: event.cancellationReason,
+    });
+  });
+
+  for (let i = 0; i < jobs.length; i += HOLDER_NOTIFY_BATCH) {
+    await Promise.allSettled(jobs.slice(i, i + HOLDER_NOTIFY_BATCH).map((run) => run()));
+  }
+}
+
+/**
+ * PATCH /admin/event-cancellations/:id/reject
+ *
+ * Leaves the event exactly as it was, including reopening ticket sales if the
+ * request is what closed them.
+ */
+export async function rejectEventCancellation(req, res) {
+  try {
+    const { id } = req.params;
+    const { reason = "" } = req.body ?? {};
+    const event = await Event.findById(id).populate("createdBy", "_id fcmToken username");
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    if (event.cancellationRequest?.status !== "pending") {
+      return res.status(400).json({ message: "No pending cancellation request for this event" });
+    }
+
+    if (event.cancellationRequest.closedSalesOnRequest) {
+      event.ticketSalesClosedAt = null;
+      event.ticketSalesClosedBy = undefined;
+    }
+    event.cancellationRequest.status = "rejected";
+    event.cancellationRequest.reviewedAt = new Date();
+    event.cancellationRequest.reviewedBy = req.user?.username || "admin";
+    event.cancellationRequest.rejectReason = reason;
+    await event.save();
+
+    invalidateCachePattern(`event_detail_${event._id}_`);
+
+    const body = reason
+      ? `We couldn't cancel "${event.title}". Reason: ${reason}`
+      : `We couldn't cancel "${event.title}". Contact support if you need to discuss it.`;
+    notifyUser(event.createdBy?._id, {
+      type: "event_cancellation_rejected",
+      title: "Cancellation request declined",
+      body,
+      data: { eventId: String(event._id) },
+    });
+
+    res.json({ status: "rejected" });
+  } catch (error) {
+    console.error("rejectEventCancellation:", error);
     res.status(500).json({ message: error.message });
   }
 }

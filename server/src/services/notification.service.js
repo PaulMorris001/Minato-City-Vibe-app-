@@ -23,10 +23,34 @@ export function getFirebaseApp() {
 }
 
 /**
+ * FCM errors that mean the TOKEN is dead, not that the send failed transiently.
+ * A reinstall, a restored backup or a long-idle install all produce these.
+ *
+ * Deliberately excludes `messaging/invalid-argument`: FCM returns that for a
+ * malformed message payload too, so treating it as a dead token would let one
+ * bad send wipe the push token of every recipient — and they'd only get pushes
+ * back after a cold launch each. A live token is never worth that gamble.
+ */
+const DEAD_TOKEN_CODES = new Set([
+  "messaging/registration-token-not-registered",
+  "messaging/invalid-registration-token",
+]);
+
+/**
  * Send a push notification via Firebase Cloud Messaging.
  * Silently no-ops if the token is missing.
+ *
+ * @param {string} pushToken
+ * @param {string} title
+ * @param {string} body
+ * @param {object} [data]    extra payload; values are stringified for FCM
+ * @param {object} [opts]
+ * @param {string} [opts.userId]  owner of the token. When given, a token FCM
+ *   rejects as dead is cleared, so we stop pushing into the void and the next
+ *   app launch re-registers a live one. Without it the dead token sticks around
+ *   forever and the user silently receives nothing.
  */
-export async function sendPushNotification(pushToken, title, body, data = {}) {
+export async function sendPushNotification(pushToken, title, body, data = {}, { userId } = {}) {
   console.log(`[Push] Attempting to send: "${title}" → token: ${pushToken?.slice(0, 30)}...`);
 
   if (!pushToken) {
@@ -50,6 +74,16 @@ export async function sendPushNotification(pushToken, title, body, data = {}) {
     console.log("[Push] Sent successfully, message id:", response);
   } catch (err) {
     console.error("[Push] Send error:", err?.message ?? err);
+    if (userId && DEAD_TOKEN_CODES.has(err?.errorInfo?.code || err?.code)) {
+      try {
+        // Only clear the token we just tried: the user may have registered a
+        // newer one from another device between the read and this failure.
+        await User.updateOne({ _id: userId, fcmToken: pushToken }, { fcmToken: null });
+        console.log(`[Push] Cleared dead token for user ${userId}`);
+      } catch (clearErr) {
+        console.error("[Push] Failed to clear dead token:", clearErr?.message ?? clearErr);
+      }
+    }
   }
 }
 
@@ -104,7 +138,7 @@ export async function notifyUser(userId, { type, title, body, data = {}, push = 
   if (push) {
     try {
       const recipient = await User.findById(userId).select("fcmToken");
-      await sendPushNotification(recipient?.fcmToken, title, body, { type, ...data });
+      await sendPushNotification(recipient?.fcmToken, title, body, { type, ...data }, { userId });
     } catch (err) {
       console.error(`[notifyUser] Push failed for "${type}" → ${userId}:`, err?.message ?? err);
     }

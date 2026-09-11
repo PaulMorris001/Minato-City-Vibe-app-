@@ -101,6 +101,9 @@ export default function Raffle() {
     }
   };
 
+  const [drawConfirm, setDrawConfirm] = useState(false);
+  const [drawResult, setDrawResult] = useState<string | null>(null);
+
   const endCampaign = async () => {
     if (!campaign?._id) return;
     setWorking(true);
@@ -108,6 +111,27 @@ export default function Raffle() {
       await adminApi.endRaffleCampaign(campaign._id);
       setEndConfirm(false);
       load({ silent: true });
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const runDraw = async () => {
+    if (!campaign?._id) return;
+    setWorking(true);
+    try {
+      const res = await adminApi.drawRaffleWinners(campaign._id);
+      const lines = res.data.winners
+        .map((w) => `#${w.rank} — ${w.eventTitle}${w.username ? ` (${w.username})` : ""}, ${w.tickets} entries`)
+        .join("\n");
+      setDrawResult(
+        `Drew ${res.data.winners.length} winner(s) from ${res.data.totalTickets} entries across ${res.data.totalEntries} events:\n${lines}`
+      );
+      setDrawConfirm(false);
+      load({ silent: true });
+    } catch (err: any) {
+      setDrawResult(err?.response?.data?.message || "The draw could not be run.");
+      setDrawConfirm(false);
     } finally {
       setWorking(false);
     }
@@ -295,6 +319,36 @@ export default function Raffle() {
           </div>
         )}
 
+        {/* The published official rules promise entrants a random draw weighted
+            by their entry count, so the draw is run here rather than by picking
+            winners out of the table by hand. */}
+        {ended && !loading && entries.length > 0 && campaign?._id && (
+          <div style={styles.notice}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <span style={{ flex: 1, minWidth: 240 }}>
+                This campaign has closed. Running the draw picks {prizeCount} winner
+                {prizeCount === 1 ? "" : "s"} at random, weighted by each entry's ticket count
+                (1 per event + 1 per verified RSVP), with one prize per entrant. It replaces any
+                existing result and notifies the winners.
+              </span>
+              <Button variant="primary" size="sm" onClick={() => setDrawConfirm(true)}>
+                {totals.winners > 0 ? "Re-run draw" : "Draw winners"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {drawResult && (
+          <div style={{ ...styles.notice, whiteSpace: "pre-line" }}>
+            {drawResult}
+            <div style={{ marginTop: 8 }}>
+              <Button variant="secondary" size="sm" onClick={() => setDrawResult(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
+
         <Table
           columns={columns}
           data={entries}
@@ -360,6 +414,29 @@ export default function Raffle() {
         <p style={{ color: colors.textMuted, fontSize: 14, lineHeight: 1.5 }}>
           New birthday events can no longer enter until you create the next campaign. Entries
           and any winners already picked stay as they are.
+        </p>
+      </Modal>
+
+      <Modal
+        open={drawConfirm}
+        title="Run the random draw?"
+        onClose={() => setDrawConfirm(false)}
+        footer={
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Button variant="secondary" size="sm" onClick={() => setDrawConfirm(false)} disabled={working}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" onClick={runDraw} loading={working}>
+              Run draw
+            </Button>
+          </div>
+        }
+      >
+        <p style={{ color: colors.textMuted, fontSize: 14, lineHeight: 1.5 }}>
+          This selects {prizeCount} winner{prizeCount === 1 ? "" : "s"} at random from{" "}
+          {entries.length} entr{entries.length === 1 ? "y" : "ies"}, weighted by ticket count,
+          and notifies them in the app. Any winners already recorded for this campaign are
+          replaced.
         </p>
       </Modal>
     </>

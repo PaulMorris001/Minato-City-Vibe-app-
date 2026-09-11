@@ -14,6 +14,8 @@ import Analytics from "./pages/Analytics";
 import Verifications from "./pages/Verifications";
 import PaidEvents from "./pages/PaidEvents";
 import EventEdits from "./pages/EventEdits";
+import EventCancellations from "./pages/EventCancellations";
+import Announcements from "./pages/Announcements";
 import Payouts from "./pages/Payouts";
 import Reports from "./pages/Reports";
 import DiscountCodes from "./pages/DiscountCodes";
@@ -47,6 +49,8 @@ function AppRoutes() {
                 <Route path="/verifications" element={<Verifications />} />
                 <Route path="/paid-events" element={<PaidEvents />} />
                 <Route path="/event-edits" element={<EventEdits />} />
+                <Route path="/event-cancellations" element={<EventCancellations />} />
+                <Route path="/announcements" element={<Announcements />} />
                 <Route path="/payouts" element={<Payouts />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/discount-codes" element={<DiscountCodes />} />

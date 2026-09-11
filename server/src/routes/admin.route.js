@@ -1,5 +1,11 @@
 import express from "express";
 import { authenticateAdmin } from "../middleware/admin.middleware.js";
+import {
+  getAnnouncements,
+  getAnnouncementGroups,
+  previewAudience,
+  sendAnnouncement,
+} from "../controllers/announcement.controller.js";
 import { adminLoginLimiter } from "../middleware/rateLimit.middleware.js";
 import {
   adminLogin,
@@ -23,6 +29,7 @@ import {
   createRaffleCampaign,
   updateRaffleCampaign,
   endRaffleCampaign,
+  drawRaffleWinners,
   setRaffleWinner,
   getGuides,
   toggleGuideActive,
@@ -41,6 +48,9 @@ import {
   getPendingEventEdits,
   approveEventEdit,
   rejectEventEdit,
+  getEventCancellations,
+  approveEventCancellation,
+  rejectEventCancellation,
 } from "../controllers/admin.controller.js";
 import {
   getPayouts,
@@ -90,6 +100,8 @@ router.get("/admin/raffle/campaigns", authenticateAdmin, getRaffleCampaigns);
 router.post("/admin/raffle/campaigns", authenticateAdmin, createRaffleCampaign);
 router.patch("/admin/raffle/campaigns/:id", authenticateAdmin, updateRaffleCampaign);
 router.post("/admin/raffle/campaigns/:id/end", authenticateAdmin, endRaffleCampaign);
+// The weighted random draw the published official rules promise entrants.
+router.post("/admin/raffle/campaigns/:id/draw", authenticateAdmin, drawRaffleWinners);
 // Birthday Raffle — entries + winner selection
 router.get("/admin/raffle/entries", authenticateAdmin, getRaffleEntries);
 router.patch("/admin/raffle/:id/winner", authenticateAdmin, setRaffleWinner);
@@ -122,6 +134,19 @@ router.patch("/admin/paid-events/:id/reject", authenticateAdmin, rejectPaidEvent
 router.get("/admin/event-edits", authenticateAdmin, getPendingEventEdits);
 router.patch("/admin/event-edits/:id/approve", authenticateAdmin, approveEventEdit);
 router.patch("/admin/event-edits/:id/reject", authenticateAdmin, rejectEventEdit);
+
+// Event cancellation review — approving is what runs the refunds.
+router.get("/admin/event-cancellations", authenticateAdmin, getEventCancellations);
+router.patch("/admin/event-cancellations/:id/approve", authenticateAdmin, approveEventCancellation);
+router.patch("/admin/event-cancellations/:id/reject", authenticateAdmin, rejectEventCancellation);
+
+// Broadcasts to the user base. Fans out through notifyUser so recipients get
+// an in-app record too, not just a push.
+router.get("/admin/announcements", authenticateAdmin, getAnnouncements);
+router.get("/admin/announcement-groups", authenticateAdmin, getAnnouncementGroups);
+// No side effects — lets the console show the real reach before it sends.
+router.post("/admin/announcements/preview", authenticateAdmin, previewAudience);
+router.post("/admin/announcements", authenticateAdmin, sendAnnouncement);
 
 // Event discount codes (admin-created; creators can only toggle theirs)
 router.get("/admin/discount-codes", authenticateAdmin, getDiscountCodes);

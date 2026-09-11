@@ -124,6 +124,8 @@ interface Event {
   shareToken: string;
   isPublic: boolean;
   isPaid: boolean;
+  /** Optional end. Absent means the event is a single date. */
+  endDate?: string | null;
   ticketPrice?: number;
   ticketTiers?: { _id: string; name: string; price: number }[];
   currency?: string;
@@ -137,6 +139,30 @@ interface Event {
   showAttendance?: boolean;
   /** Server-computed, sent to everyone — the CTA needs it without the numbers. */
   soldOut?: boolean;
+  /**
+   * Availability, not capacity: the event ended, the organizer paused sales, a
+   * cancellation is under review, or it isn't approved. Like `soldOut`, both
+   * reach every viewer regardless of `showAttendance`.
+   */
+  salesClosed?: boolean;
+  salesClosedReason?:
+    | "cancelled"
+    | "cancellation_pending"
+    | "ended"
+    | "closed_by_organizer"
+    | "not_approved"
+    | null;
+  hasEnded?: boolean;
+  /** Set while the organizer has sales manually stopped. Organizer-facing. */
+  ticketSalesClosedAt?: string | null;
+  /** Organizer-only: a cancellation request waiting on (or refused by) admin. */
+  cancellationRequest?: {
+    status: "none" | "pending" | "approved" | "rejected";
+    reason?: string;
+    requestedAt?: string;
+    ticketsAtRequest?: number;
+    rejectReason?: string;
+  };
   ticketingReady?: boolean;
   userHasPurchased?: boolean;
   approvalStatus?: "pending" | "approved" | "rejected";
@@ -294,6 +320,26 @@ function GlassRoundIcon({
   return <GlassIconButton icon={icon} onPress={onPress} size={size} overMedia />;
 }
 
+/**
+ * Buyer-facing copy per `salesClosedReason` from the API. Keyed by the server's
+ * reason string so the client never re-derives why sales are shut.
+ */
+const CTA_LABELS: Record<string, string> = {
+  cancelled: "Event cancelled",
+  cancellation_pending: "Sales paused",
+  ended: "Event ended",
+  closed_by_organizer: "Sales closed",
+  not_approved: "Not on sale yet",
+};
+
+const CHIP_LABELS: Record<string, string> = {
+  cancelled: "CANCELLED",
+  cancellation_pending: "SALES PAUSED",
+  ended: "ENDED",
+  closed_by_organizer: "SALES CLOSED",
+  not_approved: "NOT ON SALE",
+};
+
 export default function EventDetailsPage() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -348,6 +394,8 @@ export default function EventDetailsPage() {
   const [discountCodes, setDiscountCodes] = useState<DiscountCode[]>([]);
   const [togglingCodeId, setTogglingCodeId] = useState<string | null>(null);
   const [refunding, setRefunding] = useState(false);
+  const [togglingSales, setTogglingSales] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
   const [shareSheetVisible, setShareSheetVisible] = useState(false);
   const [qrVisible, setQrVisible] = useState(false);
@@ -756,6 +804,107 @@ export default function EventDetailsPage() {
     }
   };
 
+  /**
+   * Organizer's stop/resume switch for ticket sales. Stopping refunds nothing
+   * and is reversible — that's the whole point of it existing separately from
+   * cancelling.
+   */
+  const handleToggleTicketSales = async (close: boolean) => {
+    if (!event) return;
+    const run = async () => {
+      setTogglingSales(true);
+      try {
+        const token = await authToken();
+        const res = await fetch(`${BASE_URL}/events/${event._id}/ticket-sales`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ closed: close }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showError(data.message || "Couldn't update ticket sales.");
+          return;
+        }
+        setEvent((prev) =>
+          prev
+            ? {
+                ...prev,
+                ticketSalesClosedAt: data.ticketSalesClosedAt ?? null,
+                salesClosed: data.salesClosed,
+                salesClosedReason: data.salesClosedReason,
+              }
+            : prev
+        );
+        showSuccess(close ? "Ticket sales closed." : "Ticket sales reopened.");
+      } catch {
+        showError("Couldn't update ticket sales.");
+      } finally {
+        setTogglingSales(false);
+      }
+    };
+
+    if (!close) return run();
+    Alert.alert(
+      "Stop ticket sales?",
+      "Nobody new will be able to buy a ticket. Everyone who already has one keeps it, and you can turn sales back on whenever you like.",
+      [
+        { text: "Keep selling", style: "cancel" },
+        { text: "Stop sales", style: "destructive", onPress: run },
+      ]
+    );
+  };
+
+  /**
+   * Ask to call the event off. With tickets sold this files a request our team
+   * reviews before any money moves; with none it cancels outright. The server
+   * decides which — the copy here just has to match both outcomes.
+   */
+  const handleCancelEvent = () => {
+    if (!event) return;
+    const hasSales = !!event.isPaid && (event.ticketsSold ?? 0) > 0;
+    Alert.alert(
+      "Cancel this event?",
+      hasSales
+        ? "Ticket sales stop right away and our team reviews the cancellation. Once it's approved, everyone who bought a ticket is refunded in full and emailed automatically."
+        : "This takes the event down for everyone. It can't be undone.",
+      [
+        { text: "Keep event", style: "cancel" },
+        {
+          text: hasSales ? "Request cancellation" : "Cancel event",
+          style: "destructive",
+          onPress: async () => {
+            setCancelling(true);
+            try {
+              const token = await authToken();
+              const res = await fetch(`${BASE_URL}/events/${event._id}/cancel`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ reason: "" }),
+              });
+              const data = await res.json();
+              if (!res.ok) {
+                showError(data.message || "Couldn't cancel this event.");
+                return;
+              }
+              showSuccess(data.message);
+              fetchEventDetails();
+            } catch {
+              showError("Couldn't cancel this event.");
+            } finally {
+              setCancelling(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleRefundOwnTicket = async () => {
     if (!event) return;
     if (!requireAuth("refund your ticket")) return;
@@ -1103,6 +1252,11 @@ export default function EventDetailsPage() {
   const isCancelled = !!event.cancelledAt;
   const isPending = event.approvalStatus === "pending";
   const isRejected = event.approvalStatus === "rejected";
+  // Sales can be shut for reasons capacity knows nothing about. The server
+  // names the reason so the CTA can say the true thing.
+  const salesClosed = !!event.salesClosed;
+  const salesClosedReason = event.salesClosedReason ?? null;
+  const cancellationPending = event.cancellationRequest?.status === "pending";
   // The server computes soldOut for everyone; the numbers behind it only reach
   // organizers now, so the local fallback is just for older API responses.
   const ticketsRemaining =
@@ -1237,9 +1391,11 @@ export default function EventDetailsPage() {
                 </Text>
               </View>
             )}
-            {soldOut && (
+            {(soldOut || salesClosed) && (
               <View style={[styles.chip, styles.chipNeutral]}>
-                <Text style={[styles.chipText, { color: colors.textBright }]}>SOLD OUT</Text>
+                <Text style={[styles.chipText, { color: colors.textBright }]}>
+                  {salesClosed ? CHIP_LABELS[salesClosedReason ?? ""] ?? "SALES CLOSED" : "SOLD OUT"}
+                </Text>
               </View>
             )}
           </View>
@@ -1345,6 +1501,30 @@ export default function EventDetailsPage() {
                 <Text style={styles.bannerBody}>
                   Tickets will go on sale automatically once an admin approves. We do
                   this for every organizer's first paid event.
+                </Text>
+              </View>
+            </View>
+          )}
+          {isCreator && cancellationPending && (
+            <View style={styles.bannerPending}>
+              <Ionicons name="time-outline" size={18} color={colors.warning} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bannerTitle}>Cancellation under review</Text>
+                <Text style={styles.bannerBody}>
+                  Ticket sales are paused while our team reviews this. Once it's approved,
+                  everyone who bought a ticket is refunded in full and emailed.
+                </Text>
+              </View>
+            </View>
+          )}
+          {isCreator && event.cancellationRequest?.status === "rejected" && (
+            <View style={styles.bannerRejected}>
+              <Ionicons name="close-circle-outline" size={18} color={colors.error} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bannerTitle}>Cancellation declined</Text>
+                <Text style={styles.bannerBody}>
+                  {event.cancellationRequest.rejectReason ||
+                    "We couldn't cancel this event. Contact support to discuss it."}
                 </Text>
               </View>
             </View>
@@ -1824,6 +2004,59 @@ export default function EventDetailsPage() {
             </GlassCard>
           )}
 
+          {/* Organizer controls: pause selling, or call the event off entirely.
+              Hidden once cancelled — there is nothing left to control. */}
+          {isCreator && !isCancelled && (
+            <GlassCard style={styles.pendingCard}>
+              <Text style={styles.microLabel}>MANAGE</Text>
+
+              {event.isPaid && (
+                <View style={styles.pendingRow}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.manageRowTitle}>Ticket sales</Text>
+                    <Text style={styles.manageRowHint}>
+                      {salesClosedReason === "ended"
+                        ? "This event has ended, so sales are closed."
+                        : cancellationPending
+                          ? "Paused while your cancellation is reviewed."
+                          : event.ticketSalesClosedAt
+                            ? "Closed. Nobody new can buy a ticket."
+                            : "Open. Turn this off to stop selling at any time."}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={!event.ticketSalesClosedAt}
+                    onValueChange={(open) => handleToggleTicketSales(!open)}
+                    disabled={
+                      togglingSales || cancellationPending || salesClosedReason === "ended"
+                    }
+                    trackColor={{ false: colors.borderMuted, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.pendingRow, { borderBottomWidth: 0 }]}
+                activeOpacity={0.7}
+                onPress={handleCancelEvent}
+                disabled={cancelling || cancellationPending}
+              >
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.manageRowTitle, { color: colors.error }]}>
+                    Cancel event
+                  </Text>
+                  <Text style={styles.manageRowHint}>
+                    {cancellationPending
+                      ? "Already requested — waiting on review."
+                      : "Takes it down. Ticket holders are refunded in full."}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={colors.textFaint} />
+              </TouchableOpacity>
+            </GlassCard>
+          )}
+
           {/* Discount codes — admin-issued; the creator can pause a code but
               not create one, and can't re-enable a code an admin turned off. */}
           {isCreator && event.isPaid && (
@@ -2025,6 +2258,8 @@ export default function EventDetailsPage() {
               userIsGoing={userIsGoing}
               userHasTicket={userHasTicket}
               soldOut={soldOut}
+              salesClosed={salesClosed}
+              salesClosedReason={salesClosedReason}
               userIsInvited={userIsInvited}
               userIsPendingInvite={userIsPendingInvite}
               userHasRequested={userHasRequested}
@@ -2562,6 +2797,8 @@ function StickyCTA(props: {
   userIsGoing: boolean;
   userHasTicket: boolean;
   soldOut: boolean;
+  salesClosed: boolean;
+  salesClosedReason: string | null;
   userIsInvited: boolean;
   userIsPendingInvite: boolean;
   userHasRequested: boolean;
@@ -2582,6 +2819,8 @@ function StickyCTA(props: {
     userIsGoing,
     userHasTicket,
     soldOut,
+    salesClosed,
+    salesClosedReason,
     userIsPendingInvite,
     userHasRequested,
     purchasing,
@@ -2596,6 +2835,22 @@ function StickyCTA(props: {
 
   // Pending invite: handled inline above with Accept/Decline; hide sticky.
   if (userIsPendingInvite || isCreator) return null;
+
+  // Sales shut for a reason that isn't capacity — the event ended, the
+  // organizer paused it, it's cancelled or under review. Checked before
+  // sold-out so the buyer sees the reason that actually applies.
+  if (salesClosed && !userHasTicket) {
+    return (
+      <View style={styles.ctaPill}>
+        <PriceBlock event={event} />
+        <View style={[styles.ctaBtn, styles.ctaBtnDisabled]}>
+          <Text style={styles.ctaBtnDisabledText}>
+            {CTA_LABELS[salesClosedReason ?? ""] ?? "Sales closed"}
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   // Sold out — disabled, no shadow.
   if (soldOut && !userHasTicket) {
@@ -3555,6 +3810,18 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.regular,
     fontSize: 12.5,
     lineHeight: 17,
+  },
+  manageRowTitle: {
+    color: c.textBright,
+    fontFamily: Fonts.semiBold,
+    fontSize: 14,
+  },
+  manageRowHint: {
+    color: c.textDim,
+    fontFamily: Fonts.regular,
+    fontSize: 12.5,
+    lineHeight: 17,
+    marginTop: 2,
   },
   sheetGrabber: {
     alignSelf: "center",

@@ -17,6 +17,7 @@ export default function BirthdayRaffleLayout() {
     >
       <Stack.Screen name="index" />
       <Stack.Screen name="status" />
+      <Stack.Screen name="rules" />
     </Stack>
   );
 }
