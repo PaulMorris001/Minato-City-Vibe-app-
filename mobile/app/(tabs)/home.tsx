@@ -34,12 +34,11 @@ import {
   Alert,
   Animated,
   AppState,
-  Easing,
   FlatList,
   Linking,
   Platform,
-  Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -49,10 +48,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { ThemeColors } from "@/constants/theme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
-
-// expo-image doesn't animate transforms on its own; this lets the hero image
-// take a scroll-driven translateY/scale for the parallax.
-const AnimatedImage = Animated.createAnimatedComponent(Image);
 
 function Skeleton({ width, height, borderRadius = 10, style }: { width: number | string; height: number; borderRadius?: number; style?: any }) {
   const { colors } = useTheme();
@@ -80,95 +75,6 @@ function HeroSkeleton() {
     <View style={[styles.heroCard, { overflow: "hidden" }]}>
       <Skeleton width="100%" height={320} borderRadius={24} />
     </View>
-  );
-}
-
-/**
- * Entrance wrapper for a home section: fades and slides up on first mount,
- * staggered by `index` so the feed assembles top-to-bottom rather than all at
- * once. Sections whose data arrives after the initial load simply animate in
- * when they first render, which is the behaviour we want. Native-driver only
- * (opacity + translateY), matching every other animation in the app.
- */
-function AnimatedSection({
-  index = 0,
-  style,
-  children,
-}: {
-  index?: number;
-  style?: any;
-  children: React.ReactNode;
-}) {
-  const progress = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(progress, {
-      toValue: 1,
-      duration: 380,
-      delay: Math.min(index, 6) * 55,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [progress, index]);
-
-  return (
-    <Animated.View
-      style={[
-        style,
-        {
-          opacity: progress,
-          transform: [
-            {
-              translateY: progress.interpolate({
-                inputRange: [0, 1],
-                outputRange: [16, 0],
-              }),
-            },
-          ],
-        },
-      ]}
-    >
-      {children}
-    </Animated.View>
-  );
-}
-
-/**
- * Press feedback for the discovery cards — a small spring-in scale so the whole
- * rail feels responsive to touch. Forwards press handling to a Pressable and
- * leaves layout to the caller's `style`.
- */
-function PressableScale({
-  onPress,
-  style,
-  children,
-  disabled,
-}: {
-  onPress?: () => void;
-  style?: any;
-  children: React.ReactNode;
-  disabled?: boolean;
-}) {
-  const scale = useRef(new Animated.Value(1)).current;
-  const to = (v: number) =>
-    Animated.spring(scale, {
-      toValue: v,
-      useNativeDriver: true,
-      speed: 40,
-      bounciness: 6,
-    }).start();
-
-  return (
-    <Pressable
-      onPress={onPress}
-      onPressIn={() => to(0.96)}
-      onPressOut={() => to(1)}
-      disabled={disabled}
-    >
-      <Animated.View style={[style, { transform: [{ scale }] }]}>
-        {children}
-      </Animated.View>
-    </Pressable>
   );
 }
 
@@ -256,56 +162,17 @@ const TOPIC_EMOJI: Record<string, string> = {
   "Barber Shops": "💈",
 };
 
-function SectionHeader({
-  title,
-  subtitle,
-  kicker,
-  onAction,
-  actionLabel,
-}: {
-  title: string;
-  subtitle?: string;
-  kicker?: string;
-  onAction?: () => void;
-  actionLabel?: string;
-}) {
-  const { colors } = useTheme();
+function SectionHeader({ title, subtitle, onAction, actionLabel }: { title: string; subtitle?: string; onAction?: () => void; actionLabel?: string }) {
   const styles = useThemedStyles(createStyles);
-  // The accent bar under the title wipes in from the left on mount — a small
-  // "this section just arrived" cue that rides along with AnimatedSection.
-  const grow = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(grow, {
-      toValue: 1,
-      duration: 320,
-      delay: 120,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [grow]);
-
   return (
     <View style={styles.sectionHeader}>
-      <View style={styles.sectionHeaderText}>
-        {kicker && <Text style={styles.sectionKicker}>{kicker}</Text>}
+      <View>
         <Text style={styles.sectionTitle}>{title}</Text>
-        <Animated.View
-          style={[
-            styles.sectionHeaderUnderline,
-            { transform: [{ scaleX: grow }] },
-          ]}
-        />
         {subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
       </View>
       {onAction && actionLabel && (
-        <TouchableOpacity
-          onPress={onAction}
-          activeOpacity={0.7}
-          style={styles.sectionActionBtn}
-          hitSlop={8}
-        >
+        <TouchableOpacity onPress={onAction} activeOpacity={0.7}>
           <Text style={styles.sectionAction}>{actionLabel}</Text>
-          <Ionicons name="chevron-forward" size={13} color={colors.primary} />
         </TouchableOpacity>
       )}
     </View>
@@ -448,7 +315,7 @@ function SmallEventCard({
   const owned = event.isCreator || event.userHasPurchased || event.userStatus === "accepted";
 
   return (
-    <PressableScale style={styles.smallCard} onPress={onPress}>
+    <TouchableOpacity style={styles.smallCard} onPress={onPress} activeOpacity={0.8}>
       <LinearGradient colors={[colors.cardGradientStart, colors.cardGradientEnd]} style={styles.smallCardInner}>
         <View style={styles.smallCardImageWrap}>
           {event.image ? (
@@ -499,7 +366,55 @@ function SmallEventCard({
           )}
         </View>
       </LinearGradient>
-    </PressableScale>
+    </TouchableOpacity>
+  );
+}
+
+// Compact card for third-party (Ticketmaster etc) events, sized to match
+// SmallEventCard so they sit naturally in the same horizontal "this week" row.
+// Tapping anywhere opens the external-event detail screen.
+function SmallExternalEventCard({
+  event,
+  onPress,
+}: {
+  event: ExternalEvent;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  const sym = currencyPrefix(event.currency);
+  // Named priceBadge, not priceLabel: this is a "from" price for an external
+  // listing, and the name priceLabel belongs to the shared money helper.
+  const priceBadge =
+    event.priceMin != null ? `${sym}${Math.round(event.priceMin)}` : "TICKETS";
+
+  return (
+    <TouchableOpacity style={styles.smallCard} onPress={onPress} activeOpacity={0.8}>
+      <LinearGradient colors={[colors.cardGradientStart, colors.cardGradientEnd]} style={styles.smallCardInner}>
+        <View style={styles.smallCardImageWrap}>
+          {event.image ? (
+            <Image source={{ uri: event.image }} style={styles.smallCardImage} contentFit="cover" />
+          ) : (
+            <View style={[styles.smallCardImage, { backgroundColor: colors.cardAlt, justifyContent: "center", alignItems: "center" }]}>
+              <Ionicons name="calendar" size={24} color={colors.primary} />
+            </View>
+          )}
+          <View style={[styles.smallCardBadge, styles.smallCardBadgePaid]}>
+            <Text style={styles.smallCardBadgeText}>{priceBadge}</Text>
+          </View>
+        </View>
+
+        <View style={styles.smallCardContent}>
+          <Text style={styles.smallCardTitle} numberOfLines={2}>{event.title}</Text>
+          <Text style={styles.smallCardDate} numberOfLines={1}>
+            {new Date(event.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+          </Text>
+          <View style={[styles.smallCardAction, styles.smallCardActionPaid]}>
+            <Text style={styles.smallCardActionText}>View Tickets</Text>
+          </View>
+        </View>
+      </LinearGradient>
+    </TouchableOpacity>
   );
 }
 
@@ -515,7 +430,7 @@ function VendorCard({ vendor, onPress }: { vendor: Vendor; onPress: () => void }
     "";
   const image = vendor.images?.[0] || vendor.profilePicture || vendor.image;
   return (
-    <PressableScale style={styles.vendorCard} onPress={onPress}>
+    <TouchableOpacity style={styles.vendorCard} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.vendorCardImage}>
         {image ? (
           <Image
@@ -533,57 +448,7 @@ function VendorCard({ vendor, onPress }: { vendor: Vendor; onPress: () => void }
         <Text style={styles.vendorCardName} numberOfLines={1}>{name}</Text>
         {!!type && <Text style={styles.vendorCardType} numberOfLines={1}>{type}</Text>}
       </View>
-    </PressableScale>
-  );
-}
-
-/**
- * The bigger vendor card used only in "Featured vendors" — a taller image and a
- * highlighted type chip so the curated rail reads as a step above the plain
- * "More around town" row below it.
- */
-function VendorCardLarge({ vendor, onPress }: { vendor: Vendor; onPress: () => void }) {
-  const { colors } = useTheme();
-  const styles = useThemedStyles(createStyles);
-  const name =
-    vendor.name || vendor.vendorName || vendor.businessName || vendor.username || "Vendor";
-  const type =
-    vendor.category ||
-    (typeof vendor.vendorType === "string" ? vendor.vendorType : vendor.vendorType?.name) ||
-    "";
-  const city =
-    typeof vendor.city === "object" ? vendor.city?.name : undefined;
-  const image = vendor.images?.[0] || vendor.profilePicture || vendor.image;
-  return (
-    <PressableScale style={styles.vendorLargeCard} onPress={onPress}>
-      <View style={styles.vendorLargeImage}>
-        {image ? (
-          <Image
-            source={{ uri: image }}
-            style={{ width: "100%", height: "100%" }}
-            contentFit="cover"
-          />
-        ) : (
-          <LinearGradient colors={[colors.primary, colors.primaryDark]} style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <Ionicons name="briefcase" size={30} color="#fff" />
-          </LinearGradient>
-        )}
-        <View style={styles.vendorLargeScrim} />
-        {!!type && (
-          <View style={styles.vendorLargeTypeChip}>
-            <Text style={styles.vendorLargeTypeText} numberOfLines={1}>{type}</Text>
-          </View>
-        )}
-      </View>
-      <View style={styles.vendorLargeContent}>
-        <Text style={styles.vendorLargeName} numberOfLines={1}>{name}</Text>
-        {!!city && (
-          <Text style={styles.vendorLargeCity} numberOfLines={1}>
-            <Ionicons name="location-outline" size={11} color={colors.textFaint} /> {city}
-          </Text>
-        )}
-      </View>
-    </PressableScale>
+    </TouchableOpacity>
   );
 }
 
@@ -592,7 +457,7 @@ function GuideCard({ guide, onPress }: { guide: TopGuide; onPress: () => void })
   const styles = useThemedStyles(createStyles);
   const emoji = TOPIC_EMOJI[guide.topic] || "📍";
   return (
-    <PressableScale style={styles.guideCard} onPress={onPress}>
+    <TouchableOpacity style={styles.guideCard} onPress={onPress} activeOpacity={0.85}>
       {guide.coverImage ? (
         <Image
           source={{ uri: guide.coverImage }}
@@ -625,7 +490,7 @@ function GuideCard({ guide, onPress }: { guide: TopGuide; onPress: () => void })
           </Text>
         </View>
       </View>
-    </PressableScale>
+    </TouchableOpacity>
   );
 }
 
@@ -723,9 +588,6 @@ export default function Home() {
   const [requestingLocation, setRequestingLocation] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationInitRef = useRef(false);
-  // Drives the hero's scroll parallax. Fed by Animated.event on the scroll
-  // view; the same handler still updates `feedAtTop` via its listener.
-  const scrollY = useRef(new Animated.Value(0)).current;
   // The city the most recent fetch cycle was issued for. Location-scoped
   // fetches below check this before writing their response into state, so a
   // slower response for a city the user has since navigated away from can
@@ -1317,92 +1179,59 @@ export default function Home() {
   // ── Home hero selection ──────────────────────────────────────────────────
   // 1. If the user has any event they're hosting / RSVP'd to / paid for, the
   //    soonest one is the hero (backend returns these in `myUpcoming`, date-asc).
-  // 2. Otherwise, promote the soonest upcoming event — native first, an external
-  //    listing only if there's no native one — into the hero. A promoted
-  //    external event gets a "Read more" button.
+  // 2. Otherwise, promote the first item of the "After that" carousel (the mixed
+  //    native + external feed) into the hero and drop it from the carousel.
+  //    A promoted external event gets a "Read more" button.
   const myHero = highlights.myUpcoming?.[0] || null;
-  const byDate = <T extends { date: string }>(a: T, b: T) =>
-    new Date(a.date).getTime() - new Date(b.date).getTime();
 
-  // General upcoming events (falls back to the public-events list), date-asc,
-  // minus the personal hero so it never double-shows.
-  const nativePool = (highlights.upcoming.length ? highlights.upcoming : publicEvents)
-    .filter((e) => e._id !== myHero?._id)
-    .slice()
-    .sort(byDate);
+  // Native pool for the carousel — general upcoming events (falls back to the
+  // public-events list), minus whatever is shown as the hero so it isn't dupes.
+  const nativePool = highlights.upcoming.length ? highlights.upcoming : publicEvents;
 
-  // Resolve the hero. A personal event wins; otherwise the soonest native
-  // upcoming event; otherwise the soonest external listing.
+  // In-app events lead the feed (date-asc); external (Ticketmaster etc.)
+  // suggestions only follow after every native event. This also means the
+  // hero promotion below prefers a native event whenever one exists.
+  const baseFeed = [
+    ...nativePool
+      .filter((e) => e._id !== myHero?._id)
+      .map((e) => ({ _kind: "native" as const, data: e, sort: new Date(e.date).getTime() }))
+      .sort((a, b) => a.sort - b.sort),
+    ...externalEvents
+      .map((e) => ({ _kind: "external" as const, data: e, sort: new Date(e.date).getTime() }))
+      .sort((a, b) => a.sort - b.sort),
+  ];
+
+  // Resolve hero + the carousel feed. When there's no personal event, the first
+  // feed item is promoted to the hero and removed from the carousel.
   let resolvedHero: PublicEvent | null = myHero;
   let resolvedExternal: ExternalEvent | null = null;
-  if (!resolvedHero) {
-    if (nativePool.length > 0) resolvedHero = nativePool[0];
-    else if (externalEvents.length > 0) {
-      resolvedExternal = [...externalEvents].sort(byDate)[0];
-    }
+  let resolvedFeed = baseFeed;
+  if (!resolvedHero && baseFeed.length > 0) {
+    const first = baseFeed[0];
+    resolvedFeed = baseFeed.slice(1);
+    if (first._kind === "native") resolvedHero = first.data;
+    else resolvedExternal = first.data;
   }
   // const bindings so TS narrows them inside the hero's onPress closures.
   const heroEvent = resolvedHero;
   const heroExternal = resolvedExternal;
-
-  // ── The three event rails, partitioned so nothing repeats ────────────────
-  // "This week" — native upcoming, minus whatever became the hero.
-  const weekFeed = nativePool.filter((e) => e._id !== heroEvent?._id);
-  const weekShown = useMemo(
-    () => new Set([heroEvent?._id, ...weekFeed.map((e) => e._id)].filter(Boolean)),
-    [heroEvent?._id, weekFeed]
-  );
-  // "Trending now" — genuinely trending native events the user hasn't already
-  // seen in the hero or the "This week" rail. Section hides itself when empty.
-  const trendingFeed = highlights.trending
-    .filter((e) => !weekShown.has(e._id))
-    .slice()
-    .sort(byDate);
-  // "Tickets near you" — external (Ticketmaster etc.) listings, and the ONLY
-  // place they appear now. Drops the hero-promoted one if there was one.
-  const ticketsFeed = externalEvents
-    .filter((e) => e._id !== heroExternal?._id)
-    .slice()
-    .sort(byDate);
-
-  // ── Vendors: two differentiated rails ───────────────────────────────────
-  // "Featured vendors" — the curated, review-ranked list.
-  const featuredVendors = topVendors;
-  // "More around town" — the search-derived list, minus anything already
-  // featured above so the two rails never overlap.
-  const moreVendors = useMemo(() => {
-    const featured = new Set(topVendors.map((v) => v._id));
-    return vendors.filter((v) => !featured.has(v._id));
+  // Prefer vendors the rail above isn't already showing. A city with fewer than
+  // ~10 vendors would otherwise dedupe this section out of existence entirely,
+  // so fall back to the ranked list unfiltered rather than hiding it.
+  const rankedVendors = useMemo(() => {
+    const shown = new Set(vendors.map((v) => v._id));
+    const fresh = topVendors.filter((v) => !shown.has(v._id));
+    return fresh.length >= 3 ? fresh : topVendors;
   }, [vendors, topVendors]);
 
-  const feedIsEmpty =
-    weekFeed.length === 0 && trendingFeed.length === 0 && ticketsFeed.length === 0;
+  const mixedFeed = resolvedFeed;
 
-  // Hero image parallax: zooms a touch on pull-down (overscroll) and drifts
-  // down as the card scrolls away. Transform-only, so it rides the
-  // native-driven scrollY with no bridge traffic. Memoised so the
-  // interpolation nodes are built once, not per render.
-  const heroParallax = useMemo(
-    () => ({
-      transform: [
-        {
-          translateY: scrollY.interpolate({
-            inputRange: [-300, 0, 400],
-            outputRange: [-30, 0, 80],
-            extrapolateRight: "clamp",
-          }),
-        },
-        {
-          scale: scrollY.interpolate({
-            inputRange: [-300, 0],
-            outputRange: [1.15, 1],
-            extrapolateRight: "clamp",
-          }),
-        },
-      ],
-    }),
-    [scrollY]
-  );
+  const trendingFeed = [
+    ...highlights.trending.map((e) => ({ _kind: "native" as const, data: e, sort: new Date(e.date).getTime() })),
+    ...externalEvents.map((e) => ({ _kind: "external" as const, data: e, sort: new Date(e.date).getTime() })),
+  ].sort((a, b) => a.sort - b.sort);
+
+  const feedIsEmpty = mixedFeed.length === 0 && trendingFeed.length === 0;
 
   // Only reach for a recommendation once the real feed has settled and come
   // back with nothing AND the server had no nearby city to offer — those two
@@ -1454,25 +1283,17 @@ export default function Home() {
 
   return (
     <>
-      <Animated.ScrollView
+      <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         // Let content run under the floating native tab bar on iOS; the system
         // inset keeps the last item scrollable above it.
         contentInsetAdjustmentBehavior="automatic"
         scrollEventThrottle={16}
-        // Feeds the hero parallax; the listener keeps the create-event
-        // coachmark's at-top logic working exactly as before.
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          {
-            useNativeDriver: true,
-            listener: (e: any) => {
-              const atTop = e.nativeEvent.contentOffset.y <= 220;
-              setFeedAtTop((prev) => (prev === atTop ? prev : atTop));
-            },
-          }
-        )}
+        onScroll={(e) => {
+          const atTop = e.nativeEvent.contentOffset.y <= 220;
+          setFeedAtTop((prev) => (prev === atTop ? prev : atTop));
+        }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
         }
@@ -1544,8 +1365,7 @@ export default function Home() {
         )}
 
         <>
-            {/* ── HERO · "Up Next" ─────────────────────────────────────── */}
-            <AnimatedSection index={0}>
+            {/* Hero Card */}
             {initialLoading ? (
               <HeroSkeleton />
             ) : heroEvent ? (
@@ -1561,7 +1381,7 @@ export default function Home() {
               end={{ x: 1, y: 1 }}
             >
               {heroEvent.image && (
-                <AnimatedImage source={{ uri: heroEvent.image }} style={[styles.heroImage, heroParallax]} contentFit="cover" />
+                <Image source={{ uri: heroEvent.image }} style={styles.heroImage} contentFit="cover" />
               )}
               <View style={styles.heroOverlay} />
               <View style={styles.heroContent}>
@@ -1677,7 +1497,7 @@ export default function Home() {
               end={{ x: 1, y: 1 }}
             >
               {heroExternal.image && (
-                <AnimatedImage source={{ uri: heroExternal.image }} style={[styles.heroImage, heroParallax]} contentFit="cover" />
+                <Image source={{ uri: heroExternal.image }} style={styles.heroImage} contentFit="cover" />
               )}
               <View style={styles.heroOverlay} />
               <View style={styles.heroContent}>
@@ -1708,7 +1528,7 @@ export default function Home() {
               </View>
             </LinearGradient>
           </TouchableOpacity>
-        ) : !initialLoading && feedIsEmpty ? (
+        ) : !initialLoading && mixedFeed.length === 0 && trendingFeed.length === 0 ? (
           <View style={styles.emptyState}>
             <View style={styles.emptyStateIconWrap}>
               <Ionicons name="calendar-outline" size={32} color={colors.primary} />
@@ -1733,14 +1553,16 @@ export default function Home() {
             </TouchableOpacity>
           </View>
         ) : null}
-            </AnimatedSection>
 
         {/* Recommended elsewhere — only when this city genuinely has nothing,
             so it reads as a helpful alternative rather than a second feed. */}
-        {!initialLoading && feedIsEmpty && nearby && nearby.events.length > 0 ? (
-          <AnimatedSection index={1} style={styles.section}>
+        {!initialLoading &&
+        mixedFeed.length === 0 &&
+        trendingFeed.length === 0 &&
+        nearby &&
+        nearby.events.length > 0 ? (
+          <View style={styles.section}>
             <SectionHeader
-              kicker="NEARBY"
               title={`Happening in ${nearby.city}`}
               subtitle={
                 nearby.totalThere
@@ -1762,15 +1584,14 @@ export default function Home() {
                 </View>
               ))}
             </View>
-          </AnimatedSection>
+          </View>
         ) : null}
 
         {/* Last resort, so the tab is never blank. Only when the city is empty
             AND the server had no nearby city to point at. */}
         {!initialLoading && feedIsEmpty && !nearby && recommended ? (
-          <AnimatedSection index={1} style={styles.section}>
+          <View style={styles.section}>
             <SectionHeader
-              kicker="ELSEWHERE"
               title={recommended.scope === "radius" ? "Around you" : "Recommended"}
               subtitle={
                 recommended.scope === "radius"
@@ -1787,13 +1608,15 @@ export default function Home() {
                 </View>
               ))}
             </View>
-          </AnimatedSection>
+          </View>
         ) : null}
 
-            {/* ── EVENTS · "This week" ──────────────────────────────────── */}
+        <IPlannerBanner />
+
+            {/* After That */}
             {initialLoading ? (
               <View style={styles.section}>
-                <SectionHeader kicker="EVENTS" title="This week" subtitle="On the calendar near you" />
+                <SectionHeader title="After that →" subtitle="This week's calendar" />
                 <FlatList
                   horizontal
                   data={[1, 2, 3, 4]}
@@ -1803,81 +1626,49 @@ export default function Home() {
                   renderItem={() => <SmallCardSkeleton />}
                 />
               </View>
-            ) : weekFeed.length > 0 ? (
-          <AnimatedSection index={1} style={styles.section}>
+            ) : mixedFeed.length > 0 && (
+          <View style={styles.section}>
             <SectionHeader
-              kicker="EVENTS"
-              title={selectedCity ? `This week in ${selectedCity}` : "This week"}
-              subtitle="On the calendar, soonest first"
+              title="After that →"
+              subtitle="This week's calendar"
               onAction={() => router.push("/public-events" as any)}
-              actionLabel="See all"
+              actionLabel="All"
             />
             <FlatList
               horizontal
-              data={weekFeed}
-              keyExtractor={(item) => item._id}
+              // Mixed feed — in-app events first, then external — with the hero
+              // item already removed when it was promoted from this carousel.
+              data={mixedFeed}
+              keyExtractor={(item) => `${item._kind}-${item.data._id}`}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalList}
-              renderItem={({ item }) => (
-                <SmallEventCard
-                  event={item}
-                  onPress={() => router.push(`/event/${item._id}` as any)}
-                  onPurchase={handlePurchaseTicket}
-                  onJoin={handleJoinFreeEvent}
-                />
-              )}
+              renderItem={({ item }) =>
+                item._kind === "native" ? (
+                  <SmallEventCard
+                    event={item.data}
+                    onPress={() => router.push(`/event/${item.data._id}` as any)}
+                    onPurchase={handlePurchaseTicket}
+                    onJoin={handleJoinFreeEvent}
+                  />
+                ) : (
+                  <SmallExternalEventCard
+                    event={item.data}
+                    onPress={() => router.push(`/external-event/${item.data._id}` as any)}
+                  />
+                )
+              }
             />
-          </AnimatedSection>
-        ) : null}
+          </View>
+        )}
 
-            {/* ── GUIDES · "City guides" ────────────────────────────────── */}
+            {/* Trending Now */}
             {initialLoading ? (
               <View style={styles.section}>
-                <SectionHeader kicker="GUIDES" title="City guides" subtitle="Insider picks, written by locals" />
-                <FlatList
-                  horizontal
-                  data={[1, 2, 3, 4]}
-                  keyExtractor={(item) => String(item)}
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}
-                  renderItem={() => <GuideCardSkeleton />}
-                />
-              </View>
-            ) : topGuides.length > 0 ? (
-          <AnimatedSection index={2} style={styles.section}>
-            <SectionHeader
-              kicker="GUIDES"
-              title="City guides"
-              subtitle="Insider picks, written by locals"
-              onAction={() => router.push("/(tabs)/bests")}
-              actionLabel="See all"
-            />
-            <FlatList
-              horizontal
-              data={topGuides}
-              keyExtractor={(item) => item._id}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-              renderItem={({ item }) => (
-                <GuideCard
-                  guide={item}
-                  onPress={() => router.push(`/guide/${item._id}` as any)}
-                />
-              )}
-            />
-          </AnimatedSection>
-        ) : null}
-
-            {/* ── EVENTS · "Trending now" — native trending the rails above
-                haven't already shown; hidden entirely when there's nothing
-                distinct left to say. ─────────────────────────────────────── */}
-            {initialLoading ? (
-              <View style={styles.section}>
-                <SectionHeader kicker="TRENDING" title="Trending now 🔥" subtitle="Filling up fast" />
+                <SectionHeader title="Trending Now 🔥" subtitle="Hot in your city" />
                 <View style={styles.verticalStack}>
                   {[1, 2, 3].map((item) => (
                     <View key={item} style={styles.verticalCard}>
-                      <Skeleton width="100%" height={170} borderRadius={18} />
+                      <Skeleton width="100%" height={170} borderRadius={16} />
                       <View style={{ padding: 12, gap: 8 }}>
                         <Skeleton width="100%" height={14} />
                         <Skeleton width={140} height={12} />
@@ -1886,53 +1677,41 @@ export default function Home() {
                   ))}
                 </View>
               </View>
-            ) : trendingFeed.length > 0 ? (
-          <AnimatedSection index={3} style={styles.section}>
+            ) : (highlights.trending.length > 0 || externalEvents.length > 0) && (
+          <View style={styles.section}>
             <SectionHeader
-              kicker="TRENDING"
-              title="Trending now 🔥"
-              subtitle="Filling up fast in your city"
+              title="Trending Now 🔥"
+              subtitle="Hot in your city"
               onAction={() => router.push("/public-events" as any)}
-              actionLabel="See all"
+              actionLabel="All"
             />
             <View style={styles.verticalStack}>
-              {trendingFeed.map((event) => (
-                <View key={`trending-${event._id}`} style={styles.verticalCard}>
-                  <PublicEventCard
-                    event={event}
-                    onPurchaseTicket={handlePurchaseTicket}
-                    onJoinFreeEvent={handleJoinFreeEvent}
-                    style={styles.verticalEventCard}
-                  />
+              {trendingFeed.map((item) => (
+                <View key={`${item._kind}-${item.data._id}`} style={styles.verticalCard}>
+                  {item._kind === "native" ? (
+                    <PublicEventCard
+                      event={item.data}
+                      onPurchaseTicket={handlePurchaseTicket}
+                      onJoinFreeEvent={handleJoinFreeEvent}
+                      style={styles.verticalEventCard}
+                    />
+                  ) : (
+                    <ExternalEventCard event={item.data} />
+                  )}
                 </View>
               ))}
             </View>
-          </AnimatedSection>
-        ) : null}
+          </View>
+        )}
 
-            {/* ── EVENTS · "Tickets near you" — the one and only home for
-                external (Ticketmaster etc.) listings. ──────────────────────── */}
-            {!initialLoading && ticketsFeed.length > 0 ? (
-          <AnimatedSection index={4} style={styles.section}>
-            <SectionHeader
-              kicker="TICKETS"
-              title="Tickets near you"
-              subtitle="Bigger shows and gigs from around the web"
-            />
-            <View style={styles.verticalStack}>
-              {ticketsFeed.slice(0, 6).map((event) => (
-                <View key={`tickets-${event._id}`} style={styles.verticalCard}>
-                  <ExternalEventCard event={event} />
-                </View>
-              ))}
-            </View>
-          </AnimatedSection>
-        ) : null}
+            {/* Cross-promo for our sister app. Sits between the feed above and
+                the vendor rails below so it reads as an aside, not a listing. */}
+            <IPlannerBanner />
 
-            {/* ── VENDORS · "Featured vendors" — curated, review-ranked. ─── */}
+            {/* Where the city's at — vendors */}
             {initialLoading ? (
               <View style={styles.section}>
-                <SectionHeader kicker="VENDORS" title="Featured vendors" subtitle="Highest rated in your city" />
+                <SectionHeader title="Where the city's at" subtitle="Vendors & venues near you" />
                 <FlatList
                   horizontal
                   data={[1, 2, 3, 4]}
@@ -1942,45 +1721,17 @@ export default function Home() {
                   renderItem={() => <VendorCardSkeleton />}
                 />
               </View>
-            ) : featuredVendors.length > 0 ? (
-              <AnimatedSection index={5} style={styles.section}>
-                <SectionHeader
-                  kicker="VENDORS"
-                  title="Featured vendors"
-                  subtitle="Highest rated in your city"
-                  onAction={() => router.push("/(tabs)/vendors")}
-                  actionLabel="See all"
-                />
-                <FlatList
-                  horizontal
-                  data={featuredVendors}
-                  keyExtractor={(item) => item._id}
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}
-                  renderItem={({ item }) => (
-                    <VendorCardLarge
-                      vendor={item}
-                      onPress={() => router.push(`/vendor-details/${item._id}` as any)}
-                    />
-                  )}
-                />
-              </AnimatedSection>
-            ) : null}
-
-            {/* ── VENDORS · "More around town" — everything else, no overlap
-                with Featured above. ──────────────────────────────────────── */}
-            {!initialLoading && moreVendors.length > 0 ? (
-          <AnimatedSection index={6} style={styles.section}>
+            ) : vendors.length > 0 && (
+          <View style={styles.section}>
             <SectionHeader
-              kicker="VENDORS"
-              title="More around town"
+              title="Where the city's at"
               subtitle="Vendors & venues near you"
               onAction={() => router.push("/(tabs)/vendors")}
-              actionLabel="See all"
+              actionLabel="All"
             />
             <FlatList
               horizontal
-              data={moreVendors}
+              data={vendors}
               keyExtractor={(item) => item._id}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalList}
@@ -1991,23 +1742,56 @@ export default function Home() {
                 />
               )}
             />
-          </AnimatedSection>
-        ) : null}
+          </View>
+        )}
 
-            {/* Cross-promo for our sister app — an aside after the real
-                content, not a listing. */}
-            {!initialLoading && <IPlannerBanner />}
+            {/* Top vendors — ranked by review count, so a lone 5-star review
+                can't outrank a vendor with fifty. */}
+            {initialLoading ? (
+              <View style={styles.section}>
+                <SectionHeader title="Top vendors" subtitle="Highest rated in your city" />
+                <FlatList
+                  horizontal
+                  data={[1, 2, 3, 4]}
+                  keyExtractor={(item) => String(item)}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={() => <VendorCardSkeleton />}
+                />
+              </View>
+            ) : rankedVendors.length > 0 && (
+              <View style={styles.section}>
+                <SectionHeader
+                  title="Top vendors"
+                  subtitle="Highest rated in your city"
+                  onAction={() => router.push("/(tabs)/vendors")}
+                  actionLabel="All"
+                />
+                <FlatList
+                  horizontal
+                  data={rankedVendors}
+                  keyExtractor={(item) => item._id}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={({ item }) => (
+                    <VendorCard
+                      vendor={item}
+                      onPress={() => router.push(`/vendor-details/${item._id}` as any)}
+                    />
+                  )}
+                />
+              </View>
+            )}
 
             {/* Vendor fallback — stands in for both vendor rails when this
                 city has none, so the row widens instead of disappearing. */}
-            {!initialLoading && featuredVendors.length === 0 && moreVendors.length === 0 && recommendedVendors ? (
-              <AnimatedSection index={5} style={styles.section}>
+            {!initialLoading && recommendedVendors ? (
+              <View style={styles.section}>
                 <SectionHeader
-                  kicker="VENDORS"
                   title="Vendors further out"
                   subtitle={fallbackSubtitle(recommendedVendors.scope, selectedCity)}
                   onAction={() => router.push("/(tabs)/vendors")}
-                  actionLabel="See all"
+                  actionLabel="All"
                 />
                 <FlatList
                   horizontal
@@ -2022,18 +1806,54 @@ export default function Home() {
                     />
                   )}
                 />
-              </AnimatedSection>
+              </View>
             ) : null}
 
+            {/* Top guides — best-selling city guides */}
+            {initialLoading ? (
+              <View style={styles.section}>
+                <SectionHeader title="Top guides" subtitle="Best-selling city guides" />
+                <FlatList
+                  horizontal
+                  data={[1, 2, 3, 4]}
+                  keyExtractor={(item) => String(item)}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={() => <GuideCardSkeleton />}
+                />
+              </View>
+            ) : topGuides.length > 0 && (
+          <View style={styles.section}>
+            <SectionHeader
+              title="Top guides"
+              subtitle="Best-selling city guides"
+              onAction={() => router.push("/(tabs)/bests")}
+              actionLabel="All"
+            />
+            <FlatList
+              horizontal
+              data={topGuides}
+              keyExtractor={(item) => item._id}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalList}
+              renderItem={({ item }) => (
+                <GuideCard
+                  guide={item}
+                  onPress={() => router.push(`/guide/${item._id}` as any)}
+                />
+              )}
+            />
+          </View>
+            )}
+
             {/* Guide fallback — same idea as the vendor row above. */}
-            {!initialLoading && topGuides.length === 0 && recommendedGuides ? (
-              <AnimatedSection index={6} style={styles.section}>
+            {!initialLoading && recommendedGuides ? (
+              <View style={styles.section}>
                 <SectionHeader
-                  kicker="GUIDES"
                   title="Guides further out"
                   subtitle={fallbackSubtitle(recommendedGuides.scope, selectedCity)}
                   onAction={() => router.push("/(tabs)/bests")}
-                  actionLabel="See all"
+                  actionLabel="All"
                 />
                 <FlatList
                   horizontal
@@ -2042,17 +1862,20 @@ export default function Home() {
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.horizontalList}
                   renderItem={({ item }) => (
+                    // No `style` prop: home's local GuideCard doesn't accept
+                    // one. The main rail above passes it anyway, where it's a
+                    // type error and a runtime no-op — not worth copying.
                     <GuideCard
                       guide={item}
                       onPress={() => router.push(`/guide/${item._id}` as any)}
                     />
                   )}
                 />
-              </AnimatedSection>
+              </View>
             ) : null}
           </>
 
-      </Animated.ScrollView>
+      </ScrollView>
 
       {/* FAB */}
       <TouchableOpacity
@@ -2335,44 +2158,16 @@ const createStyles = (c: ThemeColors) =>
     paddingHorizontal: 20,
     marginBottom: 14,
   },
-  sectionHeaderText: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  sectionKicker: {
-    fontFamily: Fonts.bold,
-    fontSize: 10,
-    color: c.primary,
-    letterSpacing: 1.4,
-    textTransform: "uppercase",
-    marginBottom: 3,
-  },
   sectionTitle: {
     fontFamily: Fonts.bold,
-    fontSize: 19,
+    fontSize: 18,
     color: c.textBright,
     letterSpacing: -0.3,
-  },
-  sectionHeaderUnderline: {
-    height: 2.5,
-    width: 30,
-    borderRadius: 2,
-    marginTop: 6,
-    backgroundColor: c.primary,
-    // scaleX animates from the left edge
-    alignSelf: "flex-start",
-    transform: [{ scaleX: 0 }],
   },
   sectionSubtitle: {
     fontFamily: Fonts.regular,
     fontSize: 12,
     color: c.textFaint,
-    marginTop: 6,
-  },
-  sectionActionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
     marginTop: 2,
   },
   sectionAction: {
@@ -2384,14 +2179,11 @@ const createStyles = (c: ThemeColors) =>
     paddingHorizontal: 20,
     paddingBottom: 2,
   },
-  // The three rail cards (smallCard / vendorCard / guideCard) share radius,
-  // border and surface so the interleaved feed reads as one system.
   smallCard: {
     width: 160,
     marginRight: 12,
-    borderRadius: 18,
+    borderRadius: 16,
     overflow: "hidden",
-    backgroundColor: c.card,
     borderWidth: 1,
     borderColor: c.glassStroke,
   },
@@ -2516,13 +2308,13 @@ const createStyles = (c: ThemeColors) =>
     flex: 1,
   },
   vendorCard: {
-    width: 150,
+    width: 140,
     marginRight: 12,
     backgroundColor: c.card,
-    borderRadius: 18,
+    borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: c.glassStroke,
+    borderColor: c.glassFillSubtle,
   },
   vendorCardImage: {
     width: "100%",
@@ -2543,68 +2335,13 @@ const createStyles = (c: ThemeColors) =>
     color: c.textFaint,
     marginTop: 3,
   },
-  // Bigger, curated card for "Featured vendors".
-  vendorLargeCard: {
-    width: 190,
-    marginRight: 12,
-    backgroundColor: c.card,
-    borderRadius: 18,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: c.glassStroke,
-  },
-  vendorLargeImage: {
-    width: "100%",
-    height: 128,
-    overflow: "hidden",
-    position: "relative",
-  },
-  vendorLargeScrim: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 56,
-    backgroundColor: "rgba(0,0,0,0.28)",
-  },
-  vendorLargeTypeChip: {
-    position: "absolute",
-    left: 8,
-    bottom: 8,
-    maxWidth: "80%",
-    backgroundColor: "rgba(168,85,247,0.92)",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  vendorLargeTypeText: {
-    fontFamily: Fonts.bold,
-    fontSize: 10,
-    color: c.white,
-    letterSpacing: 0.3,
-  },
-  vendorLargeContent: {
-    padding: 12,
-    gap: 3,
-  },
-  vendorLargeName: {
-    fontFamily: Fonts.bold,
-    fontSize: 14,
-    color: c.textBright,
-    letterSpacing: -0.2,
-  },
-  vendorLargeCity: {
-    fontFamily: Fonts.regular,
-    fontSize: 11.5,
-    color: c.textFaint,
-  },
   guideCard: {
     width: 220,
     marginRight: 12,
-    borderRadius: 18,
+    borderRadius: 16,
     backgroundColor: c.card,
     borderWidth: 1,
-    borderColor: c.glassStroke,
+    borderColor: c.glassFillSubtle,
     overflow: "hidden",
   },
   guideCardBanner: {

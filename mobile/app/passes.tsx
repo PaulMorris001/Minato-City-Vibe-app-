@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { goBack } from "@/utils/navigation";
@@ -55,7 +55,6 @@ const STATUS_META: Record<
 export default function PassesScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const router = useRouter();
   const [passes, setPasses] = useState<Pass[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -122,14 +121,6 @@ export default function PassesScreen() {
             <Text style={styles.headerTitle}>My Passes</Text>
             <Text style={styles.headerSubtitle}>Show your QR at the door</Text>
           </View>
-          <TouchableOpacity
-            onPress={() => router.push("/bookings" as any)}
-            style={styles.bookingsButton}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="briefcase-outline" size={16} color={colors.primaryLight} />
-            <Text style={styles.bookingsButtonText}>Bookings</Text>
-          </TouchableOpacity>
         </View>
 
         <ScrollView
@@ -292,23 +283,6 @@ const createStyles = (c: ThemeColors) =>
     lineHeight: 30,
   },
   headerSubtitle: { fontFamily: "Outfit_500Medium", fontSize: 12, color: c.textDim, marginTop: 4 },
-  bookingsButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: c.primaryFaded,
-    borderWidth: 1,
-    borderColor: "rgba(168,85,247,0.28)",
-  },
-  bookingsButtonText: {
-    fontFamily: "Outfit_700Bold",
-    fontSize: 12.5,
-    color: c.primaryLight,
-    letterSpacing: 0.1,
-  },
   scrollContent: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 28 },
   loadingWrap: { paddingVertical: 80, alignItems: "center" },
   card: {
