@@ -116,6 +116,13 @@ export default function Raffle() {
   const ended = campaign
     ? campaign.status === "ended" || Date.now() > new Date(campaign.endDate).getTime()
     : false;
+  // "active" status only means admin hasn't ended it — the app also gates on
+  // startDate (isCampaignOpen, server-side), so a campaign scheduled to start
+  // later reads as active+not-ended here but ISN'T actually open yet. Surface
+  // that distinctly so a future start date doesn't look indistinguishable
+  // from "live right now".
+  const notStarted =
+    !!campaign && !ended && new Date(campaign.startDate).getTime() > Date.now();
   const daysLeft = campaign
     ? Math.max(0, Math.ceil((new Date(campaign.endDate).getTime() - Date.now()) / 86_400_000))
     : 0;
@@ -308,14 +315,28 @@ export default function Raffle() {
             accent={colors.warning}
           />
           <StatCard
-            label={campaign ? `Ends ${formatDate(campaign.endDate)}` : "No campaign"}
-            value={ended ? "Ended" : `${daysLeft}d left`}
+            label={
+              campaign
+                ? notStarted
+                  ? `Starts ${formatDate(campaign.startDate)}`
+                  : `Ends ${formatDate(campaign.endDate)}`
+                : "No campaign"
+            }
+            value={ended ? "Ended" : notStarted ? "Not open yet" : `${daysLeft}d left`}
             icon="⏳"
-            accent={ended ? colors.textDim : colors.info}
+            accent={ended ? colors.textDim : notStarted ? colors.warning : colors.info}
           />
         </div>
 
-        {!ended && !loading && entries.length > 0 && (
+        {notStarted && !loading && (
+          <div style={styles.notice}>
+            This campaign's start date ({formatDate(campaign!.startDate)}) hasn't arrived yet —
+            "Create Birthday Event" stays disabled in the app and shows "Raffle Has Ended" until
+            then. Set the start date to today (or earlier) if it should be live right now.
+          </div>
+        )}
+
+        {!ended && !notStarted && !loading && entries.length > 0 && (
           <div style={styles.notice}>
             Campaign is still open — entries can still gain RSVPs. Winners are normally
             drawn after {campaign ? formatDate(campaign.endDate) : "the deadline"}, from
@@ -410,6 +431,12 @@ function CampaignPanel({
   onEndClick: () => void;
 }) {
   const real = !!campaign?._id;
+  // Same "active status doesn't mean open yet" distinction as the parent's
+  // `notStarted` — recomputed here since this component only gets `campaign`.
+  const notStarted =
+    !!campaign &&
+    campaign.status === "active" &&
+    new Date(campaign.startDate).getTime() > Date.now();
   const [name, setName] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -536,6 +563,7 @@ function CampaignPanel({
               {campaign?.status}
             </Badge>
           )}
+          {real && !creating && notStarted && <Badge variant="warning">Not open yet</Badge>}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {real && campaign?.status === "active" && !creating && (
