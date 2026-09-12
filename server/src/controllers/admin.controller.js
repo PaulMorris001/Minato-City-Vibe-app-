@@ -12,7 +12,7 @@ import Notification from "../models/notification.model.js";
 import Report from "../models/report.model.js";
 import Message from "../models/message.model.js";
 import chatService from "../services/chat.service.js";
-import { sendPushNotification } from "../services/notification.service.js";
+import { sendPushNotification, notifyUser } from "../services/notification.service.js";
 import { markVerified } from "../services/verification.service.js";
 import { getSocketInstance } from "../services/socket.service.js";
 import {
@@ -24,6 +24,8 @@ import {
   getCurrentCampaign,
   campaignPrizes,
   campaignMinReferrals,
+  prizeReward,
+  isNigerianCountry,
 } from "../services/raffleCampaign.service.js";
 
 /**
@@ -363,6 +365,14 @@ function normalizeMinReferrals(input) {
   return { minReferrals: n };
 }
 
+// 1 -> "1st", 2 -> "2nd", 11 -> "11th", ... — same rule as the admin frontend's
+// copy (admin/src/pages/Raffle.tsx), needed here too for the winner notification.
+const ordinal = (n) => {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+};
+
 /** Reject a window that's inverted or overlaps another campaign. Returns an
  *  error message, or null when the window is fine. */
 async function windowConflict(startDate, endDate, excludeId) {
@@ -543,6 +553,7 @@ export async function setRaffleWinner(req, res) {
     if (!event || !event.isBirthdayRaffle) {
       return res.status(404).json({ message: "Raffle entry not found" });
     }
+    const previousRank = event.raffleWinnerRank;
 
     // The campaign that owns this entry (by date window), used both to bound
     // the valid ranks and to scope the "one holder per place" reset.
@@ -569,6 +580,26 @@ export async function setRaffleWinner(req, res) {
     }
     event.raffleWinnerRank = rank;
     await event.save();
+
+    // Tell the winner. Only on an actual new award — not a re-save of the
+    // rank they already held (the admin UI never triggers that anyway) and
+    // not on clearing a place, which is a correction, not news. Never gated
+    // by a notification preference: this is a rare, once-per-campaign event a
+    // winner would want pushed regardless of their category toggles.
+    if (rank !== null && rank !== previousRank) {
+      const prizeTier = campaignPrizes(owning).find((p) => p.rank === rank);
+      if (prizeTier) {
+        const winnerUser = await User.findById(event.createdBy).select("location.country");
+        const reward = prizeReward(prizeTier, isNigerianCountry(winnerUser?.location?.country));
+        notifyUser(event.createdBy, {
+          type: "raffle_winner",
+          title: "🎉 You won the Birthday Raffle!",
+          body: `Your event "${event.title}" placed ${ordinal(rank)} — ${reward}. Open the app for details.`,
+          data: { eventId: event._id.toString(), rank: String(rank) },
+        });
+      }
+    }
+
     res.json({ eventId: event._id, winnerRank: event.raffleWinnerRank });
   } catch (error) {
     res.status(500).json({ message: error.message });

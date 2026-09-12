@@ -62,6 +62,7 @@ function notifIcon(type: string) {
     case "verification_approved": return "shield-checkmark";
     case "verification_rejected": return "shield-outline";
     case "discount_code_created": return "pricetag";
+    case "raffle_winner": return "trophy";
     // Money on its way vs money that needs the seller to do something. The
     // second group is deliberately an alert icon — these are the ones a seller
     // must act on to actually get paid.
@@ -209,6 +210,9 @@ export default function NotificationsScreen() {
       case "verification_approved":
       case "verification_rejected":
         router.push("/profile" as any);
+        break;
+      case "raffle_winner":
+        router.push("/birthday-raffle/status" as any);
         break;
     }
   };

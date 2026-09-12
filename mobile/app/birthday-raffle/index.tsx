@@ -328,6 +328,17 @@ const handlePrimaryCTA = async () => {
             contacted via the app.
           </Text>
         )}
+
+        {/* Not a link — no verified handle to point at yet. Swap in real
+            social URLs here (and make this row a TouchableOpacity/Linking.openURL
+            per platform) once they exist. */}
+        <View style={styles.socialRow}>
+          <Ionicons name="megaphone-outline" size={15} color={colors.textFaint} />
+          <Text style={styles.socialText}>
+            Follow <Text style={styles.socialHandle}>OurCityVibe</Text> on social media for
+            raffle draw updates and winner announcements.
+          </Text>
+        </View>
       </ScrollView>
     </View>
   );
@@ -566,5 +577,25 @@ const createStyles = (c: ThemeColors) =>
       color: c.textFaint,
       textAlign: "center",
       lineHeight: 18,
+    },
+    socialRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "center",
+      gap: 6,
+      marginTop: 14,
+      paddingHorizontal: 8,
+    },
+    socialText: {
+      flex: 1,
+      fontFamily: Fonts.regular,
+      fontSize: 12,
+      color: c.textFaint,
+      textAlign: "center",
+      lineHeight: 18,
+    },
+    socialHandle: {
+      fontFamily: Fonts.semiBold,
+      color: c.textDim,
     },
   });
