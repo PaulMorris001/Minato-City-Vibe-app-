@@ -122,12 +122,22 @@ export default function Raffle() {
   const hasActive = campaigns.some((c) => c.status === "active");
   const prizes = campaign?.prizes?.length ? campaign.prizes : [];
   const prizeCount = prizes.length || 3;
-  const rewardFor = (rank: number) => prizes.find((p) => p.rank === rank)?.reward;
+  // Both regional rewards, since the admin picking a winner isn't picking a
+  // country — the winner's own reward is resolved server-side at read time.
+  const rewardFor = (rank: number) => {
+    const p = prizes.find((p) => p.rank === rank);
+    if (!p) return undefined;
+    const ngn = p.rewardNGN || p.reward;
+    const usd = p.rewardUSD || p.reward;
+    if (ngn && usd && ngn !== usd) return `${ngn} (NGN) / ${usd} (USD)`;
+    return ngn || usd;
+  };
 
   const totals = useMemo(() => {
     const rsvps = entries.reduce((sum, e) => sum + e.verifiedRsvps, 0);
     const winners = entries.filter((e) => e.winnerRank != null).length;
-    return { rsvps, winners };
+    const eligible = entries.filter((e) => e.isEligible).length;
+    return { rsvps, winners, eligible };
   }, [entries]);
 
   const columns: Column<AdminRaffleEntry>[] = [
@@ -181,6 +191,17 @@ export default function Raffle() {
       header: "Score",
       width: 80,
       render: (e) => <Badge variant="info">{e.eligibilityScore}</Badge>,
+    },
+    {
+      key: "eligible",
+      header: "Eligible",
+      width: 90,
+      render: (e) =>
+        e.isEligible ? (
+          <Badge variant="success">Yes</Badge>
+        ) : (
+          <Badge variant="default">Not yet</Badge>
+        ),
     },
     {
       key: "actions",
@@ -275,6 +296,12 @@ export default function Raffle() {
           <StatCard label="Entries" value={entries.length} icon="🎂" />
           <StatCard label="Verified RSVPs" value={totals.rsvps} icon="✅" accent={colors.success} />
           <StatCard
+            label={`Eligible (≥${campaign?.minReferrals ?? 6} RSVPs)`}
+            value={`${totals.eligible} / ${entries.length}`}
+            icon="🎯"
+            accent={colors.info}
+          />
+          <StatCard
             label="Winners picked"
             value={`${totals.winners} / ${prizeCount}`}
             icon="🏆"
@@ -291,7 +318,8 @@ export default function Raffle() {
         {!ended && !loading && entries.length > 0 && (
           <div style={styles.notice}>
             Campaign is still open — entries can still gain RSVPs. Winners are normally
-            drawn after {campaign ? formatDate(campaign.endDate) : "the deadline"}.
+            drawn after {campaign ? formatDate(campaign.endDate) : "the deadline"}, from
+            entries with at least {campaign?.minReferrals ?? 6} verified RSVPs.
           </div>
         )}
 
@@ -384,13 +412,28 @@ function CampaignPanel({
   const [name, setName] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  // One reward string per winner tier; array length = number of winners.
-  const [rewards, setRewards] = useState<string[]>(["", "", ""]);
+  // One NGN + USD reward pair per winner tier; array length = number of winners.
+  const [rewards, setRewards] = useState<{ rewardNGN: string; rewardUSD: string }[]>([
+    { rewardNGN: "", rewardUSD: "" },
+    { rewardNGN: "", rewardUSD: "" },
+    { rewardNGN: "", rewardUSD: "" },
+  ]);
+  // Verified RSVPs a host needs before they're prize-eligible.
+  const [minReferrals, setMinReferrals] = useState("6");
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
 
+  const EMPTY_REWARDS = [
+    { rewardNGN: "", rewardUSD: "" },
+    { rewardNGN: "", rewardUSD: "" },
+    { rewardNGN: "", rewardUSD: "" },
+  ];
   const campaignRewards = (c: AdminRaffleCampaign | null) =>
-    c?.prizes?.length ? [...c.prizes].sort((a, b) => a.rank - b.rank).map((p) => p.reward) : ["", "", ""];
+    c?.prizes?.length
+      ? [...c.prizes]
+          .sort((a, b) => a.rank - b.rank)
+          .map((p) => ({ rewardNGN: p.rewardNGN ?? p.reward ?? "", rewardUSD: p.rewardUSD ?? p.reward ?? "" }))
+      : EMPTY_REWARDS;
 
   // Reset the edit fields whenever the selected campaign changes.
   useEffect(() => {
@@ -399,18 +442,20 @@ function CampaignPanel({
       setStart(toDateInput(campaign.startDate));
       setEnd(toDateInput(campaign.endDate));
       setRewards(campaignRewards(campaign));
+      setMinReferrals(String(campaign.minReferrals ?? 6));
       setCreating(false);
     } else {
       setName("");
       setStart("");
       setEnd("");
-      setRewards(["", "", ""]);
+      setRewards(EMPTY_REWARDS);
+      setMinReferrals("6");
     }
   }, [campaign, real]);
 
-  const setReward = (i: number, v: string) =>
-    setRewards((prev) => prev.map((r, idx) => (idx === i ? v : r)));
-  const addTier = () => setRewards((prev) => [...prev, ""]);
+  const setReward = (i: number, field: "rewardNGN" | "rewardUSD", v: string) =>
+    setRewards((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: v } : r)));
+  const addTier = () => setRewards((prev) => [...prev, { rewardNGN: "", rewardUSD: "" }]);
   const removeTier = (i: number) => setRewards((prev) => prev.filter((_, idx) => idx !== i));
 
   const rewardsDirty =
@@ -421,9 +466,15 @@ function CampaignPanel({
     (name !== campaign.name ||
       start !== toDateInput(campaign.startDate) ||
       end !== toDateInput(campaign.endDate) ||
-      rewardsDirty);
+      rewardsDirty ||
+      minReferrals !== String(campaign.minReferrals ?? 6));
 
-  const prizesPayload = () => rewards.map((r) => ({ reward: r.trim() }));
+  const prizesPayload = () =>
+    rewards.map((r) => ({ rewardNGN: r.rewardNGN.trim(), rewardUSD: r.rewardUSD.trim() }));
+  const minReferralsPayload = () => {
+    const n = Number(minReferrals);
+    return Number.isInteger(n) && n >= 0 ? n : undefined;
+  };
 
   const save = async () => {
     onError(null);
@@ -434,6 +485,7 @@ function CampaignPanel({
         startDate: startInstant(start),
         endDate: endInstant(end),
         prizes: prizesPayload(),
+        minReferrals: minReferralsPayload(),
       });
       onSaved(res.data.campaign);
     } catch (e: any) {
@@ -452,6 +504,7 @@ function CampaignPanel({
         startDate: startInstant(start),
         endDate: endInstant(end),
         prizes: prizesPayload(),
+        minReferrals: minReferralsPayload(),
       });
       onSaved(res.data.campaign);
     } catch (e: any) {
@@ -463,7 +516,12 @@ function CampaignPanel({
 
   const showCreate = creating || !real;
   const canSubmit =
-    !!name.trim() && !!start && !!end && rewards.length > 0 && rewards.every((r) => r.trim());
+    !!name.trim() &&
+    !!start &&
+    !!end &&
+    minReferralsPayload() !== undefined &&
+    rewards.length > 0 &&
+    rewards.every((r) => r.rewardNGN.trim() && r.rewardUSD.trim());
 
   return (
     <div style={styles.panel}>
@@ -531,6 +589,20 @@ function CampaignPanel({
             onChange={(e) => setEnd(e.target.value)}
           />
         </Field>
+        <Field label="Min. referrals to qualify">
+          <input
+            type="number"
+            min={0}
+            step={1}
+            style={{ ...styles.input, width: 90 }}
+            value={minReferrals}
+            onChange={(e) => setMinReferrals(e.target.value)}
+          />
+        </Field>
+      </div>
+      <div style={{ ...styles.panelRow, marginTop: -6 }}>
+        A host needs at least this many verified RSVPs on their birthday event before
+        they're eligible to win a prize.
       </div>
 
       <div style={styles.prizeBlock}>
@@ -542,14 +614,26 @@ function CampaignPanel({
             + Add winner
           </Button>
         </div>
+        <div style={styles.prizeColumnHeads}>
+          <span style={{ ...styles.prizeRank, visibility: "hidden" }}>—</span>
+          <span style={{ ...styles.fieldLabel, flex: 1 }}>Nigeria (₦)</span>
+          <span style={{ ...styles.fieldLabel, flex: 1 }}>Everywhere else ($)</span>
+          <span style={{ width: 34, flexShrink: 0 }} />
+        </div>
         {rewards.map((r, i) => (
           <div key={i} style={styles.prizeRow}>
             <span style={styles.prizeRank}>{ordinal(i + 1)}</span>
             <input
               style={{ ...styles.input, flex: 1 }}
-              value={r}
-              onChange={(e) => setReward(i, e.target.value)}
+              value={r.rewardNGN}
+              onChange={(e) => setReward(i, "rewardNGN", e.target.value)}
               placeholder="e.g. ₦150,000 Cash + Premium Event Pass"
+            />
+            <input
+              style={{ ...styles.input, flex: 1 }}
+              value={r.rewardUSD}
+              onChange={(e) => setReward(i, "rewardUSD", e.target.value)}
+              placeholder="e.g. $100 Cash + Premium Event Pass"
             />
             <Button
               variant="ghost"
@@ -660,13 +744,18 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: 8,
-    maxWidth: 520,
+    maxWidth: 760,
   },
   prizeHead: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
+  },
+  prizeColumnHeads: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
   },
   prizeRow: {
     display: "flex",

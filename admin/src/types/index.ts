@@ -130,13 +130,21 @@ export interface AdminRaffleEntry {
   verifiedRsvps: number;
   totalInvites: number;
   eligibilityScore: number;
+  // Whether this host has cleared the campaign's minReferrals bar. Informational
+  // only — the server doesn't block assigning a place to an ineligible entry.
+  isEligible: boolean;
   // 1..N where N is the campaign's prize-tier count.
   winnerRank: number | null;
 }
 
 export interface RafflePrize {
   rank: number;
-  reward: string;
+  // Region-split reward copy — shown verbatim to the winner, NGN for Nigeria
+  // and USD everywhere else. `reward` is the pre-split legacy field, present
+  // only on rows saved before the split.
+  reward?: string;
+  rewardNGN: string;
+  rewardUSD: string;
 }
 
 export interface AdminRaffleCampaign {
@@ -149,6 +157,8 @@ export interface AdminRaffleCampaign {
   status: "active" | "ended";
   // Ordered prize tiers; length is the winner count.
   prizes: RafflePrize[];
+  // Verified RSVPs a birthday event needs before its host is prize-eligible.
+  minReferrals: number;
   createdByAdmin?: string;
   createdAt?: string;
   updatedAt?: string;

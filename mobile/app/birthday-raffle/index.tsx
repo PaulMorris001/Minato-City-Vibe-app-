@@ -56,10 +56,16 @@ const CAMPAIGN = {
     "Create a birthday event on CityVibe during the campaign period.",
     "Share your unique tracking link with friends.",
     "Only unique, verified RSVPs count toward eligibility.",
-    "Base entry for creating the event + points for each verified RSVP.",
+    // Index 3 — rewritten in the component with the campaign's real
+    // minReferrals once /raffle/status resolves; this is the guest/offline
+    // fallback copy.
+    "Base entry for creating the event, but you need a minimum number of verified RSVPs to be prize-eligible.",
     "Winners are selected randomly from eligible entries by admin.",
   ],
 };
+
+// Guest/offline fallback until /raffle/status resolves with the real value.
+const DEFAULT_MIN_REFERRALS = 6;
 
 export default function BirthdayRaffleScreen() {
   const { colors } = useTheme();
@@ -74,6 +80,9 @@ export default function BirthdayRaffleScreen() {
   // logged-in user, which is the one that actually gates eligibility.
   const [deadlineMs, setDeadlineMs] = useState(CAMPAIGN_DEADLINE_MS);
   const [prizes, setPrizes] = useState<PrizeRow[]>(CAMPAIGN.prizes);
+  // Verified RSVPs needed to be prize-eligible — set from the active
+  // campaign; the current admin default is 6.
+  const [minReferrals, setMinReferrals] = useState(DEFAULT_MIN_REFERRALS);
   const countdown = useCountdown(deadlineMs);
 
   useEffect(() => {
@@ -92,6 +101,7 @@ export default function BirthdayRaffleScreen() {
           setHasBirthdayEvent(!!data.hasQualifyingEvent);
           if (data.campaignDeadline) setDeadlineMs(new Date(data.campaignDeadline).getTime());
           if (Array.isArray(data.prizes) && data.prizes.length) setPrizes(toPrizeRows(data.prizes));
+          if (typeof data.minReferrals === "number") setMinReferrals(data.minReferrals);
         } else {
           setHasBirthdayEvent(false);
         }
@@ -110,6 +120,14 @@ export default function BirthdayRaffleScreen() {
     day: "numeric",
     year: "numeric",
   });
+
+  // Index 3 is rewritten with the real campaign threshold once it resolves —
+  // see that rule's own comment in CAMPAIGN.rules for why it's this index.
+  const rules = CAMPAIGN.rules.map((rule, index) =>
+    index === 3
+      ? `Base entry for creating the event, plus at least ${minReferrals} verified RSVP${minReferrals === 1 ? "" : "s"} to be prize-eligible.`
+      : rule
+  );
 
 const handlePrimaryCTA = async () => {
   if (!(await ensureAuth("join the birthday raffle"))) return;
@@ -208,7 +226,7 @@ const handlePrimaryCTA = async () => {
         {/* Rules */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>How it works</Text>
-          {CAMPAIGN.rules.map((rule, index) => (
+          {rules.map((rule, index) => (
             <View key={index} style={styles.ruleRow}>
               <View style={styles.ruleNumber}>
                 <Text style={styles.ruleNumberText}>{index + 1}</Text>

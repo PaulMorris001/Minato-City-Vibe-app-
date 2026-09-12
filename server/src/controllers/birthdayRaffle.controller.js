@@ -1,5 +1,11 @@
 import Event from "../models/event.model.js";
-import { getCurrentCampaign, campaignPrizes } from "../services/raffleCampaign.service.js";
+import User from "../models/user.model.js";
+import {
+  getCurrentCampaign,
+  campaignMinReferrals,
+  resolvedPrizes,
+  isNigerianCountry,
+} from "../services/raffleCampaign.service.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -19,11 +25,16 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * `totalInvites` is intentionally the other list (invitedUsers +
  * pendingInvites) — it's "how many people were reached out to", which
  * shouldn't un-count just because one of them later backs out of going.
+ *
+ * `isEligible` gates on the campaign's `minReferrals` — creating the event is
+ * enough to enter (`hasQualifyingEvent`), but a host only becomes prize-
+ * eligible once enough of their invitees have actually verified-RSVP'd.
  */
 function scoreEntry(event, campaign) {
   const verifiedRsvps = event.rsvpUsers.length;
   const totalInvites = event.invitedUsers.length + event.pendingInvites.length;
   const campaignOver = Date.now() > new Date(campaign.endDate).getTime();
+  const minReferrals = campaignMinReferrals(campaign);
   return {
     eventId: event._id,
     eventTitle: event.title,
@@ -34,7 +45,9 @@ function scoreEntry(event, campaign) {
     verifiedRsvps,
     totalInvites,
     eligibilityScore: 1 + verifiedRsvps, // base entry + one point per verified RSVP
-    isEligible: true,
+    isEligible: verifiedRsvps >= minReferrals,
+    minReferrals,
+    referralsNeeded: Math.max(0, minReferrals - verifiedRsvps),
     status: event.raffleWinnerRank ? "winner" : campaignOver ? "eligible" : "active",
     winnerRank: event.raffleWinnerRank || null,
   };
@@ -48,7 +61,11 @@ function scoreEntry(event, campaign) {
  */
 export async function getRaffleStatus(req, res) {
   try {
-    const campaign = await getCurrentCampaign();
+    const [campaign, user] = await Promise.all([
+      getCurrentCampaign(),
+      User.findById(req.user.id).select("location.country"),
+    ]);
+    const isNigerian = isNigerianCountry(user?.location?.country);
 
     const events = await Event.find({
       createdBy: req.user.id,
@@ -62,12 +79,14 @@ export async function getRaffleStatus(req, res) {
       Math.ceil((new Date(campaign.endDate).getTime() - Date.now()) / DAY_MS)
     );
     const campaignDeadline = new Date(campaign.endDate).toISOString();
-    // Prize tiers for this campaign so the app can render real rewards instead
-    // of its hardcoded copy.
-    const prizes = campaignPrizes(campaign);
+    // Prize tiers for this campaign, localized to the requesting user's
+    // country, so the app can render real rewards instead of its hardcoded
+    // copy without needing to know about the NGN/USD split itself.
+    const prizes = resolvedPrizes(campaign, isNigerian);
+    const minReferrals = campaignMinReferrals(campaign);
 
     if (events.length === 0) {
-      return res.json({ hasQualifyingEvent: false, daysLeft, campaignDeadline, prizes });
+      return res.json({ hasQualifyingEvent: false, daysLeft, campaignDeadline, prizes, minReferrals });
     }
 
     // Multiple qualifying events are allowed (more parties, more chances) —

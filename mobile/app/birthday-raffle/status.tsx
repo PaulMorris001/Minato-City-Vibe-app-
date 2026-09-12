@@ -33,6 +33,9 @@ interface RaffleStatus {
   isEligible: boolean;
   status: "active" | "eligible" | "ineligible" | "winner";
   campaignDeadlineMs: number;
+  // Verified RSVPs needed to be prize-eligible — admin-controlled, current
+  // default is 6. Drives the progress bar below.
+  minReferrals: number;
 }
 
 export default function RaffleStatusScreen() {
@@ -65,6 +68,7 @@ export default function RaffleStatusScreen() {
           isEligible: data.isEligible,
           status: data.status,
           campaignDeadlineMs: new Date(data.campaignDeadline).getTime(),
+          minReferrals: typeof data.minReferrals === "number" ? data.minReferrals : 6,
         });
       } else if (!status) {
         // No qualifying event on the very first load (or the fetch failed) —
@@ -120,10 +124,13 @@ export default function RaffleStatusScreen() {
     );
   }
 
+  // Math.max(1, …) guards a campaign configured with minReferrals: 0 (always
+  // eligible) from a divide-by-zero — the bar just reads full immediately.
   const progressPercent = Math.min(
-    (status.verifiedRsvps / 10) * 100, // example target of 10 for full bar
+    (status.verifiedRsvps / Math.max(1, status.minReferrals)) * 100,
     100
   );
+  const referralsRemaining = Math.max(0, status.minReferrals - status.verifiedRsvps);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -226,7 +233,7 @@ export default function RaffleStatusScreen() {
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Progress</Text>
             <Text style={styles.progressText}>
-              {status.verifiedRsvps} / 10 verified
+              {status.verifiedRsvps} / {status.minReferrals} verified
             </Text>
           </View>
           <View style={styles.progressTrack}>
@@ -238,7 +245,9 @@ export default function RaffleStatusScreen() {
             />
           </View>
           <Text style={styles.progressHint}>
-            Get more verified RSVPs to increase your chances
+            {status.isEligible
+              ? "You've hit the minimum — keep sharing to climb the leaderboard."
+              : `${referralsRemaining} more verified RSVP${referralsRemaining === 1 ? "" : "s"} to become prize-eligible.`}
           </Text>
         </View>
 

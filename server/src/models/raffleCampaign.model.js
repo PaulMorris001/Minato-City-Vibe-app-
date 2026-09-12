@@ -16,12 +16,21 @@ import mongoose from "mongoose";
  */
 
 // One prize tier. `rank` is 1..N (1 = top prize) and the array length is "how
-// many winners this campaign has". `reward` is free text — it's shown verbatim
-// on the mobile raffle screen, so it carries the amount ("₦150,000 Cash + ...").
+// many winners this campaign has". Rewards are free text, shown verbatim on
+// the mobile raffle screen, so each carries its own amount.
+//
+// `rewardNGN`/`rewardUSD` split the prize by the winner's country — Nigerian
+// winners see the NGN copy, everyone else sees USD (see isNigerianCountry /
+// prizeReward in raffleCampaign.service.js). `reward` is the pre-split legacy
+// field, kept only so rows saved before the split still resolve to something;
+// new writes go through admin.controller.js's normalizePrizes, which always
+// populates both regional fields.
 const prizeSchema = mongoose.Schema(
   {
     rank: { type: Number, required: true, min: 1 },
-    reward: { type: String, required: true, trim: true },
+    reward: { type: String, trim: true },
+    rewardNGN: { type: String, trim: true },
+    rewardUSD: { type: String, trim: true },
   },
   { _id: false }
 );
@@ -36,6 +45,12 @@ const raffleCampaignSchema = mongoose.Schema(
     // Prize tiers, ordered by rank. Empty on rows created before this field
     // existed — readers fall back to DEFAULT_RAFFLE_PRIZES for those.
     prizes: { type: [prizeSchema], default: [] },
+
+    // Verified RSVPs (the host's live "going" list — see scoreEntry in
+    // birthdayRaffle.controller.js) a birthday event needs before its host is
+    // eligible to win a prize. Admin-controlled; existing rows default to 6
+    // via this schema default whenever they're read as a hydrated document.
+    minReferrals: { type: Number, default: 6, min: 0 },
 
     // Admin JWTs carry only a username — same attribution convention as
     // discountCode.createdByAdmin / event pendingEdits.reviewedBy.

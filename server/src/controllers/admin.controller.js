@@ -20,7 +20,11 @@ import {
   PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
 import RaffleCampaign from "../models/raffleCampaign.model.js";
-import { getCurrentCampaign, campaignPrizes } from "../services/raffleCampaign.service.js";
+import {
+  getCurrentCampaign,
+  campaignPrizes,
+  campaignMinReferrals,
+} from "../services/raffleCampaign.service.js";
 
 /**
  * Constant-time string comparison. Guards the username check against timing
@@ -322,9 +326,12 @@ async function resolveRaffleCampaign(req) {
   return getCurrentCampaign();
 }
 
-/** Normalise a prizes payload (array of `{ reward }` or plain strings) into
- *  `[{ rank, reward }]` with ranks 1..N in array order. Returns { prizes } or
- *  { error }. `undefined` input means "leave unchanged" -> { prizes: undefined }. */
+/** Normalise a prizes payload (array of `{ rewardNGN, rewardUSD }`, or the
+ *  legacy `{ reward }` / plain string) into `[{ rank, rewardNGN, rewardUSD }]`
+ *  with ranks 1..N in array order. A legacy single `reward` is mirrored into
+ *  both regional fields so an old-shaped payload still saves something
+ *  sensible rather than failing. Returns { prizes } or { error }. `undefined`
+ *  input means "leave unchanged" -> { prizes: undefined }. */
 function normalizePrizes(input) {
   if (input === undefined) return { prizes: undefined };
   if (!Array.isArray(input) || input.length === 0) {
@@ -334,11 +341,26 @@ function normalizePrizes(input) {
   const prizes = [];
   for (let i = 0; i < input.length; i++) {
     const raw = input[i];
-    const reward = (typeof raw === "string" ? raw : raw?.reward ?? "").trim();
-    if (!reward) return { error: `prize ${i + 1} needs a reward description` };
-    prizes.push({ rank: i + 1, reward });
+    const legacy = (typeof raw === "string" ? raw : raw?.reward ?? "").trim();
+    const rewardNGN = (raw?.rewardNGN ?? legacy).trim();
+    const rewardUSD = (raw?.rewardUSD ?? legacy).trim();
+    if (!rewardNGN || !rewardUSD) {
+      return { error: `prize ${i + 1} needs both a Naira and a Dollar reward` };
+    }
+    prizes.push({ rank: i + 1, rewardNGN, rewardUSD });
   }
   return { prizes };
+}
+
+/** `minReferrals` payload validation. `undefined` means "leave unchanged" on
+ *  update, or "use the schema default" on create. */
+function normalizeMinReferrals(input) {
+  if (input === undefined || input === null || input === "") return { minReferrals: undefined };
+  const n = Number(input);
+  if (!Number.isInteger(n) || n < 0) {
+    return { error: "minReferrals must be a whole number, 0 or more" };
+  }
+  return { minReferrals: n };
 }
 
 /** Reject a window that's inverted or overlaps another campaign. Returns an
@@ -369,6 +391,8 @@ export async function getRaffleEntries(req, res) {
       .populate("createdBy", "username email profilePicture")
       .sort({ createdAt: -1 });
 
+    const minReferrals = campaignMinReferrals(campaign);
+
     const entries = events
       .map((e) => ({
         eventId: e._id,
@@ -382,6 +406,10 @@ export async function getRaffleEntries(req, res) {
         verifiedRsvps: e.rsvpUsers.length,
         totalInvites: e.invitedUsers.length + e.pendingInvites.length,
         eligibilityScore: 1 + e.rsvpUsers.length,
+        // Whether this host has cleared the campaign's minimum verified-RSVP
+        // bar — informational for the admin table; winner assignment doesn't
+        // enforce it, so an edge case can still be picked by hand.
+        isEligible: e.rsvpUsers.length >= minReferrals,
         winnerRank: e.raffleWinnerRank || null,
       }))
       .sort((a, b) => b.eligibilityScore - a.eligibilityScore);
@@ -420,11 +448,16 @@ export async function createRaffleCampaign(req, res) {
     const { prizes, error: prizeError } = normalizePrizes(req.body.prizes ?? campaignPrizes(null));
     if (prizeError) return res.status(400).json({ message: prizeError });
 
+    const { minReferrals, error: minReferralsError } = normalizeMinReferrals(req.body.minReferrals);
+    if (minReferralsError) return res.status(400).json({ message: minReferralsError });
+
     const campaign = await new RaffleCampaign({
       name: name.trim(),
       startDate,
       endDate,
       prizes,
+      // Undefined here just falls through to the schema default (6).
+      minReferrals,
       status: "active",
       createdByAdmin: req.user?.username || "admin",
     }).save();
@@ -450,10 +483,14 @@ export async function updateRaffleCampaign(req, res) {
     const { prizes, error: prizeError } = normalizePrizes(req.body.prizes);
     if (prizeError) return res.status(400).json({ message: prizeError });
 
+    const { minReferrals, error: minReferralsError } = normalizeMinReferrals(req.body.minReferrals);
+    if (minReferralsError) return res.status(400).json({ message: minReferralsError });
+
     campaign.name = String(name).trim();
     campaign.startDate = startDate;
     campaign.endDate = endDate;
     if (prizes !== undefined) campaign.prizes = prizes;
+    if (minReferrals !== undefined) campaign.minReferrals = minReferrals;
     await campaign.save();
     res.json({ campaign });
   } catch (error) {

@@ -88,14 +88,22 @@ export const adminApi = {
     startDate: string;
     endDate: string;
     // Ordered rewards; server assigns ranks 1..N by position.
-    prizes?: { reward: string }[];
+    prizes?: { rewardNGN: string; rewardUSD: string }[];
+    // Verified RSVPs needed to be prize-eligible; omit to use the server default (6).
+    minReferrals?: number;
   }) =>
     client
       .post<{ campaign: AdminRaffleCampaign }>("/admin/raffle/campaigns", data)
       .then((r) => { bustCache("/admin/raffle"); return r; }),
   updateRaffleCampaign: (
     id: string,
-    data: { name?: string; startDate?: string; endDate?: string; prizes?: { reward: string }[] }
+    data: {
+      name?: string;
+      startDate?: string;
+      endDate?: string;
+      prizes?: { rewardNGN: string; rewardUSD: string }[];
+      minReferrals?: number;
+    }
   ) =>
     client
       .patch<{ campaign: AdminRaffleCampaign }>(`/admin/raffle/campaigns/${id}`, data)
