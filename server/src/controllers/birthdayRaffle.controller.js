@@ -5,6 +5,7 @@ import {
   campaignMinReferrals,
   resolvedPrizes,
   isNigerianCountry,
+  isCampaignOpen,
 } from "../services/raffleCampaign.service.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -84,9 +85,24 @@ export async function getRaffleStatus(req, res) {
     // copy without needing to know about the NGN/USD split itself.
     const prizes = resolvedPrizes(campaign, isNigerian);
     const minReferrals = campaignMinReferrals(campaign);
+    // Whether NEW birthday events can enter right now (mirrors the same check
+    // event.controller.js enforces on creation) — the raffle landing page uses
+    // this to gray out "Create Birthday Event" and explain why, instead of
+    // letting the user hit the create flow and bounce off a 400 there.
+    // Ending a campaign early (admin.controller.js's endRaffleCampaign) also
+    // pulls its endDate back to that moment, so this and the deadline shown
+    // to the user agree.
+    const campaignOpen = isCampaignOpen(campaign);
 
     if (events.length === 0) {
-      return res.json({ hasQualifyingEvent: false, daysLeft, campaignDeadline, prizes, minReferrals });
+      return res.json({
+        hasQualifyingEvent: false,
+        daysLeft,
+        campaignDeadline,
+        prizes,
+        minReferrals,
+        campaignOpen,
+      });
     }
 
     // Multiple qualifying events are allowed (more parties, more chances) —
@@ -99,6 +115,7 @@ export async function getRaffleStatus(req, res) {
       daysLeft,
       campaignDeadline,
       prizes,
+      campaignOpen,
     });
   } catch (error) {
     console.error("Get raffle status error:", error);

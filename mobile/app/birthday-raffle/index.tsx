@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -83,6 +84,10 @@ export default function BirthdayRaffleScreen() {
   // Verified RSVPs needed to be prize-eligible — set from the active
   // campaign; the current admin default is 6.
   const [minReferrals, setMinReferrals] = useState(DEFAULT_MIN_REFERRALS);
+  // Whether the active campaign is still taking new entries. Defaults to true
+  // so a guest (who never fetches — see checkStatus) still sees the normal
+  // "join" CTA; a logged-in user gets the real value the moment it resolves.
+  const [campaignOpen, setCampaignOpen] = useState(true);
   const countdown = useCountdown(deadlineMs);
 
   useEffect(() => {
@@ -102,6 +107,7 @@ export default function BirthdayRaffleScreen() {
           if (data.campaignDeadline) setDeadlineMs(new Date(data.campaignDeadline).getTime());
           if (Array.isArray(data.prizes) && data.prizes.length) setPrizes(toPrizeRows(data.prizes));
           if (typeof data.minReferrals === "number") setMinReferrals(data.minReferrals);
+          if (typeof data.campaignOpen === "boolean") setCampaignOpen(data.campaignOpen);
         } else {
           setHasBirthdayEvent(false);
         }
@@ -130,6 +136,9 @@ export default function BirthdayRaffleScreen() {
   );
 
 const handlePrimaryCTA = async () => {
+  // Belt-and-suspenders — the button is disabled in this state, but a stray
+  // tap mid-transition shouldn't be able to reach the create flow either.
+  if (!hasBirthdayEvent && !campaignOpen) return;
   if (!(await ensureAuth("join the birthday raffle"))) return;
 
   if (hasBirthdayEvent) {
@@ -143,6 +152,25 @@ const handlePrimaryCTA = async () => {
     router.replace("/(tabs)/home?openCreate=birthday" as any);
   }
 };
+
+  // Server-authoritative — reflects an admin ending the campaign early just as
+  // much as it reaching its natural deadline (see isCampaignOpen).
+  const ended = !campaignOpen;
+  // Someone who already has a qualifying event can always check its status,
+  // ended campaign or not — only a fresh entry is blocked.
+  const ctaDisabled = !hasBirthdayEvent && ended;
+
+  // Wait for the real status before showing anything. Without this, a
+  // logged-in user briefly saw the guest/offline fallback copy (default
+  // prizes, generic rules, the seed deadline) flash and then jump to their
+  // real values the moment the fetch resolved.
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -174,36 +202,47 @@ const handlePrimaryCTA = async () => {
           end={{ x: 1, y: 1 }}
         >
           <View style={styles.heroBadge}>
-            <Ionicons name="gift" size={14} color="#fff" />
-            <Text style={styles.heroBadgeText}>LIMITED TIME</Text>
+            <Ionicons name={ended ? "time-outline" : "gift"} size={14} color="#fff" />
+            <Text style={styles.heroBadgeText}>{ended ? "CAMPAIGN ENDED" : "LIMITED TIME"}</Text>
           </View>
 
           <Text style={styles.heroTitle}>{CAMPAIGN.title}</Text>
           <Text style={styles.heroSubtitle}>{CAMPAIGN.subtitle}</Text>
 
-          <View style={styles.deadlineRow}>
-            <Ionicons name="time-outline" size={16} color="rgba(255,255,255,0.8)" />
-            <Text style={styles.deadlineText}>Ends {deadlineLabel}</Text>
-          </View>
-
-          {/* Live countdown — ticks every second, see hooks/useCountdown. */}
-          {countdown && (
-            <View style={styles.countdownRow}>
-              {[
-                { label: "Days", value: countdown.days },
-                { label: "Hrs", value: countdown.hours },
-                { label: "Min", value: countdown.minutes },
-                { label: "Sec", value: countdown.seconds },
-              ].map((unit, i) => (
-                <React.Fragment key={unit.label}>
-                  {i > 0 && <Text style={styles.countdownColon}>:</Text>}
-                  <View style={styles.countdownUnit}>
-                    <Text style={styles.countdownValue}>{String(unit.value).padStart(2, "0")}</Text>
-                    <Text style={styles.countdownLabel}>{unit.label}</Text>
-                  </View>
-                </React.Fragment>
-              ))}
+          {ended ? (
+            <View style={styles.endedRow}>
+              <Ionicons name="alert-circle-outline" size={16} color="rgba(255,255,255,0.85)" />
+              <Text style={styles.endedText}>
+                This batch of the raffle has ended — entries closed {deadlineLabel}.
+              </Text>
             </View>
+          ) : (
+            <>
+              <View style={styles.deadlineRow}>
+                <Ionicons name="time-outline" size={16} color="rgba(255,255,255,0.8)" />
+                <Text style={styles.deadlineText}>Ends {deadlineLabel}</Text>
+              </View>
+
+              {/* Live countdown — ticks every second, see hooks/useCountdown. */}
+              {countdown && (
+                <View style={styles.countdownRow}>
+                  {[
+                    { label: "Days", value: countdown.days },
+                    { label: "Hrs", value: countdown.hours },
+                    { label: "Min", value: countdown.minutes },
+                    { label: "Sec", value: countdown.seconds },
+                  ].map((unit, i) => (
+                    <React.Fragment key={unit.label}>
+                      {i > 0 && <Text style={styles.countdownColon}>:</Text>}
+                      <View style={styles.countdownUnit}>
+                        <Text style={styles.countdownValue}>{String(unit.value).padStart(2, "0")}</Text>
+                        <Text style={styles.countdownLabel}>{unit.label}</Text>
+                      </View>
+                    </React.Fragment>
+                  ))}
+                </View>
+              )}
+            </>
           )}
         </LinearGradient>
 
@@ -236,34 +275,42 @@ const handlePrimaryCTA = async () => {
           ))}
         </View>
 
-        {/* Primary CTA */}
+        {/* Primary CTA — disabled only for someone with no entry once the
+            campaign's closed; an existing entry can still check its status. */}
         <TouchableOpacity
-          style={styles.ctaButton}
-          activeOpacity={0.85}
+          style={[styles.ctaButton, ctaDisabled && styles.ctaButtonDisabled]}
+          activeOpacity={ctaDisabled ? 1 : 0.85}
           onPress={handlePrimaryCTA}
-          disabled={loading}
+          disabled={ctaDisabled}
         >
           <LinearGradient
-            colors={[colors.primary, colors.primaryDark]}
+            colors={ctaDisabled ? [colors.textFaint, colors.textMuted] : [colors.primary, colors.primaryDark]}
             style={styles.ctaGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
           >
             <Text style={styles.ctaText}>
-              {loading
-                ? "Checking..."
-                : hasBirthdayEvent
+              {hasBirthdayEvent
                 ? "View My Raffle Status"
+                : ended
+                ? "Raffle Has Ended"
                 : "Create Birthday Event & Enter"}
             </Text>
-            <Ionicons name="arrow-forward" size={18} color="#fff" />
+            {!ctaDisabled && <Ionicons name="arrow-forward" size={18} color="#fff" />}
           </LinearGradient>
         </TouchableOpacity>
 
-        <Text style={styles.footerNote}>
-          By participating you agree to the campaign rules. Winners will be
-          contacted via the app.
-        </Text>
+        {ctaDisabled ? (
+          <Text style={styles.footerNote}>
+            This batch of the Birthday Raffle is closed to new entries. Keep an eye out —
+            we'll announce the next one in the app.
+          </Text>
+        ) : (
+          <Text style={styles.footerNote}>
+            By participating you agree to the campaign rules. Winners will be
+            contacted via the app.
+          </Text>
+        )}
       </ScrollView>
     </View>
   );
@@ -274,6 +321,10 @@ const createStyles = (c: ThemeColors) =>
     container: {
       flex: 1,
       backgroundColor: c.backgroundDeep,
+    },
+    loadingContainer: {
+      alignItems: "center",
+      justifyContent: "center",
     },
     header: {
       flexDirection: "row",
@@ -345,6 +396,21 @@ const createStyles = (c: ThemeColors) =>
       fontFamily: Fonts.semiBold,
       fontSize: 13,
       color: "rgba(255,255,255,0.85)",
+    },
+    endedRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 8,
+      backgroundColor: "rgba(0,0,0,0.2)",
+      borderRadius: 12,
+      padding: 12,
+    },
+    endedText: {
+      flex: 1,
+      fontFamily: Fonts.medium,
+      fontSize: 13,
+      color: "rgba(255,255,255,0.9)",
+      lineHeight: 18,
     },
     countdownRow: {
       flexDirection: "row",
@@ -459,6 +525,10 @@ const createStyles = (c: ThemeColors) =>
       shadowOpacity: 0.35,
       shadowRadius: 16,
       elevation: 8,
+    },
+    ctaButtonDisabled: {
+      shadowOpacity: 0,
+      elevation: 0,
     },
     ctaGradient: {
       flexDirection: "row",

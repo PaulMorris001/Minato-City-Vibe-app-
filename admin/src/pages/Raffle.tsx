@@ -386,8 +386,9 @@ export default function Raffle() {
         }
       >
         <p style={{ color: colors.textMuted, fontSize: 14, lineHeight: 1.5 }}>
-          New birthday events can no longer enter until you create the next campaign. Entries
-          and any winners already picked stay as they are.
+          New birthday events can no longer enter until you create the next campaign, and the
+          app's countdown and "Create Birthday Event" button update immediately to reflect that.
+          Entries and any winners already picked stay as they are.
         </p>
       </Modal>
     </>

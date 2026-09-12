@@ -505,6 +505,13 @@ export async function endRaffleCampaign(req, res) {
     const campaign = await RaffleCampaign.findById(req.params.id);
     if (!campaign) return res.status(404).json({ message: "Campaign not found" });
     campaign.status = "ended";
+    // Ending early shouldn't leave the deadline — and every countdown clock
+    // showing it — pointing at a date that's no longer real. isCampaignOpen
+    // already goes false the moment status flips, so this is purely display;
+    // never push the date LATER for a campaign that already ran past it.
+    if (campaign.endDate.getTime() > Date.now()) {
+      campaign.endDate = new Date();
+    }
     await campaign.save();
     res.json({ campaign });
   } catch (error) {
