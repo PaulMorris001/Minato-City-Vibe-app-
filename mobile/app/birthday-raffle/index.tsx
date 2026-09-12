@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -88,38 +88,55 @@ export default function BirthdayRaffleScreen() {
   // so a guest (who never fetches — see checkStatus) still sees the normal
   // "join" CTA; a logged-in user gets the real value the moment it resolves.
   const [campaignOpen, setCampaignOpen] = useState(true);
+  // The admin-given campaign name — shown as the hero title once it resolves.
+  const [campaignName, setCampaignName] = useState(CAMPAIGN.title);
   const countdown = useCountdown(deadlineMs);
 
-  useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const token = await SecureStore.getItemAsync("token");
-        if (!token) {
-          setHasBirthdayEvent(false);
-          return;
-        }
-        const res = await fetch(`${BASE_URL}/raffle/status`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (res.ok) {
-          setHasBirthdayEvent(!!data.hasQualifyingEvent);
-          if (data.campaignDeadline) setDeadlineMs(new Date(data.campaignDeadline).getTime());
-          if (Array.isArray(data.prizes) && data.prizes.length) setPrizes(toPrizeRows(data.prizes));
-          if (typeof data.minReferrals === "number") setMinReferrals(data.minReferrals);
-          if (typeof data.campaignOpen === "boolean") setCampaignOpen(data.campaignOpen);
-        } else {
-          setHasBirthdayEvent(false);
-        }
-      } catch {
-        setHasBirthdayEvent(false);
-      } finally {
-        setLoading(false);
-      }
-    };
+  // Only the very first check shows the full-page spinner (see the `loading`
+  // gate below) — a refocus refetch updates state quietly so returning to
+  // this screen doesn't flash a spinner over content that's still valid.
+  const hasLoadedOnceRef = useRef(false);
 
-    checkStatus();
+  const checkStatus = useCallback(async () => {
+    if (!hasLoadedOnceRef.current) setLoading(true);
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) {
+        setHasBirthdayEvent(false);
+        return;
+      }
+      const res = await fetch(`${BASE_URL}/raffle/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setHasBirthdayEvent(!!data.hasQualifyingEvent);
+        if (data.campaignDeadline) setDeadlineMs(new Date(data.campaignDeadline).getTime());
+        if (Array.isArray(data.prizes) && data.prizes.length) setPrizes(toPrizeRows(data.prizes));
+        if (typeof data.minReferrals === "number") setMinReferrals(data.minReferrals);
+        if (typeof data.campaignOpen === "boolean") setCampaignOpen(data.campaignOpen);
+        if (data.campaignName) setCampaignName(data.campaignName);
+      } else {
+        setHasBirthdayEvent(false);
+      }
+    } catch {
+      setHasBirthdayEvent(false);
+    } finally {
+      setLoading(false);
+      hasLoadedOnceRef.current = true;
+    }
   }, []);
+
+  // Re-check every time this screen gains focus, not just on first mount — an
+  // admin ending or starting a campaign while this screen sat open (or
+  // cached) in the stack used to leave it showing stale state (e.g. still
+  // "Raffle Has Ended" after a brand-new campaign went active) until the app
+  // was fully reloaded.
+  useFocusEffect(
+    useCallback(() => {
+      checkStatus();
+    }, [checkStatus])
+  );
 
   const deadlineLabel = new Date(deadlineMs).toLocaleDateString("en-US", {
     month: "long",
@@ -206,7 +223,7 @@ const handlePrimaryCTA = async () => {
             <Text style={styles.heroBadgeText}>{ended ? "CAMPAIGN ENDED" : "LIMITED TIME"}</Text>
           </View>
 
-          <Text style={styles.heroTitle}>{CAMPAIGN.title}</Text>
+          <Text style={styles.heroTitle}>{campaignName}</Text>
           <Text style={styles.heroSubtitle}>{CAMPAIGN.subtitle}</Text>
 
           {ended ? (

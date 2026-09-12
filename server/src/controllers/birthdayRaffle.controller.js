@@ -93,6 +93,10 @@ export async function getRaffleStatus(req, res) {
     // pulls its endDate back to that moment, so this and the deadline shown
     // to the user agree.
     const campaignOpen = isCampaignOpen(campaign);
+    // The name an admin gave this campaign — the raffle screen's hero title
+    // is this, not a hardcoded string, so renaming a campaign in the admin
+    // dashboard is what actually renames it in the app.
+    const campaignName = campaign.name;
 
     if (events.length === 0) {
       return res.json({
@@ -102,6 +106,7 @@ export async function getRaffleStatus(req, res) {
         prizes,
         minReferrals,
         campaignOpen,
+        campaignName,
       });
     }
 
@@ -116,6 +121,7 @@ export async function getRaffleStatus(req, res) {
       campaignDeadline,
       prizes,
       campaignOpen,
+      campaignName,
     });
   } catch (error) {
     console.error("Get raffle status error:", error);
