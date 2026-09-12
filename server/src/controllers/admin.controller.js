@@ -370,9 +370,18 @@ async function windowConflict(startDate, endDate, excludeId) {
   const end = new Date(endDate);
   if (isNaN(start) || isNaN(end)) return "startDate and endDate must be valid dates";
   if (end <= start) return "endDate must be after startDate";
-  const others = await RaffleCampaign.find(
-    excludeId ? { _id: { $ne: excludeId } } : {}
-  );
+  // Only ACTIVE campaigns can actually clash: getCurrentCampaign() always
+  // prefers status:"active" over anything ended, so a new campaign's window
+  // overlapping a past, ended one's is harmless — the active campaign wins
+  // every lookup regardless of dates. Checking against ended rows too used to
+  // mean ending a campaign (which now stamps its endDate to the moment it was
+  // ended — see endRaffleCampaign) permanently blocked ever starting another
+  // one, since almost any new start date is "before" that just-stamped end.
+  // There's at most one active campaign at a time (createRaffleCampaign
+  // already refuses a second), so this is a defensive check, not the primary
+  // guard.
+  const query = { status: "active", ...(excludeId ? { _id: { $ne: excludeId } } : {}) };
+  const others = await RaffleCampaign.find(query);
   const clash = others.find((c) => start <= c.endDate && c.startDate <= end);
   return clash ? `Window overlaps campaign "${clash.name}"` : null;
 }
