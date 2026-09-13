@@ -184,6 +184,9 @@ export interface VendorStats {
   servicesByCategory: {
     category: string;
     count: number;
+    /** The CatalogueCategory id to open when this row is tapped — null for a
+     *  legacy group with no post-migration service to source it from. */
+    catalogueCategoryId: string | null;
   }[];
   rating?: number;
   ratingCount?: number;

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -29,6 +29,11 @@ interface ServicesTabProps {
   services: Service[];
   onRefresh: () => void;
   refreshing: boolean;
+  /** Opens straight into this category's item list instead of the grid —
+   *  set by the dashboard's "By category" / "Recent services" rows. */
+  initialCategoryId?: string;
+  /** Also opens this service's edit modal once its category is open. */
+  initialServiceId?: string;
 }
 
 export default function ServicesTab({
@@ -36,6 +41,8 @@ export default function ServicesTab({
   services,
   onRefresh,
   refreshing,
+  initialCategoryId,
+  initialServiceId,
 }: ServicesTabProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -122,6 +129,35 @@ export default function ServicesTab({
     setEditingItem(service);
     setItemModalVisible(true);
   };
+
+  // Applies initialCategoryId/initialServiceId once, as soon as the matching
+  // data has loaded — a route param, not local state, so it doesn't fight a
+  // refetch or a category the vendor navigates into by hand afterward.
+  const appliedInitialTarget = useRef(false);
+  useEffect(() => {
+    if (appliedInitialTarget.current) return;
+    if (!initialCategoryId && !initialServiceId) return;
+    // Nothing to match against yet — wait for the catalogue to load rather
+    // than giving up on the very first (empty) render.
+    if (categories.length === 0 && services.length === 0) return;
+
+    const targetCategoryId =
+      initialCategoryId ||
+      services.find((s) => s._id === initialServiceId)?.catalogueCategory ||
+      undefined;
+    const targetCategory = categories.find((c) => c._id === targetCategoryId);
+
+    if (targetCategory) {
+      setSelectedCategory(targetCategory);
+      if (initialServiceId) {
+        const targetService = services.find((s) => s._id === initialServiceId);
+        if (targetService) handleEditItem(targetService);
+      }
+    }
+    // Stop trying either way — a stale/deleted category or service shouldn't
+    // keep re-checking on every future catalogue refetch.
+    appliedInitialTarget.current = true;
+  }, [initialCategoryId, initialServiceId, categories, services]);
 
   const handleDeleteItem = (service: Service) => {
     Alert.alert(

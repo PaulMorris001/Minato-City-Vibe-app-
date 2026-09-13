@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { View, StyleSheet, Platform } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
@@ -12,6 +12,13 @@ import { useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 export default function VendorServices() {
   const styles = useThemedStyles(createStyles);
+  // Set by the dashboard's "By category" / "Recent services" rows so this
+  // screen opens already drilled into what was actually tapped, instead of
+  // always landing on the generic category grid — see DashboardTab.tsx.
+  const { categoryId, serviceId } = useLocalSearchParams<{
+    categoryId?: string;
+    serviceId?: string;
+  }>();
   const [categories, setCategories] = useState<CatalogueCategory[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -54,6 +61,8 @@ export default function VendorServices() {
         services={services}
         onRefresh={handleRefresh}
         refreshing={refreshing}
+        initialCategoryId={categoryId}
+        initialServiceId={serviceId}
       />
     </View>
   );

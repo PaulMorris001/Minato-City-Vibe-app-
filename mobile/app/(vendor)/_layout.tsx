@@ -316,11 +316,10 @@ export default function VendorLayout() {
         ]}
       >
         <View style={styles.navLeft}>
+          {/* The "VENDOR" badge that used to sit here moved to the dashboard's
+              greeting, next to "Welcome back" — it was one more thing
+              competing with navRight's icons for room on a narrow phone. */}
           <Text style={styles.logoText} numberOfLines={1}>OurCityvibe</Text>
-          <View style={styles.badge}>
-            <Ionicons name="briefcase" size={11} color={colors.primaryLight} />
-            <Text style={styles.badgeText}>VENDOR</Text>
-          </View>
         </View>
         <View style={styles.navRight}>
           {cart.count > 0 && (
@@ -587,24 +586,6 @@ const createStyles = (c: ThemeColors) =>
     color: c.primaryLight,
     letterSpacing: -0.6,
     flexShrink: 1,
-  },
-  badge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: c.primaryFadedStrong,
-    borderWidth: 1,
-    borderColor: "rgba(192,132,252,0.35)",
-    flexShrink: 0,
-  },
-  badgeText: {
-    color: c.primaryLight,
-    fontSize: 10.5,
-    fontFamily: Fonts.bold,
-    letterSpacing: 0.8,
   },
   profileButton: {
     borderRadius: 20,

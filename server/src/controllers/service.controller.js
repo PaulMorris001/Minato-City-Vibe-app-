@@ -268,16 +268,30 @@ export async function getVendorStats(req, res) {
 async function getServicesByCategory(vendorId) {
   try {
     const services = await Service.find({ vendor: vendorId });
-    const categoryCount = {};
+    // Grouped by the free-text category NAME (legacy field, still how a
+    // service's tile/label reads) but each group also remembers one
+    // catalogueCategory id from within it — the dashboard needs that id to
+    // open Services already filtered to the category that was tapped,
+    // rather than always landing on the generic, unfiltered tab.
+    const groups = {};
 
     services.forEach(service => {
       const category = service.category || "Uncategorized";
-      categoryCount[category] = (categoryCount[category] || 0) + 1;
+      if (!groups[category]) {
+        groups[category] = { count: 0, catalogueCategoryId: null };
+      }
+      groups[category].count += 1;
+      // Legacy services predating the catalogueCategory migration have none;
+      // any post-migration sibling in the same named group supplies it.
+      if (!groups[category].catalogueCategoryId && service.catalogueCategory) {
+        groups[category].catalogueCategoryId = service.catalogueCategory.toString();
+      }
     });
 
-    return Object.entries(categoryCount).map(([category, count]) => ({
+    return Object.entries(groups).map(([category, { count, catalogueCategoryId }]) => ({
       category,
-      count
+      count,
+      catalogueCategoryId,
     }));
   } catch (error) {
     return [];

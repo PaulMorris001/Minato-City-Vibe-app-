@@ -54,7 +54,17 @@ export default function VendorDashboard() {
         statsLoading={loading}
         onRefresh={handleRefresh}
         refreshing={refreshing}
-        onGoToServices={() => router.push("/(vendor)/services" as any)}
+        onGoToServices={(target) =>
+          router.push({
+            pathname: "/(vendor)/services",
+            // Both optional — an empty params object still lands on the
+            // generic, unfiltered tab exactly like before.
+            params: {
+              ...(target?.categoryId ? { categoryId: target.categoryId } : {}),
+              ...(target?.serviceId ? { serviceId: target.serviceId } : {}),
+            },
+          } as any)
+        }
       />
     </View>
   );
