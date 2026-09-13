@@ -146,34 +146,43 @@ export default function ServiceDetailSheet({
           >
             <View style={styles.hero}>
               {images.length > 0 ? (
-                <TouchableOpacity
-                  activeOpacity={0.92}
+                // A vendor can add several photos per service — this used to
+                // hardcode images[0], so a client could never see the rest.
+                // Swipe here for a quick look; tap a photo to open the full,
+                // zoomable ImageViewerModal at that same index.
+                //
+                // The tap target lives on each rendered page, NOT wrapped
+                // around the FlatList itself — a Touchable as the FlatList's
+                // direct parent claims the touch responder and the pager
+                // stops being swipeable at all.
+                <FlatList
                   style={styles.heroImage}
-                  onPress={() => setViewerVisible(true)}
-                  accessibilityLabel={
-                    images.length > 1
-                      ? `View all ${images.length} photos`
-                      : "View photo full-screen"
-                  }
-                >
-                  {/* A vendor can add several photos per service — this used
-                      to hardcode images[0], so a client could never see the
-                      rest. Swipe here for a quick look; tap opens the full,
-                      zoomable ImageViewerModal at the same photo. */}
-                  <FlatList
-                    data={images}
-                    horizontal
-                    pagingEnabled
-                    scrollEnabled={images.length > 1}
-                    showsHorizontalScrollIndicator={false}
-                    keyExtractor={(uri, i) => `${uri}-${i}`}
-                    onMomentumScrollEnd={onHeroScroll}
-                    getItemLayout={(_, i) => ({ length: HERO_WIDTH, offset: HERO_WIDTH * i, index: i })}
-                    renderItem={({ item }) => (
+                  data={images}
+                  horizontal
+                  pagingEnabled
+                  scrollEnabled={images.length > 1}
+                  showsHorizontalScrollIndicator={false}
+                  keyExtractor={(uri, i) => `${uri}-${i}`}
+                  onMomentumScrollEnd={onHeroScroll}
+                  getItemLayout={(_, i) => ({ length: HERO_WIDTH, offset: HERO_WIDTH * i, index: i })}
+                  renderItem={({ item, index }) => (
+                    <TouchableOpacity
+                      activeOpacity={0.92}
+                      style={styles.heroPage}
+                      onPress={() => {
+                        setHeroIndex(index);
+                        setViewerVisible(true);
+                      }}
+                      accessibilityLabel={
+                        images.length > 1
+                          ? `View all ${images.length} photos`
+                          : "View photo full-screen"
+                      }
+                    >
                       <Image source={{ uri: item }} style={styles.heroPage} contentFit="cover" />
-                    )}
-                  />
-                </TouchableOpacity>
+                    </TouchableOpacity>
+                  )}
+                />
               ) : (
                 <LinearGradient
                   colors={[Brand.violet, "#5b21b6", "#2a1150"]}
