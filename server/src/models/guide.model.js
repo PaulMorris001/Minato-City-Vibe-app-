@@ -2,29 +2,6 @@ import mongoose from "mongoose";
 import { mediaArrayLimit } from "../utils/mediaLimit.js";
 import { slugify, generateUniqueSlug } from "../utils/slug.js";
 
-const guideTopics = [
-  "Chefs",
-  "Food and Restaurants",
-  "Music and Bands",
-  "Bars and Clubs",
-  "Casinos",
-  "Concerts",
-  "Events",
-  "Transportation",
-  "Venues",
-  "Florists",
-  "Decorations",
-  "Desserts",
-  "Beverages",
-  "Grocery stores",
-  "Museums",
-  "Parks",
-  "Hotels",
-  "Spas",
-  "Hair and Nail Salons",
-  "Barber Shops"
-];
-
 const guideSectionSchema = mongoose.Schema({
   title: { type: String, required: true },
   rank: { type: Number, required: true },
@@ -73,10 +50,13 @@ const guideSchema = mongoose.Schema({
   city: { type: String, required: true },
   cityState: { type: String, required: true },
   country: { type: String, default: "United States" },
+  // Admin-managed list, not a compile-time enum — see guideTopic.model.js.
+  // Validated against that collection's current names in guide.controller.js
+  // (createGuide/updateGuide) instead of a schema-level enum, so a topic
+  // added from the admin dashboard works without an app release.
   topic: {
     type: String,
     required: true,
-    enum: guideTopics
   },
   sections: {
     type: [guideSectionSchema],
@@ -142,5 +122,4 @@ guideSchema.pre('save', async function() {
   }
 });
 
-export const guideTopicsList = guideTopics;
 export default mongoose.model("guide", guideSchema);

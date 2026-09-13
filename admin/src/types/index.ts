@@ -26,6 +26,13 @@ export interface VendorType {
   icon: string;
 }
 
+export interface GuideTopic {
+  _id: string;
+  name: string;
+  emoji?: string;
+  createdAt?: string;
+}
+
 export interface AdminVendor {
   _id: string;
   name: string;

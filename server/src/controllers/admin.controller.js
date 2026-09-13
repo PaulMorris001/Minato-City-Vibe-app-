@@ -6,6 +6,7 @@ import User from "../models/user.model.js";
 import { City, VendorType, Vendor } from "../models/vendor.model.js";
 import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
+import GuideTopic from "../models/guideTopic.model.js";
 import AnalyticsLog from "../models/analytics.model.js";
 import VerificationRequest from "../models/verification.model.js";
 import Notification from "../models/notification.model.js";
@@ -269,6 +270,50 @@ export async function deleteVendorType(req, res) {
     const { id } = req.params;
     await VendorType.findByIdAndDelete(id);
     res.json({ message: "Vendor type deleted" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// ── Guide Topics ───────────────────────────────────────────────────────────
+// Same shape as Vendor Types above: an admin-managed picker list, not a
+// compile-time enum, so a new topic doesn't need an app release. See
+// guideTopic.model.js and guide.controller.js's getTopics/create/update.
+
+export async function getGuideTopicsAdmin(req, res) {
+  try {
+    const topics = await GuideTopic.find().sort({ name: 1 });
+    res.json(topics);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function createGuideTopic(req, res) {
+  try {
+    const { name, emoji } = req.body;
+    if (!name?.trim()) {
+      return res.status(400).json({ message: "Name is required" });
+    }
+    const topic = await new GuideTopic({
+      name: name.trim(),
+      emoji: (emoji || "").trim(),
+    }).save();
+    res.status(201).json(topic);
+  } catch (error) {
+    // Duplicate name (unique index) reads better as a 400 than a 500.
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "That topic already exists" });
+    }
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function deleteGuideTopic(req, res) {
+  try {
+    const { id } = req.params;
+    await GuideTopic.findByIdAndDelete(id);
+    res.json({ message: "Guide topic deleted" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

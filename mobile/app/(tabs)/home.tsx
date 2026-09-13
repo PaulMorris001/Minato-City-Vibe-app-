@@ -160,6 +160,9 @@ const TOPIC_EMOJI: Record<string, string> = {
   Spas: "💆",
   "Hair and Nail Salons": "💅",
   "Barber Shops": "💈",
+  "Travel guide": "🧭",
+  "Tourist spot": "📍",
+  Others: "🗂️",
 };
 
 function SectionHeader({ title, subtitle, onAction, actionLabel }: { title: string; subtitle?: string; onAction?: () => void; actionLabel?: string }) {

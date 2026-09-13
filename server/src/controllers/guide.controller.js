@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
-import Guide, { guideTopicsList } from "../models/guide.model.js";
+import Guide from "../models/guide.model.js";
+import GuideTopic from "../models/guideTopic.model.js";
 import User from "../models/user.model.js";
 import { getBlockedIds } from "../utils/blockFilter.js";
 import { assertClean } from "../utils/contentFilter.js";
@@ -32,10 +33,13 @@ function normalizeSectionMedia(section) {
   return { media, image: media[0] || "" };
 }
 
-// Get all topics
+// Get all topics — admin-managed (see admin.controller.js's
+// getGuideTopicsAdmin/createGuideTopic/deleteGuideTopic), so a topic added
+// from the dashboard shows up here immediately, no app release needed.
 export const getTopics = async (req, res) => {
   try {
-    res.status(200).json({ topics: guideTopicsList });
+    const topics = await GuideTopic.find().sort({ name: 1 });
+    res.status(200).json({ topics });
   } catch (error) {
     console.error("Get topics error:", error);
     res.status(500).json({ message: "Failed to fetch topics" });
@@ -72,6 +76,12 @@ export const createGuide = async (req, res) => {
       return res
         .status(400)
         .json({ message: "All required fields must be provided" });
+    }
+
+    // topic used to be schema-enforced (a hardcoded enum on Guide.topic);
+    // now that it's admin-managed, this is the check that replaces it.
+    if (!(await GuideTopic.exists({ name: topic }))) {
+      return res.status(400).json({ message: "Invalid topic" });
     }
 
     // Validate sections
@@ -463,6 +473,11 @@ export const updateGuide = async (req, res) => {
     if (price !== undefined && parseFloat(price) > 0) {
       const author = await User.findById(userId).select(PAYOUT_ROUTING_FIELDS);
       if (rejectIfCannotSell(res, author)) return;
+    }
+
+    // Same replacement for the old schema enum as createGuide's check.
+    if (topic !== undefined && !(await GuideTopic.exists({ name: topic }))) {
+      return res.status(400).json({ message: "Invalid topic" });
     }
 
     // Validate sections if provided

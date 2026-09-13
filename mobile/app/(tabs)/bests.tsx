@@ -11,7 +11,8 @@ import {
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
-import { Guide, GUIDE_TOPICS } from "@/libs/interfaces";
+import { Guide } from "@/libs/interfaces";
+import { useGuideTopics } from "@/hooks/useGuideTopics";
 import { Fonts } from "@/constants/fonts";
 import { ActiveLocationChip } from "@/components/shared";
 import MediaTile from "@/components/shared/MediaTile";
@@ -35,6 +36,7 @@ export default function BestsPage() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
+  const { topicNames } = useGuideTopics();
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [guides, setGuides] = useState<Guide[]>([]);
@@ -115,8 +117,8 @@ export default function BestsPage() {
       if (!map.has(g.topic)) map.set(g.topic, []);
       map.get(g.topic)!.push(g);
     }
-    return GUIDE_TOPICS.filter((t) => map.has(t)).map((t) => ({ topic: t, guides: map.get(t)! }));
-  }, [guides]);
+    return topicNames.filter((t) => map.has(t)).map((t) => ({ topic: t, guides: map.get(t)! }));
+  }, [guides, topicNames]);
 
   const renderGuideCard = (g: Guide) => (
     <TouchableOpacity

@@ -247,6 +247,11 @@ export interface Guide {
   updatedAt: string;
 }
 
+// Offline/first-fetch fallback only — the real, admin-managed list comes from
+// GET /guides/topics (see hooks/useGuideTopics.ts) so a topic can be added
+// from the dashboard without an app release. Kept in sync manually with the
+// server's seed (server/src/scripts/seedGuideTopics.mjs) purely so this
+// fallback doesn't drift too far from what's actually selectable.
 export const GUIDE_TOPICS = [
   "Chefs",
   "Food and Restaurants",
@@ -267,6 +272,9 @@ export const GUIDE_TOPICS = [
   "Hotels",
   "Spas",
   "Hair and Nail Salons",
-  "Barber Shops"
+  "Barber Shops",
+  "Travel guide",
+  "Tourist spot",
+  "Others"
 ];
 

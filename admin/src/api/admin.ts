@@ -10,6 +10,7 @@ import type {
   AdminRaffleCampaign,
   City,
   VendorType,
+  GuideTopic,
   AnalyticsLog,
   AnalyticsSummary,
   AdminAnnouncement,
@@ -55,6 +56,13 @@ export const adminApi = {
     client.post<VendorType>("/admin/vendor-types", data).then((r) => { bustCache("/admin/vendor-types"); return r; }),
   deleteVendorType: (id: string) =>
     client.delete(`/admin/vendor-types/${id}`).then((r) => { bustCache("/admin/vendor-types"); return r; }),
+
+  // Guide Topics
+  getGuideTopics: () => cachedGet<GuideTopic[]>("/admin/guide-topics"),
+  createGuideTopic: (data: { name: string; emoji?: string }) =>
+    client.post<GuideTopic>("/admin/guide-topics", data).then((r) => { bustCache("/admin/guide-topics"); return r; }),
+  deleteGuideTopic: (id: string) =>
+    client.delete(`/admin/guide-topics/${id}`).then((r) => { bustCache("/admin/guide-topics"); return r; }),
 
   // Events
   getEvents: (params?: { search?: string; page?: number; limit?: number }) =>

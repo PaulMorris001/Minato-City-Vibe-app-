@@ -21,6 +21,9 @@ import {
   getVendorTypesAdmin,
   createVendorType,
   deleteVendorType,
+  getGuideTopicsAdmin,
+  createGuideTopic,
+  deleteGuideTopic,
   getEvents,
   toggleEventActive,
   deleteEvent,
@@ -89,6 +92,11 @@ router.delete("/admin/cities/:id", authenticateAdmin, deleteCity);
 router.get("/admin/vendor-types", authenticateAdmin, getVendorTypesAdmin);
 router.post("/admin/vendor-types", authenticateAdmin, createVendorType);
 router.delete("/admin/vendor-types/:id", authenticateAdmin, deleteVendorType);
+
+// Guide Topics
+router.get("/admin/guide-topics", authenticateAdmin, getGuideTopicsAdmin);
+router.post("/admin/guide-topics", authenticateAdmin, createGuideTopic);
+router.delete("/admin/guide-topics/:id", authenticateAdmin, deleteGuideTopic);
 
 // Events
 router.get("/admin/events", authenticateAdmin, getEvents);
