@@ -175,7 +175,7 @@ export default function PublicEventCard({
                     style={styles.eventCardPriceBadge}
                   >
                     <Ionicons name="pricetag" size={12} color="#fff" />
-                    <Text style={styles.eventCardPriceText}>
+                    <Text style={styles.eventCardPriceText} numberOfLines={1}>
                       {(event.ticketTiers?.length ?? 0) > 1 ? "From " : ""}
                       {currencyPrefix(event.currency)}{formatPrice(event.ticketPrice)}
                     </Text>
@@ -184,7 +184,7 @@ export default function PublicEventCard({
                   {/* Guests get the sold-out state without the headcount
                       behind it; organizers keep the exact remaining count. */}
                   {event.ticketsRemaining !== undefined ? (
-                    <Text style={styles.eventCardTicketsText}>
+                    <Text style={styles.eventCardTicketsText} numberOfLines={1}>
                       {event.ticketsRemaining} left
                     </Text>
                   ) : event.soldOut ? (
@@ -390,16 +390,23 @@ const createStyles = (c: ThemeColors) =>
     paddingVertical: 6,
     borderRadius: 12,
     gap: 6,
+    // Shrinks (and truncates via eventCardPriceText's numberOfLines) before
+    // the "N left" text next to it has to — a multi-tier "From ₦X,XXX,XXX"
+    // price is the one likelier to run long.
+    flexShrink: 1,
+    minWidth: 0,
   },
   eventCardPriceText: {
     fontSize: scaleFontSize(16),
     fontFamily: Fonts.bold,
     color: c.text,
+    flexShrink: 1,
   },
   eventCardTicketsText: {
     fontSize: scaleFontSize(14),
     fontFamily: Fonts.medium,
     color: c.warningLight,
+    flexShrink: 0,
   },
   buyTicketButton: {
     borderRadius: 12,

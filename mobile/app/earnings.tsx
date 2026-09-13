@@ -454,11 +454,14 @@ const createStyles = (c: ThemeColors) =>
       alignItems: "center",
       justifyContent: "center",
     },
-    rowBody: { flex: 1, gap: 2 },
+    // minWidth: 0 is the actual fix — flex:1 alone doesn't let a row shrink
+    // below its content's natural width in RN/Yoga, so a long sale title used
+    // to be able to push rowAmount (its flex row sibling) off the screen.
+    rowBody: { flex: 1, minWidth: 0, gap: 2 },
     rowTitle: { fontFamily: VNF.semibold, fontSize: 14, color: c.textBright },
     rowSub: { fontFamily: VNF.medium, fontSize: 11.5, color: c.textFaint },
     rowNote: { fontFamily: VNF.medium, fontSize: 11, color: c.textMuted, marginTop: 2 },
-    rowAmount: { fontFamily: VNF.bold, fontSize: 14, color: c.textBright },
+    rowAmount: { fontFamily: VNF.bold, fontSize: 14, color: c.textBright, flexShrink: 0 },
 
     loadMore: { paddingVertical: 14, alignItems: "center" },
     loadMoreText: { fontFamily: VNF.bold, fontSize: 13, color: c.primaryLight },

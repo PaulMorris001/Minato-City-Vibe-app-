@@ -155,7 +155,7 @@ export default function CartScreen() {
                         </TouchableOpacity>
                       </View>
 
-                      <Text style={styles.itemPrice}>
+                      <Text style={styles.itemPrice} numberOfLines={1}>
                         {currencyPrefix(item.currency)}{formatPrice(item.price)}
                       </Text>
 
@@ -182,7 +182,7 @@ export default function CartScreen() {
                           <Ionicons name="add" size={18} color={colors.primary} />
                         </TouchableOpacity>
 
-                        <Text style={styles.lineTotal}>
+                        <Text style={styles.lineTotal} numberOfLines={1}>
                           {currencyPrefix(item.currency)}{formatPrice(item.price * item.quantity)}
                         </Text>
                       </View>
@@ -197,7 +197,7 @@ export default function CartScreen() {
               <View style={styles.summary}>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Subtotal</Text>
-                  <Text style={styles.summaryValue}>
+                  <Text style={styles.summaryValue} numberOfLines={1}>
                     {currencyPrefix(cart.items[0]?.currency)}{formatPrice(cart.subtotal)}
                   </Text>
                 </View>
@@ -293,7 +293,7 @@ const createStyles = (c: ThemeColors) =>
       backgroundColor: `${Colors.primary}18`,
     },
     stepperQty: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.text, minWidth: 20, textAlign: "center" },
-    lineTotal: { marginLeft: "auto", fontSize: 15, fontFamily: Fonts.bold, color: c.text },
+    lineTotal: { marginLeft: "auto", flexShrink: 1, fontSize: 15, fontFamily: Fonts.bold, color: c.text },
 
     summary: {
       backgroundColor: c.card,

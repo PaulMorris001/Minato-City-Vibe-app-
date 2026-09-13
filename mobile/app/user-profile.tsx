@@ -595,6 +595,7 @@ const createStyles = (c: ThemeColors) =>
   },
   profileInfo: {
     flex: 1,
+    minWidth: 0,
     gap: 4,
   },
   usernameRow: {

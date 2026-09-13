@@ -899,11 +899,11 @@ function CartBar({
           end={Brand.gradientEnd}
           style={styles.cartBarInner}
         >
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cartBarText}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.cartBarText} numberOfLines={1}>
               {count} {count === 1 ? "service" : "services"} in cart
             </Text>
-            <Text style={styles.cartBarTotal}>{total}</Text>
+            <Text style={styles.cartBarTotal} numberOfLines={1}>{total}</Text>
           </View>
           <View style={styles.cartBarPill}>
             <Text style={styles.cartBarPillText}>View cart</Text>
@@ -1303,6 +1303,7 @@ const createStyles = (t: ServicesTokens) =>
       alignItems: "center",
       gap: 8,
       paddingHorizontal: 18,
+      flexShrink: 0,
       borderRadius: Radii.thumb,
       backgroundColor: "rgba(11,8,19,0.28)",
     },

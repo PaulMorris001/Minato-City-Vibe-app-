@@ -172,7 +172,7 @@ export default function OrderConfirm() {
               key={idx}
               style={[styles.itemRow, idx > 0 && styles.itemRowBorder]}
             >
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <View style={styles.itemNameRow}>
                   <Text style={styles.itemName}>{it.name}</Text>
                   {it.addedByVendor && (
@@ -181,12 +181,12 @@ export default function OrderConfirm() {
                     </View>
                   )}
                 </View>
-                <Text style={styles.itemQty}>
+                <Text style={styles.itemQty} numberOfLines={1}>
                   {money(it.priceSnapshot.amount)} × {it.quantity}
                   {it.note ? ` · ${it.note}` : ""}
                 </Text>
               </View>
-              <Text style={styles.itemAmount}>
+              <Text style={styles.itemAmount} numberOfLines={1}>
                 {money(it.priceSnapshot.amount * it.quantity)}
               </Text>
             </View>
@@ -199,15 +199,17 @@ export default function OrderConfirm() {
             <Text style={styles.totalLabel}>Subtotal</Text>
             <Text style={styles.totalValue}>{money(order.itemsSubtotal)}</Text>
           </View>
+          {/* fee.label is vendor-supplied free text and can run long — give it
+              the shrink room, not the amount. */}
           {order.additionalFees?.map((fee, idx) => (
             <View key={idx} style={styles.totalRow}>
-              <Text style={styles.totalLabel}>{fee.label}</Text>
-              <Text style={styles.totalValue}>{money(fee.amount)}</Text>
+              <Text style={styles.totalLabel} numberOfLines={1}>{fee.label}</Text>
+              <Text style={styles.totalValue} numberOfLines={1}>{money(fee.amount)}</Text>
             </View>
           ))}
           <View style={[styles.totalRow, styles.grandTotalRow]}>
             <Text style={styles.grandTotalLabel}>Total</Text>
-            <Text style={styles.grandTotalValue}>{money(order.total)}</Text>
+            <Text style={styles.grandTotalValue} numberOfLines={1}>{money(order.total)}</Text>
           </View>
         </View>
 
@@ -336,12 +338,14 @@ const createStyles = (c: ThemeColors) =>
     itemQty: { fontSize: 13, fontFamily: Fonts.regular, color: c.textSecondary, marginTop: 3 },
     itemAmount: { fontSize: 15, fontFamily: Fonts.bold, color: c.text },
 
-    totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10 },
-    totalLabel: { fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary },
-    totalValue: { fontSize: 14, fontFamily: Fonts.medium, color: c.textBody },
+    totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, gap: 10 },
+    // flex+minWidth so a long vendor-supplied fee.label shrinks before the
+    // amount does; the amount itself stays fixed (flexShrink:0).
+    totalLabel: { flex: 1, minWidth: 0, fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary },
+    totalValue: { flexShrink: 0, fontSize: 14, fontFamily: Fonts.medium, color: c.textBody },
     grandTotalRow: { borderTopWidth: 1, borderTopColor: c.border, marginTop: 4, paddingTop: 14, paddingBottom: 14 },
     grandTotalLabel: { fontSize: 16, fontFamily: Fonts.bold, color: c.text },
-    grandTotalValue: { fontSize: 20, fontFamily: Fonts.bold, color: c.primary },
+    grandTotalValue: { flexShrink: 0, fontSize: 20, fontFamily: Fonts.bold, color: c.primary },
 
     disclaimer: {
       fontSize: 12,
