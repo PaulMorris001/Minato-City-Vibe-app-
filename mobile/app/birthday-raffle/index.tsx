@@ -57,18 +57,13 @@ const CAMPAIGN = {
   rules: [
     "Create a birthday event on CityVibe during the campaign period.",
     "Share your unique tracking link with friends.",
-<<<<<<< HEAD
-    "Only unique, verified RSVPs count toward eligibility.",
-    // Index 3 — rewritten in the component with the campaign's real
-    // minReferrals once /raffle/status resolves; this is the guest/offline
-    // fallback copy.
-    "Base entry for creating the event, but you need a minimum number of verified RSVPs to be prize-eligible.",
-    "Winners are selected randomly from eligible entries by admin.",
-=======
     "Only unique, verified RSVPs count — one per account.",
     "Your event gets 1 entry, plus 1 more for every verified RSVP.",
-    "Winners are drawn at random from all entries after the campaign closes.",
->>>>>>> 2e3594f5544ae4395054f3a7fea5bf814597af16
+    // Index 4 — rewritten in the component with the campaign's real
+    // minReferrals once /raffle/status resolves; this is the guest/offline
+    // fallback copy.
+    "You need a minimum number of verified RSVPs to be prize-eligible.",
+    "Winners are drawn at random from eligible entries after the campaign closes.",
   ],
 };
 
@@ -151,11 +146,11 @@ export default function BirthdayRaffleScreen() {
     year: "numeric",
   });
 
-  // Index 3 is rewritten with the real campaign threshold once it resolves —
+  // Index 4 is rewritten with the real campaign threshold once it resolves —
   // see that rule's own comment in CAMPAIGN.rules for why it's this index.
   const rules = CAMPAIGN.rules.map((rule, index) =>
-    index === 3
-      ? `Base entry for creating the event, plus at least ${minReferrals} verified RSVP${minReferrals === 1 ? "" : "s"} to be prize-eligible.`
+    index === 4
+      ? `You need at least ${minReferrals} verified RSVP${minReferrals === 1 ? "" : "s"} to be prize-eligible.`
       : rule
   );
 
@@ -324,30 +319,6 @@ const handlePrimaryCTA = async () => {
           </LinearGradient>
         </TouchableOpacity>
 
-<<<<<<< HEAD
-        {ctaDisabled ? (
-          <Text style={styles.footerNote}>
-            This batch of the Birthday Raffle is closed to new entries. Keep an eye out —
-            we'll announce the next one in the app.
-          </Text>
-        ) : (
-          <Text style={styles.footerNote}>
-            By participating you agree to the campaign rules. Winners will be
-            contacted via the app.
-          </Text>
-        )}
-
-        {/* Not a link — no verified handle to point at yet. Swap in real
-            social URLs here (and make this row a TouchableOpacity/Linking.openURL
-            per platform) once they exist. */}
-        <View style={styles.socialRow}>
-          <Ionicons name="megaphone-outline" size={15} color={colors.textFaint} />
-          <Text style={styles.socialText}>
-            Follow <Text style={styles.socialHandle}>OurCityVibe</Text> on social media for
-            raffle draw updates and winner announcements.
-          </Text>
-        </View>
-=======
         {/* Guideline 5.3.2: the official rules must be reachable from the
             promotion itself, and Apple's non-involvement stated plainly. */}
         <TouchableOpacity
@@ -360,6 +331,13 @@ const handlePrimaryCTA = async () => {
           <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
         </TouchableOpacity>
 
+        {ctaDisabled && (
+          <Text style={styles.footerNote}>
+            This batch of the Birthday Raffle is closed to new entries. Keep an eye out —
+            we'll announce the next one in the app.
+          </Text>
+        )}
+
         <Text style={styles.footerNote}>
           No purchase necessary. Open to entrants aged 18 and over; void where prohibited.
           By entering you agree to the official rules. Winners are contacted in the app and
@@ -368,7 +346,17 @@ const handlePrimaryCTA = async () => {
         <Text style={styles.footerNote}>
           Apple is not a sponsor of this promotion and is not involved with it in any manner.
         </Text>
->>>>>>> 2e3594f5544ae4395054f3a7fea5bf814597af16
+
+        {/* Not a link — no verified handle to point at yet. Swap in real
+            social URLs here (and make this row a TouchableOpacity/Linking.openURL
+            per platform) once they exist. */}
+        <View style={styles.socialRow}>
+          <Ionicons name="megaphone-outline" size={15} color={colors.textFaint} />
+          <Text style={styles.socialText}>
+            Follow <Text style={styles.socialHandle}>OurCityVibe</Text> on social media for
+            raffle draw updates and winner announcements.
+          </Text>
+        </View>
       </ScrollView>
     </View>
   );
