@@ -71,7 +71,7 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: "8. Winner selection",
-    body: "After the campaign closes, winners are selected by a random draw conducted by the Sponsor from all eligible entries received during that campaign period. Because each verified RSVP adds an additional entry, collecting more RSVPs increases the number of chances an entry holds in the draw, but does not guarantee a win. The draw is final. One prize per entrant; a single entrant cannot win more than one prize tier in the same campaign.",
+    body: "To be eligible to win, a qualifying event must reach at least the minimum number of verified RSVPs shown on the Birthday Raffle screen in the app for the current campaign — a base entry from creating the event alone is not enough. After the campaign closes, winners are selected by a random draw conducted by the Sponsor from all entries that met that minimum during the campaign period. Because each verified RSVP beyond the minimum adds an additional entry, collecting more RSVPs increases the number of chances an entry holds in the draw, but does not guarantee a win. The draw is final. One prize per entrant; a single entrant cannot win more than one prize tier in the same campaign.",
   },
   {
     title: "9. Prizes",
