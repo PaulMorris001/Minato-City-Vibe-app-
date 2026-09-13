@@ -3,11 +3,15 @@ import {
   Animated,
   Dimensions,
   Easing,
+  FlatList,
   Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { Image } from "expo-image";
@@ -17,6 +21,7 @@ import { Fonts } from "@/constants/fonts";
 import { Service } from "@/libs/interfaces";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import PressScale from "@/components/shared/PressScale";
+import ImageViewerModal from "@/components/shared/ImageViewerModal";
 import {
   Brand,
   Radii,
@@ -24,7 +29,11 @@ import {
   useServicesTokens,
 } from "@/constants/vendorServicesTheme";
 
+const SCREEN_WIDTH = Dimensions.get("window").width;
 const SCREEN_HEIGHT = Dimensions.get("window").height;
+// sheetBody's own horizontal padding (16 a side) — the hero spans exactly
+// the sheet's content width, so a page of the image pager must match it.
+const HERO_WIDTH = SCREEN_WIDTH - 32;
 
 /** Availability pill on the hero — colour and copy follow the service state. */
 function availabilityPill(availability?: string) {
@@ -77,9 +86,17 @@ export default function ServiceDetailSheet({
   const [shown, setShown] = useState<Service | null>(service);
   const progress = useRef(new Animated.Value(0)).current;
 
+  // Which of the service's photos the hero pager is currently on, and
+  // whether the full-screen swipeable/zoomable viewer is open (opens to
+  // this same index — a vendor can add several photos per service, but
+  // clients used to only ever see the first one).
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [viewerVisible, setViewerVisible] = useState(false);
+
   useEffect(() => {
     if (service) {
       setShown(service);
+      setHeroIndex(0);
       Animated.timing(progress, {
         toValue: 1,
         duration: 260,
@@ -102,11 +119,16 @@ export default function ServiceDetailSheet({
 
   const pill = availabilityPill(shown.availability);
   const tile = secondTile(shown);
-  const image = shown.images?.[0];
+  const images = shown.images || [];
   const translateY = progress.interpolate({
     inputRange: [0, 1],
     outputRange: [SCREEN_HEIGHT * 0.6, 0],
   });
+
+  const onHeroScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const i = Math.round(e.nativeEvent.contentOffset.x / HERO_WIDTH);
+    if (i !== heroIndex) setHeroIndex(i);
+  };
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose}>
@@ -123,8 +145,35 @@ export default function ServiceDetailSheet({
             bounces={false}
           >
             <View style={styles.hero}>
-              {image ? (
-                <Image source={{ uri: image }} style={styles.heroImage} contentFit="cover" />
+              {images.length > 0 ? (
+                <TouchableOpacity
+                  activeOpacity={0.92}
+                  style={styles.heroImage}
+                  onPress={() => setViewerVisible(true)}
+                  accessibilityLabel={
+                    images.length > 1
+                      ? `View all ${images.length} photos`
+                      : "View photo full-screen"
+                  }
+                >
+                  {/* A vendor can add several photos per service — this used
+                      to hardcode images[0], so a client could never see the
+                      rest. Swipe here for a quick look; tap opens the full,
+                      zoomable ImageViewerModal at the same photo. */}
+                  <FlatList
+                    data={images}
+                    horizontal
+                    pagingEnabled
+                    scrollEnabled={images.length > 1}
+                    showsHorizontalScrollIndicator={false}
+                    keyExtractor={(uri, i) => `${uri}-${i}`}
+                    onMomentumScrollEnd={onHeroScroll}
+                    getItemLayout={(_, i) => ({ length: HERO_WIDTH, offset: HERO_WIDTH * i, index: i })}
+                    renderItem={({ item }) => (
+                      <Image source={{ uri: item }} style={styles.heroPage} contentFit="cover" />
+                    )}
+                  />
+                </TouchableOpacity>
               ) : (
                 <LinearGradient
                   colors={[Brand.violet, "#5b21b6", "#2a1150"]}
@@ -136,8 +185,9 @@ export default function ServiceDetailSheet({
               <LinearGradient
                 colors={["transparent", "rgba(0,0,0,0.45)"]}
                 style={styles.heroScrim}
+                pointerEvents="none"
               />
-              <View style={styles.heroPills}>
+              <View style={styles.heroPills} pointerEvents="none">
                 {!!categoryName && (
                   <View style={styles.categoryPill}>
                     <Text style={styles.categoryPillText}>{categoryName}</Text>
@@ -149,6 +199,16 @@ export default function ServiceDetailSheet({
                   </Text>
                 </View>
               </View>
+              {images.length > 1 && (
+                <View style={styles.dotsRow} pointerEvents="none">
+                  {images.map((_, i) => (
+                    <View
+                      key={i}
+                      style={[styles.dot, i === heroIndex && styles.dotActive]}
+                    />
+                  ))}
+                </View>
+              )}
             </View>
 
             <View style={styles.copy}>
@@ -200,6 +260,13 @@ export default function ServiceDetailSheet({
           </ScrollView>
         </Animated.View>
       </View>
+
+      <ImageViewerModal
+        visible={viewerVisible}
+        images={images}
+        initialIndex={heroIndex}
+        onClose={() => setViewerVisible(false)}
+      />
     </Modal>
   );
 }
@@ -248,6 +315,12 @@ const createStyles = (t: ServicesTokens) =>
       width: "100%",
       height: "100%",
     },
+    // One page of the hero pager — HERO_WIDTH matches the sheet's own
+    // content width exactly, so pages don't peek their neighbours.
+    heroPage: {
+      width: HERO_WIDTH,
+      height: "100%",
+    },
     heroScrim: {
       position: "absolute",
       left: 0,
@@ -261,6 +334,23 @@ const createStyles = (t: ServicesTokens) =>
       bottom: 12,
       flexDirection: "row",
       gap: 8,
+    },
+    dotsRow: {
+      position: "absolute",
+      right: 14,
+      bottom: 16,
+      flexDirection: "row",
+      gap: 4,
+    },
+    dot: {
+      width: 5,
+      height: 5,
+      borderRadius: 3,
+      backgroundColor: "rgba(255,255,255,0.45)",
+    },
+    dotActive: {
+      backgroundColor: "#ffffff",
+      width: 14,
     },
     categoryPill: {
       paddingHorizontal: 10,
