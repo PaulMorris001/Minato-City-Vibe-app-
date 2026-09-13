@@ -316,7 +316,7 @@ export default function VendorLayout() {
         ]}
       >
         <View style={styles.navLeft}>
-          <Text style={styles.logoText}>OurCityvibe</Text>
+          <Text style={styles.logoText} numberOfLines={1}>OurCityvibe</Text>
           <View style={styles.badge}>
             <Ionicons name="briefcase" size={11} color={colors.primaryLight} />
             <Text style={styles.badgeText}>VENDOR</Text>
@@ -541,11 +541,18 @@ const createStyles = (c: ThemeColors) =>
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    // Shrinks first (the logo truncates) so navRight's tap targets never
+    // have to — on a narrow phone the two used to just add up past the
+    // screen width, pushing the notification icon off-screen entirely.
+    flex: 1,
+    minWidth: 0,
+    marginRight: 8,
   },
   navRight: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    flexShrink: 0,
   },
   iconButton: {
     width: 34,
@@ -579,6 +586,7 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 22,
     color: c.primaryLight,
     letterSpacing: -0.6,
+    flexShrink: 1,
   },
   badge: {
     flexDirection: "row",
@@ -590,6 +598,7 @@ const createStyles = (c: ThemeColors) =>
     backgroundColor: c.primaryFadedStrong,
     borderWidth: 1,
     borderColor: "rgba(192,132,252,0.35)",
+    flexShrink: 0,
   },
   badgeText: {
     color: c.primaryLight,

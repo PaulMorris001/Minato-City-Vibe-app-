@@ -137,10 +137,20 @@ export function StatCard({ icon, accent, label, value, sub }: StatCardProps) {
         >
           <Ionicons name={icon} size={14} color={accent} />
         </View>
-        <Text style={styles.statValue}>{value}</Text>
+        {/* A large amount (a currency code tacked on, or just a big number) can
+            outgrow the card at this card's fixed 22px size — shrink the font
+            before letting it clip or spill past the rounded corners. */}
+        <Text
+          style={styles.statValue}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.55}
+        >
+          {value}
+        </Text>
       </View>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statSub}>{sub}</Text>
+      <Text style={styles.statLabel} numberOfLines={1}>{label}</Text>
+      <Text style={styles.statSub} numberOfLines={1}>{sub}</Text>
     </View>
   );
 }
@@ -208,13 +218,20 @@ const createStyles = (c: ThemeColors) =>
     statCard: {
       width: "47.8%",
       flexGrow: 1,
+      // Belt-and-suspenders alongside the value's own numberOfLines/shrink —
+      // nothing drawn inside this card should ever visibly spill past its
+      // rounded corners.
+      overflow: "hidden",
       padding: 12,
       borderRadius: 14,
       backgroundColor: c.cardGlass,
       borderWidth: 1,
       borderColor: c.glassStroke,
     },
-    statTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    // `gap` + the icon's own flexShrink:0, rather than space-between — with
+    // only two children, space-between doesn't give the value room to shrink
+    // into, it just lets a long one overflow past the icon.
+    statTop: { flexDirection: "row", alignItems: "center", gap: 8 },
     statIcon: {
       width: 28,
       height: 28,
@@ -222,8 +239,16 @@ const createStyles = (c: ThemeColors) =>
       borderWidth: 1,
       alignItems: "center",
       justifyContent: "center",
+      flexShrink: 0,
     },
-    statValue: { fontFamily: VNF.heading, fontSize: 22, color: c.textBright, letterSpacing: -0.4 },
+    statValue: {
+      flex: 1,
+      textAlign: "right",
+      fontFamily: VNF.heading,
+      fontSize: 22,
+      color: c.textBright,
+      letterSpacing: -0.4,
+    },
     statLabel: { fontFamily: VNF.semibold, fontSize: 11.5, color: c.textBright, marginTop: 8 },
     statSub: { fontFamily: VNF.medium, fontSize: 10.5, color: c.textFaint, marginTop: 2 },
   });
