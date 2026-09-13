@@ -79,6 +79,8 @@ export interface EventItem {
   title: string;
   description?: string;
   date: string;
+  /** Optional end. Absent means the event is a single date. */
+  endDate?: string | null;
   location: string;
   address?: string;
   city?: string;
@@ -104,6 +106,21 @@ export interface EventItem {
   ticketsSold?: number;
   ticketsRemaining?: number;
   soldOut?: boolean;
+  /**
+   * Availability, not capacity. `salesClosed` covers every reason tickets can't
+   * be bought right now; `salesClosedReason` says which one so the page can
+   * show the true message rather than a generic "unavailable". Like `soldOut`,
+   * both reach every viewer regardless of `showAttendance`.
+   */
+  salesClosed?: boolean;
+  salesClosedReason?:
+    | "cancelled"
+    | "cancellation_pending"
+    | "ended"
+    | "closed_by_organizer"
+    | "not_approved"
+    | null;
+  hasEnded?: boolean;
   /** Organizer opt-in: publishes the headcount/capacity numbers to all viewers. */
   showAttendance?: boolean;
   userHasPurchased?: boolean;
@@ -175,4 +192,21 @@ export interface Ticket {
   currency?: string;
   tierName?: string;
   ticketCode?: string;
+}
+
+/** How-to manual, served by GET /manual and /manual/:slug. */
+export interface ManualTopicSummary {
+  slug: string;
+  title: string;
+  summary: string;
+}
+
+export interface ManualSection {
+  heading: string;
+  body: string;
+  bullets?: string[];
+}
+
+export interface ManualTopic extends ManualTopicSummary {
+  sections: ManualSection[];
 }

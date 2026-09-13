@@ -75,6 +75,7 @@ export default function Layout({
             <span className="cv-muted">© {new Date().getFullYear()} OurCityvibe</span>
             <div className="cv-footer-links">
               <Link to="/events">Events</Link>
+              <Link to="/help">How it works</Link>
               <Link to="/privacy">Privacy</Link>
               <Link to="/csae-policy">Child safety</Link>
               <Link to="/delete-account">Delete account</Link>

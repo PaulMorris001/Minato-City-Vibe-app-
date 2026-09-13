@@ -27,7 +27,9 @@ Mobile layout: `app/` (routes), `components/`, `contexts/`, `hooks/`, `services/
 4. **Webhook raw-body parsers are registered before `express.json()`** in `src/index.js` for `/api/paypal/webhook`, `/api/paystack/webhook`, `/api/stripe/webhook`. Moving them breaks signature verification.
 5. **`:eventId` / `:userId` params may be a slug or a shareToken**, not just an ObjectId — website share links depend on this. Use `utils/resolveEvent.js` (`findEventByAnyId`) and `utils/resolveUser.js` (`resolveUserId`). A bare `findById` 500s or fake-404s that traffic.
 6. **`utils/response.js` (`sendSuccess`/`sendError`/`asyncHandler`) is dead code** — zero controllers use it, despite what the README claims. Match the real pattern: `try/catch` + `res.status(n).json({ message })`.
-7. **Per-sale amounts are stored in CENTS for PayPal and Stripe, MAJOR units for Paystack**, all in the same `sellerNetCents` / `vendorNet` fields. PayPal's API speaks major units, so `settlePaypalPayment.js` converts on the way in *on purpose*: `currency` is USD for both PayPal and legacy Stripe sales and cannot tell them apart, so a major-unit PayPal net would be divided again by `toMajorNet` and `ticketPayoutAmount` and pay the seller 1% of what they are owed. `Payout.amount` is always major.
+7. **`toObject()` does not flatten Mongoose Maps — `toJSON()` does.** A doc with a `Map` path serialized via `toObject()` keeps real `Map` values, and `JSON.stringify(new Map(...))` is `{}`. `withSupportMarkers` in `utils/supportAccount.js` hit this and silently shipped every chat's `unreadCount`/`isMuted`/`isArchived` as empty objects, which emptied every unread badge in the app. Use `toObject({ flattenMaps: true })` on `chat.model.js` or anything else with a Map field.
+8. **Cancelling an event with tickets sold is a REQUEST, not an action.** `POST /events/:eventId/cancel` refunds immediately only when nothing is outstanding; otherwise it files `Event.cancellationRequest` (202) and closes ticket sales. Refunds run only from `PATCH /admin/event-cancellations/:id/approve`.
+9. **Per-sale amounts are stored in CENTS for PayPal and Stripe, MAJOR units for Paystack**, all in the same `sellerNetCents` / `vendorNet` fields. PayPal's API speaks major units, so `settlePaypalPayment.js` converts on the way in *on purpose*: `currency` is USD for both PayPal and legacy Stripe sales and cannot tell them apart, so a major-unit PayPal net would be divided again by `toMajorNet` and `ticketPayoutAmount` and pay the seller 1% of what they are owed. `Payout.amount` is always major.
 
 ## Auth & accounts
 
@@ -54,12 +56,17 @@ Mobile layout: `app/` (routes), `components/`, `contexts/`, `hooks/`, `services/
 
 ## Events
 
-- Server: `routes/event.route.js`, `controllers/event.controller.js` (2527 lines — grep for the exported handler), `models/event.model.js`
+- Server: `routes/event.route.js`, `controllers/event.controller.js` (2527 lines — grep for the exported handler), `models/event.model.js`, `utils/eventLifecycle.js`
+- **When an event is over, and whether a ticket can be sold, is `utils/eventLifecycle.js` and nowhere else.** `date` is the start; `endDate` is optional and, when absent, the event runs until a day after `date` (door sales). `ticketSalesClosedReason()` returns `cancelled | cancellation_pending | ended | closed_by_organizer | not_approved | null`, and both purchase paths plus every read path go through it. `upcomingFilter()` is the `$or` that keeps a multi-day event in the feeds after it starts — it merges into `$and`, never spread next to another top-level `$or`.
+- Organizer stop/resume switch: `PATCH /events/:eventId/ticket-sales` (`setTicketSales`, creator or co-host, applies immediately — not held in `pendingEdits`)
+- Cancellation review: `POST /events/:eventId/cancel` (stripe.controller.js) → `Event.cancellationRequest` → the admin queue. `refundAllEventTickets()` in `stripe.controller.js` is the one refund loop both paths share.
 - External/aggregated events: `controllers/externalEvent.controller.js`, `services/eventbrite.service.js`, `services/ticketmaster.service.js`, `models/externalEvent.model.js`, `models/eventbritePlace.model.js`
 - `ExternalEvent.geo.type` must **not** carry `default: "Point"`. Upserts run with `setDefaultsOnInsert` on, so a default writes `geo: { type: "Point" }` with no coordinates for the many upstream events that ship no lat/lng, and the `2dsphere` index rejects the insert. The same trap applies to any new GeoJSON field.
 - Mobile: `app/event/[id].tsx` (3482 lines), `app/manage-events.tsx`, `app/public-events.tsx`, `app/external-event/[id].tsx`, `app/event-attendees/[eventId].tsx`, `components/client/CreateEventModal.tsx`, `components/shared/PublicEventCard.tsx`, `ExternalEventCard.tsx`, `hooks/useEventActions.ts`, `hooks/useDiscoverFeed.ts`, `utils/eventDetails.ts`
 - Web: `web/src/pages/Events.tsx`, `EventDetails.tsx`, `ExternalEventDetails.tsx`, `MyEvents.tsx`, `EditEvent.tsx`
 - Admin: `admin/src/pages/Events.tsx`, `PaidEvents.tsx`, `EventEdits.tsx`
+- Birthday Raffle: `models/raffleCampaign.model.js`, `services/raffleCampaign.service.js`, `controllers/birthdayRaffle.controller.js`, `drawRaffleWinners`/`setRaffleWinner` in `admin.controller.js` → `mobile/app/birthday-raffle/{index,status,rules}.tsx`, `admin/src/pages/Raffle.tsx`
+- **The raffle is a promotion with published official rules, and the code has to match them.** `mobile/app/birthday-raffle/rules.tsx` is the binding text; it is bundled (never fetched) because App Store guideline 5.3.2 requires it to be readable at all times, and it must state that Apple is not a sponsor. Winners come from `POST /admin/raffle/campaigns/:id/draw` — a weighted random draw (1 ticket per event + 1 per verified RSVP, one prize per entrant, `crypto.randomInt`). `setRaffleWinner` is a correction tool for a forfeited prize, NOT how winners are chosen. Changing the draw, the scoring or the prize wording means changing the rules screen too.
 
 ## Passes, tickets, check-in
 
@@ -148,7 +155,11 @@ POST /payments/confirm/:type/:id
 ## Notifications & email
 
 - Push + in-app: `services/notification.service.js` (`notifyUser`, `sendPushNotification` — Firebase Admin + `expo-server-sdk`), `routes/notification.route.js`, `models/notification.model.js` → `mobile/app/notifications.tsx`, `utils/pushNotifications.ts`
-- Email: `services/email.service.js` (nodemailer) — `sendPasswordResetOTP`, `sendSignupVerificationOTP`, `sendGuestCheckoutOTP`, `sendEventPassEmail`, `sendEventReminderEmail`, `sendPasswordResetSuccessEmail`, `sendSaleEmail`, `sendPurchaseReceiptEmail`. Unsubscribe: `routes/unsubscribe.route.js`.
+- Email: `services/email.service.js` (nodemailer) — `sendPasswordResetOTP`, `sendSignupVerificationOTP`, `sendGuestCheckoutOTP`, `sendEventPassEmail`, `sendEventReminderEmail`, `sendPasswordResetSuccessEmail`, `sendSaleEmail`, `sendPurchaseReceiptEmail`, `sendEventCancelledEmail`, `sendEventCancellationApprovedEmail`, `sendPayoutSentEmail`. Unsubscribe: `routes/unsubscribe.route.js`.
+- Admin broadcasts: `controllers/announcement.controller.js`, `models/announcement.model.js` → `admin/src/pages/Announcements.tsx`. Routes: `GET|POST /admin/announcements`, `GET /admin/announcement-groups` (derived cohorts, currently just vendors — no group collection exists), `POST /admin/announcements/preview` (no side effects; reach shown before an irreversible send). Fans out through `notifyUser()`, never `sendPushNotification` directly, so a recipient with a dead token still gets the in-app record.
+- **Announcement targets OR together, so each one added WIDENS the audience.** Countries/states/cities match `location.*` (states and cities qualified by their parent), and a city additionally matches `pushCity` — which carries no country/state, so it can only be matched on name. The console's dropdowns are built from the `City` collection while accounts store free-text `location.state` (`"CA"` alongside `"Lagos"`), so a target can legitimately match nobody; that is what the preview endpoint exists to surface.
+- `sendPushNotification(token, title, body, data, { userId })` — pass `userId` and a token FCM rejects as dead is cleared, so the next launch re-registers. Chat pushes honour `chat.isMuted`; support-chat messages additionally go through `notifyUser` (type `support_message`) so a missed push still leaves a trace.
+- Mobile re-uploads a rotated FCM token via `messaging().onTokenRefresh` in `app/_layout.tsx` → `uploadPushToken()`; `getPushPermissionStatus()` backs the "notifications are off" row in `app/settings.tsx`.
 - Dev note: on some ISPs (MTN) SMTP is blocked outright — `ETIMEDOUT` on `smtp.gmail.com:587` is the network, not the code. Dev OTP is `000000`; guest-OTP tolerates mail failure in dev.
 
 ## Search, location, uploads, misc
@@ -160,18 +171,25 @@ POST /payments/confirm/:type/:id
 - Logging: `routes/log.route.js` (client → server) → `mobile/utils/remoteLog.ts`, `logger.ts`, `errorHandler.ts`
 - `errorHandler.ts` monkey-patches `console.error` / `console.warn` to forward to `remoteLog`, so **a `[MOBILE ERROR]` line in the server log stream is a phone's console, not a server fault**. Production builds strip `console.log`, so this relay is the only device diagnostic there is.
 - Legal/compliance: `routes/{privacy,csae}.route.js`, `mobile/app/{privacy,terms}.tsx`, `web/src/pages/{Privacy,Csae}.tsx`
+- How-to manual (event creation, guides, vendors): content authored once in `server/src/content/manual.js`, served public by `routes/manual.route.js` (`GET /manual`, `GET /manual/:slug`) → `mobile/app/help/{index,[slug]}.tsx` and `web/src/pages/{Help,HelpTopic}.tsx`. Both clients fetch it; nothing is bundled, so a copy edit needs no app release. Entry points: mobile Settings → "How it works", vendor AccountTab, CreateEventModal.
 
 ## Admin console
 
 `routes/admin.route.js` + `controllers/admin.controller.js` (959 lines) + `middleware/admin.middleware.js`
-→ `admin/src/pages/*` (Dashboard, Users, Events, PaidEvents, EventEdits, Vendors, VendorTypes,
-Cities, Guides, Payouts, DiscountCodes, Reports, Verifications, Analytics), shared UI in
-`admin/src/components/ui/`.
+→ `admin/src/pages/*` (Dashboard, Users, Events, PaidEvents, EventEdits, EventCancellations,
+Announcements, Vendors, VendorTypes, Cities, Guides, Payouts, DiscountCodes, Reports,
+Verifications, Analytics, Raffle), shared UI in `admin/src/components/ui/` — though the review-queue
+pages (EventEdits, EventCancellations) use inline styles + `constants/colors`, not those primitives.
+
+Broadcast + cancellation review live in their own controllers, not `admin.controller.js`'s siblings:
+`GET|POST /admin/announcements` and `GET /admin/event-cancellations` +
+`PATCH /admin/event-cancellations/:id/{approve,reject}`.
 
 ## Background jobs & one-off scripts
 
 Started from `server/src/index.js`: `eventReminder.job.js`, `payoutRelease.job.js`,
-`externalEventsRefresh.job.js`, `discountReservation.job.js`.
+`externalEventsRefresh.job.js`, `discountReservation.job.js`, `engagementPush.job.js`
+(the "come see what's on" nudge — Mon/Wed/Fri/Sat at 18:00 UTC, 36h minimum gap per user).
 
 Migrations — **these must actually be run against each environment**, they are not automatic:
 `server/scripts/{backfill-slugs,migrate-catalogue-categories,ingest-eventbrite,hash-admin-password,verify-oauth-accounts}.mjs`

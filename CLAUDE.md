@@ -43,5 +43,9 @@ Four deployables in one repo:
 - Mobile styling goes through `useThemedStyles` + `constants/theme.ts` tokens. No hardcoded hex in new code.
 - Mobile HTTP goes through the plain `axios` default import — global timeout/retry/token-refresh live in `utils/apiClient.ts`.
 - Payments: collection is Stripe (outside Nigeria) or Paystack (Nigeria); settlement is Stripe Connect (US/UK/EEA/CA/CH) or Paystack (Nigeria), and everywhere else has no rail by design. PayPal is built but gated behind `PAYPAL_ENABLED` + credentials. Deploy **server before mobile**.
+- Mongoose `toObject()` does **not** flatten `Map` fields (`toJSON()` does), and `JSON.stringify(new Map())` is `{}`. Use `toObject({ flattenMaps: true })` on anything with a Map path — this silently emptied every chat unread badge.
+- Cancelling an event with tickets sold files a **request** for admin review (`Event.cancellationRequest`) and closes ticket sales; refunds only run from the admin approve endpoint. Only an event with nothing outstanding cancels outright.
+- Whether tickets can be sold is `server/src/utils/eventLifecycle.js` and nowhere else. `date` is the start, `endDate` optional; with no end date the event runs until a day after `date`.
 - Per-sale amounts are stored in **cents** for PayPal and Stripe, **major units** for Paystack, in the same `sellerNetCents`/`vendorNet` fields. `Payout.amount` is always major. Getting this wrong pays a seller 1% or 100× what they're owed.
+- The Birthday Raffle's official rules (`mobile/app/birthday-raffle/rules.tsx`) are bundled, not fetched — App Store 5.3.2 requires them readable at all times and must state Apple is not a sponsor. Winners come from the weighted random draw endpoint, not by hand; changing the draw or scoring means changing the rules text.
 - Migrations in `server/scripts/` and `server/src/scripts/` are manual — say so when a change needs one.

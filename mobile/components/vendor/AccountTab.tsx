@@ -488,6 +488,28 @@ export default function AccountTab({ onRefresh }: AccountTabProps) {
               })}
             </View>
           </View>
+
+          <View style={styles.sectionWrap}>
+            <Text style={styles.sectionKicker}>Help</Text>
+            <View style={styles.group}>
+              <TouchableOpacity
+                style={styles.socialRow}
+                activeOpacity={0.7}
+                onPress={() => router.push("/help/vendors" as any)}
+              >
+                <View style={[styles.socialIcon, styles.socialIconSet]}>
+                  <Ionicons name="help-circle-outline" size={14} color={colors.primaryLight} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.fieldLabel}>Vendor guide</Text>
+                  <Text style={styles.fieldValue} numberOfLines={1}>
+                    Catalogue, orders, bookings and payouts
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
+              </TouchableOpacity>
+            </View>
+          </View>
         </>
       )}
 

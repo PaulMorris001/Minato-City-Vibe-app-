@@ -52,15 +52,23 @@ const CAMPAIGN = {
     { place: "2nd", reward: "₦75,000 Cash", icon: "medal" as const },
     { place: "3rd", reward: "₦40,000 Cash", icon: "ribbon" as const },
   ] as PrizeRow[],
+  // Plain-language summary only. The binding text is the Official Rules screen
+  // (app/birthday-raffle/rules.tsx) — keep these two consistent.
   rules: [
     "Create a birthday event on CityVibe during the campaign period.",
     "Share your unique tracking link with friends.",
+<<<<<<< HEAD
     "Only unique, verified RSVPs count toward eligibility.",
     // Index 3 — rewritten in the component with the campaign's real
     // minReferrals once /raffle/status resolves; this is the guest/offline
     // fallback copy.
     "Base entry for creating the event, but you need a minimum number of verified RSVPs to be prize-eligible.",
     "Winners are selected randomly from eligible entries by admin.",
+=======
+    "Only unique, verified RSVPs count — one per account.",
+    "Your event gets 1 entry, plus 1 more for every verified RSVP.",
+    "Winners are drawn at random from all entries after the campaign closes.",
+>>>>>>> 2e3594f5544ae4395054f3a7fea5bf814597af16
   ],
 };
 
@@ -316,6 +324,7 @@ const handlePrimaryCTA = async () => {
           </LinearGradient>
         </TouchableOpacity>
 
+<<<<<<< HEAD
         {ctaDisabled ? (
           <Text style={styles.footerNote}>
             This batch of the Birthday Raffle is closed to new entries. Keep an eye out —
@@ -338,6 +347,28 @@ const handlePrimaryCTA = async () => {
             raffle draw updates and winner announcements.
           </Text>
         </View>
+=======
+        {/* Guideline 5.3.2: the official rules must be reachable from the
+            promotion itself, and Apple's non-involvement stated plainly. */}
+        <TouchableOpacity
+          style={styles.rulesLink}
+          activeOpacity={0.7}
+          onPress={() => router.push("/birthday-raffle/rules" as any)}
+        >
+          <Ionicons name="document-text-outline" size={16} color={colors.primaryLight} />
+          <Text style={styles.rulesLinkText}>Read the official rules</Text>
+          <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
+        </TouchableOpacity>
+
+        <Text style={styles.footerNote}>
+          No purchase necessary. Open to entrants aged 18 and over; void where prohibited.
+          By entering you agree to the official rules. Winners are contacted in the app and
+          by email.
+        </Text>
+        <Text style={styles.footerNote}>
+          Apple is not a sponsor of this promotion and is not involved with it in any manner.
+        </Text>
+>>>>>>> 2e3594f5544ae4395054f3a7fea5bf814597af16
       </ScrollView>
     </View>
   );
@@ -576,6 +607,25 @@ const createStyles = (c: ThemeColors) =>
       color: c.textFaint,
       textAlign: "center",
       lineHeight: 18,
+      marginTop: 10,
+    },
+    rulesLink: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      marginTop: 18,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      borderRadius: 12,
+      backgroundColor: c.primaryFaded,
+      borderWidth: 1,
+      borderColor: c.primaryBorder,
+    },
+    rulesLinkText: {
+      fontFamily: Fonts.semiBold,
+      fontSize: 13,
+      color: c.primaryLight,
     },
     socialRow: {
       flexDirection: "row",

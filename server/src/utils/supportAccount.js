@@ -33,10 +33,16 @@ export const involvesSupport = (a, b) => isSupportUser(a) || isSupportUser(b);
  *
  * Returns a plain object — `isSupport` isn't a schema field, so a Mongoose
  * document would drop it on serialisation. A no-op when support is unset.
+ *
+ * `flattenMaps` is load-bearing, not tidiness: toObject() leaves Map paths as
+ * real Maps (unlike toJSON()), and JSON.stringify(new Map(...)) is "{}". Without
+ * it every chat here shipped `unreadCount`, `isMuted` and `isArchived` as empty
+ * objects, which silently emptied every unread badge in the app.
  */
 export function withSupportMarkers(chat) {
   if (!chat || !SUPPORT_USER_ID) return chat;
-  const plain = typeof chat.toObject === "function" ? chat.toObject() : chat;
+  const plain =
+    typeof chat.toObject === "function" ? chat.toObject({ flattenMaps: true }) : chat;
   if (!Array.isArray(plain.participants)) return plain;
   plain.participants = plain.participants.map((p) =>
     p && isSupportUser(p._id) ? { ...p, isSupport: true, verified: true } : p

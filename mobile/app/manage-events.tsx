@@ -55,6 +55,7 @@ interface Event {
   _id: string;
   title: string;
   date: string;
+  endDate?: string | null;
   location: string;
   address?: string;
   city?: string;
@@ -162,6 +163,9 @@ export default function EventsPage() {
   const [editData, setEditData] = useState({
     title: "",
     date: "",
+    // Optional. "" means no end date — the payload spreads editData, so an
+    // empty string is what clears one the event already had.
+    endDate: "",
     location: "",
     address: "",
     city: "",
@@ -465,6 +469,7 @@ export default function EventsPage() {
     setEditData({
       title: event.title,
       date: eventDate.toISOString(),
+      endDate: event.endDate ? new Date(event.endDate).toISOString() : "",
       location: event.location,
       address: event.address || "",
       city: event.city || "",
@@ -1219,7 +1224,7 @@ export default function EventsPage() {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Date & Time *</Text>
+                <Text style={styles.inputLabel}>Starts *</Text>
                 <DateTimeDropdown
                   value={editData.date ? new Date(editData.date) : null}
                   onChange={(d) =>
@@ -1227,6 +1232,26 @@ export default function EventsPage() {
                   }
                   minimumDate={new Date()}
                 />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Ends (optional)</Text>
+                <DateTimeDropdown
+                  value={editData.endDate ? new Date(editData.endDate) : null}
+                  onChange={(d) =>
+                    setEditData((prev) => ({ ...prev, endDate: d.toISOString() }))
+                  }
+                  minimumDate={editData.date ? new Date(editData.date) : new Date()}
+                />
+                {!!editData.endDate && (
+                  <TouchableOpacity
+                    onPress={() => setEditData((prev) => ({ ...prev, endDate: "" }))}
+                    hitSlop={8}
+                    style={{ paddingVertical: 6 }}
+                  >
+                    <Text style={styles.clearEndDate}>Clear end date</Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
               <View style={styles.inputGroup}>
@@ -2102,6 +2127,11 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.semiBold,
     color: c.textBody,
     marginBottom: 8,
+  },
+  clearEndDate: {
+    fontSize: scaleFontSize(12),
+    fontFamily: Fonts.medium,
+    color: c.primaryLight,
   },
   attendanceToggle: {
     flexDirection: "row",

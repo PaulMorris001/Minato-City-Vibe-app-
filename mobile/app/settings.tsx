@@ -38,6 +38,10 @@ import GlassBackButton from "@/components/shared/GlassBackButton";
 import { clearLocalData } from "@/utils/localData";
 import { isSupportUser } from "@/constants/support";
 import { openSupportChat } from "@/utils/userNavigation";
+import {
+  getPushPermissionStatus,
+  registerForPushNotifications,
+} from "@/utils/pushNotifications";
 const THEME_OPTIONS = [
   { value: "system", label: "System", icon: "phone-portrait-outline" },
   { value: "light", label: "Light", icon: "sunny-outline" },
@@ -69,6 +73,18 @@ export default function SettingsScreen() {
     emailVerifiedAt: null as string | null,
     country: "",
   });
+<<<<<<< HEAD
+=======
+  // Reminder emails are opt-out, so the switch starts on until the profile says
+  // otherwise. `savingReminders` blocks a double-tap while the PUT is in flight.
+  const [eventReminderEmails, setEventReminderEmails] = useState(true);
+  // Device-level push permission. registerForPushNotifications() returns
+  // silently when it's denied, so without surfacing it here a user has no way
+  // to find out why nothing is arriving.
+  const [pushStatus, setPushStatus] = useState<"granted" | "denied" | "undetermined">("granted");
+  const [savingReminders, setSavingReminders] = useState(false);
+
+>>>>>>> 2e3594f5544ae4395054f3a7fea5bf814597af16
   // Onboarding screen for whichever rail settles this user, or null when no rail
   // reaches their country (they can still publish free listings).
   const payoutRoute = payoutOnboardingRoute(user.country);
@@ -98,8 +114,25 @@ export default function SettingsScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchProfile();
+      // Re-read on focus: the user may have just changed it in OS settings.
+      getPushPermissionStatus().then(setPushStatus);
     }, [])
   );
+
+  /**
+   * Ask for push permission, or send the user to OS settings when the system
+   * won't prompt again (iOS only ever asks once).
+   */
+  const handleEnablePush = async () => {
+    await registerForPushNotifications();
+    const next = await getPushPermissionStatus();
+    setPushStatus(next);
+    if (next !== "granted") {
+      Linking.openSettings().catch(() =>
+        showError("Open your device settings to turn on notifications for OurCityvibe.")
+      );
+    }
+  };
 
   // The only way to set location anywhere in the app now — no typing. Grabs
   // device GPS (prompting for permission if needed), reverse-geocodes it,
@@ -457,9 +490,57 @@ export default function SettingsScreen() {
         )}
       </View>
 
+<<<<<<< HEAD
       {/* Notifications — the full set of channel/category toggles lives on its
           own screen (notification-settings.tsx); the Preferences section below
           links to it. */}
+=======
+      {/* Notification channels */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Notifications</Text>
+        <Text style={styles.sectionDescription}>
+          Push notifications follow your device settings. These control what we
+          send to your inbox.
+        </Text>
+
+        {pushStatus !== "granted" && (
+          <TouchableOpacity
+            style={styles.pushOffRow}
+            activeOpacity={0.85}
+            onPress={handleEnablePush}
+          >
+            <Ionicons name="notifications-off-outline" size={22} color={colors.warning} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pushOffTitle}>Push notifications are off</Text>
+              <Text style={styles.pushOffHint}>
+                You won't get messages, ticket sales or support replies on this device. Tap to turn
+                them on.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
+        <View style={[styles.preferenceItem, { borderBottomWidth: 0 }]}>
+          <View style={[styles.preferenceLeft, { flex: 1, paddingRight: 12 }]}>
+            <Ionicons name="mail-outline" size={22} color={Colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.preferenceText}>Event reminder emails</Text>
+              <Text style={styles.reminderHint}>
+                {"A reminder the day before an event you're going to."}
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={eventReminderEmails}
+            onValueChange={handleToggleReminderEmails}
+            disabled={savingReminders}
+            trackColor={{ false: colors.borderMuted, true: Colors.primary }}
+            thumbColor="#fff"
+          />
+        </View>
+      </View>
+>>>>>>> 2e3594f5544ae4395054f3a7fea5bf814597af16
 
       {/* Email Verification status */}
       <View style={styles.section}>
@@ -519,6 +600,31 @@ export default function SettingsScreen() {
             Having trouble with an event, payment or your account? Message our
             team and we'll get back to you here.
           </Text>
+
+          <TouchableOpacity
+            style={styles.preferenceItem}
+            onPress={() => router.push("/help" as any)}
+          >
+            <View style={styles.preferenceLeft}>
+              <Ionicons name="help-circle-outline" size={22} color={colors.textBody} />
+              <Text style={styles.preferenceText}>How it works</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          {/* App Store guideline 5.3.2 requires the promotion's official rules
+              to be reachable at all times, including between campaigns — so
+              this entry point is here and not only on the raffle screen. */}
+          <TouchableOpacity
+            style={styles.preferenceItem}
+            onPress={() => router.push("/birthday-raffle/rules" as any)}
+          >
+            <View style={styles.preferenceLeft}>
+              <Ionicons name="document-text-outline" size={22} color={colors.textBody} />
+              <Text style={styles.preferenceText}>Birthday Raffle official rules</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.preferenceItem, { borderBottomWidth: 0 }]}
@@ -784,6 +890,29 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 12.5,
     fontFamily: Fonts.regular,
     color: c.textMuted,
+    marginTop: 2,
+  },
+  pushOffRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: c.card,
+    borderWidth: 1,
+    borderColor: c.warning,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  pushOffTitle: {
+    fontSize: 14,
+    fontFamily: Fonts.semiBold,
+    color: c.text,
+  },
+  pushOffHint: {
+    fontSize: 12,
+    fontFamily: Fonts.regular,
+    color: c.textSecondary,
+    lineHeight: 17,
     marginTop: 2,
   },
   reminderHint: {

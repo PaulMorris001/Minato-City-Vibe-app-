@@ -3,7 +3,7 @@ import User from "../models/user.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
 
 /**
- * "Come see what's on" nudge — twice a week, to every user we hold a push
+ * "Come see what's on" nudge — four times a week, to every user we hold a push
  * token for, naming a real upcoming event in their city.
  *
  * Push only, no Notification doc: this is a re-engagement nudge, not something
@@ -14,13 +14,14 @@ import { sendPushNotification } from "../services/notification.service.js";
 
 /** UTC hour the nudge goes out on a send day. */
 const SEND_HOUR_UTC = 18;
-/** Send days, JS getUTCDay(): 3 = Wednesday, 6 = Saturday. */
-const SEND_DAYS = new Set([3, 6]);
+/** Send days, JS getUTCDay(): 1 = Mon, 3 = Wed, 5 = Fri, 6 = Sat. */
+const SEND_DAYS = new Set([1, 3, 5, 6]);
 /**
- * Minimum gap between nudges to the same user. Three days is what makes "twice
- * a week" hold even if the job restarts inside a send hour or a tick is missed.
+ * Minimum gap between nudges to the same user. 36 hours is what makes the
+ * cadence hold even if the job restarts inside a send hour or a tick is missed,
+ * while still clearing the Fri → Sat pair.
  */
-const MIN_GAP_MS = 3 * 24 * 60 * 60 * 1000;
+const MIN_GAP_MS = 36 * 60 * 60 * 1000;
 /** How far ahead to look for something worth mentioning. */
 const EVENT_HORIZON_MS = 14 * 24 * 60 * 60 * 1000;
 /** Pushes in flight at once, so a big city doesn't open 5000 sockets. */
@@ -116,7 +117,11 @@ export async function sendEngagementPushes() {
     if (event) data.eventId = String(event._id);
 
     pushedIds.push(user._id);
-    jobs.push(() => sendPushNotification(user.fcmToken, title, body, data));
+    // This job touches every user holding a token, four times a week, so it's
+    // where dead tokens get found and cleared fastest.
+    jobs.push(() =>
+      sendPushNotification(user.fcmToken, title, body, data, { userId: user._id })
+    );
   }
 
   await sendInBatches(jobs);

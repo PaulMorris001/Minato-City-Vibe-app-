@@ -12,7 +12,7 @@ const GOOGLE_IOS_URL_SCHEME = GOOGLE_IOS_CLIENT_ID
 module.exports = {
   name: "OurCityvibe",
   slug: "cityvibe",
-  version: "1.3.0",
+  version: "1.3.1",
   orientation: "portrait",
   icon: "./assets/images/ios/icon.png",
   scheme: "mobile",

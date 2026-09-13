@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Landing from "./pages/Landing";
 import Privacy from "./pages/Privacy";
+import Help from "./pages/Help";
+import HelpTopic from "./pages/HelpTopic";
 import Csae from "./pages/Csae";
 import DeleteAccount from "./pages/DeleteAccount";
 import Login from "./pages/Login";
@@ -23,6 +25,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/privacy" element={<Privacy />} />
+          <Route path="/help" element={<Help />} />
+          <Route path="/help/:slug" element={<HelpTopic />} />
           {/* `/csae-policy` is the path declared in the Google Play Console child
               safety section — keep it stable. `/csae` is a friendly alias. */}
           <Route path="/csae-policy" element={<Csae />} />

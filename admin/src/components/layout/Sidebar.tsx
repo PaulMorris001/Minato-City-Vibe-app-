@@ -10,6 +10,8 @@ const navItems = [
   { to: "/verifications", label: "Verifications", icon: "✓" },
   { to: "/paid-events", label: "Paid Events", icon: "💸" },
   { to: "/event-edits", label: "Event Edits", icon: "✏️" },
+  { to: "/event-cancellations", label: "Cancellations", icon: "🚫" },
+  { to: "/announcements", label: "Announcements", icon: "📣" },
   { to: "/payouts", label: "Payouts", icon: "💰" },
   { to: "/reports", label: "Reports", icon: "🚩" },
   { to: "/cities", label: "Cities", icon: "📍" },

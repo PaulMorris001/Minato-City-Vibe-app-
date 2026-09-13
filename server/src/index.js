@@ -42,6 +42,7 @@ import deepLinksRoutes from "./routes/deepLinks.route.js";
 import privacyRoutes from "./routes/privacy.route.js";
 import csaeRoutes from "./routes/csae.route.js";
 import unsubscribeRoutes from "./routes/unsubscribe.route.js";
+import manualRoutes from "./routes/manual.route.js";
 import reportRoutes from "./routes/report.route.js";
 import blockRoutes from "./routes/block.route.js";
 import locationRoutes from "./routes/location.route.js";
@@ -131,6 +132,7 @@ app.get("/api/wise/connect/status", (req, res) =>
 app.use("/api/", paymentsRoutes);
 app.use("/api/", searchRoutes);
 app.use("/api/", notificationRoutes);
+app.use("/api/", manualRoutes);
 app.use("/api/", earningsRoutes);
 app.use("/api/", favoritesRoutes);
 app.use("/api/", followRoutes);

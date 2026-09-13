@@ -74,6 +74,8 @@ export default function CreateEventModal({
   const [formData, setFormData] = useState({
     title: "",
     date: "",
+    // Optional. Empty means the event is a single date.
+    endDate: "",
     location: "",
     address: "",
     description: "",
@@ -243,6 +245,7 @@ export default function CreateEventModal({
       const eventData = {
         title: formData.title.trim(),
         date: formData.date.trim(),
+        ...(formData.endDate ? { endDate: formData.endDate } : {}),
         location: formData.isVirtual ? "Online" : formatLocation(eventLocation!),
         address: formData.isVirtual ? "" : formData.address.trim(),
         city: formData.isVirtual ? "" : eventLocation!.city,
@@ -297,6 +300,7 @@ export default function CreateEventModal({
     setFormData({
       title: "",
       date: "",
+      endDate: "",
       location: "",
       address: "",
       description: "",
@@ -399,6 +403,23 @@ export default function CreateEventModal({
                 </TouchableOpacity>
               </View>
 
+              {/* First-timers get a way out to the manual without losing the
+                  form — closing the sheet is what makes the push navigable. */}
+              <TouchableOpacity
+                style={styles.howItWorksRow}
+                activeOpacity={0.7}
+                onPress={() => {
+                  onClose();
+                  router.push("/help/events" as any);
+                }}
+              >
+                <Ionicons name="help-circle-outline" size={16} color={colors.primaryLight} />
+                <Text style={styles.howItWorksText}>
+                  First event? Read how tickets, approval and payouts work
+                </Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
+              </TouchableOpacity>
+
               {/* Event Photos */}
               <View style={{ paddingHorizontal: 20, marginTop: 8 }}>
                 <MultiImagePicker
@@ -451,6 +472,35 @@ export default function CreateEventModal({
                   defaultHour={22}
                 />
               </View>
+
+              {/* Optional end. Only offered once a start exists, since it's
+                  validated against one. */}
+              {!!formData.date && (
+                <View style={{ paddingHorizontal: 20, marginBottom: 4 }}>
+                  <Text style={styles.endDateLabel}>
+                    {formData.endDate
+                      ? "Ends"
+                      : "Runs across days? Add an end (optional)"}
+                  </Text>
+                  <DateTimeDropdown
+                    value={formData.endDate ? new Date(formData.endDate) : null}
+                    onChange={(d) =>
+                      setFormData((prev) => ({ ...prev, endDate: d.toISOString() }))
+                    }
+                    minimumDate={new Date(formData.date)}
+                    defaultHour={22}
+                  />
+                  {!!formData.endDate && (
+                    <TouchableOpacity
+                      onPress={() => setFormData((prev) => ({ ...prev, endDate: "" }))}
+                      hitSlop={8}
+                      style={{ paddingVertical: 6 }}
+                    >
+                      <Text style={styles.endDateClear}>Clear end date</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
 
               {/* Where is it held — in person vs virtual */}
               <InfoTip
@@ -1083,6 +1133,36 @@ const createStyles = (c: ThemeColors) =>
     fontSize: scaleFontSize(13),
     fontFamily: Fonts.semiBold,
     color: c.primary,
+  },
+  howItWorksRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 20,
+    marginTop: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: c.primaryFaded,
+    borderWidth: 1,
+    borderColor: c.primaryBorder,
+  },
+  howItWorksText: {
+    flex: 1,
+    color: c.textDim,
+    fontFamily: Fonts.regular,
+    fontSize: 12.5,
+  },
+  endDateLabel: {
+    color: c.textDim,
+    fontFamily: Fonts.regular,
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  endDateClear: {
+    color: c.primaryLight,
+    fontFamily: Fonts.medium,
+    fontSize: 12,
   },
   quickDatesRow: {
     flexDirection: "row",

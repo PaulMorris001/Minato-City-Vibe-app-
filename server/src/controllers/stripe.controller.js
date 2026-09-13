@@ -16,7 +16,8 @@ import config from "../config/env.js";
 import User from "../models/user.model.js";
 import Event from "../models/event.model.js";
 import Ticket from "../models/ticket.model.js";
-import { sendPushNotification } from "../services/notification.service.js";
+import { sendPushNotification, notifyUser } from "../services/notification.service.js";
+import { invalidateCachePattern } from "../utils/cache.js";
 import { settleStripePurchase } from "../services/payments/settleStripePayment.js";
 import { refundPaystackCharge } from "./paystack.controller.js";
 import { refundPaypalCapture, findPaypalCaptureId } from "./paypal.controller.js";
@@ -167,10 +168,60 @@ export const refundOwnTicket = async (req, res) => {
   }
 };
 
+/** Tickets that still owe their holder money if the event is called off. */
+export const outstandingTicketFilter = (eventId) => ({
+  event: eventId,
+  isValid: true,
+  refunded: { $ne: true },
+  transferred: { $ne: true },
+});
+
 /**
- * Organizer cancels their own event — refunds all valid, non-transferred
- * tickets and marks the event cancelled. Must be called before the payout
- * job releases funds (i.e., within the 24h hold window).
+ * Refund every outstanding ticket on an event.
+ *
+ * Shared by the immediate cancellation (nothing sold) and the admin-approved
+ * one, so the two can never drift. Partial failure is normal — a dead provider
+ * charge fails on its own without taking the rest of the batch down — so the
+ * caller gets both counts and the tickets that actually refunded, which is
+ * what decides who gets a refund email.
+ */
+export async function refundAllEventTickets(event) {
+  const tickets = await Ticket.find(outstandingTicketFilter(event._id));
+
+  const refundedTickets = [];
+  const failures = [];
+  for (const t of tickets) {
+    try {
+      const r = await refundTicket(t, { reason: "event_cancelled" });
+      if (r.ok) refundedTickets.push(t);
+      else failures.push({ ticketId: String(t._id), message: r.message });
+    } catch (err) {
+      console.error(`Refund failed for ticket ${t._id}:`, err);
+      failures.push({ ticketId: String(t._id), message: err?.message ?? "Refund error" });
+    }
+  }
+
+  return {
+    refunded: refundedTickets.length,
+    failed: failures.length,
+    refundedTickets,
+    failures,
+  };
+}
+
+/**
+ * POST /events/:eventId/cancel
+ *
+ * Organizer asks to call their event off.
+ *
+ * With tickets outstanding this does NOT refund — it files a request for an
+ * admin to approve (`cancellationRequest`), because refunding real buyers is a
+ * decision someone signs off on. Ticket sales close immediately so nobody buys
+ * into an event that is about to be refunded. With nothing sold there is no
+ * money to move and no reason to make the organizer wait, so it cancels there
+ * and then.
+ *
+ * Must still be called before the payout job releases funds (the 24h hold).
  */
 export const cancelEventByOrganizer = async (req, res) => {
   try {
@@ -186,6 +237,11 @@ export const cancelEventByOrganizer = async (req, res) => {
     if (event.cancelledAt) {
       return res.status(400).json({ message: "Event is already cancelled" });
     }
+    if (event.cancellationRequest?.status === "pending") {
+      return res.status(400).json({
+        message: "You've already asked to cancel this event — it's with our team for review.",
+      });
+    }
     if (event.payoutStatus === "released") {
       return res.status(400).json({
         message:
@@ -193,35 +249,59 @@ export const cancelEventByOrganizer = async (req, res) => {
       });
     }
 
-    const tickets = await Ticket.find({
-      event: eventId,
-      isValid: true,
-      refunded: { $ne: true },
-      transferred: { $ne: true },
-    });
+    const outstanding = await Ticket.countDocuments(outstandingTicketFilter(event._id));
 
-    const results = { refunded: 0, failed: 0 };
-    for (const t of tickets) {
-      try {
-        const r = await refundTicket(t, { reason: "event_cancelled" });
-        if (r.ok) results.refunded += 1;
-        else results.failed += 1;
-      } catch (err) {
-        console.error(`Refund failed for ticket ${t._id}:`, err);
-        results.failed += 1;
-      }
+    // Nothing sold — no money to refund, so don't make anyone wait on a review.
+    if (outstanding === 0) {
+      event.cancelledAt = new Date();
+      event.cancelledBy = userId;
+      event.cancellationReason = reason;
+      event.isActive = false;
+      event.payoutStatus = "released"; // nothing left to release
+      await event.save();
+      invalidateCachePattern(`event_detail_${event._id}_`);
+      invalidateCachePattern("public_events_");
+      invalidateCachePattern("event_highlights_");
+
+      return res.status(200).json({
+        status: "cancelled",
+        message: "Event cancelled.",
+        refunded: 0,
+        failed: 0,
+      });
     }
 
-    event.cancelledAt = new Date();
-    event.cancelledBy = userId;
-    event.cancellationReason = reason;
-    event.isActive = false;
-    event.payoutStatus = "released"; // nothing left to release
+    // Tickets are out there: file the request and stop selling. Only record
+    // that WE closed sales if they were open, so a rejection restores exactly
+    // what the organizer had.
+    const closedSalesOnRequest = !event.ticketSalesClosedAt;
+    if (closedSalesOnRequest) event.ticketSalesClosedAt = new Date();
+    event.cancellationRequest = {
+      status: "pending",
+      reason,
+      requestedAt: new Date(),
+      requestedBy: userId,
+      ticketsAtRequest: outstanding,
+      closedSalesOnRequest,
+      reviewedAt: undefined,
+      reviewedBy: undefined,
+      rejectReason: undefined,
+    };
     await event.save();
+    invalidateCachePattern(`event_detail_${event._id}_`);
 
-    res.status(200).json({
-      message: `Event cancelled. ${results.refunded} ticket(s) refunded.`,
-      ...results,
+    notifyUser(userId, {
+      type: "event_cancellation_requested",
+      title: "Cancellation request received",
+      body: `We're reviewing your request to cancel "${event.title}". Ticket sales are paused in the meantime.`,
+      data: { eventId: String(event._id) },
+    });
+
+    return res.status(202).json({
+      status: "pending_review",
+      message:
+        "Your cancellation request is with our team. Ticket sales are paused, and we'll refund everyone who bought a ticket once it's approved.",
+      ticketsAtRequest: outstanding,
     });
   } catch (error) {
     console.error("cancelEventByOrganizer error:", error);

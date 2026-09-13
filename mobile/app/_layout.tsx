@@ -5,7 +5,7 @@ import { Platform, Linking } from "react-native";
 import { BASE_URL } from "@/constants/constants";
 import messaging from "@react-native-firebase/messaging";
 import * as Notifications from "expo-notifications";
-import { registerForPushNotifications } from "@/utils/pushNotifications";
+import { registerForPushNotifications, uploadPushToken } from "@/utils/pushNotifications";
 import {
   setPendingDeepLink,
   deepLinkToPath,
@@ -157,9 +157,15 @@ watchNetworkState();
 const EVENT_PUSH_TYPES = new Set([
   "event",
   "event_reminder",
-  // Twice-weekly "come see what's on" nudge (server jobs/engagementPush.job.js).
-  // Carries an eventId when the user's city had something to feature.
+  // Four-times-weekly "come see what's on" nudge (server
+  // jobs/engagementPush.job.js). Carries an eventId when the user's city had
+  // something to feature.
   "event_suggestion",
+  "event_cancelled",
+  "event_cancellation_requested",
+  "event_cancellation_approved",
+  "event_cancellation_rejected",
+  "raffle_winner",
   "ticket_sold",
   "ticket_purchased",
   "ticket_refunded",
@@ -247,6 +253,7 @@ export default Sentry.wrap(function RootLayout() {
   useEffect(() => {
     let unsubscribeForeground: (() => void) | null = null;
     let unsubscribeBackground: (() => void) | null = null;
+    let unsubscribeTokenRefresh: (() => void) | null = null;
 
     /**
      * Parse a notification data payload into a structured deep link, or null
@@ -259,7 +266,10 @@ export default Sentry.wrap(function RootLayout() {
       const d = data as Record<string, unknown>;
       const type = typeof d.type === "string" ? d.type : null;
 
-      if (type === "new_message" && looksLikeObjectId(d.chatId)) {
+      // "support_message" is a support-chat reply. It carries a durable in-app
+      // notification too (server chat.service.js), but the tap target is the
+      // same thread as any other message.
+      if ((type === "new_message" || type === "support_message") && looksLikeObjectId(d.chatId)) {
         return { kind: "chat", chatId: d.chatId };
       }
       if (type === "new_follower" && typeof d.followerId === "string" && d.followerId) {
@@ -356,6 +366,14 @@ export default Sentry.wrap(function RootLayout() {
         });
       });
 
+      // FCM rotates tokens on its own schedule (reinstall, restore, long idle).
+      // Registration only runs at cold launch and login, so without this the
+      // server keeps pushing to a dead token and the user hears nothing.
+      unsubscribeTokenRefresh = messaging().onTokenRefresh(token => {
+        console.log("[PushNotif] FCM token rotated — re-uploading");
+        uploadPushToken(token);
+      });
+
       // Tap while app was backgrounded
       unsubscribeBackground = messaging().onNotificationOpenedApp(remoteMessage => {
         route(linkFromNotificationData(remoteMessage?.data, "onNotificationOpenedApp"));
@@ -388,6 +406,7 @@ export default Sentry.wrap(function RootLayout() {
       unsubscribeForeground?.();
       notifSub.remove();
       unsubscribeBackground?.();
+      unsubscribeTokenRefresh?.();
     };
   }, []);
 

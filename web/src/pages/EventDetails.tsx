@@ -477,6 +477,30 @@ function Fact({
 }
 
 /** The purchase / RSVP call to action — the one thing the sidebar exists for. */
+/** Buyer-facing copy per `salesClosedReason` from the API. */
+const SALES_CLOSED_COPY: Record<string, { heading: string; detail: string }> = {
+  cancelled: {
+    heading: "This event was cancelled",
+    detail: "The organizer called it off. If you bought a ticket, you've been refunded.",
+  },
+  cancellation_pending: {
+    heading: "Tickets are on hold",
+    detail: "This event is under review. Sales are paused until it's resolved.",
+  },
+  ended: {
+    heading: "This event has ended",
+    detail: "Tickets are no longer on sale. Have a look at what's on next.",
+  },
+  closed_by_organizer: {
+    heading: "Ticket sales are closed",
+    detail: "The organizer has stopped selling tickets for this event.",
+  },
+  not_approved: {
+    heading: "Tickets aren't on sale yet",
+    detail: "Check back soon — this event is still being reviewed.",
+  },
+};
+
 function TicketBox({
   ev,
   user,
@@ -548,6 +572,21 @@ function TicketBox({
             </button>
           </>
         )}
+      </>
+    );
+  }
+  // Sales can be shut for reasons that have nothing to do with capacity — the
+  // event is over, the organizer paused it, a cancellation is being reviewed.
+  // The server names the reason so the buyer sees the one that's actually true.
+  if (ev.salesClosed) {
+    const copy = SALES_CLOSED_COPY[ev.salesClosedReason ?? ""] ?? {
+      heading: "Tickets aren't available",
+      detail: "Ticket sales are closed for this event.",
+    };
+    return (
+      <>
+        <h3 className="cv-h3">{copy.heading}</h3>
+        <p className="cv-muted">{copy.detail}</p>
       </>
     );
   }
