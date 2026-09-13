@@ -73,18 +73,13 @@ export default function SettingsScreen() {
     emailVerifiedAt: null as string | null,
     country: "",
   });
-<<<<<<< HEAD
-=======
-  // Reminder emails are opt-out, so the switch starts on until the profile says
-  // otherwise. `savingReminders` blocks a double-tap while the PUT is in flight.
-  const [eventReminderEmails, setEventReminderEmails] = useState(true);
   // Device-level push permission. registerForPushNotifications() returns
   // silently when it's denied, so without surfacing it here a user has no way
-  // to find out why nothing is arriving.
+  // to find out why nothing is arriving. Category/channel preferences (which
+  // notifications, email vs push) are a separate concern — see
+  // notification-settings.tsx, linked from the Preferences section below.
   const [pushStatus, setPushStatus] = useState<"granted" | "denied" | "undetermined">("granted");
-  const [savingReminders, setSavingReminders] = useState(false);
 
->>>>>>> 2e3594f5544ae4395054f3a7fea5bf814597af16
   // Onboarding screen for whichever rail settles this user, or null when no rail
   // reaches their country (they can still publish free listings).
   const payoutRoute = payoutOnboardingRoute(user.country);
@@ -490,57 +485,27 @@ export default function SettingsScreen() {
         )}
       </View>
 
-<<<<<<< HEAD
-      {/* Notifications — the full set of channel/category toggles lives on its
-          own screen (notification-settings.tsx); the Preferences section below
-          links to it. */}
-=======
-      {/* Notification channels */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notifications</Text>
-        <Text style={styles.sectionDescription}>
-          Push notifications follow your device settings. These control what we
-          send to your inbox.
-        </Text>
-
-        {pushStatus !== "granted" && (
-          <TouchableOpacity
-            style={styles.pushOffRow}
-            activeOpacity={0.85}
-            onPress={handleEnablePush}
-          >
-            <Ionicons name="notifications-off-outline" size={22} color={colors.warning} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.pushOffTitle}>Push notifications are off</Text>
-              <Text style={styles.pushOffHint}>
-                You won't get messages, ticket sales or support replies on this device. Tap to turn
-                them on.
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-        )}
-
-        <View style={[styles.preferenceItem, { borderBottomWidth: 0 }]}>
-          <View style={[styles.preferenceLeft, { flex: 1, paddingRight: 12 }]}>
-            <Ionicons name="mail-outline" size={22} color={Colors.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.preferenceText}>Event reminder emails</Text>
-              <Text style={styles.reminderHint}>
-                {"A reminder the day before an event you're going to."}
-              </Text>
-            </View>
+      {/* Push notifications off — device-level, surfaced immediately since it
+          silently explains "why am I not getting anything". Channel/category
+          preferences (which notifications, email vs push) live on their own
+          screen — see the "Notifications" row in Preferences below. */}
+      {pushStatus !== "granted" && (
+        <TouchableOpacity
+          style={styles.pushOffRow}
+          activeOpacity={0.85}
+          onPress={handleEnablePush}
+        >
+          <Ionicons name="notifications-off-outline" size={22} color={colors.warning} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.pushOffTitle}>Push notifications are off</Text>
+            <Text style={styles.pushOffHint}>
+              You won't get messages, ticket sales or support replies on this device. Tap to turn
+              them on.
+            </Text>
           </View>
-          <Switch
-            value={eventReminderEmails}
-            onValueChange={handleToggleReminderEmails}
-            disabled={savingReminders}
-            trackColor={{ false: colors.borderMuted, true: Colors.primary }}
-            thumbColor="#fff"
-          />
-        </View>
-      </View>
->>>>>>> 2e3594f5544ae4395054f3a7fea5bf814597af16
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </TouchableOpacity>
+      )}
 
       {/* Email Verification status */}
       <View style={styles.section}>
@@ -901,7 +866,11 @@ const createStyles = (c: ThemeColors) =>
     borderColor: c.warning,
     borderRadius: 12,
     padding: 14,
-    marginBottom: 12,
+    // Standalone card now (not nested in a `section`, which supplied this
+    // before) — matches `section`'s own marginHorizontal/marginBottom so it
+    // lines up with the rest of the page.
+    marginHorizontal: 16,
+    marginBottom: 16,
   },
   pushOffTitle: {
     fontSize: 14,

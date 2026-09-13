@@ -13,8 +13,6 @@ import Report from "../models/report.model.js";
 import Message from "../models/message.model.js";
 import chatService from "../services/chat.service.js";
 import { sendPushNotification, notifyUser } from "../services/notification.service.js";
-<<<<<<< HEAD
-=======
 import {
   refundAllEventTickets,
   outstandingTicketFilter,
@@ -26,7 +24,6 @@ import {
 } from "../services/email.service.js";
 import { formatAmountText } from "../services/payments/fulfillment.js";
 import { invalidateCachePattern } from "../utils/cache.js";
->>>>>>> 2e3594f5544ae4395054f3a7fea5bf814597af16
 import { markVerified } from "../services/verification.service.js";
 import { getSocketInstance } from "../services/socket.service.js";
 import {

@@ -181,17 +181,12 @@ export async function notifyUser(userId, { type, title, body, data = {}, push = 
 
   if (push) {
     try {
-<<<<<<< HEAD
       const recipient = await User.findById(userId).select("fcmToken notificationPrefs");
       if (!wantsPush(recipient, type, prefKey)) {
         console.log(`[notifyUser] Push suppressed by preference for "${type}" → ${userId}`);
       } else {
-        await sendPushNotification(recipient?.fcmToken, title, body, { type, ...data });
+        await sendPushNotification(recipient?.fcmToken, title, body, { type, ...data }, { userId });
       }
-=======
-      const recipient = await User.findById(userId).select("fcmToken");
-      await sendPushNotification(recipient?.fcmToken, title, body, { type, ...data }, { userId });
->>>>>>> 2e3594f5544ae4395054f3a7fea5bf814597af16
     } catch (err) {
       console.error(`[notifyUser] Push failed for "${type}" → ${userId}:`, err?.message ?? err);
     }

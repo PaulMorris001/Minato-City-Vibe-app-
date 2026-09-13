@@ -6,11 +6,7 @@ import Notification from "../models/notification.model.js";
 import { emitNewMessage, getSocketInstance } from "./socket.service.js";
 import { uploadBase64Image, deleteImage } from "./image.service.js";
 import { isVideoUrl } from "../config/cloudinary.js";
-<<<<<<< HEAD
-import { sendPushNotification, wantsPush } from "./notification.service.js";
-=======
-import { sendPushNotification, notifyUser } from "./notification.service.js";
->>>>>>> 2e3594f5544ae4395054f3a7fea5bf814597af16
+import { sendPushNotification, wantsPush, notifyUser } from "./notification.service.js";
 import { areMutualFollows } from "../utils/followCheck.js";
 import { involvesSupport, withSupportMarkers } from "../utils/supportAccount.js";
 
@@ -350,20 +346,11 @@ class ChatService {
     const mentionedIds = new Set(mentions.map((id) => id.toString()));
 
     for (const participantId of chat.participants) {
-<<<<<<< HEAD
-      if (participantId.toString() === senderId.toString()) continue;
-      const recipient = await User.findById(participantId).select("fcmToken notificationPrefs");
-      if (!recipient?.fcmToken) continue;
-      // Honours the recipient's "Messages" push toggle. The message itself is
-      // still delivered over the socket / on next open — this only mutes push.
-      if (!wantsPush(recipient, "new_message")) continue;
-=======
       const participantIdStr = participantId.toString();
       if (participantIdStr === senderId.toString()) continue;
       // Muting a thread has to actually mute it — this loop used to ignore
       // isMuted entirely, so the setting did nothing.
       if (chat.isMuted?.get(participantIdStr)) continue;
->>>>>>> 2e3594f5544ae4395054f3a7fea5bf814597af16
 
       let body;
       if (mentionsAll) {
@@ -397,8 +384,11 @@ class ChatService {
         continue;
       }
 
-      const recipient = await User.findById(participantId).select("fcmToken");
+      const recipient = await User.findById(participantId).select("fcmToken notificationPrefs");
       if (!recipient?.fcmToken) continue;
+      // Honours the recipient's "Messages" push toggle. The message itself is
+      // still delivered over the socket / on next open — this only mutes push.
+      if (!wantsPush(recipient, "new_message")) continue;
 
       await sendPushNotification(
         recipient.fcmToken,
