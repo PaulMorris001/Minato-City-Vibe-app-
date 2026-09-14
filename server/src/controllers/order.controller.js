@@ -7,6 +7,7 @@ import chatService from "../services/chat.service.js";
 import { currencyForUser } from "../services/payments/resolveProvider.js";
 import { notifyUser } from "../services/notification.service.js";
 import { formatAmountText } from "../services/payments/fulfillment.js";
+import { refundOrderCoupon } from "../services/payments/coupon.service.js";
 import { invalidateCachePattern } from "../utils/cache.js";
 
 /** Recompute server-authoritative totals from the item snapshots + vendor fees. */
@@ -268,6 +269,9 @@ export async function declineOrder(req, res) {
 
     order.status = "declined";
     await order.save();
+    // Give back any coupon balance reserved at payment init — there's nothing
+    // left to spend it on.
+    await refundOrderCoupon(order);
     await postOrderSystemMessage(order.chat, req.user.id, "Vendor declined this order");
 
     await populateOrder(order);
@@ -288,6 +292,7 @@ export async function cancelOrder(req, res) {
 
     order.status = "cancelled";
     await order.save();
+    await refundOrderCoupon(order);
     await postOrderSystemMessage(order.chat, req.user.id, "Client cancelled this order");
 
     await populateOrder(order);

@@ -72,6 +72,7 @@ export default function SettingsScreen() {
     isVendor: false,
     emailVerifiedAt: null as string | null,
     country: "",
+    couponBalance: 0,
   });
   // Device-level push permission. registerForPushNotifications() returns
   // silently when it's denied, so without surfacing it here a user has no way
@@ -214,6 +215,7 @@ export default function SettingsScreen() {
         isVendor: userData.isVendor || false,
         emailVerifiedAt: userData.emailVerifiedAt || null,
         country: userData.location?.country || "",
+        couponBalance: userData.couponBalance || 0,
       });
       if (userData.location?.country) {
         setLocation({
@@ -381,6 +383,25 @@ export default function SettingsScreen() {
             </Text>
           </View>
         </View>
+
+        {user.couponBalance > 0 && (
+          <View style={[styles.infoRow, { borderBottomWidth: 0, marginBottom: 4 }]}>
+            <View style={styles.infoIconContainer}>
+              <Ionicons name="pricetag-outline" size={20} color={Colors.primary} />
+            </View>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoLabel}>OurCityVibe Coupons</Text>
+              <Text style={styles.infoValue}>
+                {user.couponBalance % 1 === 0
+                  ? user.couponBalance
+                  : user.couponBalance.toFixed(2)}{" "}
+                <Text style={styles.infoSubvalue}>
+                  · $1 = 1 coupon, ₦1,500 = 1 coupon — use at checkout with any vendor
+                </Text>
+              </Text>
+            </View>
+          </View>
+        )}
 
         <TouchableOpacity
           style={[

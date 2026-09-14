@@ -12,6 +12,7 @@ import { startEventReminderJob } from './jobs/eventReminder.job.js';
 import { startPayoutReleaseJob } from './jobs/payoutRelease.job.js';
 import { startExternalEventsRefresh } from './jobs/externalEventsRefresh.job.js';
 import { startDiscountReservationJob } from './jobs/discountReservation.job.js';
+import { startCouponReservationJob } from './jobs/couponReservation.job.js';
 import { startEngagementPushJob } from './jobs/engagementPush.job.js';
 
 import authRoutes from './routes/auth.route.js'
@@ -165,5 +166,6 @@ httpServer.listen(config.server.port, config.server.host, async () => {
   startPayoutReleaseJob();
   startExternalEventsRefresh();
   startDiscountReservationJob();
+  startCouponReservationJob();
   startEngagementPushJob();
 });

@@ -158,6 +158,16 @@ const userSchema = mongoose.Schema({
   // it, and it's where they live rather than where they're looking for events.
   pushCity: { type: String, default: null },
 
+  // OurCityVibe coupon balance — a currency-agnostic unit, fixed at 1 coupon =
+  // $1 USD = ₦1,500. Credited when a Birthday Raffle prize carries a coupon
+  // value (see raffleCampaign.model.js's prizeSchema and admin.controller.js's
+  // setRaffleWinner); spent at checkout against any vendor order (see
+  // services/payments/coupon.service.js). Never negative in steady state —
+  // reservations are only ever for an amount already on the balance — but
+  // stored as a plain Number rather than unsigned so a manual admin
+  // correction can't be rejected by the schema.
+  couponBalance: { type: Number, default: 0 },
+
   // Email/push channel preferences. Push follows the OS permission; these
   // cover the channels we control. Default on — users opt out, not in.
   // The category flags gate push delivery per notification type (see the

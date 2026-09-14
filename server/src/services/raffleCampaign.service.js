@@ -5,6 +5,7 @@
 
 import RaffleCampaign from "../models/raffleCampaign.model.js";
 import { RAFFLE_CAMPAIGN_END } from "../config/birthdayRaffle.js";
+import { amountToCouponUnits } from "./payments/coupon.service.js";
 
 // The three tiers the raffle shipped with. Used for a fresh campaign's starting
 // point and as the fallback for campaign rows saved before `prizes` existed.
@@ -69,12 +70,22 @@ export function prizeReward(prize, isNigerian) {
   return primary || fallback || prize?.reward || "";
 }
 
-/** A campaign's prize tiers localized for one user — `[{ rank, reward }]`,
- *  the shape the mobile raffle screens already render. */
+/** One prize tier's coupon award, in coupon units, for a winner in
+ *  `isNigerian`'s country — see coupon.service.js for what a "unit" is
+ *  worth. 0 (the default on tiers saved before this field existed) means
+ *  that tier carries no coupon, independent of its display reward text. */
+export function prizeCouponUnits(prize, isNigerian) {
+  const amount = isNigerian ? prize?.couponNGN || 0 : prize?.couponUSD || 0;
+  return amountToCouponUnits(amount, isNigerian ? "NGN" : "USD");
+}
+
+/** A campaign's prize tiers localized for one user — `[{ rank, reward,
+ *  couponUnits }]`, the shape the mobile raffle screens render. */
 export function resolvedPrizes(campaign, isNigerian) {
   return campaignPrizes(campaign).map((p) => ({
     rank: p.rank,
     reward: prizeReward(p, isNigerian),
+    couponUnits: prizeCouponUnits(p, isNigerian),
   }));
 }
 

@@ -37,8 +37,10 @@ import {
   campaignPrizes,
   campaignMinReferrals,
   prizeReward,
+  prizeCouponUnits,
   isNigerianCountry,
 } from "../services/raffleCampaign.service.js";
+import { adjustCouponBalance } from "../services/payments/coupon.service.js";
 
 /**
  * Constant-time string comparison. Guards the username check against timing
@@ -405,7 +407,15 @@ function normalizePrizes(input) {
     if (!rewardNGN || !rewardUSD) {
       return { error: `prize ${i + 1} needs both a Naira and a Dollar reward` };
     }
-    prizes.push({ rank: i + 1, rewardNGN, rewardUSD });
+    // Coupon value is independent of (and defaults to none, unlike) the
+    // reward text above — an admin opts a tier into awarding a coupon by
+    // giving it a positive amount. 0/blank/omitted all mean "no coupon".
+    const couponNGN = Number(raw?.couponNGN ?? 0);
+    const couponUSD = Number(raw?.couponUSD ?? 0);
+    if (!Number.isFinite(couponNGN) || couponNGN < 0 || !Number.isFinite(couponUSD) || couponUSD < 0) {
+      return { error: `prize ${i + 1}'s coupon values must be 0 or a positive number` };
+    }
+    prizes.push({ rank: i + 1, rewardNGN, rewardUSD, couponNGN, couponUSD });
   }
   return { prizes };
 }
@@ -428,6 +438,11 @@ const ordinal = (n) => {
   const v = n % 100;
   return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 };
+
+// Coupon units are usually whole (a ₦75,000 tier is exactly 50 units), but an
+// admin-set amount that isn't a clean multiple of ₦1,500 rounds to cents —
+// trim trailing zeros so the notification reads "50 coupons", not "50.00".
+const formatCouponUnits = (units) => (Math.round(units * 100) / 100).toString();
 
 /** Reject a window that's inverted or overlaps another campaign. Returns an
  *  error message, or null when the window is fine. */
@@ -743,20 +758,34 @@ export async function setRaffleWinner(req, res) {
     event.raffleWinnerRank = rank;
     await event.save();
 
-    // Tell the winner. Only on an actual new award — not a re-save of the
-    // rank they already held (the admin UI never triggers that anyway) and
-    // not on clearing a place, which is a correction, not news. Never gated
-    // by a notification preference: this is a rare, once-per-campaign event a
-    // winner would want pushed regardless of their category toggles.
-    if (rank !== null && rank !== previousRank) {
-      const prizeTier = campaignPrizes(owning).find((p) => p.rank === rank);
-      if (prizeTier) {
-        const winnerUser = await User.findById(event.createdBy).select("location.country");
-        const reward = prizeReward(prizeTier, isNigerianCountry(winnerUser?.location?.country));
+    // Reconcile the coupon award: whatever the OLD rank was worth (0 if none)
+    // against what the NEW rank is worth (0 if cleared to null). Covers a
+    // fresh award, a correction to a different place, and un-picking a
+    // mistaken winner, all as one "what's owed now vs before" delta — so
+    // changing 2nd→1st doesn't double-credit both tiers' coupons, and
+    // clearing a pick takes back what clearing it should.
+    if (rank !== previousRank) {
+      const winnerUser = await User.findById(event.createdBy).select("location.country");
+      const isNigerian = isNigerianCountry(winnerUser?.location?.country);
+      const oldTier = previousRank !== null ? campaignPrizes(owning).find((p) => p.rank === previousRank) : null;
+      const newTier = rank !== null ? campaignPrizes(owning).find((p) => p.rank === rank) : null;
+      const oldUnits = oldTier ? prizeCouponUnits(oldTier, isNigerian) : 0;
+      const newUnits = newTier ? prizeCouponUnits(newTier, isNigerian) : 0;
+      if (oldUnits !== newUnits) await adjustCouponBalance(event.createdBy, newUnits - oldUnits);
+
+      // Tell the winner. Only on an actual new award — not on clearing a
+      // place, which is a correction, not news. Never gated by a
+      // notification preference: this is a rare, once-per-campaign event a
+      // winner would want pushed regardless of their category toggles.
+      if (rank !== null && newTier) {
+        const reward = prizeReward(newTier, isNigerian);
+        const couponNote = newUnits > 0
+          ? ` Plus ${formatCouponUnits(newUnits)} OurCityVibe coupons — spend them at checkout with any vendor.`
+          : "";
         notifyUser(event.createdBy, {
           type: "raffle_winner",
           title: "🎉 You won the Birthday Raffle!",
-          body: `Your event "${event.title}" placed ${ordinal(rank)} — ${reward}. Open the app for details.`,
+          body: `Your event "${event.title}" placed ${ordinal(rank)} — ${reward}.${couponNote} Open the app for details.`,
           data: { eventId: event._id.toString(), rank: String(rank) },
         });
       }

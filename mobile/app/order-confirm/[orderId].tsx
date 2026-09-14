@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Image,
   Platform,
+  Switch,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -17,7 +18,7 @@ import { BASE_URL } from "@/constants/constants";
 import { Order } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
-import { currencyPrefix } from "@/constants/payments";
+import { currencyPrefix, couponUnitsToAmount } from "@/constants/payments";
 import { usePayment } from "@/hooks/usePayment";
 import { showError, showSuccess } from "@/utils/toast";
 import { ensureOnline } from "@/utils/requireOnline";
@@ -43,19 +44,30 @@ export default function OrderConfirm() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
+  const [couponBalance, setCouponBalance] = useState(0);
+  const [useCoupon, setUseCoupon] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       try {
         const token = await SecureStore.getItemAsync("token");
-        const res = await fetch(`${BASE_URL}/orders/${orderId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (!res.ok) {
+        const [orderRes, profileRes] = await Promise.all([
+          fetch(`${BASE_URL}/orders/${orderId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${BASE_URL}/profile`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
+        const data = await orderRes.json();
+        if (!orderRes.ok) {
           setError(data.message || "Couldn't load this order");
         } else {
           setOrder(data);
+        }
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          setCouponBalance(profileData?.user?.couponBalance || 0);
         }
       } catch {
         setError("Network error. Please try again.");
@@ -77,12 +89,16 @@ export default function OrderConfirm() {
     return "Vendor";
   };
 
+  const couponAvailable = couponUnitsToAmount(couponBalance, order?.currency);
+  const couponApplied = order ? Math.min(couponAvailable, order.total) : 0;
+  const payableAfterCoupon = order ? Math.max(0, order.total - couponApplied) : 0;
+
   const handleConfirmPay = async () => {
     if (!order || paying) return;
     if (!ensureOnline("pay for an order")) return;
     setPaying(true);
     try {
-      const result = await payForOrder(order._id);
+      const result = await payForOrder(order._id, useCoupon);
       if (result.success) {
         showSuccess("Payment complete", "Paid");
         // Back to the chat — its focus refresh flips the invoice card to Paid.
@@ -213,9 +229,41 @@ export default function OrderConfirm() {
           </View>
         </View>
 
+        {payable && couponBalance > 0 && (
+          <View style={[styles.card, styles.couponCard]}>
+            <View style={styles.couponRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.couponTitle}>Use my OurCityVibe coupon</Text>
+                <Text style={styles.couponSubtitle} numberOfLines={2}>
+                  You have {money(couponAvailable)} available
+                  {couponApplied < order.total ? " — won't cover the full order" : ""}.
+                </Text>
+              </View>
+              <Switch
+                value={useCoupon}
+                onValueChange={setUseCoupon}
+                trackColor={{ true: colors.primary }}
+              />
+            </View>
+            {useCoupon && (
+              <View style={styles.couponBreakdown}>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Coupon applied</Text>
+                  <Text style={styles.totalValue}>-{money(couponApplied)}</Text>
+                </View>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>You pay</Text>
+                  <Text style={styles.totalValue}>{money(payableAfterCoupon)}</Text>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+
         <Text style={styles.disclaimer}>
-          You'll be charged {money(order.total)} in {order.currency}. Amounts are
-          confirmed by the vendor and verified on our servers before payment.
+          You'll be charged {money(useCoupon ? payableAfterCoupon : order.total)} in{" "}
+          {order.currency}. Amounts are confirmed by the vendor and verified on our
+          servers before payment.
         </Text>
       </ScrollView>
 
@@ -239,7 +287,9 @@ export default function OrderConfirm() {
                 <>
                   <Ionicons name="lock-closed" size={16} color="#fff" />
                   <Text style={styles.payButtonText}>
-                    Confirm & Pay {money(order.total)}
+                    {useCoupon && payableAfterCoupon === 0
+                      ? "Confirm — Fully covered by coupon"
+                      : `Confirm & Pay ${money(useCoupon ? payableAfterCoupon : order.total)}`}
                   </Text>
                 </>
               )}
@@ -346,6 +396,12 @@ const createStyles = (c: ThemeColors) =>
     grandTotalRow: { borderTopWidth: 1, borderTopColor: c.border, marginTop: 4, paddingTop: 14, paddingBottom: 14 },
     grandTotalLabel: { fontSize: 16, fontFamily: Fonts.bold, color: c.text },
     grandTotalValue: { flexShrink: 0, fontSize: 20, fontFamily: Fonts.bold, color: c.primary },
+
+    couponCard: { marginTop: 16, paddingVertical: 14 },
+    couponRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+    couponTitle: { fontSize: 14, fontFamily: Fonts.semiBold, color: c.text },
+    couponSubtitle: { fontSize: 12, fontFamily: Fonts.regular, color: c.textSecondary, marginTop: 2 },
+    couponBreakdown: { marginTop: 6, borderTopWidth: 1, borderTopColor: c.border },
 
     disclaimer: {
       fontSize: 12,

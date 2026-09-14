@@ -517,27 +517,28 @@ function CampaignPanel({
   const [name, setName] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  // One NGN + USD reward pair per winner tier; array length = number of winners.
-  const [rewards, setRewards] = useState<{ rewardNGN: string; rewardUSD: string }[]>([
-    { rewardNGN: "", rewardUSD: "" },
-    { rewardNGN: "", rewardUSD: "" },
-    { rewardNGN: "", rewardUSD: "" },
-  ]);
+  // One tier's reward copy + coupon value per winner; array length = number of
+  // winners. Coupon fields are strings (controlled inputs) that default to
+  // "0" — a tier with 0 awards no coupon, only the reward text/extras.
+  type RewardRow = { rewardNGN: string; rewardUSD: string; couponNGN: string; couponUSD: string };
+  const EMPTY_ROW: RewardRow = { rewardNGN: "", rewardUSD: "", couponNGN: "0", couponUSD: "0" };
+  const [rewards, setRewards] = useState<RewardRow[]>([{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }]);
   // Verified RSVPs a host needs before they're prize-eligible.
   const [minReferrals, setMinReferrals] = useState("6");
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const EMPTY_REWARDS = [
-    { rewardNGN: "", rewardUSD: "" },
-    { rewardNGN: "", rewardUSD: "" },
-    { rewardNGN: "", rewardUSD: "" },
-  ];
-  const campaignRewards = (c: AdminRaffleCampaign | null) =>
+  const EMPTY_REWARDS = [{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }];
+  const campaignRewards = (c: AdminRaffleCampaign | null): RewardRow[] =>
     c?.prizes?.length
       ? [...c.prizes]
           .sort((a, b) => a.rank - b.rank)
-          .map((p) => ({ rewardNGN: p.rewardNGN ?? p.reward ?? "", rewardUSD: p.rewardUSD ?? p.reward ?? "" }))
+          .map((p) => ({
+            rewardNGN: p.rewardNGN ?? p.reward ?? "",
+            rewardUSD: p.rewardUSD ?? p.reward ?? "",
+            couponNGN: String(p.couponNGN ?? 0),
+            couponUSD: String(p.couponUSD ?? 0),
+          }))
       : EMPTY_REWARDS;
 
   // Reset the edit fields whenever the selected campaign changes.
@@ -558,9 +559,9 @@ function CampaignPanel({
     }
   }, [campaign, real]);
 
-  const setReward = (i: number, field: "rewardNGN" | "rewardUSD", v: string) =>
+  const setReward = (i: number, field: keyof RewardRow, v: string) =>
     setRewards((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: v } : r)));
-  const addTier = () => setRewards((prev) => [...prev, { rewardNGN: "", rewardUSD: "" }]);
+  const addTier = () => setRewards((prev) => [...prev, { ...EMPTY_ROW }]);
   const removeTier = (i: number) => setRewards((prev) => prev.filter((_, idx) => idx !== i));
 
   const rewardsDirty =
@@ -575,7 +576,12 @@ function CampaignPanel({
       minReferrals !== String(campaign.minReferrals ?? 6));
 
   const prizesPayload = () =>
-    rewards.map((r) => ({ rewardNGN: r.rewardNGN.trim(), rewardUSD: r.rewardUSD.trim() }));
+    rewards.map((r) => ({
+      rewardNGN: r.rewardNGN.trim(),
+      rewardUSD: r.rewardUSD.trim(),
+      couponNGN: Number(r.couponNGN) || 0,
+      couponUSD: Number(r.couponUSD) || 0,
+    }));
   const minReferralsPayload = () => {
     const n = Number(minReferrals);
     return Number.isInteger(n) && n >= 0 ? n : undefined;
@@ -620,13 +626,16 @@ function CampaignPanel({
   };
 
   const showCreate = creating || !real;
+  const validCoupon = (v: string) => v.trim() === "" || (Number(v) >= 0 && Number.isFinite(Number(v)));
   const canSubmit =
     !!name.trim() &&
     !!start &&
     !!end &&
     minReferralsPayload() !== undefined &&
     rewards.length > 0 &&
-    rewards.every((r) => r.rewardNGN.trim() && r.rewardUSD.trim());
+    rewards.every(
+      (r) => r.rewardNGN.trim() && r.rewardUSD.trim() && validCoupon(r.couponNGN) && validCoupon(r.couponUSD)
+    );
 
   return (
     <div style={styles.panel}>
@@ -727,31 +736,62 @@ function CampaignPanel({
           <span style={{ width: 34, flexShrink: 0 }} />
         </div>
         {rewards.map((r, i) => (
-          <div key={i} style={styles.prizeRow}>
-            <span style={styles.prizeRank}>{ordinal(i + 1)}</span>
-            <input
-              style={{ ...styles.input, flex: 1 }}
-              value={r.rewardNGN}
-              onChange={(e) => setReward(i, "rewardNGN", e.target.value)}
-              placeholder="e.g. ₦150,000 Cash + Premium Event Pass"
-            />
-            <input
-              style={{ ...styles.input, flex: 1 }}
-              value={r.rewardUSD}
-              onChange={(e) => setReward(i, "rewardUSD", e.target.value)}
-              placeholder="e.g. $100 Cash + Premium Event Pass"
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={rewards.length <= 1}
-              onClick={() => removeTier(i)}
-              title="Remove this winner"
-            >
-              ✕
-            </Button>
+          <div key={i} style={styles.prizeTierCard}>
+            <div style={styles.prizeRow}>
+              <span style={styles.prizeRank}>{ordinal(i + 1)}</span>
+              <input
+                style={{ ...styles.input, flex: 1 }}
+                value={r.rewardNGN}
+                onChange={(e) => setReward(i, "rewardNGN", e.target.value)}
+                placeholder="e.g. ₦150,000 Cash + Premium Event Pass"
+              />
+              <input
+                style={{ ...styles.input, flex: 1 }}
+                value={r.rewardUSD}
+                onChange={(e) => setReward(i, "rewardUSD", e.target.value)}
+                placeholder="e.g. $100 Cash + Premium Event Pass"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={rewards.length <= 1}
+                onClick={() => removeTier(i)}
+                title="Remove this winner"
+              >
+                ✕
+              </Button>
+            </div>
+            <div style={styles.prizeRow}>
+              <span style={{ ...styles.prizeRank, visibility: "hidden" }}>—</span>
+              <div style={styles.couponField}>
+                <span style={styles.fieldLabel}>Coupon ₦</span>
+                <input
+                  type="number"
+                  min={0}
+                  style={{ ...styles.input, width: 110 }}
+                  value={r.couponNGN}
+                  onChange={(e) => setReward(i, "couponNGN", e.target.value)}
+                />
+              </div>
+              <div style={styles.couponField}>
+                <span style={styles.fieldLabel}>Coupon $</span>
+                <input
+                  type="number"
+                  min={0}
+                  style={{ ...styles.input, width: 110 }}
+                  value={r.couponUSD}
+                  onChange={(e) => setReward(i, "couponUSD", e.target.value)}
+                />
+              </div>
+              <span style={{ width: 34, flexShrink: 0 }} />
+            </div>
           </div>
         ))}
+      </div>
+      <div style={{ ...styles.panelRow, marginTop: -8 }}>
+        Coupon: what the winner is actually credited (services/payments/coupon.service.js) —
+        1 coupon = ₦1,500 = $1, spendable at checkout with any vendor. Independent of the
+        reward text above, which can describe non-cash extras; 0 awards no coupon.
       </div>
 
       <div>
@@ -849,7 +889,7 @@ const styles: Record<string, React.CSSProperties> = {
   prizeBlock: {
     display: "flex",
     flexDirection: "column",
-    gap: 8,
+    gap: 12,
     maxWidth: 760,
   },
   prizeHead: {
@@ -863,6 +903,15 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 10,
   },
+  prizeTierCard: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+    padding: 10,
+    borderRadius: 10,
+    border: `1px solid ${colors.border}`,
+    background: colors.surfaceHover,
+  },
   prizeRow: {
     display: "flex",
     alignItems: "center",
@@ -874,6 +923,11 @@ const styles: Record<string, React.CSSProperties> = {
     color: colors.textMuted,
     width: 34,
     flexShrink: 0,
+  },
+  couponField: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
   },
   stats: {
     display: "flex",

@@ -152,6 +152,11 @@ export interface RafflePrize {
   reward?: string;
   rewardNGN: string;
   rewardUSD: string;
+  // Coupon value credited to the winner on top of the reward copy above —
+  // NGN and USD, converted to OurCityVibe coupon units (₦1,500 = $1 = 1
+  // coupon) server-side. 0/undefined awards no coupon for that tier.
+  couponNGN?: number;
+  couponUSD?: number;
 }
 
 export interface AdminRaffleCampaign {

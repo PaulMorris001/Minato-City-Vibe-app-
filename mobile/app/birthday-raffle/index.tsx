@@ -29,7 +29,12 @@ import { useCountdown } from "@/hooks/useCountdown";
 // the server exactly.
 const CAMPAIGN_DEADLINE_MS = new Date("2026-09-30T23:59:59.999Z").getTime();
 
-type PrizeRow = { place: string; reward: string; icon: "trophy" | "medal" | "ribbon" };
+type PrizeRow = {
+  place: string;
+  reward: string;
+  icon: "trophy" | "medal" | "ribbon";
+  couponUnits: number;
+};
 
 const PRIZE_ICONS: PrizeRow["icon"][] = ["trophy", "medal", "ribbon"];
 const ordinal = (n: number) => {
@@ -37,20 +42,26 @@ const ordinal = (n: number) => {
   const v = n % 100;
   return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 };
-// Server sends [{ rank, reward }] for the active campaign; fall back to the
-// static copy below until that resolves (and for guests, who can't fetch it).
-const toPrizeRows = (prizes: { rank: number; reward: string }[]): PrizeRow[] =>
+// Server sends [{ rank, reward, couponUnits }] for the active campaign; fall
+// back to the static copy below until that resolves (and for guests, who
+// can't fetch it).
+const toPrizeRows = (prizes: { rank: number; reward: string; couponUnits?: number }[]): PrizeRow[] =>
   [...prizes]
     .sort((a, b) => a.rank - b.rank)
-    .map((p, i) => ({ place: ordinal(p.rank), reward: p.reward, icon: PRIZE_ICONS[i] ?? "ribbon" }));
+    .map((p, i) => ({
+      place: ordinal(p.rank),
+      reward: p.reward,
+      icon: PRIZE_ICONS[i] ?? "ribbon",
+      couponUnits: p.couponUnits || 0,
+    }));
 
 const CAMPAIGN = {
   title: "Birthday Raffle Campaign",
   subtitle: "Create a birthday event, invite friends, and win prizes",
   prizes: [
-    { place: "1st", reward: "₦150,000 Cash + Premium Event Pass", icon: "trophy" as const },
-    { place: "2nd", reward: "₦75,000 Cash", icon: "medal" as const },
-    { place: "3rd", reward: "₦40,000 Cash", icon: "ribbon" as const },
+    { place: "1st", reward: "₦150,000 Cash + Premium Event Pass", icon: "trophy" as const, couponUnits: 0 },
+    { place: "2nd", reward: "₦75,000 Cash", icon: "medal" as const, couponUnits: 0 },
+    { place: "3rd", reward: "₦40,000 Cash", icon: "ribbon" as const, couponUnits: 0 },
   ] as PrizeRow[],
   // Plain-language summary only. The binding text is the Official Rules screen
   // (app/birthday-raffle/rules.tsx) — keep these two consistent.
@@ -276,6 +287,12 @@ const handlePrimaryCTA = async () => {
               <View style={styles.prizeContent}>
                 <Text style={styles.prizePlace}>{prize.place} Place</Text>
                 <Text style={styles.prizeReward}>{prize.reward}</Text>
+                {prize.couponUnits > 0 && (
+                  <Text style={styles.prizeCoupon}>
+                    + {prize.couponUnits % 1 === 0 ? prize.couponUnits : prize.couponUnits.toFixed(2)}{" "}
+                    OurCityVibe coupon{prize.couponUnits === 1 ? "" : "s"} to spend with any vendor
+                  </Text>
+                )}
               </View>
             </View>
           ))}
@@ -534,6 +551,12 @@ const createStyles = (c: ThemeColors) =>
       fontFamily: Fonts.regular,
       fontSize: 13,
       color: c.textDim,
+    },
+    prizeCoupon: {
+      fontFamily: Fonts.medium,
+      fontSize: 12,
+      color: c.primary,
+      marginTop: 3,
     },
     ruleRow: {
       flexDirection: "row",

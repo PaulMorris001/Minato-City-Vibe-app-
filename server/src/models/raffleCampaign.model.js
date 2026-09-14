@@ -31,6 +31,15 @@ const prizeSchema = mongoose.Schema(
     reward: { type: String, trim: true },
     rewardNGN: { type: String, trim: true },
     rewardUSD: { type: String, trim: true },
+    // The coupon a winner is credited on pick (services/payments/
+    // coupon.service.js), in the winner's own currency — a Nigerian winner
+    // gets couponNGN worth of coupons (at ₦1,500/coupon), everyone else gets
+    // couponUSD (1:1). Independent of the display-only reward text above: a
+    // reward can describe a non-cash extra ("+ Premium Event Pass") that
+    // isn't part of the coupon at all. 0 (the default) awards no coupon —
+    // existing campaigns saved before this field keep working unchanged.
+    couponNGN: { type: Number, default: 0, min: 0 },
+    couponUSD: { type: Number, default: 0, min: 0 },
   },
   { _id: false }
 );

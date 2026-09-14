@@ -98,7 +98,7 @@ export const adminApi = {
     startDate: string;
     endDate: string;
     // Ordered rewards; server assigns ranks 1..N by position.
-    prizes?: { rewardNGN: string; rewardUSD: string }[];
+    prizes?: { rewardNGN: string; rewardUSD: string; couponNGN?: number; couponUSD?: number }[];
     // Verified RSVPs needed to be prize-eligible; omit to use the server default (6).
     minReferrals?: number;
   }) =>
@@ -111,7 +111,7 @@ export const adminApi = {
       name?: string;
       startDate?: string;
       endDate?: string;
-      prizes?: { rewardNGN: string; rewardUSD: string }[];
+      prizes?: { rewardNGN: string; rewardUSD: string; couponNGN?: number; couponUSD?: number }[];
       minReferrals?: number;
     }
   ) =>
