@@ -13,6 +13,7 @@ import { startPayoutReleaseJob } from './jobs/payoutRelease.job.js';
 import { startExternalEventsRefresh } from './jobs/externalEventsRefresh.job.js';
 import { startDiscountReservationJob } from './jobs/discountReservation.job.js';
 import { startCouponReservationJob } from './jobs/couponReservation.job.js';
+import { startCouponExpirationJob } from './jobs/couponExpiration.job.js';
 import { startEngagementPushJob } from './jobs/engagementPush.job.js';
 
 import authRoutes from './routes/auth.route.js'
@@ -51,6 +52,7 @@ import externalEventRoutes from "./routes/externalEvent.route.js";
 import attendanceRoutes from "./routes/attendance.route.js";
 import birthdayRaffleRoutes from "./routes/birthdayRaffle.route.js";
 import peopleRoutes from "./routes/people.route.js";
+import walletRoutes from "./routes/wallet.route.js";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -147,6 +149,7 @@ app.use("/api/", externalEventRoutes);
 app.use("/api/", attendanceRoutes);
 app.use("/api/", birthdayRaffleRoutes);
 app.use("/api/", peopleRoutes);
+app.use("/api/", walletRoutes);
 app.use("/", deleteAccountRoutes);
 app.use("/", deepLinksRoutes);
 app.use("/", privacyRoutes);
@@ -167,5 +170,6 @@ httpServer.listen(config.server.port, config.server.host, async () => {
   startExternalEventsRefresh();
   startDiscountReservationJob();
   startCouponReservationJob();
+  startCouponExpirationJob();
   startEngagementPushJob();
 });

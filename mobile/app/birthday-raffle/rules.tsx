@@ -59,27 +59,27 @@ const SECTIONS: { title: string; body: string }[] = [
   },
   {
     title: "5. Entry period",
-    body: "Each campaign runs for the period shown on the Birthday Raffle screen in the app, which displays the current campaign's closing date and a live countdown. Only qualifying events created during an open campaign period are entered into that campaign. Entries received after a campaign closes are not eligible for it.",
+    body: "The Birthday Raffle runs as a series of monthly campaigns, each covering the calendar month of the birthday event's date — not the date the entry was created. A birthday event dated for the current month enters that month's campaign; a birthday event dated up to six (6) months in the future may be created ahead of time and is held pending until its own month's campaign opens, at which point it is entered automatically. The closing date and, where applicable, pending status for your own entry are shown on the Birthday Raffle screen in the app.",
   },
   {
     title: "6. How to enter",
-    body: "Create a birthday event on OurCityvibe during an open campaign period using the \"Create Birthday Event & Enter\" option. Doing so enters that event into the current campaign automatically. You may create and enter more than one qualifying event.",
+    body: "Create a birthday event on OurCityvibe dated within the next six (6) months using the \"Create Birthday Event & Enter\" option. The event's own date, not when you create it, determines which month's campaign it competes in. You may create and enter more than one qualifying event, including for different months.",
   },
   {
-    title: "7. Entries and odds of winning",
-    body: "Each qualifying birthday event receives one (1) entry into the random draw, plus one (1) additional entry for each unique verified RSVP that event receives from a distinct OurCityvibe account. An event showing a score of 8 in the app therefore holds 8 entries in the draw. Duplicate, fraudulent, automated or incentivised RSVPs do not count and may disqualify the entry entirely. The odds of winning depend on the total number of entries received across all participants during the campaign period.",
+    title: "7. Entries and engagement",
+    body: "Each qualifying birthday event's standing is measured by its number of unique verified RSVPs from distinct OurCityvibe accounts — the score shown on the Birthday Raffle screen. Duplicate, fraudulent, automated or incentivised RSVPs do not count and may disqualify the entry entirely. There is no limit to how many verified RSVPs a qualifying event may collect, and every additional verified RSVP improves an entry's standing.",
   },
   {
     title: "8. Winner selection",
-    body: "To be eligible to win, a qualifying event must reach at least the minimum number of verified RSVPs shown on the Birthday Raffle screen in the app for the current campaign — a base entry from creating the event alone is not enough. After the campaign closes, winners are selected by a random draw conducted by the Sponsor from all entries that met that minimum during the campaign period. Because each verified RSVP beyond the minimum adds an additional entry, collecting more RSVPs increases the number of chances an entry holds in the draw, but does not guarantee a win. The draw is final. One prize per entrant; a single entrant cannot win more than one prize tier in the same campaign.",
+    body: "To be eligible to win, a qualifying event must reach at least the minimum number of verified RSVPs shown on the Birthday Raffle screen in the app for the current campaign — a base entry from creating the event alone is not enough. After the campaign closes, winners are the eligible entries with the highest number of verified RSVPs, ranked highest to lowest, one prize tier per rank; ties are broken in favor of whichever entry reached that number of verified RSVPs first. This is a merit-based ranking, not a random drawing. One prize per entrant; a single entrant cannot win more than one prize tier in the same campaign.",
   },
   {
     title: "9. Prizes",
-    body: "The prizes for the current campaign, including the number of prize tiers and the value of each, are displayed on the Birthday Raffle screen in the app. Prizes are not transferable and no cash alternative is offered except at the Sponsor's sole discretion. The Sponsor may substitute a prize of equal or greater value where a prize becomes unavailable. Where a cash prize is stated in Nigerian Naira (₦), payment is made in Naira; winners outside Nigeria may receive the equivalent value by a method determined by the Sponsor.",
+    body: "The prizes for the current campaign, including the number of prize tiers and the value of each, are displayed on the Birthday Raffle screen in the app. Each prize is a fixed amount of OurCityvibe credit, redeemable only at the vendor the Sponsor has assigned to that prize tier and currency (shown on the Birthday Raffle screen), and only against purchases priced in the same currency the credit was awarded in. Prizes are not transferable, not redeemable for cash, and no cash alternative is offered. The Sponsor may substitute a prize of equal or greater value, or reassign the redeeming vendor, where the original becomes unavailable.",
   },
   {
     title: "10. Winner notification and claim",
-    body: "Winners are notified in the app and by the email address registered to their OurCityvibe account. A winner must respond and provide any information reasonably required to verify eligibility and deliver the prize within fourteen (14) days of first notification. If a winner cannot be contacted, does not respond within that period, is found to be ineligible, or declines the prize, the Sponsor may forfeit that prize and draw an alternate winner.",
+    body: "Winners are notified in the app and by the email address registered to their OurCityvibe account. A winner must respond and provide any information reasonably required to verify eligibility and deliver the prize within fourteen (14) days of first notification. If a winner cannot be contacted, does not respond within that period, is found to be ineligible, or declines the prize, the Sponsor may forfeit that prize and select the next-highest-ranked eligible entry as an alternate winner.",
   },
   {
     title: "11. Taxes and costs",
@@ -164,12 +164,12 @@ const createStyles = (c: ThemeColors) =>
       paddingBottom: 20,
       paddingHorizontal: getResponsivePadding(),
       flexDirection: "row",
-      alignItems: "flex-end",
+      alignItems: "center",
       gap: 12,
     },
-    backButton: { padding: 4, marginBottom: 2 },
+    backButton: { padding: 4 },
     headerText: { flex: 1, minWidth: 0 },
-    headerTitle: { fontSize: scaleFontSize(26), fontFamily: Fonts.bold, color: c.text },
+    headerTitle: { fontSize: scaleFontSize(22), fontFamily: Fonts.bold, color: c.text },
     headerSubtitle: {
       fontSize: scaleFontSize(13),
       fontFamily: Fonts.regular,

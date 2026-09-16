@@ -21,7 +21,7 @@ import {
   PAYOUT_ROUTING_FIELDS,
 } from "../services/payments/resolveProvider.js";
 import { rejectIfCannotSell } from "../services/payments/sellingEligibility.js";
-import { getCurrentCampaign, isCampaignOpen } from "../services/raffleCampaign.service.js";
+import { birthdayRaffleDateError } from "../services/raffleCampaign.service.js";
 import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 import { findEventByAnyId } from "../utils/resolveEvent.js";
 import {
@@ -197,11 +197,13 @@ export const createEvent = async (req, res) => {
       { field: "Address", value: address },
     ]);
 
-    // Birthday-raffle entry is only open while a campaign is running. Between a
-    // campaign ending and the next one starting, reject the flag outright
-    // rather than quietly create an event that can never qualify.
-    if (Boolean(isBirthdayRaffle) && !isCampaignOpen(await getCurrentCampaign())) {
-      return res.status(400).json({ message: "The Birthday Raffle isn't running right now." });
+    // Birthday-raffle eligibility is about the event's own date, not whether
+    // a campaign happens to be running right now: a December birthday can be
+    // pre-registered in August and just sits pending until December's batch
+    // is created (raffle runs as monthly batches, up to 6 months ahead).
+    if (Boolean(isBirthdayRaffle)) {
+      const dateError = birthdayRaffleDateError(date);
+      if (dateError) return res.status(400).json({ message: dateError });
     }
 
     // Ticket currency defaults to the organizer's local currency (set below for

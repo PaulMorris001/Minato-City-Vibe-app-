@@ -7,7 +7,6 @@ import {
   FlatList,
   RefreshControl,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -26,6 +25,7 @@ import DiscoverPeoplePreview from "@/components/shared/DiscoverPeoplePreview";
 import GuestGate from "@/components/shared/GuestGate";
 import CreateEventModal from "@/components/client/CreateEventModal";
 import ImageViewerModal from "@/components/shared/ImageViewerModal";
+import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
 import { displayName } from "@/utils/displayName";
 import { AU } from "@/components/auth/tokens";
 import { BASE_URL } from "@/constants/constants";
@@ -333,18 +333,21 @@ function Header({
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const handleShareProfile = async () => {
-    if (!user?._id) return;
-    try {
-      const url = createUserShareLink(user.slug || user._id);
-      await Share.share({
-        message: `Check out my profile on OurCityvibe\n${url}`,
-        url, // iOS uses this for richer share targets; Android ignores it.
+  // Share sheet gives a "send in a chat" option (in-app, to a friend or
+  // group) alongside the OS share sheet — same component event/[id].tsx and
+  // guide screens already use for their own share buttons.
+  const [shareSheetVisible, setShareSheetVisible] = useState(false);
+  const shareTarget: ShareTarget | null = user
+    ? {
+        kind: "profile",
+        userId: user._id,
         title: displayName(user),
-      });
-    } catch (err) {
-      console.error("Share profile failed:", err);
-    }
+        externalUrl: createUserShareLink(user.slug || user._id),
+      }
+    : null;
+  const handleShareProfile = () => {
+    if (!user?._id) return;
+    setShareSheetVisible(true);
   };
 
   return (
@@ -545,6 +548,12 @@ function Header({
           <Text style={styles.manageLinkText}>Manage your events</Text>
         </TouchableOpacity>
       )}
+
+      <ShareSheet
+        visible={shareSheetVisible}
+        onClose={() => setShareSheetVisible(false)}
+        target={shareTarget}
+      />
     </View>
   );
 }

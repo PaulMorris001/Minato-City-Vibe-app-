@@ -229,7 +229,7 @@ class ChatService {
    * Send a message in a chat
    */
   async sendMessage(chatId, senderId, messageData) {
-    const { type, content, imageUrl, eventId, guideId, orderId, replyTo } = messageData;
+    const { type, content, imageUrl, eventId, guideId, orderId, profileUserId, replyTo } = messageData;
 
     // Verify chat exists and user is participant
     const chat = await Chat.findById(chatId);
@@ -282,6 +282,7 @@ class ChatService {
       event: eventId,
       guide: guideId,
       order: orderId,
+      profileUser: profileUserId,
       replyTo,
       mentions
     });
@@ -317,6 +318,7 @@ class ChatService {
       { path: 'event' },
       { path: 'guide', select: 'title authorName city cityState topic price currency' },
       { path: 'order' },
+      { path: 'profileUser', select: 'username firstName lastName profilePicture isVendor businessName businessPicture verified' },
     ]);
 
     // Emit message via Socket.IO to the active chat room
@@ -468,6 +470,7 @@ class ChatService {
       .populate('event')
       .populate('guide', 'title authorName city cityState topic price currency')
       .populate('order')
+      .populate('profileUser', 'username firstName lastName profilePicture isVendor businessName businessPicture verified')
       .populate('reactions.user', 'username profilePicture');
 
     // Delta mode already sorted oldest-first; the other two have to be flipped.

@@ -252,8 +252,8 @@ const createStyles = (c: ThemeColors) =>
     header: { paddingTop: 60, paddingBottom: 20, paddingHorizontal: 16 },
     headerContent: { flexDirection: "row", alignItems: "center" },
     backButton: { padding: 8, marginRight: 12 },
-    title: { fontSize: 24, fontFamily: Fonts.bold, color: c.text },
-    subtitle: { fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary, marginTop: 2 },
+    title: { fontSize: 22, fontFamily: Fonts.bold, color: c.text },
+    subtitle: { fontSize: 13, fontFamily: Fonts.regular, color: c.textSecondary, marginTop: 2 },
 
     listContent: { padding: 16, paddingBottom: 24 },
     card: {

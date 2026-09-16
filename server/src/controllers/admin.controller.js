@@ -36,11 +36,12 @@ import {
   getCurrentCampaign,
   campaignPrizes,
   campaignMinReferrals,
-  prizeReward,
-  prizeCouponUnits,
+  prizeCouponAmount,
+  formatCurrencyAmount,
+  prizeExtraPerk,
   isNigerianCountry,
 } from "../services/raffleCampaign.service.js";
-import { adjustCouponBalance } from "../services/payments/coupon.service.js";
+import { adjustCouponBalance, setCouponVendorLock } from "../services/payments/coupon.service.js";
 
 /**
  * Constant-time string comparison. Guards the username check against timing
@@ -373,25 +374,34 @@ export async function deleteEvent(req, res) {
 // feature, not by sharing a module (the two call sites want different shapes:
 // one entry vs a whole leaderboard).
 //
-// A campaign is a [startDate, endDate] window managed here. An event belongs to
-// the campaign whose window contains its createdAt — there is no ref — so the
-// windows are kept non-overlapping on create/update.
+// A campaign is a [startDate, endDate] window managed here. An event belongs
+// to the campaign whose window contains its own `date` (the birthday itself)
+// — there is no ref — so an entry can be created well before its campaign
+// exists (a December birthday registered in August just sits pending) and
+// windows are kept non-overlapping on create/update so the match stays
+// unambiguous once that campaign is created.
 
 /** Resolve the campaign a raffle request targets: an explicit ?campaignId, else
  *  the current one. Returns null when an explicit id doesn't exist. */
+const VENDOR_LOCK_SELECT = "username businessName businessPicture profilePicture location.country";
+
 async function resolveRaffleCampaign(req) {
   if (req.query.campaignId) {
-    return RaffleCampaign.findById(req.query.campaignId);
+    return RaffleCampaign.findById(req.query.campaignId)
+      .populate("vendorNGN", VENDOR_LOCK_SELECT)
+      .populate("vendorUSD", VENDOR_LOCK_SELECT);
   }
+  // getCurrentCampaign() already populates both vendor fields.
   return getCurrentCampaign();
 }
 
-/** Normalise a prizes payload (array of `{ rewardNGN, rewardUSD }`, or the
- *  legacy `{ reward }` / plain string) into `[{ rank, rewardNGN, rewardUSD }]`
- *  with ranks 1..N in array order. A legacy single `reward` is mirrored into
- *  both regional fields so an old-shaped payload still saves something
- *  sensible rather than failing. Returns { prizes } or { error }. `undefined`
- *  input means "leave unchanged" -> { prizes: undefined }. */
+/** Normalise a prizes payload (array of `{ couponNGN, couponUSD, extraPerk }`)
+ *  into `[{ rank, couponNGN, couponUSD, extraPerk }]` with ranks 1..N in array
+ *  order. There is no cash prize — every tier's actual reward IS its coupon
+ *  amount, so at least one of couponNGN/couponUSD must be positive.
+ *  `extraPerk` is an optional, region-agnostic non-cash bonus. Returns
+ *  { prizes } or { error }. `undefined` input means "leave unchanged" ->
+ *  { prizes: undefined }. */
 function normalizePrizes(input) {
   if (input === undefined) return { prizes: undefined };
   if (!Array.isArray(input) || input.length === 0) {
@@ -401,21 +411,16 @@ function normalizePrizes(input) {
   const prizes = [];
   for (let i = 0; i < input.length; i++) {
     const raw = input[i];
-    const legacy = (typeof raw === "string" ? raw : raw?.reward ?? "").trim();
-    const rewardNGN = (raw?.rewardNGN ?? legacy).trim();
-    const rewardUSD = (raw?.rewardUSD ?? legacy).trim();
-    if (!rewardNGN || !rewardUSD) {
-      return { error: `prize ${i + 1} needs both a Naira and a Dollar reward` };
-    }
-    // Coupon value is independent of (and defaults to none, unlike) the
-    // reward text above — an admin opts a tier into awarding a coupon by
-    // giving it a positive amount. 0/blank/omitted all mean "no coupon".
     const couponNGN = Number(raw?.couponNGN ?? 0);
     const couponUSD = Number(raw?.couponUSD ?? 0);
     if (!Number.isFinite(couponNGN) || couponNGN < 0 || !Number.isFinite(couponUSD) || couponUSD < 0) {
       return { error: `prize ${i + 1}'s coupon values must be 0 or a positive number` };
     }
-    prizes.push({ rank: i + 1, rewardNGN, rewardUSD, couponNGN, couponUSD });
+    if (couponNGN <= 0 && couponUSD <= 0) {
+      return { error: `prize ${i + 1} needs a coupon value in Naira, Dollars, or both` };
+    }
+    const extraPerk = String(raw?.extraPerk ?? "").trim();
+    prizes.push({ rank: i + 1, couponNGN, couponUSD, extraPerk });
   }
   return { prizes };
 }
@@ -431,6 +436,30 @@ function normalizeMinReferrals(input) {
   return { minReferrals: n };
 }
 
+/** `vendorNGN`/`vendorUSD` payload validation — the vendor a winner's credit
+ *  in that currency is redeemable at (see raffleCampaign.model.js). Both
+ *  optional; `undefined` for a field means "leave unchanged" on update, or
+ *  "no vendor assigned" (spendable anywhere) on create. An empty string or
+ *  null explicitly clears an existing assignment. Returns
+ *  { vendorNGN, vendorUSD, error }. */
+async function normalizeVendors(input) {
+  const result = {};
+  for (const key of ["vendorNGN", "vendorUSD"]) {
+    const raw = input?.[key];
+    if (raw === undefined) continue;
+    if (!raw) {
+      result[key] = null;
+      continue;
+    }
+    const vendorUser = await User.findOne({ _id: raw, isVendor: true }).select("_id");
+    if (!vendorUser) {
+      return { error: `${key === "vendorNGN" ? "Naira" : "Dollar"} vendor not found, or that account isn't a vendor` };
+    }
+    result[key] = vendorUser._id;
+  }
+  return result;
+}
+
 // 1 -> "1st", 2 -> "2nd", 11 -> "11th", ... — same rule as the admin frontend's
 // copy (admin/src/pages/Raffle.tsx), needed here too for the winner notification.
 const ordinal = (n) => {
@@ -439,10 +468,100 @@ const ordinal = (n) => {
   return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 };
 
-// Coupon units are usually whole (a ₦75,000 tier is exactly 50 units), but an
-// admin-set amount that isn't a clean multiple of ₦1,500 rounds to cents —
-// trim trailing zeros so the notification reads "50 coupons", not "50.00".
-const formatCouponUnits = (units) => (Math.round(units * 100) / 100).toString();
+/** Build the reward-text line used in every winner notification: the coupon
+ *  amount (if any) plus any non-cash extra, falling back to "a prize" so a
+ *  mis-configured tier never sends an empty-sounding message. */
+function winnerRewardText(newTier, isNigerian, newAmount) {
+  const perk = prizeExtraPerk(newTier);
+  const couponText =
+    newAmount > 0
+      ? `${formatCurrencyAmount(newAmount, isNigerian)} OurCityVibe credit — spend it at checkout with any vendor within 30 days`
+      : "";
+  return [couponText, perk].filter(Boolean).join(" + ") || "a prize";
+}
+
+/**
+ * True up one winner's coupon balance between an OLD (prizes table, rank)
+ * pair and a NEW one, crediting/debiting only the difference for their own
+ * currency (Nigerian winners in NGN, everyone else in USD), and refreshes
+ * their vendor lock (see coupon.service.js's setCouponVendorLock) to
+ * `campaign`'s CURRENT vendor assignment for that currency whenever they
+ * still hold a rank — so both a rank change and an admin later reassigning
+ * the vendor keep the lock in sync, not just the dollar amount.
+ *
+ * Deliberately generic over what changed — a rank change (same prizes table,
+ * different rank) and a prize-value edit (same rank, different prizes table)
+ * are the same underlying problem: "what's owed now vs before". Shared by
+ * setRaffleWinner (fresh pick / rank correction) and
+ * reconcileCampaignPrizeEdit (an admin correcting prize VALUES — or the
+ * vendor assignment — after winners were already picked) so neither can
+ * double-credit or silently drift from the other.
+ *
+ * @returns {Promise<{isNigerian: boolean, newAmount: number, newTier: object|null, changed: boolean}>}
+ */
+async function reconcileWinnerCoupon(event, oldPrizes, oldRank, newPrizes, newRank, campaign) {
+  const winnerUser = await User.findById(event.createdBy).select("location.country");
+  const isNigerian = isNigerianCountry(winnerUser?.location?.country);
+  const oldTier = oldRank !== null ? (oldPrizes || []).find((p) => p.rank === oldRank) || null : null;
+  const newTier = newRank !== null ? (newPrizes || []).find((p) => p.rank === newRank) || null : null;
+  const oldAmount = oldTier ? prizeCouponAmount(oldTier, isNigerian) : 0;
+  const newAmount = newTier ? prizeCouponAmount(newTier, isNigerian) : 0;
+  const currency = isNigerian ? "NGN" : "USD";
+  if (oldAmount !== newAmount) {
+    const description = newRank !== null ? `Birthday Raffle — ${ordinal(newRank)} place` : "Birthday Raffle prize correction";
+    await adjustCouponBalance(event.createdBy, currency, newAmount - oldAmount, description);
+  }
+  if (newTier) {
+    const vendorId = isNigerian ? campaign?.vendorNGN : campaign?.vendorUSD;
+    if (vendorId) await setCouponVendorLock(event.createdBy, currency, vendorId);
+  }
+  return { isNigerian, newAmount, newTier, changed: oldAmount !== newAmount };
+}
+
+/**
+ * After an admin edits a campaign's prize VALUES, true up every already-
+ * picked winner in that campaign against the new numbers. Without this, a
+ * winner assigned before the correction keeps whatever was credited and
+ * notified under the old (often still-default) values forever — picking a
+ * winner only reconciles at pick time (setRaffleWinner), so a later prize
+ * edit never reached them on its own. Only notifies a winner whose actual
+ * credited amount changed, so touching an unrelated tier or the extra-perk
+ * text doesn't spam everyone.
+ */
+async function reconcileCampaignPrizeEdit(campaign, oldPrizes) {
+  const newPrizes = campaignPrizes(campaign);
+  const winners = await Event.find({
+    isBirthdayRaffle: true,
+    raffleWinnerRank: { $ne: null },
+    // A batch's entries are the ones whose own birthday date falls in its
+    // window, not whichever events happened to be created during it.
+    date: { $gte: campaign.startDate, $lte: campaign.endDate },
+  });
+
+  for (const event of winners) {
+    const rank = event.raffleWinnerRank;
+    const { isNigerian, newAmount, newTier, changed } = await reconcileWinnerCoupon(
+      event,
+      oldPrizes,
+      rank,
+      newPrizes,
+      rank,
+      campaign
+    );
+    if (changed && newTier) {
+      notifyUser(event.createdBy, {
+        type: "raffle_winner",
+        title: "🎉 Your Birthday Raffle prize was updated",
+        body: `Your event "${event.title}"'s ${ordinal(rank)}-place prize is now ${winnerRewardText(
+          newTier,
+          isNigerian,
+          newAmount
+        )}. Open the app for details.`,
+        data: { eventId: event._id.toString(), rank: String(rank) },
+      });
+    }
+  }
+}
 
 /** Reject a window that's inverted or overlaps another campaign. Returns an
  *  error message, or null when the window is fine. */
@@ -451,16 +570,17 @@ async function windowConflict(startDate, endDate, excludeId) {
   const end = new Date(endDate);
   if (isNaN(start) || isNaN(end)) return "startDate and endDate must be valid dates";
   if (end <= start) return "endDate must be after startDate";
-  // Only ACTIVE campaigns can actually clash: getCurrentCampaign() always
-  // prefers status:"active" over anything ended, so a new campaign's window
-  // overlapping a past, ended one's is harmless — the active campaign wins
-  // every lookup regardless of dates. Checking against ended rows too used to
-  // mean ending a campaign (which now stamps its endDate to the moment it was
-  // ended — see endRaffleCampaign) permanently blocked ever starting another
-  // one, since almost any new start date is "before" that just-stamped end.
-  // There's at most one active campaign at a time (createRaffleCampaign
-  // already refuses a second), so this is a defensive check, not the primary
-  // guard.
+  // Only ACTIVE campaigns can actually clash: entries resolve by matching
+  // their event's own date against a campaign's window (see
+  // findCampaignForDate), so two active campaigns covering the same dates
+  // would make that match ambiguous. A window overlapping a past, ended
+  // one's is harmless — ended campaigns keep the dates they actually ran
+  // (endRaffleCampaign stamps endDate to the moment it was ended), so
+  // checking against them too used to mean ending a campaign permanently
+  // blocked ever starting another one, since almost any new start date is
+  // "before" that just-stamped end. Campaigns now run as concurrent monthly
+  // batches on purpose (next month's can be created before this month's
+  // ends) — as long as their windows don't overlap, that's fine.
   const query = { status: "active", ...(excludeId ? { _id: { $ne: excludeId } } : {}) };
   const others = await RaffleCampaign.find(query);
   const clash = others.find((c) => start <= c.endDate && c.startDate <= end);
@@ -476,9 +596,12 @@ export async function getRaffleEntries(req, res) {
 
     const events = await Event.find({
       isBirthdayRaffle: true,
-      createdAt: { $gte: campaign.startDate, $lte: campaign.endDate },
+      // A batch's entries are the ones whose own birthday date falls in its
+      // window, not whichever events happened to be created during it —
+      // lets a user pre-register a future month's birthday early.
+      date: { $gte: campaign.startDate, $lte: campaign.endDate },
     })
-      .populate("createdBy", "username email profilePicture")
+      .populate("createdBy", "username email profilePicture location")
       .sort({ createdAt: -1 });
 
     const minReferrals = campaignMinReferrals(campaign);
@@ -512,7 +635,10 @@ export async function getRaffleEntries(req, res) {
 
 export async function getRaffleCampaigns(req, res) {
   try {
-    const campaigns = await RaffleCampaign.find().sort({ startDate: -1 });
+    const campaigns = await RaffleCampaign.find()
+      .sort({ startDate: -1 })
+      .populate("vendorNGN", VENDOR_LOCK_SELECT)
+      .populate("vendorUSD", VENDOR_LOCK_SELECT);
     res.json({ campaigns });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -525,12 +651,10 @@ export async function createRaffleCampaign(req, res) {
     if (!name || !startDate || !endDate) {
       return res.status(400).json({ message: "name, startDate and endDate are required" });
     }
-    // One live campaign at a time — the previous one must be ended first so its
-    // entries stop qualifying before the next window opens.
-    const active = await RaffleCampaign.findOne({ status: "active" });
-    if (active) {
-      return res.status(400).json({ message: `End the current campaign ("${active.name}") first` });
-    }
+    // Campaigns run as monthly batches and can legitimately coexist (this
+    // month's still open while next month's is already set up ahead of
+    // time) — windowConflict below is what actually guards against two
+    // campaigns covering the same dates.
     const conflict = await windowConflict(startDate, endDate);
     if (conflict) return res.status(400).json({ message: conflict });
 
@@ -541,6 +665,9 @@ export async function createRaffleCampaign(req, res) {
     const { minReferrals, error: minReferralsError } = normalizeMinReferrals(req.body.minReferrals);
     if (minReferralsError) return res.status(400).json({ message: minReferralsError });
 
+    const { vendorNGN, vendorUSD, error: vendorError } = await normalizeVendors(req.body);
+    if (vendorError) return res.status(400).json({ message: vendorError });
+
     const campaign = await new RaffleCampaign({
       name: name.trim(),
       startDate,
@@ -548,9 +675,17 @@ export async function createRaffleCampaign(req, res) {
       prizes,
       // Undefined here just falls through to the schema default (6).
       minReferrals,
+      // Undefined here just falls through to the schema default (null — no
+      // vendor assigned, credit spendable at any vendor).
+      vendorNGN,
+      vendorUSD,
       status: "active",
       createdByAdmin: req.user?.username || "admin",
     }).save();
+    await campaign.populate([
+      { path: "vendorNGN", select: VENDOR_LOCK_SELECT },
+      { path: "vendorUSD", select: VENDOR_LOCK_SELECT },
+    ]);
     res.status(201).json({ campaign });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -576,12 +711,35 @@ export async function updateRaffleCampaign(req, res) {
     const { minReferrals, error: minReferralsError } = normalizeMinReferrals(req.body.minReferrals);
     if (minReferralsError) return res.status(400).json({ message: minReferralsError });
 
+    const { vendorNGN, vendorUSD, error: vendorError } = await normalizeVendors(req.body);
+    if (vendorError) return res.status(400).json({ message: vendorError });
+
+    // Snapshot before overwriting — reconcileCampaignPrizeEdit needs both the
+    // old and new tables to true up any winners already picked in this
+    // campaign, and needs to know whether the vendor assignment itself moved
+    // (a winner's credit lock has to follow that too, not just $ changes).
+    const oldPrizes = campaignPrizes(campaign);
+    const vendorsChanged =
+      (vendorNGN !== undefined && String(vendorNGN) !== String(campaign.vendorNGN || "")) ||
+      (vendorUSD !== undefined && String(vendorUSD) !== String(campaign.vendorUSD || ""));
+
     campaign.name = String(name).trim();
     campaign.startDate = startDate;
     campaign.endDate = endDate;
     if (prizes !== undefined) campaign.prizes = prizes;
     if (minReferrals !== undefined) campaign.minReferrals = minReferrals;
+    if (vendorNGN !== undefined) campaign.vendorNGN = vendorNGN;
+    if (vendorUSD !== undefined) campaign.vendorUSD = vendorUSD;
     await campaign.save();
+
+    if (prizes !== undefined || vendorsChanged) {
+      await reconcileCampaignPrizeEdit(campaign, oldPrizes);
+    }
+
+    await campaign.populate([
+      { path: "vendorNGN", select: VENDOR_LOCK_SELECT },
+      { path: "vendorUSD", select: VENDOR_LOCK_SELECT },
+    ]);
     res.json({ campaign });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -612,20 +770,79 @@ export async function endRaffleCampaign(req, res) {
   }
 }
 
+
+/** Remove an unawarded birthday raffle entry from its campaign. The event is
+ * the raffle entry, so deleting it also removes it from the user's raffle. */
+export async function deleteRaffleEntry(req, res) {
+  try {
+    const event = await Event.findById(req.params.id);
+    if (!event || !event.isBirthdayRaffle) {
+      return res.status(404).json({ message: "Raffle entry not found" });
+    }
+    if (event.raffleWinnerRank != null) {
+      return res.status(400).json({
+        message: "A winning raffle entry cannot be deleted. Clear its winning place first.",
+      });
+    }
+
+    if (req.query.campaignId) {
+      const campaign = await RaffleCampaign.findById(req.query.campaignId);
+      if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      const eventDate = new Date(event.date).getTime();
+      if (
+        eventDate < new Date(campaign.startDate).getTime() ||
+        eventDate > new Date(campaign.endDate).getTime()
+      ) {
+        return res.status(400).json({ message: "Raffle entry is not in this campaign" });
+      }
+    }
+
+    await Event.deleteOne({ _id: event._id });
+    res.json({ eventId: event._id });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+/** Delete a campaign that has no awarded winners. Entries are retained so an
+ * admin can create a corrected replacement window without losing user data. */
+export async function deleteRaffleCampaign(req, res) {
+  try {
+    const campaign = await RaffleCampaign.findById(req.params.id);
+    if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+
+    const winnerCount = await Event.countDocuments({
+      isBirthdayRaffle: true,
+      raffleWinnerRank: { $ne: null },
+      date: { $gte: campaign.startDate, $lte: campaign.endDate },
+    });
+    if (winnerCount > 0) {
+      return res.status(400).json({
+        message: "A campaign with winners cannot be deleted. Clear its winners first.",
+      });
+    }
+
+    await RaffleCampaign.deleteOne({ _id: campaign._id });
+    res.json({ campaignId: campaign._id });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
 /**
  * POST /admin/raffle/campaigns/:id/draw
  *
  * Run the weighted random draw for a campaign and record the winners.
  *
  * The official rules published in the app (mobile/app/birthday-raffle/rules.tsx)
- * promise entrants a random draw in which each qualifying event holds one entry
- * plus one per verified RSVP. That promise is only true if the draw actually
- * happens here — an admin eyeballing the entry table and picking the biggest
- * numbers is a different promotion from the one entrants agreed to. This is the
- * implementation of that rule, which is why the weighting below mirrors
- * `scoreEntry` in birthdayRaffle.controller.js exactly.
+ * promise entrants the top spots go to whoever has the most verified RSVPs —
+ * a merit ranking, not a random draw. That promise is only true if the ranking
+ * actually happens here, from the same numbers `scoreEntry` in
+ * birthdayRaffle.controller.js shows each entrant as their own score — an
+ * admin eyeballing the table and picking by hand is a different promotion
+ * from the one entrants agreed to. minReferrals is only a floor to be eligible
+ * at all; above it, there is no ceiling on how many RSVPs help.
  *
- * Refuses to run while the campaign is still open: drawing early would exclude
+ * Refuses to run while the campaign is still open: ranking early would exclude
  * entries that rule 5 says are still eligible.
  */
 export async function drawRaffleWinners(req, res) {
@@ -642,40 +859,45 @@ export async function drawRaffleWinners(req, res) {
 
     const entries = await Event.find({
       isBirthdayRaffle: true,
-      createdAt: { $gte: campaign.startDate, $lte: campaign.endDate },
+      date: { $gte: campaign.startDate, $lte: campaign.endDate },
     }).populate("createdBy", "_id username");
     if (entries.length === 0) {
       return res.status(400).json({ message: "No entries in this campaign" });
     }
 
-    // One ticket per entry, plus one per verified RSVP — the same count the
-    // entrant was shown as "entries in the draw".
-    const tickets = [];
+    // Ranked by engagement, not a random draw — the entrant with the most
+    // verified RSVPs wins 1st, and so on. minReferrals is only a floor to be
+    // eligible at all; there's no ceiling, so collecting more always helps.
+    // One prize per entrant (rule 8): only their single best-performing event
+    // competes if they have more than one qualifying event.
+    const bestPerEntrant = new Map();
     for (const entry of entries) {
-      const count = 1 + entry.rsvpUsers.length;
-      for (let i = 0; i < count; i += 1) tickets.push(entry);
+      const entrantId = String(entry.createdBy?._id ?? entry.createdBy);
+      const existing = bestPerEntrant.get(entrantId);
+      if (!existing || entry.rsvpUsers.length > existing.rsvpUsers.length) {
+        bestPerEntrant.set(entrantId, entry);
+      }
     }
+    // Ties broken by whoever reached that count first — first come, first
+    // served is the only tiebreak that doesn't reintroduce randomness.
+    const ranked = [...bestPerEntrant.values()].sort((a, b) => {
+      if (b.rsvpUsers.length !== a.rsvpUsers.length) {
+        return b.rsvpUsers.length - a.rsvpUsers.length;
+      }
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
 
     const prizeCount = campaignPrizes(campaign).length;
-    const winners = [];
-    const wonBy = new Set(); // one prize per entrant, per rule 8
-    let pool = tickets;
-
-    for (let rank = 1; rank <= prizeCount && pool.length > 0; rank += 1) {
-      // crypto.randomInt is uniform over the range; Math.random is not, and a
-      // draw that decides real money should not be the place we accept bias.
-      const picked = pool[crypto.randomInt(pool.length)];
-      winners.push({ rank, event: picked });
-      wonBy.add(String(picked.createdBy?._id ?? picked.createdBy));
-      // Remove every ticket held by that entrant so nobody wins twice.
-      pool = pool.filter(
-        (t) => !wonBy.has(String(t.createdBy?._id ?? t.createdBy))
-      );
-    }
+    const winners = ranked
+      .slice(0, prizeCount)
+      .map((event, i) => ({ rank: i + 1, event }));
+    // Unchanged meaning from the old random draw — "1 + verified RSVPs" per
+    // entry — kept only for the admin result banner's entry counts.
+    const totalTickets = entries.reduce((sum, e) => sum + 1 + e.rsvpUsers.length, 0);
 
     // Clear this campaign's previous result before writing the new one, so a
     // re-draw can't leave a stale rank behind.
-    const window = { createdAt: { $gte: campaign.startDate, $lte: campaign.endDate } };
+    const window = { date: { $gte: campaign.startDate, $lte: campaign.endDate } };
     await Event.updateMany(
       { isBirthdayRaffle: true, raffleWinnerRank: { $ne: null }, ...window },
       { $set: { raffleWinnerRank: null } }
@@ -689,19 +911,19 @@ export async function drawRaffleWinners(req, res) {
       notifyUser(event.createdBy?._id, {
         type: "raffle_winner",
         title: `You won the Birthday Raffle! 🎉`,
-        body: `"${event.title}" was drawn at position ${rank}. Check your raffle status for what happens next.`,
+        body: `"${event.title}" placed #${rank} by engagement. Check your raffle status for what happens next.`,
         data: { eventId: String(event._id) },
       });
     }
 
     console.log(
-      `[Raffle] Drew ${winners.length} winner(s) for "${campaign.name}" from ${tickets.length} entries across ${entries.length} events`
+      `[Raffle] Ranked ${winners.length} winner(s) for "${campaign.name}" from ${totalTickets} entries across ${entries.length} events`
     );
 
     res.json({
       campaign: campaign.name,
       totalEntries: entries.length,
-      totalTickets: tickets.length,
+      totalTickets,
       winners: winners.map(({ rank, event }) => ({
         rank,
         eventId: event._id,
@@ -732,11 +954,12 @@ export async function setRaffleWinner(req, res) {
     }
     const previousRank = event.raffleWinnerRank;
 
-    // The campaign that owns this entry (by date window), used both to bound
-    // the valid ranks and to scope the "one holder per place" reset.
+    // The campaign that owns this entry — matched by the event's own
+    // birthday date, not when it was created — used both to bound the valid
+    // ranks and to scope the "one holder per place" reset.
     const owning = await RaffleCampaign.findOne({
-      startDate: { $lte: event.createdAt },
-      endDate: { $gte: event.createdAt },
+      startDate: { $lte: event.date },
+      endDate: { $gte: event.date },
     });
     const maxRank = campaignPrizes(owning).length;
 
@@ -748,7 +971,7 @@ export async function setRaffleWinner(req, res) {
     // a past campaign's 1st place isn't cleared when the new one picks theirs.
     if (rank !== null) {
       const sameWindow = owning
-        ? { createdAt: { $gte: owning.startDate, $lte: owning.endDate } }
+        ? { date: { $gte: owning.startDate, $lte: owning.endDate } }
         : {};
       await Event.updateMany(
         { _id: { $ne: event._id }, isBirthdayRaffle: true, raffleWinnerRank: rank, ...sameWindow },
@@ -763,29 +986,32 @@ export async function setRaffleWinner(req, res) {
     // fresh award, a correction to a different place, and un-picking a
     // mistaken winner, all as one "what's owed now vs before" delta — so
     // changing 2nd→1st doesn't double-credit both tiers' coupons, and
-    // clearing a pick takes back what clearing it should.
+    // clearing a pick takes back what clearing it should. Both ranks are read
+    // against the SAME (current) prizes table — a later edit to the table
+    // itself is reconciled separately by reconcileCampaignPrizeEdit.
     if (rank !== previousRank) {
-      const winnerUser = await User.findById(event.createdBy).select("location.country");
-      const isNigerian = isNigerianCountry(winnerUser?.location?.country);
-      const oldTier = previousRank !== null ? campaignPrizes(owning).find((p) => p.rank === previousRank) : null;
-      const newTier = rank !== null ? campaignPrizes(owning).find((p) => p.rank === rank) : null;
-      const oldUnits = oldTier ? prizeCouponUnits(oldTier, isNigerian) : 0;
-      const newUnits = newTier ? prizeCouponUnits(newTier, isNigerian) : 0;
-      if (oldUnits !== newUnits) await adjustCouponBalance(event.createdBy, newUnits - oldUnits);
+      const prizesTable = campaignPrizes(owning);
+      const { isNigerian, newAmount, newTier } = await reconcileWinnerCoupon(
+        event,
+        prizesTable,
+        previousRank,
+        prizesTable,
+        rank
+      );
 
       // Tell the winner. Only on an actual new award — not on clearing a
       // place, which is a correction, not news. Never gated by a
       // notification preference: this is a rare, once-per-campaign event a
       // winner would want pushed regardless of their category toggles.
       if (rank !== null && newTier) {
-        const reward = prizeReward(newTier, isNigerian);
-        const couponNote = newUnits > 0
-          ? ` Plus ${formatCouponUnits(newUnits)} OurCityVibe coupons — spend them at checkout with any vendor.`
-          : "";
         notifyUser(event.createdBy, {
           type: "raffle_winner",
           title: "🎉 You won the Birthday Raffle!",
-          body: `Your event "${event.title}" placed ${ordinal(rank)} — ${reward}.${couponNote} Open the app for details.`,
+          body: `Your event "${event.title}" placed ${ordinal(rank)} — ${winnerRewardText(
+            newTier,
+            isNigerian,
+            newAmount
+          )}. Open the app for details.`,
           data: { eventId: event._id.toString(), rank: String(rank) },
         });
       }

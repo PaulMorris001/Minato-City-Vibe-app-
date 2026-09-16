@@ -90,6 +90,12 @@ export const adminApi = {
         { rank }
       )
       .then((r) => { bustCache("/admin/raffle"); return r; }),
+  deleteRaffleEntry: (id: string, campaignId?: string) =>
+    client
+      .delete(`/admin/raffle/entries/${id}`, {
+        params: campaignId ? { campaignId } : undefined,
+      })
+      .then((r) => { bustCache("/admin/raffle"); bustCache("/admin/events"); return r; }),
 
   getRaffleCampaigns: () =>
     cachedGet<{ campaigns: AdminRaffleCampaign[] }>("/admin/raffle/campaigns", { ttl: 30_000 }),
@@ -98,9 +104,13 @@ export const adminApi = {
     startDate: string;
     endDate: string;
     // Ordered rewards; server assigns ranks 1..N by position.
-    prizes?: { rewardNGN: string; rewardUSD: string; couponNGN?: number; couponUSD?: number }[];
+    prizes?: { couponNGN?: number; couponUSD?: number; extraPerk?: string }[];
     // Verified RSVPs needed to be prize-eligible; omit to use the server default (6).
     minReferrals?: number;
+    // The vendor each currency's credit is redeemable at — omit or send null
+    // for "any vendor". Must be an existing account with isVendor:true.
+    vendorNGN?: string | null;
+    vendorUSD?: string | null;
   }) =>
     client
       .post<{ campaign: AdminRaffleCampaign }>("/admin/raffle/campaigns", data)
@@ -111,8 +121,10 @@ export const adminApi = {
       name?: string;
       startDate?: string;
       endDate?: string;
-      prizes?: { rewardNGN: string; rewardUSD: string; couponNGN?: number; couponUSD?: number }[];
+      prizes?: { couponNGN?: number; couponUSD?: number; extraPerk?: string }[];
       minReferrals?: number;
+      vendorNGN?: string | null;
+      vendorUSD?: string | null;
     }
   ) =>
     client
@@ -121,6 +133,10 @@ export const adminApi = {
   endRaffleCampaign: (id: string) =>
     client
       .post<{ campaign: AdminRaffleCampaign }>(`/admin/raffle/campaigns/${id}/end`, {})
+      .then((r) => { bustCache("/admin/raffle"); return r; }),
+  deleteRaffleCampaign: (id: string) =>
+    client
+      .delete(`/admin/raffle/campaigns/${id}`)
       .then((r) => { bustCache("/admin/raffle"); return r; }),
   /** Runs the weighted random draw the app's official rules promise entrants. */
   drawRaffleWinners: (id: string) =>

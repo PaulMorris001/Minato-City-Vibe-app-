@@ -72,15 +72,14 @@ const orderSchema = new mongoose.Schema(
     // Single currency — one vendor per order ⇒ currencyForUser(vendor).
     currency: { type: String, required: true },
 
-    // OurCityVibe coupon balance reserved against this order at payment init
-    // (services/payments/coupon.service.js). `couponApplied` is in `currency`
-    // major units, knocked off `total` to get what the buyer actually pays;
-    // `couponUnitsUsed` is the equivalent coupon-unit amount actually taken
-    // off the buyer's balance, kept so a cancelled/declined/stale order can
-    // give back the exact amount reserved. The vendor's payout is still
-    // computed from `total`, never `total - couponApplied` — the platform
-    // absorbs the coupon, not the vendor.
-    couponUnitsUsed: { type: Number, default: 0 },
+    // OurCityVibe coupon amount reserved against this order at payment init
+    // (services/payments/coupon.service.js), in `currency` major units — 1
+    // coupon = 1 unit of `currency`, so this is both what was taken off the
+    // buyer's same-currency coupon balance and what's knocked off `total` to
+    // get what they actually pay. Kept on the order so a cancelled/declined/
+    // stale order can give back the exact amount reserved. The vendor's
+    // payout is still computed from `total`, never `total - couponApplied` —
+    // the platform absorbs the coupon, not the vendor.
     couponApplied: { type: Number, default: 0 },
 
     status: {

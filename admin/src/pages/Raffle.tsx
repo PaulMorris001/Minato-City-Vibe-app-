@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { adminApi } from "../api/admin";
-import type { AdminRaffleEntry, AdminRaffleCampaign } from "../types";
+import type { AdminRaffleEntry, AdminRaffleCampaign, AdminVendor } from "../types";
 import Table, { Column } from "../components/ui/Table";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import PageShell from "../components/ui/PageShell";
 import StatCard from "../components/ui/StatCard";
-import Modal from "../components/ui/Modal";
+import Modal, { ConfirmModal } from "../components/ui/Modal";
 import { colors } from "../constants/colors";
 
 // 1 -> "1st", 2 -> "2nd", 11 -> "11th", ...
@@ -42,6 +42,8 @@ export default function Raffle() {
   const [pending, setPending] = useState<{ entry: AdminRaffleEntry; rank: number | null } | null>(null);
   const [working, setWorking] = useState(false);
   const [endConfirm, setEndConfirm] = useState(false);
+  const [deleteEntry, setDeleteEntry] = useState<AdminRaffleEntry | null>(null);
+  const [deleteCampaignConfirm, setDeleteCampaignConfirm] = useState(false);
 
   // Serialized copy of the last data we rendered. A refetch that comes back
   // identical is dropped entirely — no setState, so no re-render / table
@@ -116,6 +118,36 @@ export default function Raffle() {
     }
   };
 
+  const removeEntry = async () => {
+    if (!deleteEntry) return;
+    setWorking(true);
+    try {
+      await adminApi.deleteRaffleEntry(deleteEntry.eventId, campaign?._id || undefined);
+      setDeleteEntry(null);
+      load({ silent: true });
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || "Failed to remove raffle entry");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const removeCampaign = async () => {
+    if (!campaign?._id) return;
+    setWorking(true);
+    try {
+      await adminApi.deleteRaffleCampaign(campaign._id);
+      setDeleteCampaignConfirm(false);
+      setSelectedId(null);
+      lastSnapshot.current = "";
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || "Failed to delete campaign");
+      setDeleteCampaignConfirm(false);
+    } finally {
+      setWorking(false);
+    }
+  };
+
   const runDraw = async () => {
     if (!campaign?._id) return;
     setWorking(true);
@@ -150,18 +182,21 @@ export default function Raffle() {
   const daysLeft = campaign
     ? Math.max(0, Math.ceil((new Date(campaign.endDate).getTime() - Date.now()) / 86_400_000))
     : 0;
-  const hasActive = campaigns.some((c) => c.status === "active");
   const prizes = campaign?.prizes?.length ? campaign.prizes : [];
   const prizeCount = prizes.length || 3;
-  // Both regional rewards, since the admin picking a winner isn't picking a
-  // country — the winner's own reward is resolved server-side at read time.
+  // Both regional coupon values, since the admin picking a winner isn't
+  // picking a country — the winner's own coupon amount is resolved
+  // server-side at read time. There's no cash prize: the coupon amount IS
+  // the reward, with an optional non-cash extra alongside it.
   const rewardFor = (rank: number) => {
     const p = prizes.find((p) => p.rank === rank);
     if (!p) return undefined;
-    const ngn = p.rewardNGN || p.reward;
-    const usd = p.rewardUSD || p.reward;
-    if (ngn && usd && ngn !== usd) return `${ngn} (NGN) / ${usd} (USD)`;
-    return ngn || usd;
+    const amounts: string[] = [];
+    if (p.couponNGN) amounts.push(`₦${p.couponNGN.toLocaleString()}`);
+    if (p.couponUSD) amounts.push(`$${p.couponUSD.toLocaleString()}`);
+    const coupon = amounts.length ? `${amounts.join(" / ")} credit` : undefined;
+    if (coupon && p.extraPerk) return `${coupon} + ${p.extraPerk}`;
+    return coupon || p.extraPerk || undefined;
   };
 
   const totals = useMemo(() => {
@@ -192,6 +227,22 @@ export default function Raffle() {
           <div style={{ fontSize: 12, color: colors.textMuted }}>{e.host?.email}</div>
         </div>
       ),
+    },
+    {
+      key: "location",
+      header: "Location",
+      width: 130,
+      // So the admin can sanity-check a winner's country before locking their
+      // prize to a NGN- or USD-side vendor.
+      render: (e) => {
+        const loc = e.host?.location;
+        const label = [loc?.city, loc?.state, loc?.country].filter(Boolean).join(", ");
+        return label ? (
+          <span style={{ fontSize: 13 }}>{label}</span>
+        ) : (
+          <span style={{ color: colors.textDim }}>Unknown</span>
+        );
+      },
     },
     {
       key: "event",
@@ -259,6 +310,9 @@ export default function Raffle() {
           >
             Clear
           </Button>
+          <Button size="sm" variant="danger" onClick={() => setDeleteEntry(e)}>
+            Remove
+          </Button>
         </div>
       ),
     },
@@ -312,13 +366,13 @@ export default function Raffle() {
       >
         <CampaignPanel
           campaign={campaign}
-          hasActive={hasActive}
           onSaved={(c) => {
             setSelectedId(c._id);
             load({ silent: true });
           }}
           onError={setErr}
           onEndClick={() => setEndConfirm(true)}
+          onDeleteClick={() => setDeleteCampaignConfirm(true)}
         />
 
         {err && <div style={{ ...styles.panelRow, color: colors.error }}>{err}</div>}
@@ -489,6 +543,32 @@ export default function Raffle() {
           replaced.
         </p>
       </Modal>
+
+      <ConfirmModal
+        open={!!deleteEntry}
+        title="Remove raffle entry?"
+        message={
+          deleteEntry
+            ? `This permanently removes ${deleteEntry.title} (@${deleteEntry.host?.username || "unknown"}) from the Birthday Raffle. The event itself will also be deleted.`
+            : ""
+        }
+        onCancel={() => setDeleteEntry(null)}
+        onConfirm={removeEntry}
+        loading={working}
+      />
+
+      <ConfirmModal
+        open={deleteCampaignConfirm}
+        title="Delete this campaign?"
+        message={
+          campaign
+            ? `Delete ${campaign.name}? Its unawarded entries will be kept, but the campaign window and settings will be permanently removed. Campaigns with winners cannot be deleted.`
+            : ""
+        }
+        onCancel={() => setDeleteCampaignConfirm(false)}
+        onConfirm={removeCampaign}
+        loading={working}
+      />
     </>
   );
 }
@@ -496,16 +576,16 @@ export default function Raffle() {
 /** Current-campaign detail + inline date editing, or the "new campaign" form. */
 function CampaignPanel({
   campaign,
-  hasActive,
   onSaved,
   onError,
   onEndClick,
+  onDeleteClick,
 }: {
   campaign: AdminRaffleCampaign | null;
-  hasActive: boolean;
   onSaved: (c: AdminRaffleCampaign) => void;
   onError: (msg: string | null) => void;
   onEndClick: () => void;
+  onDeleteClick: () => void;
 }) {
   const real = !!campaign?._id;
   // Same "active status doesn't mean open yet" distinction as the parent's
@@ -517,16 +597,37 @@ function CampaignPanel({
   const [name, setName] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  // One tier's reward copy + coupon value per winner; array length = number of
-  // winners. Coupon fields are strings (controlled inputs) that default to
-  // "0" — a tier with 0 awards no coupon, only the reward text/extras.
-  type RewardRow = { rewardNGN: string; rewardUSD: string; couponNGN: string; couponUSD: string };
-  const EMPTY_ROW: RewardRow = { rewardNGN: "", rewardUSD: "", couponNGN: "0", couponUSD: "0" };
+  // One tier's coupon value per winner, plus an optional non-cash extra;
+  // array length = number of winners. There is no cash prize — the coupon
+  // amount IS the reward, so at least one of couponNGN/couponUSD must be
+  // positive. Coupon fields are strings (controlled inputs) that default to
+  // "0".
+  type RewardRow = { couponNGN: string; couponUSD: string; extraPerk: string };
+  const EMPTY_ROW: RewardRow = { couponNGN: "0", couponUSD: "0", extraPerk: "" };
   const [rewards, setRewards] = useState<RewardRow[]>([{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }]);
   // Verified RSVPs a host needs before they're prize-eligible.
   const [minReferrals, setMinReferrals] = useState("6");
+  // The vendor each currency's credit is redeemable at — "" means "any
+  // vendor" (no assignment). Holds the vendor's USER id (order.vendor / the
+  // coupon lock both ref the user account, not the separate Vendor doc).
+  const [vendorNGN, setVendorNGN] = useState("");
+  const [vendorUSD, setVendorUSD] = useState("");
+  const [vendors, setVendors] = useState<AdminVendor[]>([]);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
+
+  // Fetched once — a plain dropdown is fine at this scale; picking a vendor
+  // for a raffle happens a handful of times per campaign, not per request.
+  useEffect(() => {
+    adminApi
+      .getVendors({ limit: 200 })
+      .then((r) => setVendors(r.data.vendors))
+      .catch(() => {});
+  }, []);
+  // Only vendors with a linked user account can actually be assigned — that
+  // account is what order.vendor / the coupon lock point at, not the Vendor
+  // profile doc itself.
+  const vendorOptions = vendors.filter((v) => v.user?._id);
 
   const EMPTY_REWARDS = [{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }];
   const campaignRewards = (c: AdminRaffleCampaign | null): RewardRow[] =>
@@ -534,21 +635,22 @@ function CampaignPanel({
       ? [...c.prizes]
           .sort((a, b) => a.rank - b.rank)
           .map((p) => ({
-            rewardNGN: p.rewardNGN ?? p.reward ?? "",
-            rewardUSD: p.rewardUSD ?? p.reward ?? "",
             couponNGN: String(p.couponNGN ?? 0),
             couponUSD: String(p.couponUSD ?? 0),
+            extraPerk: p.extraPerk ?? "",
           }))
       : EMPTY_REWARDS;
 
   // Reset the edit fields whenever the selected campaign changes.
   useEffect(() => {
-    if (real && campaign) {
+    if (real && campaign && !creating) {
       setName(campaign.name);
       setStart(toDateInput(campaign.startDate));
       setEnd(toDateInput(campaign.endDate));
       setRewards(campaignRewards(campaign));
       setMinReferrals(String(campaign.minReferrals ?? 6));
+      setVendorNGN(campaign.vendorNGN?._id ?? "");
+      setVendorUSD(campaign.vendorUSD?._id ?? "");
       setCreating(false);
     } else {
       setName("");
@@ -556,8 +658,10 @@ function CampaignPanel({
       setEnd("");
       setRewards(EMPTY_REWARDS);
       setMinReferrals("6");
+      setVendorNGN("");
+      setVendorUSD("");
     }
-  }, [campaign, real]);
+  }, [campaign, real, creating]);
 
   const setReward = (i: number, field: keyof RewardRow, v: string) =>
     setRewards((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: v } : r)));
@@ -573,14 +677,15 @@ function CampaignPanel({
       start !== toDateInput(campaign.startDate) ||
       end !== toDateInput(campaign.endDate) ||
       rewardsDirty ||
-      minReferrals !== String(campaign.minReferrals ?? 6));
+      minReferrals !== String(campaign.minReferrals ?? 6) ||
+      vendorNGN !== (campaign.vendorNGN?._id ?? "") ||
+      vendorUSD !== (campaign.vendorUSD?._id ?? ""));
 
   const prizesPayload = () =>
     rewards.map((r) => ({
-      rewardNGN: r.rewardNGN.trim(),
-      rewardUSD: r.rewardUSD.trim(),
       couponNGN: Number(r.couponNGN) || 0,
       couponUSD: Number(r.couponUSD) || 0,
+      extraPerk: r.extraPerk.trim(),
     }));
   const minReferralsPayload = () => {
     const n = Number(minReferrals);
@@ -597,6 +702,8 @@ function CampaignPanel({
         endDate: endInstant(end),
         prizes: prizesPayload(),
         minReferrals: minReferralsPayload(),
+        vendorNGN: vendorNGN || null,
+        vendorUSD: vendorUSD || null,
       });
       onSaved(res.data.campaign);
     } catch (e: any) {
@@ -616,6 +723,8 @@ function CampaignPanel({
         endDate: endInstant(end),
         prizes: prizesPayload(),
         minReferrals: minReferralsPayload(),
+        vendorNGN: vendorNGN || null,
+        vendorUSD: vendorUSD || null,
       });
       onSaved(res.data.campaign);
     } catch (e: any) {
@@ -634,7 +743,10 @@ function CampaignPanel({
     minReferralsPayload() !== undefined &&
     rewards.length > 0 &&
     rewards.every(
-      (r) => r.rewardNGN.trim() && r.rewardUSD.trim() && validCoupon(r.couponNGN) && validCoupon(r.couponUSD)
+      (r) =>
+        validCoupon(r.couponNGN) &&
+        validCoupon(r.couponUSD) &&
+        ((Number(r.couponNGN) || 0) > 0 || (Number(r.couponUSD) || 0) > 0)
     );
 
   return (
@@ -657,9 +769,14 @@ function CampaignPanel({
               End campaign
             </Button>
           )}
-          {real && !creating && !hasActive && (
+          {real && !creating && (
             <Button variant="secondary" size="sm" onClick={() => setCreating(true)}>
               New campaign
+            </Button>
+          )}
+          {real && !creating && (
+            <Button variant="danger" size="sm" onClick={onDeleteClick}>
+              Delete campaign
             </Button>
           )}
           {creating && (
@@ -717,7 +834,43 @@ function CampaignPanel({
       </div>
       <div style={{ ...styles.panelRow, marginTop: -6 }}>
         A host needs at least this many verified RSVPs on their birthday event before
-        they're eligible to win a prize.
+        they're eligible to win a prize — there's no ceiling, ranking is purely by highest
+        verified RSVPs.
+      </div>
+
+      <div style={styles.fields}>
+        <Field label="Naira vendor">
+          <select
+            style={{ ...styles.input, minWidth: 220 }}
+            value={vendorNGN}
+            onChange={(e) => setVendorNGN(e.target.value)}
+          >
+            <option value="">Any vendor</option>
+            {vendorOptions.map((v) => (
+              <option key={v.user!._id} value={v.user!._id}>
+                {v.name || v.user?.username}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Dollar vendor">
+          <select
+            style={{ ...styles.input, minWidth: 220 }}
+            value={vendorUSD}
+            onChange={(e) => setVendorUSD(e.target.value)}
+          >
+            <option value="">Any vendor</option>
+            {vendorOptions.map((v) => (
+              <option key={v.user!._id} value={v.user!._id}>
+                {v.name || v.user?.username}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      <div style={{ ...styles.panelRow, marginTop: -6 }}>
+        Naira winners' credit is redeemable only at the Naira vendor; Dollar winners' only at
+        the Dollar vendor. Leave as "Any vendor" for credit spendable anywhere.
       </div>
 
       <div style={styles.prizeBlock}>
@@ -731,67 +884,53 @@ function CampaignPanel({
         </div>
         <div style={styles.prizeColumnHeads}>
           <span style={{ ...styles.prizeRank, visibility: "hidden" }}>—</span>
-          <span style={{ ...styles.fieldLabel, flex: 1 }}>Nigeria (₦)</span>
-          <span style={{ ...styles.fieldLabel, flex: 1 }}>Everywhere else ($)</span>
+          <span style={{ ...styles.fieldLabel, width: 110 }}>Credit ₦</span>
+          <span style={{ ...styles.fieldLabel, width: 110 }}>Credit $</span>
+          <span style={{ ...styles.fieldLabel, flex: 1 }}>Extra (optional)</span>
           <span style={{ width: 34, flexShrink: 0 }} />
         </div>
         {rewards.map((r, i) => (
-          <div key={i} style={styles.prizeTierCard}>
-            <div style={styles.prizeRow}>
-              <span style={styles.prizeRank}>{ordinal(i + 1)}</span>
-              <input
-                style={{ ...styles.input, flex: 1 }}
-                value={r.rewardNGN}
-                onChange={(e) => setReward(i, "rewardNGN", e.target.value)}
-                placeholder="e.g. ₦150,000 Cash + Premium Event Pass"
-              />
-              <input
-                style={{ ...styles.input, flex: 1 }}
-                value={r.rewardUSD}
-                onChange={(e) => setReward(i, "rewardUSD", e.target.value)}
-                placeholder="e.g. $100 Cash + Premium Event Pass"
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={rewards.length <= 1}
-                onClick={() => removeTier(i)}
-                title="Remove this winner"
-              >
-                ✕
-              </Button>
-            </div>
-            <div style={styles.prizeRow}>
-              <span style={{ ...styles.prizeRank, visibility: "hidden" }}>—</span>
-              <div style={styles.couponField}>
-                <span style={styles.fieldLabel}>Coupon ₦</span>
-                <input
-                  type="number"
-                  min={0}
-                  style={{ ...styles.input, width: 110 }}
-                  value={r.couponNGN}
-                  onChange={(e) => setReward(i, "couponNGN", e.target.value)}
-                />
-              </div>
-              <div style={styles.couponField}>
-                <span style={styles.fieldLabel}>Coupon $</span>
-                <input
-                  type="number"
-                  min={0}
-                  style={{ ...styles.input, width: 110 }}
-                  value={r.couponUSD}
-                  onChange={(e) => setReward(i, "couponUSD", e.target.value)}
-                />
-              </div>
-              <span style={{ width: 34, flexShrink: 0 }} />
-            </div>
+          <div key={i} style={styles.prizeRow}>
+            <span style={styles.prizeRank}>{ordinal(i + 1)}</span>
+            <input
+              type="number"
+              min={0}
+              style={{ ...styles.input, width: 110 }}
+              value={r.couponNGN}
+              onChange={(e) => setReward(i, "couponNGN", e.target.value)}
+            />
+            <input
+              type="number"
+              min={0}
+              style={{ ...styles.input, width: 110 }}
+              value={r.couponUSD}
+              onChange={(e) => setReward(i, "couponUSD", e.target.value)}
+            />
+            <input
+              style={{ ...styles.input, flex: 1 }}
+              value={r.extraPerk}
+              onChange={(e) => setReward(i, "extraPerk", e.target.value)}
+              placeholder="e.g. Premium Event Pass"
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={rewards.length <= 1}
+              onClick={() => removeTier(i)}
+              title="Remove this winner"
+            >
+              ✕
+            </Button>
           </div>
         ))}
       </div>
       <div style={{ ...styles.panelRow, marginTop: -8 }}>
-        Coupon: what the winner is actually credited (services/payments/coupon.service.js) —
-        1 coupon = ₦1,500 = $1, spendable at checkout with any vendor. Independent of the
-        reward text above, which can describe non-cash extras; 0 awards no coupon.
+        There's no cash prize — the amount above IS the reward, credited as OurCityVibe
+        credit (1 credit = ₦1 / $1, no exchange rate between the two — see
+        services/payments/coupon.service.js). Nigerian winners are credited in Naira,
+        everyone else in Dollars, spendable at checkout with any vendor, and it expires if
+        left unused for 30 days. A tier needs a value in Naira, Dollars, or both. "Extra" is
+        an optional non-cash bonus (e.g. an event pass) shown alongside the credit.
       </div>
 
       <div>
@@ -800,10 +939,10 @@ function CampaignPanel({
             variant="primary"
             size="sm"
             onClick={create}
-            disabled={!canSubmit || hasActive}
+            disabled={!canSubmit}
             loading={saving}
           >
-            {hasActive ? "End current first" : "Create campaign"}
+            Create campaign
           </Button>
         ) : (
           <Button
@@ -903,15 +1042,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 10,
   },
-  prizeTierCard: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-    padding: 10,
-    borderRadius: 10,
-    border: `1px solid ${colors.border}`,
-    background: colors.surfaceHover,
-  },
   prizeRow: {
     display: "flex",
     alignItems: "center",
@@ -923,11 +1053,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: colors.textMuted,
     width: 34,
     flexShrink: 0,
-  },
-  couponField: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
   },
   stats: {
     display: "flex",

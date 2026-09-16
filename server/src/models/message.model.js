@@ -18,7 +18,7 @@ const messageSchema = mongoose.Schema({
   // Message content and type
   type: {
     type: String,
-    enum: ['text', 'image', 'event', 'guide', 'system', 'order'],
+    enum: ['text', 'image', 'event', 'guide', 'system', 'order', 'profile'],
     default: 'text'
   },
 
@@ -53,6 +53,13 @@ const messageSchema = mongoose.Schema({
   order: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "order"
+  },
+
+  // For profile sharing — the user whose profile card this message renders,
+  // distinct from `sender` (who sent the message).
+  profileUser: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "user"
   },
 
   // Message status

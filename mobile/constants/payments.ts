@@ -252,15 +252,3 @@ export function priceLabel(
   return formatMoney(price, currency);
 }
 
-/**
- * OurCityVibe coupon conversion rate — mirrors the server's
- * services/payments/coupon.service.js COUPON_NGN_PER_UNIT. 1 coupon = $1 = ₦1,500.
- * Display-only: the server is the source of truth for what a checkout actually
- * reserves and charges.
- */
-const COUPON_NGN_PER_UNIT = 1500;
-
-/** A user's coupon balance (in units), converted to a display amount in `currency`. */
-export function couponUnitsToAmount(units: number, currency?: string): number {
-  return (currency || "USD").toUpperCase() === "NGN" ? units * COUPON_NGN_PER_UNIT : units;
-}

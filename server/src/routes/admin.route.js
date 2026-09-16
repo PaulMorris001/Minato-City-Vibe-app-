@@ -32,6 +32,8 @@ import {
   createRaffleCampaign,
   updateRaffleCampaign,
   endRaffleCampaign,
+  deleteRaffleEntry,
+  deleteRaffleCampaign,
   drawRaffleWinners,
   setRaffleWinner,
   getGuides,
@@ -108,6 +110,8 @@ router.get("/admin/raffle/campaigns", authenticateAdmin, getRaffleCampaigns);
 router.post("/admin/raffle/campaigns", authenticateAdmin, createRaffleCampaign);
 router.patch("/admin/raffle/campaigns/:id", authenticateAdmin, updateRaffleCampaign);
 router.post("/admin/raffle/campaigns/:id/end", authenticateAdmin, endRaffleCampaign);
+router.delete("/admin/raffle/campaigns/:id", authenticateAdmin, deleteRaffleCampaign);
+router.delete("/admin/raffle/entries/:id", authenticateAdmin, deleteRaffleEntry);
 // The weighted random draw the published official rules promise entrants.
 router.post("/admin/raffle/campaigns/:id/draw", authenticateAdmin, drawRaffleWinners);
 // Birthday Raffle — entries + winner selection

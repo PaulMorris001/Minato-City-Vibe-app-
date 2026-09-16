@@ -24,6 +24,7 @@ import {
   payoutCountryKnown,
   payoutOnboardingRoute,
   payoutUnavailableMessage,
+  formatMoney,
 } from "@/constants/payments";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { getAddressFromCurrentPosition } from "@/hooks/useLocation";
@@ -72,7 +73,8 @@ export default function SettingsScreen() {
     isVendor: false,
     emailVerifiedAt: null as string | null,
     country: "",
-    couponBalance: 0,
+    couponBalanceNGN: 0,
+    couponBalanceUSD: 0,
   });
   // Device-level push permission. registerForPushNotifications() returns
   // silently when it's denied, so without surfacing it here a user has no way
@@ -215,7 +217,8 @@ export default function SettingsScreen() {
         isVendor: userData.isVendor || false,
         emailVerifiedAt: userData.emailVerifiedAt || null,
         country: userData.location?.country || "",
-        couponBalance: userData.couponBalance || 0,
+        couponBalanceNGN: userData.couponBalanceNGN || 0,
+        couponBalanceUSD: userData.couponBalanceUSD || 0,
       });
       if (userData.location?.country) {
         setLocation({
@@ -384,19 +387,23 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {user.couponBalance > 0 && (
+        {(user.couponBalanceNGN > 0 || user.couponBalanceUSD > 0) && (
           <View style={[styles.infoRow, { borderBottomWidth: 0, marginBottom: 4 }]}>
             <View style={styles.infoIconContainer}>
               <Ionicons name="pricetag-outline" size={20} color={Colors.primary} />
             </View>
             <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>OurCityVibe Coupons</Text>
+              <Text style={styles.infoLabel}>OurCityVibe Credit</Text>
               <Text style={styles.infoValue}>
-                {user.couponBalance % 1 === 0
-                  ? user.couponBalance
-                  : user.couponBalance.toFixed(2)}{" "}
+                {[
+                  user.couponBalanceNGN > 0 ? formatMoney(user.couponBalanceNGN, "NGN") : null,
+                  user.couponBalanceUSD > 0 ? formatMoney(user.couponBalanceUSD, "USD") : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}{" "}
                 <Text style={styles.infoSubvalue}>
-                  · $1 = 1 coupon, ₦1,500 = 1 coupon — use at checkout with any vendor
+                  · use at checkout with a vendor pricing in that currency — expires if unused
+                  for 30 days
                 </Text>
               </Text>
             </View>
@@ -763,13 +770,13 @@ const createStyles = (c: ThemeColors) =>
     padding: 4,
   },
   headerTitle: {
-    fontSize: 32,
+    fontSize: 22,
     fontFamily: Fonts.bold,
     color: c.text,
-    marginBottom: 8,
+    marginBottom: 3,
   },
   headerSubtitle: {
-    fontSize: 16,
+    fontSize: 13,
     fontFamily: Fonts.regular,
     color: c.textSecondary,
   },
@@ -783,7 +790,7 @@ const createStyles = (c: ThemeColors) =>
     borderColor: c.border,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 16,
     fontFamily: Fonts.bold,
     color: c.text,
     marginBottom: 8,

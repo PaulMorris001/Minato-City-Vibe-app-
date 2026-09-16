@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -19,6 +20,8 @@ import { Fonts } from "@/constants/fonts";
 import { ensureAuth } from "@/utils/requireAuth";
 import { BASE_URL } from "@/constants/constants";
 import { useCountdown } from "@/hooks/useCountdown";
+import { formatMoney } from "@/constants/payments";
+import RaffleWinnerPopup, { type RaffleStatusLike } from "@/components/shared/RaffleWinnerPopup";
 
 // Prizes and rules are static marketing copy — safe to hardcode. The deadline
 // below is only a pre-fetch seed so the countdown ticks immediately (guests
@@ -31,9 +34,10 @@ const CAMPAIGN_DEADLINE_MS = new Date("2026-09-30T23:59:59.999Z").getTime();
 
 type PrizeRow = {
   place: string;
-  reward: string;
   icon: "trophy" | "medal" | "ribbon";
-  couponUnits: number;
+  couponAmount: number;
+  couponCurrency: "NGN" | "USD";
+  extraPerk: string;
 };
 
 const PRIZE_ICONS: PrizeRow["icon"][] = ["trophy", "medal", "ribbon"];
@@ -42,26 +46,33 @@ const ordinal = (n: number) => {
   const v = n % 100;
   return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 };
-// Server sends [{ rank, reward, couponUnits }] for the active campaign; fall
-// back to the static copy below until that resolves (and for guests, who
-// can't fetch it).
-const toPrizeRows = (prizes: { rank: number; reward: string; couponUnits?: number }[]): PrizeRow[] =>
+// Server sends [{ rank, couponAmount, couponCurrency, extraPerk }] for the
+// active campaign, already localized to the requesting user's country —
+// Nigerian viewers get NGN, everyone else gets USD. There is no cash prize,
+// the coupon amount IS the reward, and 1 coupon = 1 unit of its own currency
+// (no NGN/USD conversion). Fall back to the static copy below until that
+// resolves (and for guests, who can't fetch it — defaults to NGN, same as
+// this screen always showed pre-login).
+const toPrizeRows = (
+  prizes: { rank: number; couponAmount?: number; couponCurrency?: "NGN" | "USD"; extraPerk?: string }[]
+): PrizeRow[] =>
   [...prizes]
     .sort((a, b) => a.rank - b.rank)
     .map((p, i) => ({
       place: ordinal(p.rank),
-      reward: p.reward,
       icon: PRIZE_ICONS[i] ?? "ribbon",
-      couponUnits: p.couponUnits || 0,
+      couponAmount: p.couponAmount || 0,
+      couponCurrency: p.couponCurrency || "NGN",
+      extraPerk: p.extraPerk || "",
     }));
 
 const CAMPAIGN = {
   title: "Birthday Raffle Campaign",
   subtitle: "Create a birthday event, invite friends, and win prizes",
   prizes: [
-    { place: "1st", reward: "₦150,000 Cash + Premium Event Pass", icon: "trophy" as const, couponUnits: 0 },
-    { place: "2nd", reward: "₦75,000 Cash", icon: "medal" as const, couponUnits: 0 },
-    { place: "3rd", reward: "₦40,000 Cash", icon: "ribbon" as const, couponUnits: 0 },
+    { place: "1st", icon: "trophy" as const, couponAmount: 150000, couponCurrency: "NGN" as const, extraPerk: "Premium Event Pass" },
+    { place: "2nd", icon: "medal" as const, couponAmount: 75000, couponCurrency: "NGN" as const, extraPerk: "" },
+    { place: "3rd", icon: "ribbon" as const, couponAmount: 40000, couponCurrency: "NGN" as const, extraPerk: "" },
   ] as PrizeRow[],
   // Plain-language summary only. The binding text is the Official Rules screen
   // (app/birthday-raffle/rules.tsx) — keep these two consistent.
@@ -69,17 +80,20 @@ const CAMPAIGN = {
     "Create a birthday event on CityVibe during the campaign period.",
     "Share your unique tracking link with friends.",
     "Only unique, verified RSVPs count — one per account.",
-    "Your event gets 1 entry, plus 1 more for every verified RSVP.",
+    "There's no limit — every verified RSVP improves your standing.",
     // Index 4 — rewritten in the component with the campaign's real
     // minReferrals once /raffle/status resolves; this is the guest/offline
     // fallback copy.
     "You need a minimum number of verified RSVPs to be prize-eligible.",
-    "Winners are drawn at random from eligible entries after the campaign closes.",
+    "Winners are the eligible entries with the most verified RSVPs — highest engagement wins, not a random draw.",
   ],
 };
 
 // Guest/offline fallback until /raffle/status resolves with the real value.
 const DEFAULT_MIN_REFERRALS = 6;
+
+const genericPrizeRows = (): PrizeRow[] =>
+  CAMPAIGN.prizes.map((prize) => ({ ...prize, couponAmount: 0, extraPerk: "" }));
 
 export default function BirthdayRaffleScreen() {
   const { colors } = useTheme();
@@ -101,9 +115,15 @@ export default function BirthdayRaffleScreen() {
   // so a guest (who never fetches — see checkStatus) still sees the normal
   // "join" CTA; a logged-in user gets the real value the moment it resolves.
   const [campaignOpen, setCampaignOpen] = useState(true);
+  const [hasActiveCampaign, setHasActiveCampaign] = useState(false);
+  const [campaignStartMs, setCampaignStartMs] = useState(0);
   // The admin-given campaign name — shown as the hero title once it resolves.
   const [campaignName, setCampaignName] = useState(CAMPAIGN.title);
   const countdown = useCountdown(deadlineMs);
+
+  // Raw /raffle/status payload, handed to <RaffleWinnerPopup> as-is — it owns
+  // its own "have they seen this?" bookkeeping, see that component.
+  const [statusData, setStatusData] = useState<RaffleStatusLike | null>(null);
 
   // Only the very first check shows the full-page spinner (see the `loading`
   // gate below) — a refocus refetch updates state quietly so returning to
@@ -113,6 +133,23 @@ export default function BirthdayRaffleScreen() {
   const checkStatus = useCallback(async () => {
     if (!hasLoadedOnceRef.current) setLoading(true);
     try {
+      const publicRes = await fetch(`${BASE_URL}/raffle/public`);
+      const publicData = await publicRes.json();
+      if (publicRes.ok && publicData.active) {
+        setHasActiveCampaign(true);
+        setCampaignOpen(true);
+        if (publicData.campaignDeadline) setDeadlineMs(new Date(publicData.campaignDeadline).getTime());
+        if (Array.isArray(publicData.prizes) && publicData.prizes.length) {
+          // Guests see that prizes exist, but never see a currency amount.
+          setPrizes(genericPrizeRows());
+        }
+        if (publicData.campaignName) setCampaignName(publicData.campaignName);
+      } else {
+        setHasActiveCampaign(false);
+        setCampaignOpen(false);
+        setPrizes(genericPrizeRows());
+      }
+
       const token = await SecureStore.getItemAsync("token");
       if (!token) {
         setHasBirthdayEvent(false);
@@ -124,11 +161,18 @@ export default function BirthdayRaffleScreen() {
       const data = await res.json();
       if (res.ok) {
         setHasBirthdayEvent(!!data.hasQualifyingEvent);
+        setHasActiveCampaign(!!data.campaignOpen);
+        if (data.campaignStartsAt) setCampaignStartMs(new Date(data.campaignStartsAt).getTime());
         if (data.campaignDeadline) setDeadlineMs(new Date(data.campaignDeadline).getTime());
-        if (Array.isArray(data.prizes) && data.prizes.length) setPrizes(toPrizeRows(data.prizes));
+        if (data.campaignOpen && Array.isArray(data.prizes) && data.prizes.length) {
+          setPrizes(toPrizeRows(data.prizes));
+        } else if (!data.campaignOpen) {
+          setPrizes(genericPrizeRows());
+        }
         if (typeof data.minReferrals === "number") setMinReferrals(data.minReferrals);
         if (typeof data.campaignOpen === "boolean") setCampaignOpen(data.campaignOpen);
         if (data.campaignName) setCampaignName(data.campaignName);
+        setStatusData(data);
       } else {
         setHasBirthdayEvent(false);
       }
@@ -166,9 +210,6 @@ export default function BirthdayRaffleScreen() {
   );
 
 const handlePrimaryCTA = async () => {
-  // Belt-and-suspenders — the button is disabled in this state, but a stray
-  // tap mid-transition shouldn't be able to reach the create flow either.
-  if (!hasBirthdayEvent && !campaignOpen) return;
   if (!(await ensureAuth("join the birthday raffle"))) return;
 
   if (hasBirthdayEvent) {
@@ -183,12 +224,25 @@ const handlePrimaryCTA = async () => {
   }
 };
 
-  // Server-authoritative — reflects an admin ending the campaign early just as
-  // much as it reaching its natural deadline (see isCampaignOpen).
-  const ended = !campaignOpen;
-  // Someone who already has a qualifying event can always check its status,
-  // ended campaign or not — only a fresh entry is blocked.
-  const ctaDisabled = !hasBirthdayEvent && ended;
+  // Whether *this month's* batch specifically has closed — server-
+  // authoritative, reflects an admin ending it early just as much as it
+  // reaching its natural deadline (see isCampaignOpen). Purely informational
+  // now: a birthday dated for next month (or up to 6 months out) can always
+  // be registered regardless, so this no longer disables the CTA.
+  const upcoming = !campaignOpen && campaignStartMs > Date.now();
+  const ended = !campaignOpen && !upcoming;
+  const campaignStartLabel = new Date(campaignStartMs).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+  // A permanent "you won" sign on this page too — not just the one-time
+  // popup — for a winner who lands here (rather than /status) on a later
+  // visit.
+  const isWinner = statusData?.status === "winner" && !!statusData?.winnerRank;
+  const winningTier = isWinner
+    ? statusData?.prizes?.find((p) => p.rank === statusData?.winnerRank)
+    : undefined;
 
   // Wait for the real status before showing anything. Without this, a
   // logged-in user briefly saw the guest/offline fallback copy (default
@@ -226,24 +280,63 @@ const handlePrimaryCTA = async () => {
       >
         {/* Hero */}
         <LinearGradient
-          colors={[colors.primary, colors.primaryDark]}
+          colors={isWinner ? ["#2D1B69", "#B8860B"] : [colors.primary, colors.primaryDark]}
           style={styles.hero}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          <View style={styles.heroBadge}>
-            <Ionicons name={ended ? "time-outline" : "gift"} size={14} color="#fff" />
-            <Text style={styles.heroBadgeText}>{ended ? "CAMPAIGN ENDED" : "LIMITED TIME"}</Text>
+          <View style={[styles.heroBadge, isWinner && styles.winnerBadge]}>
+            <Ionicons
+              name={
+                isWinner
+                  ? "trophy"
+                  : upcoming
+                  ? "calendar-outline"
+                  : ended
+                  ? "time-outline"
+                  : "gift"
+              }
+              size={14}
+              color={isWinner ? "#3D2900" : "#fff"}
+            />
+            <Text style={[styles.heroBadgeText, isWinner && styles.winnerBadgeText]}>
+              {isWinner
+                ? `${ordinal(statusData!.winnerRank!)} PLACE WINNER`
+                : upcoming
+                ? "NEXT CAMPAIGN"
+                : ended
+                ? "CAMPAIGN ENDED"
+                : "LIMITED TIME"}
+            </Text>
           </View>
+
+          {isWinner && (
+            <Text style={styles.winnerPrizeLine}>
+              🎉{" "}
+              {winningTier?.couponAmount
+                ? `${formatMoney(winningTier.couponAmount, winningTier.couponCurrency || "NGN")} OurCityVibe credit`
+                : "You won a prize"}
+              {winningTier?.extraPerk ? ` + ${winningTier.extraPerk}` : ""} — check your Wallet & Rewards
+            </Text>
+          )}
 
           <Text style={styles.heroTitle}>{campaignName}</Text>
           <Text style={styles.heroSubtitle}>{CAMPAIGN.subtitle}</Text>
 
-          {ended ? (
+          {upcoming ? (
+            <View style={styles.endedRow}>
+              <Ionicons name="calendar-outline" size={16} color="rgba(255,255,255,0.85)" />
+              <Text style={styles.endedText}>
+                The next raffle starts {campaignStartLabel}. You can create your birthday event
+                now and participate in that campaign.
+              </Text>
+            </View>
+          ) : ended ? (
             <View style={styles.endedRow}>
               <Ionicons name="alert-circle-outline" size={16} color="rgba(255,255,255,0.85)" />
               <Text style={styles.endedText}>
-                This batch of the raffle has ended — entries closed {deadlineLabel}.
+                This month&apos;s batch closed {deadlineLabel}. You can still register a
+                future birthday below.
               </Text>
             </View>
           ) : (
@@ -276,6 +369,21 @@ const handlePrimaryCTA = async () => {
           )}
         </LinearGradient>
 
+        {!hasBirthdayEvent && (
+          <View style={styles.futureBirthdayNote}>
+            <View style={styles.futureBirthdayIcon}>
+              <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+            </View>
+            <View style={styles.futureBirthdayCopy}>
+              <Text style={styles.futureBirthdayTitle}>Birthday coming up later?</Text>
+              <Text style={styles.futureBirthdayText}>
+                You can still create your birthday event up to 6 months ahead. It will wait for
+                your birthday month&apos;s raffle automatically.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Prizes */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Prizes</Text>
@@ -286,17 +394,67 @@ const handlePrimaryCTA = async () => {
               </View>
               <View style={styles.prizeContent}>
                 <Text style={styles.prizePlace}>{prize.place} Place</Text>
-                <Text style={styles.prizeReward}>{prize.reward}</Text>
-                {prize.couponUnits > 0 && (
-                  <Text style={styles.prizeCoupon}>
-                    + {prize.couponUnits % 1 === 0 ? prize.couponUnits : prize.couponUnits.toFixed(2)}{" "}
-                    OurCityVibe coupon{prize.couponUnits === 1 ? "" : "s"} to spend with any vendor
+                {/* Localized to the viewer's own country server-side — a
+                    Nigerian sees Naira, everyone else sees Dollars, never
+                    both. 1 coupon = 1 unit of that currency, so the amount IS
+                    the worth. */}
+                <Text style={styles.prizeReward}>
+                  {hasActiveCampaign && prize.couponAmount > 0
+                    ? `${formatMoney(prize.couponAmount, prize.couponCurrency)} OurCityVibe credit`
+                    : "Prizes"}
+                </Text>
+                {!!prize.extraPerk && (
+                  <Text style={styles.prizeCoupon}>+ {prize.extraPerk}</Text>
+                )}
+                {prize.couponAmount > 0 && (
+                  <Text style={styles.prizeHint}>
+                    Spend it at checkout with{" "}
+                    {statusData?.vendor
+                      ? statusData.vendor.businessName || `@${statusData.vendor.username}`
+                      : "any vendor"}{" "}
+                    — expires if unused for 30 days
                   </Text>
                 )}
               </View>
             </View>
           ))}
         </View>
+
+        {/* Redeem-at vendor — only present when the campaign assigned one for
+            this viewer's currency; a campaign with none leaves credit
+            spendable at any vendor, so there's nothing to link to. Needs
+            `vendorId` specifically (the vendor's separate listing doc), not
+            `_id` (their user account) — /vendor-details looks up by the
+            former. */}
+        {!!statusData?.vendor?.vendorId && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Redeem your credit at</Text>
+            <TouchableOpacity
+              style={styles.vendorCard}
+              activeOpacity={0.85}
+              onPress={() => router.push(`/vendor-details/${statusData.vendor!.vendorId}` as any)}
+            >
+              <View style={styles.vendorAvatarWrap}>
+                {statusData.vendor.businessPicture || statusData.vendor.profilePicture ? (
+                  <Image
+                    source={{ uri: statusData.vendor.businessPicture || statusData.vendor.profilePicture }}
+                    style={styles.vendorAvatar}
+                    contentFit="cover"
+                  />
+                ) : (
+                  <Ionicons name="storefront" size={22} color={colors.primary} />
+                )}
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.vendorName} numberOfLines={1}>
+                  {statusData.vendor.businessName || statusData.vendor.username}
+                </Text>
+                <Text style={styles.vendorHint}>Tap to view this vendor</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Rules */}
         <View style={styles.section}>
@@ -311,28 +469,26 @@ const handlePrimaryCTA = async () => {
           ))}
         </View>
 
-        {/* Primary CTA — disabled only for someone with no entry once the
-            campaign's closed; an existing entry can still check its status. */}
+        {/* Primary CTA — always live. A birthday any time this month enters
+            the current batch; a birthday up to 6 months out just registers
+            and waits ("pending") for its own month's batch to open — see
+            birthdayRaffleDateError on the server — so there's no longer a
+            state where this button has nothing useful to do. */}
         <TouchableOpacity
-          style={[styles.ctaButton, ctaDisabled && styles.ctaButtonDisabled]}
-          activeOpacity={ctaDisabled ? 1 : 0.85}
+          style={styles.ctaButton}
+          activeOpacity={0.85}
           onPress={handlePrimaryCTA}
-          disabled={ctaDisabled}
         >
           <LinearGradient
-            colors={ctaDisabled ? [colors.textFaint, colors.textMuted] : [colors.primary, colors.primaryDark]}
+            colors={[colors.primary, colors.primaryDark]}
             style={styles.ctaGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
           >
             <Text style={styles.ctaText}>
-              {hasBirthdayEvent
-                ? "View My Raffle Status"
-                : ended
-                ? "Raffle Has Ended"
-                : "Create Birthday Event & Enter"}
+              {hasBirthdayEvent ? "View My Raffle Status" : "Create Birthday Event & Enter"}
             </Text>
-            {!ctaDisabled && <Ionicons name="arrow-forward" size={18} color="#fff" />}
+            <Ionicons name="arrow-forward" size={18} color="#fff" />
           </LinearGradient>
         </TouchableOpacity>
 
@@ -348,18 +504,14 @@ const handlePrimaryCTA = async () => {
           <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
         </TouchableOpacity>
 
-        {ctaDisabled && (
+        {ended && !hasBirthdayEvent && (
           <Text style={styles.footerNote}>
-            This batch of the Birthday Raffle is closed to new entries. Keep an eye out —
-            we'll announce the next one in the app.
+            This month&apos;s batch is closed to new entries, but you can still register a
+            birthday for an upcoming month (up to 6 months ahead) — it will enter that
+            month&apos;s batch automatically once it opens.
           </Text>
         )}
 
-        <Text style={styles.footerNote}>
-          No purchase necessary. Open to entrants aged 18 and over; void where prohibited.
-          By entering you agree to the official rules. Winners are contacted in the app and
-          by email.
-        </Text>
         <Text style={styles.footerNote}>
           Apple is not a sponsor of this promotion and is not involved with it in any manner.
         </Text>
@@ -375,6 +527,8 @@ const handlePrimaryCTA = async () => {
           </Text>
         </View>
       </ScrollView>
+
+      <RaffleWinnerPopup data={statusData} />
     </View>
   );
 }
@@ -435,6 +589,19 @@ const createStyles = (c: ThemeColors) =>
       color: "#fff",
       letterSpacing: 0.6,
     },
+    winnerBadge: {
+      backgroundColor: "#F5B700",
+    },
+    winnerBadgeText: {
+      color: "#3D2900",
+    },
+    winnerPrizeLine: {
+      fontFamily: Fonts.semiBold,
+      fontSize: 13,
+      color: "#FFE8A3",
+      marginBottom: 10,
+      lineHeight: 18,
+    },
     heroTitle: {
       fontFamily: "BricolageGrotesque_800ExtraBold",
       fontSize: 28,
@@ -449,6 +616,40 @@ const createStyles = (c: ThemeColors) =>
       color: "rgba(255,255,255,0.8)",
       lineHeight: 22,
       marginBottom: 18,
+    },
+    futureBirthdayNote: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 12,
+      backgroundColor: c.primaryFaded,
+      borderRadius: 16,
+      padding: 14,
+      marginBottom: 28,
+      borderWidth: 1,
+      borderColor: c.primaryBorder || "rgba(168,85,247,0.3)",
+    },
+    futureBirthdayIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: c.card,
+    },
+    futureBirthdayCopy: {
+      flex: 1,
+    },
+    futureBirthdayTitle: {
+      fontFamily: Fonts.bold,
+      fontSize: 14,
+      color: c.textBright,
+      marginBottom: 4,
+    },
+    futureBirthdayText: {
+      fontFamily: Fonts.regular,
+      fontSize: 13,
+      lineHeight: 19,
+      color: c.textMuted,
     },
     deadlineRow: {
       flexDirection: "row",
@@ -538,6 +739,28 @@ const createStyles = (c: ThemeColors) =>
       justifyContent: "center",
       marginRight: 14,
     },
+    vendorCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      backgroundColor: c.card,
+      borderRadius: 16,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: c.glassStroke || "rgba(255,255,255,0.06)",
+    },
+    vendorAvatarWrap: {
+      width: 44,
+      height: 44,
+      borderRadius: 12,
+      backgroundColor: c.primaryFaded,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    vendorAvatar: { width: 44, height: 44 },
+    vendorName: { fontFamily: Fonts.bold, fontSize: 15, color: c.textBright },
+    vendorHint: { fontFamily: Fonts.regular, fontSize: 12, color: c.textDim, marginTop: 2 },
     prizeContent: {
       flex: 1,
     },
@@ -548,15 +771,22 @@ const createStyles = (c: ThemeColors) =>
       marginBottom: 2,
     },
     prizeReward: {
-      fontFamily: Fonts.regular,
-      fontSize: 13,
-      color: c.textDim,
+      fontFamily: Fonts.bold,
+      fontSize: 15,
+      color: c.primaryLight,
+      marginTop: 1,
     },
     prizeCoupon: {
       fontFamily: Fonts.medium,
       fontSize: 12,
       color: c.primary,
       marginTop: 3,
+    },
+    prizeHint: {
+      fontFamily: Fonts.regular,
+      fontSize: 11,
+      color: c.textFaint,
+      marginTop: 2,
     },
     ruleRow: {
       flexDirection: "row",
@@ -594,10 +824,6 @@ const createStyles = (c: ThemeColors) =>
       shadowOpacity: 0.35,
       shadowRadius: 16,
       elevation: 8,
-    },
-    ctaButtonDisabled: {
-      shadowOpacity: 0,
-      elevation: 0,
     },
     ctaGradient: {
       flexDirection: "row",

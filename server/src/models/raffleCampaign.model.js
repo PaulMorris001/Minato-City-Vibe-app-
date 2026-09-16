@@ -16,30 +16,21 @@ import mongoose from "mongoose";
  */
 
 // One prize tier. `rank` is 1..N (1 = top prize) and the array length is "how
-// many winners this campaign has". Rewards are free text, shown verbatim on
-// the mobile raffle screen, so each carries its own amount.
+// many winners this campaign has".
 //
-// `rewardNGN`/`rewardUSD` split the prize by the winner's country — Nigerian
-// winners see the NGN copy, everyone else sees USD (see isNigerianCountry /
-// prizeReward in raffleCampaign.service.js). `reward` is the pre-split legacy
-// field, kept only so rows saved before the split still resolve to something;
-// new writes go through admin.controller.js's normalizePrizes, which always
-// populates both regional fields.
+// There is no cash prize — the entire prize is OurCityVibe credit a winner is
+// credited on pick (services/payments/coupon.service.js), split by the
+// winner's country: a Nigerian winner gets couponNGN worth of credit (1
+// credit = ₦1), everyone else gets couponUSD (1 credit = $1) — there's no
+// exchange rate between the two. `extraPerk` is an optional, region-agnostic
+// non-cash bonus shown alongside the credit amount (e.g. "Premium Event
+// Pass") — it isn't priced, so it isn't split by country.
 const prizeSchema = mongoose.Schema(
   {
     rank: { type: Number, required: true, min: 1 },
-    reward: { type: String, trim: true },
-    rewardNGN: { type: String, trim: true },
-    rewardUSD: { type: String, trim: true },
-    // The coupon a winner is credited on pick (services/payments/
-    // coupon.service.js), in the winner's own currency — a Nigerian winner
-    // gets couponNGN worth of coupons (at ₦1,500/coupon), everyone else gets
-    // couponUSD (1:1). Independent of the display-only reward text above: a
-    // reward can describe a non-cash extra ("+ Premium Event Pass") that
-    // isn't part of the coupon at all. 0 (the default) awards no coupon —
-    // existing campaigns saved before this field keep working unchanged.
     couponNGN: { type: Number, default: 0, min: 0 },
     couponUSD: { type: Number, default: 0, min: 0 },
+    extraPerk: { type: String, trim: true, default: "" },
   },
   { _id: false }
 );
@@ -59,7 +50,19 @@ const raffleCampaignSchema = mongoose.Schema(
     // birthdayRaffle.controller.js) a birthday event needs before its host is
     // eligible to win a prize. Admin-controlled; existing rows default to 6
     // via this schema default whenever they're read as a hydrated document.
+    // There is no ceiling — ranking (drawRaffleWinners in admin.controller.js)
+    // sorts by verified RSVPs with no upper bound.
     minReferrals: { type: Number, default: 6, min: 0 },
+
+    // The vendor a winner's credit is redeemable at, one per currency (a
+    // Nigerian winner's couponNGN can only be spent with vendorNGN, everyone
+    // else's couponUSD only with vendorUSD — see coupon.service.js's
+    // couponVendorNGN/USD lock on User). Both a user account with
+    // isVendor:true, ref "user" to match Order.vendor / Service.vendor.
+    // Optional: a campaign with neither set awards credit spendable at any
+    // vendor, same as before this field existed.
+    vendorNGN: { type: mongoose.Schema.Types.ObjectId, ref: "user", default: null },
+    vendorUSD: { type: mongoose.Schema.Types.ObjectId, ref: "user", default: null },
 
     // Admin JWTs carry only a username — same attribution convention as
     // discountCode.createdByAdmin / event pendingEdits.reviewedBy.

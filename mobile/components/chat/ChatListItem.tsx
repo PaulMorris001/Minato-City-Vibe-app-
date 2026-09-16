@@ -89,6 +89,8 @@ export default function ChatListItem({
         return isVideoUrl(lastMessage.imageUrl) ? "🎥 Video" : "📷 Photo";
       case "event":
         return "📅 Event";
+      case "profile":
+        return "👤 Profile";
       case "system":
         return lastMessage.content || "";
       default:

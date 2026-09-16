@@ -27,6 +27,7 @@ import Animated, {
 import type { Message } from "@/services/chat.service";
 import { groupReactions } from "@/utils/reactions";
 import { openUserProfile } from "@/utils/userNavigation";
+import { vendorDisplayName } from "@/utils/displayName";
 import { Avatar } from "@/components/shared/Avatar";
 import MediaTile from "@/components/shared/MediaTile";
 import { isVideoUrl } from "@/utils/media";
@@ -104,6 +105,8 @@ export function replyPreviewLabel(msg: any): string {
       return "📖 Guide";
     case "order":
       return "🛒 Order";
+    case "profile":
+      return "👤 Profile";
     default:
       return "Message";
   }
@@ -268,6 +271,10 @@ function MessageBubble({
     if (message.guide && message.guide._id) {
       router.push(`/guide/${message.guide._id}` as any);
     }
+  };
+
+  const handleProfilePress = () => {
+    if (message.profileUser?._id) openUserProfile(message.profileUser._id);
   };
 
   // Build the bubble body
@@ -484,6 +491,41 @@ function MessageBubble({
                 <Text style={styles.eventCtaText}>Read Guide</Text>
                 <Ionicons name="arrow-forward" size={14} color="#fff" />
               </LinearGradient>
+            </View>
+          </TouchableOpacity>
+        );
+      }
+
+      case "profile": {
+        const profileUser = message.profileUser;
+        const name = profileUser ? vendorDisplayName(profileUser) : message.content || "OurCityvibe user";
+        const avatarUri = profileUser?.businessPicture || profileUser?.profilePicture;
+        return (
+          <TouchableOpacity
+            style={styles.profileCard}
+            onPress={handleProfilePress}
+            onLongPress={handleLongPress}
+            activeOpacity={0.85}
+          >
+            <Avatar uri={avatarUri} name={name} size={52} />
+            <View style={styles.profileCardBody}>
+              <View style={styles.profileCardNameRow}>
+                <Text style={styles.profileCardName} numberOfLines={1}>
+                  {name}
+                </Text>
+                {profileUser?.verified && (
+                  <Ionicons name="checkmark-circle" size={14} color={colors.info} />
+                )}
+              </View>
+              {!!profileUser?.username && (
+                <Text style={styles.profileCardHandle} numberOfLines={1}>
+                  @{profileUser.username}
+                </Text>
+              )}
+            </View>
+            <View style={styles.profileCardCta}>
+              <Text style={styles.profileCardCtaText}>View</Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.primary} />
             </View>
           </TouchableOpacity>
         );
@@ -715,8 +757,13 @@ function MessageBubble({
   // Bubble container — gradient for outgoing text/text-like; image bubble = thumbnail only;
   // event bubble = the event card (no surrounding bubble).
   const renderBubble = () => {
-    if (message.type === "event" || message.type === "guide" || message.type === "order") {
-      // Event / guide / order card stands alone — no surrounding bubble
+    if (
+      message.type === "event" ||
+      message.type === "guide" ||
+      message.type === "order" ||
+      message.type === "profile"
+    ) {
+      // Event / guide / order / profile card stands alone — no surrounding bubble
       return renderBubbleBody();
     }
     if (message.type === "image") {
@@ -1153,6 +1200,39 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 12,
     color: c.white,
     letterSpacing: 0.2,
+  },
+
+  // Shared profile card
+  profileCard: {
+    width: 244,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: c.cardGlass,
+    borderWidth: 1,
+    borderColor: c.glassStrokeStrong,
+  },
+  profileCardBody: { flex: 1, minWidth: 0 },
+  profileCardNameRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  profileCardName: {
+    fontFamily: "Outfit_700Bold",
+    fontSize: 14.5,
+    color: c.textBright,
+    flexShrink: 1,
+  },
+  profileCardHandle: {
+    fontFamily: "Outfit_500Medium",
+    fontSize: 12,
+    color: c.textDim,
+    marginTop: 1,
+  },
+  profileCardCta: { flexDirection: "row", alignItems: "center", gap: 2 },
+  profileCardCtaText: {
+    fontFamily: "Outfit_600SemiBold",
+    fontSize: 12.5,
+    color: c.primaryLight,
   },
 
   // Order / invoice card

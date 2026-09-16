@@ -116,7 +116,7 @@ export default function PassesScreen() {
     <View style={styles.container}>
       <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
         <View style={styles.header}>
-          <GlassBackButton size={38} />
+          <GlassBackButton />
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>My Passes</Text>
             <Text style={styles.headerSubtitle}>Show your QR at the door</Text>
@@ -276,13 +276,11 @@ const createStyles = (c: ThemeColors) =>
     marginBottom: 8,
   },
   headerTitle: {
-    fontFamily: "BricolageGrotesque_800ExtraBold",
-    fontSize: 28,
+    fontFamily: Fonts.bold,
+    fontSize: 22,
     color: c.textBright,
-    letterSpacing: -1,
-    lineHeight: 30,
   },
-  headerSubtitle: { fontFamily: "Outfit_500Medium", fontSize: 12, color: c.textDim, marginTop: 4 },
+  headerSubtitle: { fontFamily: Fonts.medium, fontSize: 13, color: c.textDim, marginTop: 3 },
   scrollContent: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 28 },
   loadingWrap: { paddingVertical: 80, alignItems: "center" },
   card: {
@@ -301,10 +299,9 @@ const createStyles = (c: ThemeColors) =>
   },
   eventTitle: {
     flex: 1,
-    fontFamily: "BricolageGrotesque_700Bold",
+    fontFamily: Fonts.bold,
     fontSize: 17,
     color: c.textBright,
-    letterSpacing: -0.2,
   },
   badge: {
     flexDirection: "row",
@@ -314,9 +311,9 @@ const createStyles = (c: ThemeColors) =>
     paddingVertical: 4,
     borderRadius: 999,
   },
-  badgeText: { fontFamily: "Outfit_700Bold", fontSize: 10, letterSpacing: 0.4 },
+  badgeText: { fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 0.4 },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3 },
-  metaText: { fontFamily: "Outfit_500Medium", fontSize: 12.5, color: c.textDim, flexShrink: 1 },
+  metaText: { fontFamily: Fonts.medium, fontSize: 12.5, color: c.textDim, flexShrink: 1 },
   qrWrap: {
     alignSelf: "center",
     marginTop: 18,
@@ -331,9 +328,9 @@ const createStyles = (c: ThemeColors) =>
   },
   qr: { width: 196, height: 196 },
   qrOverlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", gap: 6 },
-  qrOverlayText: { fontFamily: "Outfit_700Bold", fontSize: 14, color: c.cardAlt },
+  qrOverlayText: { fontFamily: Fonts.bold, fontSize: 14, color: c.cardAlt },
   passType: {
-    fontFamily: "Outfit_500Medium",
+    fontFamily: Fonts.medium,
     fontSize: 12.5,
     color: c.textDim,
     textAlign: "center",
@@ -352,7 +349,7 @@ const createStyles = (c: ThemeColors) =>
   },
   cachedChipText: {
     flex: 1,
-    fontFamily: "Outfit_500Medium",
+    fontFamily: Fonts.medium,
     fontSize: 12.5,
     color: c.textDim,
   },
@@ -370,12 +367,12 @@ const createStyles = (c: ThemeColors) =>
     backgroundColor: c.cardAlt,
   },
   saveRowText: {
-    fontFamily: "Outfit_600SemiBold",
+    fontFamily: Fonts.semiBold,
     fontSize: 13,
     color: c.textBright,
   },
   emptyState: { alignItems: "center", paddingVertical: 70, paddingHorizontal: 24 },
   emptyEmoji: { fontSize: 72, opacity: 0.3, marginBottom: 14 },
-  emptyTitle: { fontFamily: "BricolageGrotesque_800ExtraBold", fontSize: 20, color: c.textBright, marginBottom: 8 },
-  emptyText: { fontFamily: "Outfit_500Medium", fontSize: 13, color: c.textDim, textAlign: "center" },
+  emptyTitle: { fontFamily: Fonts.bold, fontSize: 20, color: c.textBright, marginBottom: 8 },
+  emptyText: { fontFamily: Fonts.medium, fontSize: 13, color: c.textDim, textAlign: "center" },
 });

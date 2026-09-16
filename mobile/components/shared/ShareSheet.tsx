@@ -25,7 +25,8 @@ import type { ThemeColors } from "@/constants/theme";
 
 export type ShareTarget =
   | { kind: "event"; eventId: string; title: string; externalUrl: string }
-  | { kind: "guide"; guideId: string; title: string; externalUrl: string };
+  | { kind: "guide"; guideId: string; title: string; externalUrl: string }
+  | { kind: "profile"; userId: string; title: string; externalUrl: string };
 
 interface ShareSheetProps {
   visible: boolean;
@@ -41,7 +42,8 @@ interface ShareSheetProps {
 }
 
 /**
- * Bottom sheet that lets the user pick how to share an event or a guide.
+ * Bottom sheet that lets the user pick how to share an event, a guide, or a
+ * profile.
  *
  *   Stage 1 — choice screen:
  *     · "Send in a chat"  → loads the user's chats, opens the picker
@@ -49,8 +51,8 @@ interface ShareSheetProps {
  *
  *   Stage 2 — chat picker:
  *     A searchable list of the user's chats. Tapping one sends the
- *     event/guide as a chat message of type `event` / `guide`, which
- *     MessageBubble renders as a card.
+ *     event/guide/profile as a chat message of type `event` / `guide` /
+ *     `profile`, which MessageBubble renders as a card.
  */
 export default function ShareSheet({ visible, onClose, target, onShowQR }: ShareSheetProps) {
   const { colors } = useTheme();
@@ -103,7 +105,9 @@ export default function ShareSheet({ visible, onClose, target, onShowQR }: Share
         const headline =
           target.kind === "event"
             ? `Check out this event on OurCityvibe: ${target.title}`
-            : `Check out this OurCityvibe guide: ${target.title}`;
+            : target.kind === "guide"
+            ? `Check out this OurCityvibe guide: ${target.title}`
+            : `Check out ${target.title}'s profile on OurCityvibe`;
         await Share.share({
           message: `${headline}\n${target.externalUrl}`,
           title: target.title,
@@ -126,7 +130,9 @@ export default function ShareSheet({ visible, onClose, target, onShowQR }: Share
       const payload =
         target.kind === "event"
           ? { type: "event" as const, eventId: target.eventId, content: target.title }
-          : { type: "guide" as const, guideId: target.guideId, content: target.title };
+          : target.kind === "guide"
+          ? { type: "guide" as const, guideId: target.guideId, content: target.title }
+          : { type: "profile" as const, profileUserId: target.userId, content: target.title };
       await chatService.sendMessage(chat._id, payload);
       onClose();
     } catch (err: any) {
@@ -192,7 +198,7 @@ export default function ShareSheet({ visible, onClose, target, onShowQR }: Share
           {stage === "choice" ? (
             <>
               <Text style={styles.headerLabel}>
-                Share {target.kind === "event" ? "event" : "guide"}
+                Share {target.kind === "event" ? "event" : target.kind === "guide" ? "guide" : "profile"}
               </Text>
               <Text style={styles.headerTitle} numberOfLines={1}>
                 {target.title}

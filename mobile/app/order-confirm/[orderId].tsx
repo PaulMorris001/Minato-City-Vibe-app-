@@ -18,7 +18,7 @@ import { BASE_URL } from "@/constants/constants";
 import { Order } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
-import { currencyPrefix, couponUnitsToAmount } from "@/constants/payments";
+import { currencyPrefix } from "@/constants/payments";
 import { usePayment } from "@/hooks/usePayment";
 import { showError, showSuccess } from "@/utils/toast";
 import { ensureOnline } from "@/utils/requireOnline";
@@ -44,7 +44,8 @@ export default function OrderConfirm() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
-  const [couponBalance, setCouponBalance] = useState(0);
+  const [couponBalanceNGN, setCouponBalanceNGN] = useState(0);
+  const [couponBalanceUSD, setCouponBalanceUSD] = useState(0);
   const [useCoupon, setUseCoupon] = useState(false);
 
   useEffect(() => {
@@ -67,7 +68,8 @@ export default function OrderConfirm() {
         }
         if (profileRes.ok) {
           const profileData = await profileRes.json();
-          setCouponBalance(profileData?.user?.couponBalance || 0);
+          setCouponBalanceNGN(profileData?.user?.couponBalanceNGN || 0);
+          setCouponBalanceUSD(profileData?.user?.couponBalanceUSD || 0);
         }
       } catch {
         setError("Network error. Please try again.");
@@ -89,7 +91,10 @@ export default function OrderConfirm() {
     return "Vendor";
   };
 
-  const couponAvailable = couponUnitsToAmount(couponBalance, order?.currency);
+  // A coupon is only ever spent against an order in its OWN currency — 1
+  // coupon = 1 unit of that same currency, no conversion between balances.
+  const couponAvailable =
+    order?.currency === "NGN" ? couponBalanceNGN : order?.currency === "USD" ? couponBalanceUSD : 0;
   const couponApplied = order ? Math.min(couponAvailable, order.total) : 0;
   const payableAfterCoupon = order ? Math.max(0, order.total - couponApplied) : 0;
 
@@ -229,11 +234,11 @@ export default function OrderConfirm() {
           </View>
         </View>
 
-        {payable && couponBalance > 0 && (
+        {payable && couponAvailable > 0 && (
           <View style={[styles.card, styles.couponCard]}>
             <View style={styles.couponRow}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.couponTitle}>Use my OurCityVibe coupon</Text>
+                <Text style={styles.couponTitle}>Use my OurCityVibe credit</Text>
                 <Text style={styles.couponSubtitle} numberOfLines={2}>
                   You have {money(couponAvailable)} available
                   {couponApplied < order.total ? " — won't cover the full order" : ""}.
@@ -248,7 +253,7 @@ export default function OrderConfirm() {
             {useCoupon && (
               <View style={styles.couponBreakdown}>
                 <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Coupon applied</Text>
+                  <Text style={styles.totalLabel}>Credit applied</Text>
                   <Text style={styles.totalValue}>-{money(couponApplied)}</Text>
                 </View>
                 <View style={styles.totalRow}>
@@ -288,7 +293,7 @@ export default function OrderConfirm() {
                   <Ionicons name="lock-closed" size={16} color="#fff" />
                   <Text style={styles.payButtonText}>
                     {useCoupon && payableAfterCoupon === 0
-                      ? "Confirm — Fully covered by coupon"
+                      ? "Confirm — Fully covered by credit"
                       : `Confirm & Pay ${money(useCoupon ? payableAfterCoupon : order.total)}`}
                   </Text>
                 </>

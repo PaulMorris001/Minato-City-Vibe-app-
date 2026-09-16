@@ -682,8 +682,8 @@ async function confirmFreeTicket(type, id, reference, userId, res, tierId) {
 /**
  * Confirm an order fully covered by an OurCityVibe coupon. No provider charge
  * exists, so the proof is the reservation `reserveOrderCoupon` wrote onto the
- * order itself at init (`couponUnitsUsed`/`couponApplied`) — the client's
- * claim of "free" is never trusted, same principle as confirmFreeTicket.
+ * order itself at init (`couponApplied`) — the client's claim of "free" is
+ * never trusted, same principle as confirmFreeTicket.
  *
  * The seller is still paid in full: `computeSplit(order.total)` and a real
  * Payout are queued exactly as a cash sale would, because the coupon is
@@ -701,7 +701,7 @@ async function confirmFreeOrder(id, reference, userId, res) {
   if (reference !== `coupon-${order._id}`) {
     return res.status(400).json({ message: "This reference does not match this order" });
   }
-  if (order.couponUnitsUsed <= 0 || order.couponApplied < order.total) {
+  if (order.couponApplied <= 0 || order.couponApplied < order.total) {
     return res.status(400).json({ message: "This order's coupon does not cover its full price" });
   }
 

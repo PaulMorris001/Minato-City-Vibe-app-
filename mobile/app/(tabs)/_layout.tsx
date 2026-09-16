@@ -498,14 +498,14 @@ export default function TabsLayout() {
         style={styles.menuItem}
         onPress={() => {
           setIsProfileModalVisible(false);
-          router.push("/settings");
+          router.push("/wallet-rewards" as any);
         }}
       >
         <View style={styles.menuIconContainer}>
-          <Ionicons name="settings-outline" size={20} color={colors.primary} />
+          <Ionicons name="wallet-outline" size={20} color={colors.primary} />
         </View>
         <Text style={[styles.menuItemText, isTranslucentModal && styles.glassText]}>
-          Settings
+          Wallet & Rewards
         </Text>
         <Ionicons
           name="chevron-forward"
