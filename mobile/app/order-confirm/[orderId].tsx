@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Image,
   Platform,
+  Switch,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -43,19 +44,32 @@ export default function OrderConfirm() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
+  const [couponBalanceNGN, setCouponBalanceNGN] = useState(0);
+  const [couponBalanceUSD, setCouponBalanceUSD] = useState(0);
+  const [useCoupon, setUseCoupon] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       try {
         const token = await SecureStore.getItemAsync("token");
-        const res = await fetch(`${BASE_URL}/orders/${orderId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (!res.ok) {
+        const [orderRes, profileRes] = await Promise.all([
+          fetch(`${BASE_URL}/orders/${orderId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${BASE_URL}/profile`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
+        const data = await orderRes.json();
+        if (!orderRes.ok) {
           setError(data.message || "Couldn't load this order");
         } else {
           setOrder(data);
+        }
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          setCouponBalanceNGN(profileData?.user?.couponBalanceNGN || 0);
+          setCouponBalanceUSD(profileData?.user?.couponBalanceUSD || 0);
         }
       } catch {
         setError("Network error. Please try again.");
@@ -77,12 +91,19 @@ export default function OrderConfirm() {
     return "Vendor";
   };
 
+  // A coupon is only ever spent against an order in its OWN currency — 1
+  // coupon = 1 unit of that same currency, no conversion between balances.
+  const couponAvailable =
+    order?.currency === "NGN" ? couponBalanceNGN : order?.currency === "USD" ? couponBalanceUSD : 0;
+  const couponApplied = order ? Math.min(couponAvailable, order.total) : 0;
+  const payableAfterCoupon = order ? Math.max(0, order.total - couponApplied) : 0;
+
   const handleConfirmPay = async () => {
     if (!order || paying) return;
     if (!ensureOnline("pay for an order")) return;
     setPaying(true);
     try {
-      const result = await payForOrder(order._id);
+      const result = await payForOrder(order._id, useCoupon);
       if (result.success) {
         showSuccess("Payment complete", "Paid");
         // Back to the chat — its focus refresh flips the invoice card to Paid.
@@ -172,7 +193,7 @@ export default function OrderConfirm() {
               key={idx}
               style={[styles.itemRow, idx > 0 && styles.itemRowBorder]}
             >
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <View style={styles.itemNameRow}>
                   <Text style={styles.itemName}>{it.name}</Text>
                   {it.addedByVendor && (
@@ -181,12 +202,12 @@ export default function OrderConfirm() {
                     </View>
                   )}
                 </View>
-                <Text style={styles.itemQty}>
+                <Text style={styles.itemQty} numberOfLines={1}>
                   {money(it.priceSnapshot.amount)} × {it.quantity}
                   {it.note ? ` · ${it.note}` : ""}
                 </Text>
               </View>
-              <Text style={styles.itemAmount}>
+              <Text style={styles.itemAmount} numberOfLines={1}>
                 {money(it.priceSnapshot.amount * it.quantity)}
               </Text>
             </View>
@@ -199,21 +220,55 @@ export default function OrderConfirm() {
             <Text style={styles.totalLabel}>Subtotal</Text>
             <Text style={styles.totalValue}>{money(order.itemsSubtotal)}</Text>
           </View>
+          {/* fee.label is vendor-supplied free text and can run long — give it
+              the shrink room, not the amount. */}
           {order.additionalFees?.map((fee, idx) => (
             <View key={idx} style={styles.totalRow}>
-              <Text style={styles.totalLabel}>{fee.label}</Text>
-              <Text style={styles.totalValue}>{money(fee.amount)}</Text>
+              <Text style={styles.totalLabel} numberOfLines={1}>{fee.label}</Text>
+              <Text style={styles.totalValue} numberOfLines={1}>{money(fee.amount)}</Text>
             </View>
           ))}
           <View style={[styles.totalRow, styles.grandTotalRow]}>
             <Text style={styles.grandTotalLabel}>Total</Text>
-            <Text style={styles.grandTotalValue}>{money(order.total)}</Text>
+            <Text style={styles.grandTotalValue} numberOfLines={1}>{money(order.total)}</Text>
           </View>
         </View>
 
+        {payable && couponAvailable > 0 && (
+          <View style={[styles.card, styles.couponCard]}>
+            <View style={styles.couponRow}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.couponTitle}>Use my OurCityVibe credit</Text>
+                <Text style={styles.couponSubtitle} numberOfLines={2}>
+                  You have {money(couponAvailable)} available
+                  {couponApplied < order.total ? " — won't cover the full order" : ""}.
+                </Text>
+              </View>
+              <Switch
+                value={useCoupon}
+                onValueChange={setUseCoupon}
+                trackColor={{ true: colors.primary }}
+              />
+            </View>
+            {useCoupon && (
+              <View style={styles.couponBreakdown}>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Credit applied</Text>
+                  <Text style={styles.totalValue}>-{money(couponApplied)}</Text>
+                </View>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>You pay</Text>
+                  <Text style={styles.totalValue}>{money(payableAfterCoupon)}</Text>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+
         <Text style={styles.disclaimer}>
-          You'll be charged {money(order.total)} in {order.currency}. Amounts are
-          confirmed by the vendor and verified on our servers before payment.
+          You'll be charged {money(useCoupon ? payableAfterCoupon : order.total)} in{" "}
+          {order.currency}. Amounts are confirmed by the vendor and verified on our
+          servers before payment.
         </Text>
       </ScrollView>
 
@@ -237,7 +292,9 @@ export default function OrderConfirm() {
                 <>
                   <Ionicons name="lock-closed" size={16} color="#fff" />
                   <Text style={styles.payButtonText}>
-                    Confirm & Pay {money(order.total)}
+                    {useCoupon && payableAfterCoupon === 0
+                      ? "Confirm — Fully covered by credit"
+                      : `Confirm & Pay ${money(useCoupon ? payableAfterCoupon : order.total)}`}
                   </Text>
                 </>
               )}
@@ -336,12 +393,20 @@ const createStyles = (c: ThemeColors) =>
     itemQty: { fontSize: 13, fontFamily: Fonts.regular, color: c.textSecondary, marginTop: 3 },
     itemAmount: { fontSize: 15, fontFamily: Fonts.bold, color: c.text },
 
-    totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10 },
-    totalLabel: { fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary },
-    totalValue: { fontSize: 14, fontFamily: Fonts.medium, color: c.textBody },
+    totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, gap: 10 },
+    // flex+minWidth so a long vendor-supplied fee.label shrinks before the
+    // amount does; the amount itself stays fixed (flexShrink:0).
+    totalLabel: { flex: 1, minWidth: 0, fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary },
+    totalValue: { flexShrink: 0, fontSize: 14, fontFamily: Fonts.medium, color: c.textBody },
     grandTotalRow: { borderTopWidth: 1, borderTopColor: c.border, marginTop: 4, paddingTop: 14, paddingBottom: 14 },
     grandTotalLabel: { fontSize: 16, fontFamily: Fonts.bold, color: c.text },
-    grandTotalValue: { fontSize: 20, fontFamily: Fonts.bold, color: c.primary },
+    grandTotalValue: { flexShrink: 0, fontSize: 20, fontFamily: Fonts.bold, color: c.primary },
+
+    couponCard: { marginTop: 16, paddingVertical: 14 },
+    couponRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+    couponTitle: { fontSize: 14, fontFamily: Fonts.semiBold, color: c.text },
+    couponSubtitle: { fontSize: 12, fontFamily: Fonts.regular, color: c.textSecondary, marginTop: 2 },
+    couponBreakdown: { marginTop: 6, borderTopWidth: 1, borderTopColor: c.border },
 
     disclaimer: {
       fontSize: 12,

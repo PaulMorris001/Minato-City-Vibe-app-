@@ -6,6 +6,7 @@ import type { Chat } from "@/services/chat.service";
 import { capitalize } from "@/libs/helpers";
 import { chatParticipantName, chatParticipantAvatar } from "@/utils/chatDisplay";
 import { Avatar } from "@/components/shared/Avatar";
+import VerifiedBadge from "@/components/shared/VerifiedBadge";
 import { isVideoUrl } from "@/utils/media";
 import { isSupportUser } from "@/constants/support";
 
@@ -63,6 +64,7 @@ export default function ChatListItem({
         // Server-set; the bundled support id has drifted from the configured
         // one before, so don't recognise support from a client constant.
         isSupport: !!otherUser?.isSupport || isSupportUser(otherUser?._id),
+        verified: !!otherUser?.verified,
       };
     }
   };
@@ -87,6 +89,8 @@ export default function ChatListItem({
         return isVideoUrl(lastMessage.imageUrl) ? "🎥 Video" : "📷 Photo";
       case "event":
         return "📅 Event";
+      case "profile":
+        return "👤 Profile";
       case "system":
         return lastMessage.content || "";
       default:
@@ -143,6 +147,11 @@ export default function ChatListItem({
           >
             {capitalize(chatInfo.name)}
           </Text>
+          {!chatInfo.isSupport && chatInfo.verified && (
+            <View style={{ marginLeft: 4 }}>
+              <VerifiedBadge verified size={12} />
+            </View>
+          )}
           {chatInfo.isSupport && (
             <Ionicons
               name="checkmark-circle"

@@ -32,7 +32,8 @@ export function usePayment() {
     type: PurchaseType,
     id: string,
     tierId?: string,
-    discountCode?: string
+    discountCode?: string,
+    useCoupon?: boolean
   ): Promise<PaymentResult> => {
     const token = await SecureStore.getItemAsync("token");
     if (!token) return { success: false, error: "Not authenticated" };
@@ -40,7 +41,8 @@ export function usePayment() {
     // 1. Ask the server how to charge for this item. For tiered events the
     // tierId picks which server-known price applies — the server never trusts
     // a client-sent amount, and discount codes are validated and priced
-    // server-side too.
+    // server-side too. `useCoupon` asks the server to knock the buyer's
+    // OurCityVibe coupon balance off an order's total before charging.
     let init: any;
     try {
       const res = await fetch(`${BASE_URL}/payments/init/${type}/${id}`, {
@@ -49,6 +51,7 @@ export function usePayment() {
         body: JSON.stringify({
           ...(tierId ? { tierId } : {}),
           ...(discountCode ? { discountCode } : {}),
+          ...(useCoupon ? { useCoupon: true } : {}),
         }),
       });
       init = await res.json();
@@ -195,7 +198,8 @@ export function usePayment() {
     pay("ticket", eventId, tierId, discountCode);
   const payForGuide = (guideId: string) => pay("guide", guideId);
   const payForBooking = (bookingId: string) => pay("booking", bookingId);
-  const payForOrder = (orderId: string) => pay("order", orderId);
+  const payForOrder = (orderId: string, useCoupon?: boolean) =>
+    pay("order", orderId, undefined, undefined, useCoupon);
 
   return { payForTicket, payForGuide, payForBooking, payForOrder };
 }

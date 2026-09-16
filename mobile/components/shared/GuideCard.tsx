@@ -72,13 +72,13 @@ export default function GuideCard({
           </Text>
         )}
         <View style={styles.footer}>
-          <Text style={styles.price}>
+          <Text style={styles.price} numberOfLines={1}>
             {priceLabel(guide.price, guide.currency)}
           </Text>
           {guide.views != null && (
             <View style={styles.views}>
               <Ionicons name="eye-outline" size={13} color={colors.textDim} />
-              <Text style={styles.viewsText}>{guide.views}</Text>
+              <Text style={styles.viewsText} numberOfLines={1}>{guide.views}</Text>
             </View>
           )}
         </View>
@@ -105,10 +105,13 @@ const createStyles = (c: ThemeColors) =>
     footer: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
+      // Not space-between: with only two children that gives the price no
+      // room to shrink into before it collides with (or overflows past) the
+      // views count — flex:1 on price does that instead.
+      gap: 8,
       marginTop: 6,
     },
-    price: { fontSize: 14, fontFamily: Fonts.bold, color: c.primary },
-    views: { flexDirection: "row", alignItems: "center", gap: 4 },
+    price: { flex: 1, minWidth: 0, fontSize: 14, fontFamily: Fonts.bold, color: c.primary },
+    views: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 0 },
     viewsText: { fontSize: 12, fontFamily: Fonts.regular, color: c.textDim },
   });

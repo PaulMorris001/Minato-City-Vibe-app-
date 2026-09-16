@@ -129,7 +129,7 @@ export default function ExternalEventCard({ event, style }: ExternalEventCardPro
                   style={styles.priceBadge}
                 >
                   <Ionicons name="pricetag" size={12} color="#fff" />
-                  <Text style={styles.priceText}>{priceLine}</Text>
+                  <Text style={styles.priceText} numberOfLines={1}>{priceLine}</Text>
                 </LinearGradient>
               </View>
             )}
@@ -241,11 +241,18 @@ const createStyles = (c: ThemeColors) =>
     paddingVertical: 6,
     borderRadius: 12,
     gap: 6,
+    // A price range ("₦1,250,000 – ₦4,500,000") can run long — shrink and
+    // truncate (via priceText's numberOfLines) rather than relying solely on
+    // the card's own overflow:hidden, which would just clip it mid-digit.
+    flexShrink: 1,
+    minWidth: 0,
+    maxWidth: "100%",
   },
   priceText: {
     fontSize: scaleFontSize(15),
     fontFamily: Fonts.bold,
     color: c.white,
+    flexShrink: 1,
   },
   getTicketsButton: { marginTop: 4 },
   getTicketsGradient: {

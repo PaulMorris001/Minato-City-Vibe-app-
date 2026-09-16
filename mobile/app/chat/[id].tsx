@@ -36,6 +36,7 @@ import ReportBlockSheet from "@/components/shared/ReportBlockSheet";
 import ZoomableImage from "@/components/shared/ZoomableImage";
 import ChatInput from "@/components/chat/ChatInput";
 import { Avatar } from "@/components/shared/Avatar";
+import VerifiedBadge from "@/components/shared/VerifiedBadge";
 import chatService, { Message, Chat, MessageReaction } from "@/services/chat.service";
 import followService, { FollowUser } from "@/services/follow.service";
 import socketService from "@/services/socket.service";
@@ -288,6 +289,11 @@ export default function ChatScreen() {
     // chat in SQLite: an already-visited conversation opens with its history
     // on screen before a single byte moves, instead of a spinner.
     const cached = await chatService.getCachedMessages(id, { limit: PAGE_SIZE });
+    // Paint the header from the local store too — the render now gates on
+    // `!chat`, and this keeps a previously-visited thread usable offline when
+    // the GET /chats/:id refresh below can't complete.
+    const cachedChat = await chatService.getCachedChatById(id);
+    if (cachedChat) setChat(cachedChat);
     if (cached.length) {
       setMessages(cached);
       oldestCursorRef.current = new Date(cached[0].createdAt).getTime();
@@ -315,7 +321,21 @@ export default function ChatScreen() {
     };
 
     try {
-      const c = await chatService.getChatById(id);
+      // A chat we just created (support especially — openSupportChat POSTs then
+      // navigates straight here) can briefly 404 on this read while the write
+      // propagates / the list cache is invalidated. One short retry covers that
+      // window without turning a genuinely-missing chat into a long hang.
+      let c: Chat;
+      try {
+        c = await chatService.getChatById(id);
+      } catch (firstErr: any) {
+        if (firstErr?.status === 404 && !cached.length) {
+          await new Promise((r) => setTimeout(r, 500));
+          c = await chatService.getChatById(id);
+        } else {
+          throw firstErr;
+        }
+      }
       setChat(c);
 
       const newest = cached.length ? await newestCreatedAt(id) : null;
@@ -376,9 +396,11 @@ export default function ChatScreen() {
         else router.replace("/messages");
         return;
       }
-      // Already showing saved history — a dead network is not worth an alert
-      // over a screen the user can read perfectly well.
-      if (cached.length) {
+      // Already showing saved history AND we have a chat header to frame it —
+      // a dead network isn't worth an alert over a screen the user can read
+      // perfectly well. Without a cached chat there's no usable header, so fall
+      // through to the recovery below instead of a permanent spinner.
+      if (cached.length && cachedChat) {
         console.warn("Chat sync failed, showing local history:", error?.message);
         return;
       }
@@ -387,6 +409,12 @@ export default function ChatScreen() {
       // so we can diagnose "Failed to open chat" reports from real devices.
       const detail = error?.message ? `\n\n${error.message}` : "";
       Alert.alert("Couldn't open chat", `We couldn't load this conversation.${detail}`);
+      // No cached history and the fetch failed — `chat` stays null, and the
+      // render now gates on that, so there's nothing to show. Route back to the
+      // inbox rather than stranding the user on a permanent spinner.
+      if (router.canGoBack()) router.back();
+      else router.replace("/messages");
+      return;
     } finally {
       setLoading(false);
       initialLoadRef.current = false;
@@ -1674,7 +1702,11 @@ export default function ChatScreen() {
   const isMuted = !!(chat && (chat.isMuted as any)?.[currentUserId]);
   const eventRef = chat?.event;
 
-  if (loading) {
+  // `!chat` gates the same as `loading` on purpose: on the error/slow path
+  // `loading` can flip false with the chat still unresolved, which used to
+  // flash a half-drawn header + empty body (most visible opening support,
+  // which usually has no cached messages to paint first).
+  if (loading || !chat) {
     return (
       <View style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -1720,6 +1752,9 @@ export default function ChatScreen() {
                       size={15}
                       color={colors.info}
                     />
+                  )}
+                  {!isGroup && !isSupportChat && otherParticipant?.verified && (
+                    <VerifiedBadge verified size={15} />
                   )}
                 </View>
                 {isSupportChat ? (

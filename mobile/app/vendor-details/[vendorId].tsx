@@ -508,27 +508,6 @@ export default function VendorDetails() {
         </View>
       </PressScale>
 
-      {/* Lives in the header rather than the about card's social row: that row
-          only renders when the vendor has a description or social links, so a
-          bare profile would otherwise offer no way to get in touch. */}
-      {canMessageVendor && (
-        <PressScale
-          style={styles.messageButton}
-          onPress={handleMessageVendor}
-          disabled={openingChat}
-          accessibilityRole="button"
-          accessibilityLabel={`Message ${vName}`}
-        >
-          {openingChat ? (
-            <ActivityIndicator size="small" color={Brand.teal} />
-          ) : (
-            <>
-              <Ionicons name="chatbubble-ellipses-outline" size={16} color={Brand.teal} />
-              <Text style={styles.messageButtonText}>Message</Text>
-            </>
-          )}
-        </PressScale>
-      )}
     </View>
   );
 
@@ -614,6 +593,28 @@ export default function VendorDetails() {
               </View>
             )}
           </View>
+        )}
+
+        {/* Not gated on hasAbout: a vendor with no description or social links
+            still needs a way to be reached. */}
+        {canMessageVendor && (
+          <TouchableOpacity
+            style={styles.inquiryButton}
+            onPress={handleMessageVendor}
+            disabled={openingChat}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={`Message ${vName}`}
+          >
+            {openingChat ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="chatbubble-ellipses-outline" size={18} color="#fff" />
+                <Text style={styles.inquiryButtonText}>Make an inquiry</Text>
+              </>
+            )}
+          </TouchableOpacity>
         )}
 
         <View style={{ height: 20 }} />
@@ -899,11 +900,11 @@ function CartBar({
           end={Brand.gradientEnd}
           style={styles.cartBarInner}
         >
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cartBarText}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.cartBarText} numberOfLines={1}>
               {count} {count === 1 ? "service" : "services"} in cart
             </Text>
-            <Text style={styles.cartBarTotal}>{total}</Text>
+            <Text style={styles.cartBarTotal} numberOfLines={1}>{total}</Text>
           </View>
           <View style={styles.cartBarPill}>
             <Text style={styles.cartBarPillText}>View cart</Text>
@@ -964,23 +965,21 @@ const createStyles = (t: ServicesTokens) =>
       alignItems: "center",
       gap: 5,
     },
-    messageButton: {
+    inquiryButton: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
-      gap: 6,
-      minWidth: 104,
-      paddingHorizontal: 12,
-      paddingVertical: 9,
-      borderRadius: Radii.pill,
-      borderWidth: 1,
-      borderColor: Brand.teal,
-      backgroundColor: t.card2,
+      gap: 8,
+      marginHorizontal: 16,
+      marginTop: 12,
+      paddingVertical: 13,
+      borderRadius: Radii.row,
+      backgroundColor: Brand.teal,
     },
-    messageButtonText: {
-      fontSize: 13,
+    inquiryButtonText: {
+      fontSize: 14,
       fontFamily: Fonts.semiBold,
-      color: Brand.teal,
+      color: "#fff",
     },
     vendorName: {
       flexShrink: 1,
@@ -1303,6 +1302,7 @@ const createStyles = (t: ServicesTokens) =>
       alignItems: "center",
       gap: 8,
       paddingHorizontal: 18,
+      flexShrink: 0,
       borderRadius: Radii.thumb,
       backgroundColor: "rgba(11,8,19,0.28)",
     },

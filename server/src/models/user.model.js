@@ -158,10 +158,53 @@ const userSchema = mongoose.Schema({
   // it, and it's where they live rather than where they're looking for events.
   pushCity: { type: String, default: null },
 
+  // OurCityVibe credit balances — 1 unit = 1 unit of that same currency (₦1
+  // in Nigeria, $1 elsewhere). Kept as two separate balances, not one
+  // converted total: credit is only ever spent against an order priced in
+  // its own currency, so there's no exchange rate between them to get wrong.
+  // Credited when a Birthday Raffle prize carries a coupon value (see
+  // raffleCampaign.model.js's prizeSchema and admin.controller.js's
+  // setRaffleWinner); spent at checkout against any vendor order in that
+  // currency (see services/payments/coupon.service.js). Never negative in
+  // steady state — reservations are only ever for an amount already on the
+  // balance — but stored as a plain Number rather than unsigned so a manual
+  // admin correction can't be rejected by the schema.
+  couponBalanceNGN: { type: Number, default: 0 },
+  couponBalanceUSD: { type: Number, default: 0 },
+  // When each balance was last touched (awarded, spent, refunded, or expired)
+  // — jobs/couponExpiration.job.js sweeps a balance to 0 once its timestamp is
+  // 30+ days old, so unused credit doesn't sit on the books forever. Null
+  // means the balance has never been touched and isn't on an expiry
+  // countdown; every write to the balance above sets this in the same
+  // operation, so the two never drift apart.
+  couponBalanceNGNUpdatedAt: { type: Date, default: null },
+  couponBalanceUSDUpdatedAt: { type: Date, default: null },
+  // Which vendor (a user with isVendor:true) each balance is redeemable at —
+  // set from raffleCampaign.model.js's vendorNGN/vendorUSD the moment credit
+  // is awarded (see coupon.service.js's setCouponVendorLock, called from
+  // admin.controller.js's reconcileWinnerCoupon). Null means the balance is
+  // spendable at any vendor — the case for a campaign with no vendor
+  // assigned, or a balance earned before this field existed. Simplest model:
+  // one lock per currency, not a per-award ledger — winning a later campaign
+  // with a different assigned vendor overwrites the lock, even over any
+  // leftover balance from an earlier win. That's a deliberate simplification
+  // for a rare edge case (winning twice within the same ~30-day window), not
+  // an oversight.
+  couponVendorNGN: { type: mongoose.Schema.Types.ObjectId, ref: "user", default: null },
+  couponVendorUSD: { type: mongoose.Schema.Types.ObjectId, ref: "user", default: null },
+
   // Email/push channel preferences. Push follows the OS permission; these
   // cover the channels we control. Default on — users opt out, not in.
+  // The category flags gate push delivery per notification type (see the
+  // type→prefKey map in services/notification.service.js); the in-app
+  // Notification record is always written regardless.
   notificationPrefs: {
     eventReminderEmails: { type: Boolean, default: true },
+    newFollowers: { type: Boolean, default: true },
+    messages: { type: Boolean, default: true },
+    eventUpdates: { type: Boolean, default: true },
+    sales: { type: Boolean, default: true },
+    payouts: { type: Boolean, default: true },
   },
   // Minted the first time we email this user, so the reminder footer can carry
   // a one-click unsubscribe that needs no login.

@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Linking,
   Platform,
-  Switch,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect, useNavigation } from "expo-router";
@@ -25,6 +24,7 @@ import {
   payoutCountryKnown,
   payoutOnboardingRoute,
   payoutUnavailableMessage,
+  formatMoney,
 } from "@/constants/payments";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { getAddressFromCurrentPosition } from "@/hooks/useLocation";
@@ -73,21 +73,34 @@ export default function SettingsScreen() {
     isVendor: false,
     emailVerifiedAt: null as string | null,
     country: "",
+    couponBalanceNGN: 0,
+    couponBalanceUSD: 0,
   });
-  // Reminder emails are opt-out, so the switch starts on until the profile says
-  // otherwise. `savingReminders` blocks a double-tap while the PUT is in flight.
-  const [eventReminderEmails, setEventReminderEmails] = useState(true);
   // Device-level push permission. registerForPushNotifications() returns
   // silently when it's denied, so without surfacing it here a user has no way
-  // to find out why nothing is arriving.
+  // to find out why nothing is arriving. Category/channel preferences (which
+  // notifications, email vs push) are a separate concern — see
+  // notification-settings.tsx, linked from the Preferences section below.
   const [pushStatus, setPushStatus] = useState<"granted" | "denied" | "undetermined">("granted");
-  const [savingReminders, setSavingReminders] = useState(false);
 
   // Onboarding screen for whichever rail settles this user, or null when no rail
   // reaches their country (they can still publish free listings).
   const payoutRoute = payoutOnboardingRoute(user.country);
 
   const [clearingLocalData, setClearingLocalData] = useState(false);
+  // Opening support hits the network (create-or-resume the thread) before it can
+  // navigate — without this the row just sits dead on tap.
+  const [openingSupport, setOpeningSupport] = useState(false);
+
+  const handleContactSupport = async () => {
+    if (openingSupport) return;
+    setOpeningSupport(true);
+    try {
+      await openSupportChat();
+    } finally {
+      setOpeningSupport(false);
+    }
+  };
 
   // Fetches on mount and again every time the screen regains focus (e.g.
   // returning from /verify-email, /earnings, /blocked-users) so state stays
@@ -204,10 +217,9 @@ export default function SettingsScreen() {
         isVendor: userData.isVendor || false,
         emailVerifiedAt: userData.emailVerifiedAt || null,
         country: userData.location?.country || "",
+        couponBalanceNGN: userData.couponBalanceNGN || 0,
+        couponBalanceUSD: userData.couponBalanceUSD || 0,
       });
-      setEventReminderEmails(
-        userData.notificationPrefs?.eventReminderEmails !== false
-      );
       if (userData.location?.country) {
         setLocation({
           country: userData.location.country,
@@ -221,25 +233,6 @@ export default function SettingsScreen() {
     } finally {
       setLoading(false);
       hasLoadedOnceRef.current = true;
-    }
-  };
-
-  /** Optimistic toggle — reverts if the server rejects the change. */
-  const handleToggleReminderEmails = async (value: boolean) => {
-    setEventReminderEmails(value);
-    setSavingReminders(true);
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      await axios.put(
-        `${BASE_URL}/notifications/preferences`,
-        { eventReminderEmails: value },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-    } catch {
-      setEventReminderEmails(!value);
-      showError("Couldn't update your email preference. Please try again.");
-    } finally {
-      setSavingReminders(false);
     }
   };
 
@@ -394,6 +387,29 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {(user.couponBalanceNGN > 0 || user.couponBalanceUSD > 0) && (
+          <View style={[styles.infoRow, { borderBottomWidth: 0, marginBottom: 4 }]}>
+            <View style={styles.infoIconContainer}>
+              <Ionicons name="pricetag-outline" size={20} color={Colors.primary} />
+            </View>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoLabel}>OurCityVibe Credit</Text>
+              <Text style={styles.infoValue}>
+                {[
+                  user.couponBalanceNGN > 0 ? formatMoney(user.couponBalanceNGN, "NGN") : null,
+                  user.couponBalanceUSD > 0 ? formatMoney(user.couponBalanceUSD, "USD") : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}{" "}
+                <Text style={styles.infoSubvalue}>
+                  · use at checkout with a vendor pricing in that currency — expires if unused
+                  for 30 days
+                </Text>
+              </Text>
+            </View>
+          </View>
+        )}
+
         <TouchableOpacity
           style={[
             styles.switchAccountButton,
@@ -497,51 +513,27 @@ export default function SettingsScreen() {
         )}
       </View>
 
-      {/* Notification channels */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notifications</Text>
-        <Text style={styles.sectionDescription}>
-          Push notifications follow your device settings. These control what we
-          send to your inbox.
-        </Text>
-
-        {pushStatus !== "granted" && (
-          <TouchableOpacity
-            style={styles.pushOffRow}
-            activeOpacity={0.85}
-            onPress={handleEnablePush}
-          >
-            <Ionicons name="notifications-off-outline" size={22} color={colors.warning} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.pushOffTitle}>Push notifications are off</Text>
-              <Text style={styles.pushOffHint}>
-                You won't get messages, ticket sales or support replies on this device. Tap to turn
-                them on.
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-        )}
-
-        <View style={[styles.preferenceItem, { borderBottomWidth: 0 }]}>
-          <View style={[styles.preferenceLeft, { flex: 1, paddingRight: 12 }]}>
-            <Ionicons name="mail-outline" size={22} color={Colors.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.preferenceText}>Event reminder emails</Text>
-              <Text style={styles.reminderHint}>
-                {"A reminder the day before an event you're going to."}
-              </Text>
-            </View>
+      {/* Push notifications off — device-level, surfaced immediately since it
+          silently explains "why am I not getting anything". Channel/category
+          preferences (which notifications, email vs push) live on their own
+          screen — see the "Notifications" row in Preferences below. */}
+      {pushStatus !== "granted" && (
+        <TouchableOpacity
+          style={styles.pushOffRow}
+          activeOpacity={0.85}
+          onPress={handleEnablePush}
+        >
+          <Ionicons name="notifications-off-outline" size={22} color={colors.warning} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.pushOffTitle}>Push notifications are off</Text>
+            <Text style={styles.pushOffHint}>
+              You won't get messages, ticket sales or support replies on this device. Tap to turn
+              them on.
+            </Text>
           </View>
-          <Switch
-            value={eventReminderEmails}
-            onValueChange={handleToggleReminderEmails}
-            disabled={savingReminders}
-            trackColor={{ false: colors.borderMuted, true: Colors.primary }}
-            thumbColor="#fff"
-          />
-        </View>
-      </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </TouchableOpacity>
+      )}
 
       {/* Email Verification status */}
       <View style={styles.section}>
@@ -629,13 +621,18 @@ export default function SettingsScreen() {
 
           <TouchableOpacity
             style={[styles.preferenceItem, { borderBottomWidth: 0 }]}
-            onPress={() => openSupportChat()}
+            onPress={handleContactSupport}
+            disabled={openingSupport}
           >
             <View style={styles.preferenceLeft}>
               <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.textBody} />
               <Text style={styles.preferenceText}>Contact Support</Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            {openingSupport ? (
+              <ActivityIndicator size="small" color={colors.textMuted} />
+            ) : (
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            )}
           </TouchableOpacity>
         </View>
       )}
@@ -677,7 +674,7 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.preferenceItem} onPress={() => router.push("/notifications" as any)}>
+        <TouchableOpacity style={styles.preferenceItem} onPress={() => router.push("/notification-settings" as any)}>
           <View style={styles.preferenceLeft}>
             <Ionicons name="notifications-outline" size={22} color={colors.textBody} />
             <Text style={styles.preferenceText}>Notifications</Text>
@@ -773,13 +770,13 @@ const createStyles = (c: ThemeColors) =>
     padding: 4,
   },
   headerTitle: {
-    fontSize: 32,
+    fontSize: 22,
     fontFamily: Fonts.bold,
     color: c.text,
-    marginBottom: 8,
+    marginBottom: 3,
   },
   headerSubtitle: {
-    fontSize: 16,
+    fontSize: 13,
     fontFamily: Fonts.regular,
     color: c.textSecondary,
   },
@@ -793,7 +790,7 @@ const createStyles = (c: ThemeColors) =>
     borderColor: c.border,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 16,
     fontFamily: Fonts.bold,
     color: c.text,
     marginBottom: 8,
@@ -897,7 +894,11 @@ const createStyles = (c: ThemeColors) =>
     borderColor: c.warning,
     borderRadius: 12,
     padding: 14,
-    marginBottom: 12,
+    // Standalone card now (not nested in a `section`, which supplied this
+    // before) — matches `section`'s own marginHorizontal/marginBottom so it
+    // lines up with the rest of the page.
+    marginHorizontal: 16,
+    marginBottom: 16,
   },
   pushOffTitle: {
     fontSize: 14,

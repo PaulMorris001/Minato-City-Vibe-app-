@@ -316,11 +316,10 @@ export default function VendorLayout() {
         ]}
       >
         <View style={styles.navLeft}>
-          <Text style={styles.logoText}>OurCityvibe</Text>
-          <View style={styles.badge}>
-            <Ionicons name="briefcase" size={11} color={colors.primaryLight} />
-            <Text style={styles.badgeText}>VENDOR</Text>
-          </View>
+          {/* The "VENDOR" badge that used to sit here moved to the dashboard's
+              greeting, next to "Welcome back" — it was one more thing
+              competing with navRight's icons for room on a narrow phone. */}
+          <Text style={styles.logoText} numberOfLines={1}>OurCityvibe</Text>
         </View>
         <View style={styles.navRight}>
           {cart.count > 0 && (
@@ -541,11 +540,18 @@ const createStyles = (c: ThemeColors) =>
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    // Shrinks first (the logo truncates) so navRight's tap targets never
+    // have to — on a narrow phone the two used to just add up past the
+    // screen width, pushing the notification icon off-screen entirely.
+    flex: 1,
+    minWidth: 0,
+    marginRight: 8,
   },
   navRight: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    flexShrink: 0,
   },
   iconButton: {
     width: 34,
@@ -579,23 +585,7 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 22,
     color: c.primaryLight,
     letterSpacing: -0.6,
-  },
-  badge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: c.primaryFadedStrong,
-    borderWidth: 1,
-    borderColor: "rgba(192,132,252,0.35)",
-  },
-  badgeText: {
-    color: c.primaryLight,
-    fontSize: 10.5,
-    fontFamily: Fonts.bold,
-    letterSpacing: 0.8,
+    flexShrink: 1,
   },
   profileButton: {
     borderRadius: 20,

@@ -15,7 +15,8 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
-import { GUIDE_TOPICS, GuideSection, Guide, LocationSelection } from "@/libs/interfaces";
+import { GuideSection, Guide, LocationSelection } from "@/libs/interfaces";
+import { useGuideTopics } from "@/hooks/useGuideTopics";
 import { LocationPicker, ImagePickerButton } from "@/components/shared";
 import { resolveImageUrls } from "@/utils/imageUpload";
 import { sectionMedia, MAX_MEDIA_ITEMS } from "@/utils/media";
@@ -30,6 +31,7 @@ import GlassBackButton from "@/components/shared/GlassBackButton";
 export default function CreateGuidePage() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const { topicNames } = useGuideTopics();
   const [guide, setGuide] = useState<Guide>();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -355,7 +357,7 @@ export default function CreateGuidePage() {
           {showTopicDropdown && (
             <View style={styles.dropdown}>
               <ScrollView style={styles.dropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                {GUIDE_TOPICS.map((t) => (
+                {topicNames.map((t) => (
                   <TouchableOpacity
                     key={t}
                     style={[styles.dropdownItem, topic === t && styles.dropdownItemSelected]}

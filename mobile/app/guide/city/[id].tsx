@@ -12,7 +12,8 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
-import { Guide, GUIDE_TOPICS } from "@/libs/interfaces";
+import { Guide } from "@/libs/interfaces";
+import { useGuideTopics } from "@/hooks/useGuideTopics";
 import { Colors } from "@/constants/colors";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
@@ -32,6 +33,7 @@ export default function CityGuidesPage() {
     state?: string;
     country?: string;
   }>();
+  const { topicNames } = useGuideTopics();
 
   const [guides, setGuides] = useState<Guide[]>([]);
   const [filteredGuides, setFilteredGuides] = useState<Guide[]>([]);
@@ -257,7 +259,7 @@ export default function CityGuidesPage() {
         <Text style={styles.sectionTitle}>Filter by Topic</Text>
         <FlatList
           horizontal
-          data={GUIDE_TOPICS}
+          data={topicNames}
           keyExtractor={(item) => item}
           renderItem={renderTopicFilter}
           showsHorizontalScrollIndicator={false}

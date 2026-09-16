@@ -650,9 +650,14 @@ export async function updateVendorProfile(req, res) {
 // Get current user profile
 export async function getProfile(req, res) {
   try {
-    const user = await User.findById(req.user.id).select(
-      "-password -resetPasswordOTP -resetPasswordOTPExpires -resetPasswordToken -resetPasswordTokenExpires -signupOTP -signupOTPExpires"
-    );
+    const user = await User.findById(req.user.id)
+      .select(
+        "-password -resetPasswordOTP -resetPasswordOTPExpires -resetPasswordToken -resetPasswordTokenExpires -signupOTP -signupOTPExpires"
+      )
+      // So the Wallet & Rewards screen can name which vendor each credit
+      // balance is locked to (see coupon.service.js's couponVendorNGN/USD).
+      .populate("couponVendorNGN", "username businessName")
+      .populate("couponVendorUSD", "username businessName");
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });

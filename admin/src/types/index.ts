@@ -26,6 +26,13 @@ export interface VendorType {
   icon: string;
 }
 
+export interface GuideTopic {
+  _id: string;
+  name: string;
+  emoji?: string;
+  createdAt?: string;
+}
+
 export interface AdminVendor {
   _id: string;
   name: string;
@@ -125,18 +132,47 @@ export interface AdminRaffleEntry {
   title: string;
   date: string;
   createdAt: string;
-  host: { _id: string; username: string; email: string; profilePicture?: string } | null;
+  host: {
+    _id: string;
+    username: string;
+    email: string;
+    profilePicture?: string;
+    // So the admin can sanity-check a winner's location before assigning
+    // them a NGN/USD-locked vendor prize.
+    location?: { country?: string; state?: string; city?: string };
+  } | null;
   // rsvpUsers count — the live "going" toggle, not the one-way invited list.
   verifiedRsvps: number;
   totalInvites: number;
   eligibilityScore: number;
+  // Whether this host has cleared the campaign's minReferrals bar. Informational
+  // only — the server doesn't block assigning a place to an ineligible entry.
+  isEligible: boolean;
   // 1..N where N is the campaign's prize-tier count.
   winnerRank: number | null;
 }
 
 export interface RafflePrize {
   rank: number;
-  reward: string;
+  // There is no cash prize — the coupon amount IS the reward, in OurCityVibe
+  // credit (1 credit = ₦1 = $1, no exchange rate between the two). A tier
+  // needs a value in Naira, Dollars, or both.
+  couponNGN?: number;
+  couponUSD?: number;
+  // Optional, region-agnostic non-cash bonus shown alongside the coupon
+  // amount (e.g. "Premium Event Pass").
+  extraPerk?: string;
+}
+
+// The vendor a currency's credit is redeemable at — a user account with
+// isVendor:true, populated by the server wherever a campaign is returned.
+export interface AssignedVendor {
+  _id: string;
+  username: string;
+  businessName?: string;
+  businessPicture?: string;
+  profilePicture?: string;
+  location?: { country?: string };
 }
 
 export interface AdminRaffleCampaign {
@@ -149,6 +185,13 @@ export interface AdminRaffleCampaign {
   status: "active" | "ended";
   // Ordered prize tiers; length is the winner count.
   prizes: RafflePrize[];
+  // Verified RSVPs a birthday event needs before its host is prize-eligible.
+  // No ceiling — ranking is by highest verified RSVPs, so more always helps.
+  minReferrals: number;
+  // The vendor each currency's credit is redeemable at — null/absent means
+  // spendable at any vendor.
+  vendorNGN?: AssignedVendor | null;
+  vendorUSD?: AssignedVendor | null;
   createdByAdmin?: string;
   createdAt?: string;
   updatedAt?: string;

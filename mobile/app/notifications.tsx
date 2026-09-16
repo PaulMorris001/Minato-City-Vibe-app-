@@ -62,6 +62,7 @@ function notifIcon(type: string) {
     case "verification_approved": return "shield-checkmark";
     case "verification_rejected": return "shield-outline";
     case "discount_code_created": return "pricetag";
+    case "raffle_winner": return "trophy";
     // Money on its way vs money that needs the seller to do something. The
     // second group is deliberately an alert icon — these are the ones a seller
     // must act on to actually get paid.
@@ -210,6 +211,9 @@ export default function NotificationsScreen() {
       case "verification_rejected":
         router.push("/profile" as any);
         break;
+      case "raffle_winner":
+        router.push("/birthday-raffle/status" as any);
+        break;
     }
   };
 
@@ -289,13 +293,13 @@ const createStyles = (c: ThemeColors) =>
     paddingBottom: 20,
     paddingHorizontal: getResponsivePadding(),
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     gap: 12,
   },
-  backButton: { padding: 4, marginBottom: 2 },
+  backButton: { padding: 4 },
   headerContent: { flex: 1 },
   headerTitle: {
-    fontSize: scaleFontSize(26),
+    fontSize: scaleFontSize(22),
     fontFamily: Fonts.bold,
     color: c.text,
   },
@@ -305,7 +309,7 @@ const createStyles = (c: ThemeColors) =>
     color: c.primary,
     marginTop: 2,
   },
-  markAllBtn: { paddingBottom: 4 },
+  markAllBtn: {},
   markAllText: {
     fontSize: scaleFontSize(13),
     fontFamily: Fonts.medium,
@@ -314,7 +318,7 @@ const createStyles = (c: ThemeColors) =>
   list: { padding: getResponsivePadding(), gap: 8, paddingBottom: 40 },
   notifItem: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     backgroundColor: c.card,
     borderRadius: 14,
     padding: 14,

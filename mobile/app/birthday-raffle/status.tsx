@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
 import * as Clipboard from "expo-clipboard";
@@ -22,6 +23,14 @@ import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { createEventShareLink } from "@/utils/shareLinks";
 import { useCountdown } from "@/hooks/useCountdown";
+import { formatMoney } from "@/constants/payments";
+import RaffleWinnerPopup, { type RaffleStatusLike } from "@/components/shared/RaffleWinnerPopup";
+
+const ordinal = (n: number) => {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+};
 
 interface RaffleStatus {
   eventTitle: string;
@@ -32,7 +41,16 @@ interface RaffleStatus {
   eligibilityScore: number;
   isEligible: boolean;
   status: "active" | "eligible" | "ineligible" | "winner";
+  winnerRank: number | null;
   campaignDeadlineMs: number;
+  // Verified RSVPs needed to be prize-eligible — admin-controlled, current
+  // default is 6. Drives the progress bar below.
+  minReferrals: number;
+  // True when this entry's birthday month has no admin-created campaign
+  // yet — it's registered and waiting, not actively competing. Can happen
+  // for any birthday up to 6 months out (see birthdayRaffleDateError on the
+  // server); becomes false the moment that month's campaign is created.
+  pending: boolean;
 }
 
 export default function RaffleStatusScreen() {
@@ -43,6 +61,11 @@ export default function RaffleStatusScreen() {
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<RaffleStatus | null>(null);
+  // Raw /raffle/status payload, handed to <RaffleWinnerPopup> as-is — the
+  // winner_raffle push notification deep-links straight to this screen (not
+  // the landing page), so this screen needs the same popup, not just its own
+  // typed-down `status` above.
+  const [statusData, setStatusData] = useState<RaffleStatusLike | null>(null);
   const countdown = useCountdown(status?.campaignDeadlineMs ?? null);
 
   const loadStatus = async () => {
@@ -64,8 +87,12 @@ export default function RaffleStatusScreen() {
           eligibilityScore: data.eligibilityScore,
           isEligible: data.isEligible,
           status: data.status,
+          winnerRank: data.winnerRank ?? null,
           campaignDeadlineMs: new Date(data.campaignDeadline).getTime(),
+          minReferrals: typeof data.minReferrals === "number" ? data.minReferrals : 6,
+          pending: !!data.pending,
         });
+        setStatusData(data);
       } else if (!status) {
         // No qualifying event on the very first load (or the fetch failed) —
         // nothing to show here. A failed refresh on a later focus just keeps
@@ -120,10 +147,17 @@ export default function RaffleStatusScreen() {
     );
   }
 
+  // Math.max(1, …) guards a campaign configured with minReferrals: 0 (always
+  // eligible) from a divide-by-zero — the bar just reads full immediately.
   const progressPercent = Math.min(
-    (status.verifiedRsvps / 10) * 100, // example target of 10 for full bar
+    (status.verifiedRsvps / Math.max(1, status.minReferrals)) * 100,
     100
   );
+  const referralsRemaining = Math.max(0, status.minReferrals - status.verifiedRsvps);
+  const isWinner = status.status === "winner" && !!status.winnerRank;
+  const winningTier = isWinner
+    ? statusData?.prizes?.find((p) => p.rank === status.winnerRank)
+    : undefined;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -147,10 +181,15 @@ export default function RaffleStatusScreen() {
           { paddingBottom: insets.bottom + 40 },
         ]}
       >
-        {/* Status Hero */}
+        {/* Status Hero — a winner keeps a permanent gold "WINNER" badge and
+            prize line here even after the one-time congratulations popup
+            (RaffleWinnerPopup) has been dismissed, so checking back later
+            still shows they won, not just "eligible". */}
         <LinearGradient
           colors={
-            status.isEligible
+            isWinner
+              ? ["#2D1B69", "#B8860B"]
+              : status.isEligible
               ? ["#2D1B69", colors.primaryDark || "#1a0f3d"]
               : [colors.card, colors.cardAlt]
           }
@@ -158,16 +197,39 @@ export default function RaffleStatusScreen() {
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          <View style={styles.statusBadge}>
+          <View style={[styles.statusBadge, isWinner && styles.winnerBadge]}>
             <Ionicons
-              name={status.isEligible ? "checkmark-circle" : "time"}
+              name={isWinner ? "trophy" : status.pending ? "hourglass" : status.isEligible ? "checkmark-circle" : "time"}
               size={14}
-              color="#fff"
+              color={isWinner ? "#3D2900" : "#fff"}
             />
-            <Text style={styles.statusBadgeText}>
-              {status.isEligible ? "ELIGIBLE" : "IN PROGRESS"}
+            <Text style={[styles.statusBadgeText, isWinner && styles.winnerBadgeText]}>
+              {isWinner
+                ? `${ordinal(status.winnerRank!)} PLACE WINNER`
+                : status.pending
+                ? "PENDING"
+                : status.isEligible
+                ? "ELIGIBLE"
+                : "IN PROGRESS"}
             </Text>
           </View>
+
+          {status.pending && !isWinner && (
+            <Text style={styles.winnerPrizeLine}>
+              Registered — this month&apos;s batch has not opened yet. You will start
+              competing automatically once it does.
+            </Text>
+          )}
+
+          {isWinner && (
+            <Text style={styles.winnerPrizeLine}>
+              🎉{" "}
+              {winningTier?.couponAmount
+                ? `${formatMoney(winningTier.couponAmount, winningTier.couponCurrency || "NGN")} OurCityVibe credit`
+                : "You won a prize"}
+              {winningTier?.extraPerk ? ` + ${winningTier.extraPerk}` : ""} — check your Wallet & Rewards
+            </Text>
+          )}
 
           <Text style={styles.heroTitle}>{status.eventTitle}</Text>
           <Text style={styles.heroDate}>
@@ -179,16 +241,49 @@ export default function RaffleStatusScreen() {
             })}
           </Text>
 
-          {/* Under a weighted random draw the score IS the entry count, so it
-              has to be labelled as one — calling it a "score" implies the
-              highest number wins, which is not how the draw works. */}
+          {/* Winners are ranked by verified RSVPs (highest wins), so calling
+              this a "score" is now accurate — see drawRaffleWinners in
+              admin.controller.js. */}
           <View style={styles.scoreRow}>
-            <Text style={styles.scoreLabel}>
-              {status.eligibilityScore === 1 ? "Entry in the draw" : "Entries in the draw"}
-            </Text>
+            <Text style={styles.scoreLabel}>Engagement score</Text>
             <Text style={styles.scoreValue}>{status.eligibilityScore}</Text>
           </View>
         </LinearGradient>
+
+        {/* Redeem-at vendor — only present when the campaign assigned one
+            for this viewer's currency; no assignment means spendable at any
+            vendor, so there's nothing to link to. Needs `vendorId` (their
+            separate listing doc), not `_id` (their user account) —
+            /vendor-details looks up by the former. */}
+        {!!statusData?.vendor?.vendorId && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Redeem your credit at</Text>
+            <TouchableOpacity
+              style={styles.vendorCard}
+              activeOpacity={0.85}
+              onPress={() => router.push(`/vendor-details/${statusData.vendor!.vendorId}` as any)}
+            >
+              <View style={styles.vendorAvatarWrap}>
+                {statusData.vendor.businessPicture || statusData.vendor.profilePicture ? (
+                  <Image
+                    source={{ uri: statusData.vendor.businessPicture || statusData.vendor.profilePicture }}
+                    style={styles.vendorAvatar}
+                    contentFit="cover"
+                  />
+                ) : (
+                  <Ionicons name="storefront" size={22} color={colors.primary} />
+                )}
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.vendorName} numberOfLines={1}>
+                  {statusData.vendor.businessName || statusData.vendor.username}
+                </Text>
+                <Text style={styles.vendorHint}>Tap to view this vendor</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Stats Cards */}
         <View style={styles.statsRow}>
@@ -231,7 +326,7 @@ export default function RaffleStatusScreen() {
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Progress</Text>
             <Text style={styles.progressText}>
-              {status.verifiedRsvps} / 10 verified
+              {status.verifiedRsvps} / {status.minReferrals} verified
             </Text>
           </View>
           <View style={styles.progressTrack}>
@@ -243,7 +338,9 @@ export default function RaffleStatusScreen() {
             />
           </View>
           <Text style={styles.progressHint}>
-            Get more verified RSVPs to increase your chances
+            {status.isEligible
+              ? "You've hit the minimum — keep sharing to climb the leaderboard."
+              : `${referralsRemaining} more verified RSVP${referralsRemaining === 1 ? "" : "s"} to become prize-eligible.`}
           </Text>
         </View>
 
@@ -334,6 +431,8 @@ export default function RaffleStatusScreen() {
           Apple is not a sponsor of this promotion and is not involved with it in any manner.
         </Text>
       </ScrollView>
+
+      <RaffleWinnerPopup data={statusData} />
     </View>
   );
 }
@@ -392,6 +491,20 @@ const createStyles = (c: ThemeColors) =>
       fontSize: 11,
       color: "#fff",
       letterSpacing: 0.6,
+    },
+    winnerBadge: {
+      backgroundColor: "#F5B700",
+    },
+    winnerBadgeText: {
+      color: "#3D2900",
+    },
+    winnerPrizeLine: {
+      fontFamily: Fonts.semiBold,
+      fontSize: 13,
+      color: "#FFE8A3",
+      marginTop: -4,
+      marginBottom: 14,
+      lineHeight: 18,
     },
     heroTitle: {
       fontFamily: "BricolageGrotesque_800ExtraBold",
@@ -491,6 +604,28 @@ const createStyles = (c: ThemeColors) =>
     section: {
       marginBottom: 28,
     },
+    vendorCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      backgroundColor: c.card,
+      borderRadius: 16,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: c.glassStroke || "rgba(255,255,255,0.06)",
+    },
+    vendorAvatarWrap: {
+      width: 44,
+      height: 44,
+      borderRadius: 12,
+      backgroundColor: c.primaryFaded,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    vendorAvatar: { width: 44, height: 44 },
+    vendorName: { fontFamily: Fonts.bold, fontSize: 15, color: c.textBright },
+    vendorHint: { fontFamily: Fonts.regular, fontSize: 12, color: c.textDim, marginTop: 2 },
     sectionHeaderRow: {
       flexDirection: "row",
       justifyContent: "space-between",

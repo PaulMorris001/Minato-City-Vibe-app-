@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { adminApi } from "../api/admin";
-import type { AdminRaffleEntry, AdminRaffleCampaign } from "../types";
+import type { AdminRaffleEntry, AdminRaffleCampaign, AdminVendor } from "../types";
 import Table, { Column } from "../components/ui/Table";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import PageShell from "../components/ui/PageShell";
 import StatCard from "../components/ui/StatCard";
-import Modal from "../components/ui/Modal";
+import Modal, { ConfirmModal } from "../components/ui/Modal";
 import { colors } from "../constants/colors";
 
 // 1 -> "1st", 2 -> "2nd", 11 -> "11th", ...
@@ -42,6 +42,8 @@ export default function Raffle() {
   const [pending, setPending] = useState<{ entry: AdminRaffleEntry; rank: number | null } | null>(null);
   const [working, setWorking] = useState(false);
   const [endConfirm, setEndConfirm] = useState(false);
+  const [deleteEntry, setDeleteEntry] = useState<AdminRaffleEntry | null>(null);
+  const [deleteCampaignConfirm, setDeleteCampaignConfirm] = useState(false);
 
   // Serialized copy of the last data we rendered. A refetch that comes back
   // identical is dropped entirely — no setState, so no re-render / table
@@ -116,6 +118,36 @@ export default function Raffle() {
     }
   };
 
+  const removeEntry = async () => {
+    if (!deleteEntry) return;
+    setWorking(true);
+    try {
+      await adminApi.deleteRaffleEntry(deleteEntry.eventId, campaign?._id || undefined);
+      setDeleteEntry(null);
+      load({ silent: true });
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || "Failed to remove raffle entry");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const removeCampaign = async () => {
+    if (!campaign?._id) return;
+    setWorking(true);
+    try {
+      await adminApi.deleteRaffleCampaign(campaign._id);
+      setDeleteCampaignConfirm(false);
+      setSelectedId(null);
+      lastSnapshot.current = "";
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || "Failed to delete campaign");
+      setDeleteCampaignConfirm(false);
+    } finally {
+      setWorking(false);
+    }
+  };
+
   const runDraw = async () => {
     if (!campaign?._id) return;
     setWorking(true);
@@ -140,18 +172,38 @@ export default function Raffle() {
   const ended = campaign
     ? campaign.status === "ended" || Date.now() > new Date(campaign.endDate).getTime()
     : false;
+  // "active" status only means admin hasn't ended it — the app also gates on
+  // startDate (isCampaignOpen, server-side), so a campaign scheduled to start
+  // later reads as active+not-ended here but ISN'T actually open yet. Surface
+  // that distinctly so a future start date doesn't look indistinguishable
+  // from "live right now".
+  const notStarted =
+    !!campaign && !ended && new Date(campaign.startDate).getTime() > Date.now();
   const daysLeft = campaign
     ? Math.max(0, Math.ceil((new Date(campaign.endDate).getTime() - Date.now()) / 86_400_000))
     : 0;
-  const hasActive = campaigns.some((c) => c.status === "active");
   const prizes = campaign?.prizes?.length ? campaign.prizes : [];
   const prizeCount = prizes.length || 3;
-  const rewardFor = (rank: number) => prizes.find((p) => p.rank === rank)?.reward;
+  // Both regional coupon values, since the admin picking a winner isn't
+  // picking a country — the winner's own coupon amount is resolved
+  // server-side at read time. There's no cash prize: the coupon amount IS
+  // the reward, with an optional non-cash extra alongside it.
+  const rewardFor = (rank: number) => {
+    const p = prizes.find((p) => p.rank === rank);
+    if (!p) return undefined;
+    const amounts: string[] = [];
+    if (p.couponNGN) amounts.push(`₦${p.couponNGN.toLocaleString()}`);
+    if (p.couponUSD) amounts.push(`$${p.couponUSD.toLocaleString()}`);
+    const coupon = amounts.length ? `${amounts.join(" / ")} credit` : undefined;
+    if (coupon && p.extraPerk) return `${coupon} + ${p.extraPerk}`;
+    return coupon || p.extraPerk || undefined;
+  };
 
   const totals = useMemo(() => {
     const rsvps = entries.reduce((sum, e) => sum + e.verifiedRsvps, 0);
     const winners = entries.filter((e) => e.winnerRank != null).length;
-    return { rsvps, winners };
+    const eligible = entries.filter((e) => e.isEligible).length;
+    return { rsvps, winners, eligible };
   }, [entries]);
 
   const columns: Column<AdminRaffleEntry>[] = [
@@ -175,6 +227,22 @@ export default function Raffle() {
           <div style={{ fontSize: 12, color: colors.textMuted }}>{e.host?.email}</div>
         </div>
       ),
+    },
+    {
+      key: "location",
+      header: "Location",
+      width: 130,
+      // So the admin can sanity-check a winner's country before locking their
+      // prize to a NGN- or USD-side vendor.
+      render: (e) => {
+        const loc = e.host?.location;
+        const label = [loc?.city, loc?.state, loc?.country].filter(Boolean).join(", ");
+        return label ? (
+          <span style={{ fontSize: 13 }}>{label}</span>
+        ) : (
+          <span style={{ color: colors.textDim }}>Unknown</span>
+        );
+      },
     },
     {
       key: "event",
@@ -207,6 +275,17 @@ export default function Raffle() {
       render: (e) => <Badge variant="info">{e.eligibilityScore}</Badge>,
     },
     {
+      key: "eligible",
+      header: "Eligible",
+      width: 90,
+      render: (e) =>
+        e.isEligible ? (
+          <Badge variant="success">Yes</Badge>
+        ) : (
+          <Badge variant="default">Not yet</Badge>
+        ),
+    },
+    {
       key: "actions",
       header: "Assign place",
       width: Math.max(220, prizeCount * 52 + 80),
@@ -230,6 +309,9 @@ export default function Raffle() {
             onClick={() => setPending({ entry: e, rank: null })}
           >
             Clear
+          </Button>
+          <Button size="sm" variant="danger" onClick={() => setDeleteEntry(e)}>
+            Remove
           </Button>
         </div>
       ),
@@ -284,13 +366,13 @@ export default function Raffle() {
       >
         <CampaignPanel
           campaign={campaign}
-          hasActive={hasActive}
           onSaved={(c) => {
             setSelectedId(c._id);
             load({ silent: true });
           }}
           onError={setErr}
           onEndClick={() => setEndConfirm(true)}
+          onDeleteClick={() => setDeleteCampaignConfirm(true)}
         />
 
         {err && <div style={{ ...styles.panelRow, color: colors.error }}>{err}</div>}
@@ -299,23 +381,44 @@ export default function Raffle() {
           <StatCard label="Entries" value={entries.length} icon="🎂" />
           <StatCard label="Verified RSVPs" value={totals.rsvps} icon="✅" accent={colors.success} />
           <StatCard
+            label={`Eligible (≥${campaign?.minReferrals ?? 6} RSVPs)`}
+            value={`${totals.eligible} / ${entries.length}`}
+            icon="🎯"
+            accent={colors.info}
+          />
+          <StatCard
             label="Winners picked"
             value={`${totals.winners} / ${prizeCount}`}
             icon="🏆"
             accent={colors.warning}
           />
           <StatCard
-            label={campaign ? `Ends ${formatDate(campaign.endDate)}` : "No campaign"}
-            value={ended ? "Ended" : `${daysLeft}d left`}
+            label={
+              campaign
+                ? notStarted
+                  ? `Starts ${formatDate(campaign.startDate)}`
+                  : `Ends ${formatDate(campaign.endDate)}`
+                : "No campaign"
+            }
+            value={ended ? "Ended" : notStarted ? "Not open yet" : `${daysLeft}d left`}
             icon="⏳"
-            accent={ended ? colors.textDim : colors.info}
+            accent={ended ? colors.textDim : notStarted ? colors.warning : colors.info}
           />
         </div>
 
-        {!ended && !loading && entries.length > 0 && (
+        {notStarted && !loading && (
+          <div style={styles.notice}>
+            This campaign's start date ({formatDate(campaign!.startDate)}) hasn't arrived yet —
+            "Create Birthday Event" stays disabled in the app and shows "Raffle Has Ended" until
+            then. Set the start date to today (or earlier) if it should be live right now.
+          </div>
+        )}
+
+        {!ended && !notStarted && !loading && entries.length > 0 && (
           <div style={styles.notice}>
             Campaign is still open — entries can still gain RSVPs. Winners are normally
-            drawn after {campaign ? formatDate(campaign.endDate) : "the deadline"}.
+            drawn after {campaign ? formatDate(campaign.endDate) : "the deadline"}, from
+            entries with at least {campaign?.minReferrals ?? 6} verified RSVPs.
           </div>
         )}
 
@@ -412,8 +515,9 @@ export default function Raffle() {
         }
       >
         <p style={{ color: colors.textMuted, fontSize: 14, lineHeight: 1.5 }}>
-          New birthday events can no longer enter until you create the next campaign. Entries
-          and any winners already picked stay as they are.
+          New birthday events can no longer enter until you create the next campaign, and the
+          app's countdown and "Create Birthday Event" button update immediately to reflect that.
+          Entries and any winners already picked stay as they are.
         </p>
       </Modal>
 
@@ -439,6 +543,32 @@ export default function Raffle() {
           replaced.
         </p>
       </Modal>
+
+      <ConfirmModal
+        open={!!deleteEntry}
+        title="Remove raffle entry?"
+        message={
+          deleteEntry
+            ? `This permanently removes ${deleteEntry.title} (@${deleteEntry.host?.username || "unknown"}) from the Birthday Raffle. The event itself will also be deleted.`
+            : ""
+        }
+        onCancel={() => setDeleteEntry(null)}
+        onConfirm={removeEntry}
+        loading={working}
+      />
+
+      <ConfirmModal
+        open={deleteCampaignConfirm}
+        title="Delete this campaign?"
+        message={
+          campaign
+            ? `Delete ${campaign.name}? Its unawarded entries will be kept, but the campaign window and settings will be permanently removed. Campaigns with winners cannot be deleted.`
+            : ""
+        }
+        onCancel={() => setDeleteCampaignConfirm(false)}
+        onConfirm={removeCampaign}
+        loading={working}
+      />
     </>
   );
 }
@@ -446,48 +576,96 @@ export default function Raffle() {
 /** Current-campaign detail + inline date editing, or the "new campaign" form. */
 function CampaignPanel({
   campaign,
-  hasActive,
   onSaved,
   onError,
   onEndClick,
+  onDeleteClick,
 }: {
   campaign: AdminRaffleCampaign | null;
-  hasActive: boolean;
   onSaved: (c: AdminRaffleCampaign) => void;
   onError: (msg: string | null) => void;
   onEndClick: () => void;
+  onDeleteClick: () => void;
 }) {
   const real = !!campaign?._id;
+  // Same "active status doesn't mean open yet" distinction as the parent's
+  // `notStarted` — recomputed here since this component only gets `campaign`.
+  const notStarted =
+    !!campaign &&
+    campaign.status === "active" &&
+    new Date(campaign.startDate).getTime() > Date.now();
   const [name, setName] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  // One reward string per winner tier; array length = number of winners.
-  const [rewards, setRewards] = useState<string[]>(["", "", ""]);
+  // One tier's coupon value per winner, plus an optional non-cash extra;
+  // array length = number of winners. There is no cash prize — the coupon
+  // amount IS the reward, so at least one of couponNGN/couponUSD must be
+  // positive. Coupon fields are strings (controlled inputs) that default to
+  // "0".
+  type RewardRow = { couponNGN: string; couponUSD: string; extraPerk: string };
+  const EMPTY_ROW: RewardRow = { couponNGN: "0", couponUSD: "0", extraPerk: "" };
+  const [rewards, setRewards] = useState<RewardRow[]>([{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }]);
+  // Verified RSVPs a host needs before they're prize-eligible.
+  const [minReferrals, setMinReferrals] = useState("6");
+  // The vendor each currency's credit is redeemable at — "" means "any
+  // vendor" (no assignment). Holds the vendor's USER id (order.vendor / the
+  // coupon lock both ref the user account, not the separate Vendor doc).
+  const [vendorNGN, setVendorNGN] = useState("");
+  const [vendorUSD, setVendorUSD] = useState("");
+  const [vendors, setVendors] = useState<AdminVendor[]>([]);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const campaignRewards = (c: AdminRaffleCampaign | null) =>
-    c?.prizes?.length ? [...c.prizes].sort((a, b) => a.rank - b.rank).map((p) => p.reward) : ["", "", ""];
+  // Fetched once — a plain dropdown is fine at this scale; picking a vendor
+  // for a raffle happens a handful of times per campaign, not per request.
+  useEffect(() => {
+    adminApi
+      .getVendors({ limit: 200 })
+      .then((r) => setVendors(r.data.vendors))
+      .catch(() => {});
+  }, []);
+  // Only vendors with a linked user account can actually be assigned — that
+  // account is what order.vendor / the coupon lock point at, not the Vendor
+  // profile doc itself.
+  const vendorOptions = vendors.filter((v) => v.user?._id);
+
+  const EMPTY_REWARDS = [{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }];
+  const campaignRewards = (c: AdminRaffleCampaign | null): RewardRow[] =>
+    c?.prizes?.length
+      ? [...c.prizes]
+          .sort((a, b) => a.rank - b.rank)
+          .map((p) => ({
+            couponNGN: String(p.couponNGN ?? 0),
+            couponUSD: String(p.couponUSD ?? 0),
+            extraPerk: p.extraPerk ?? "",
+          }))
+      : EMPTY_REWARDS;
 
   // Reset the edit fields whenever the selected campaign changes.
   useEffect(() => {
-    if (real && campaign) {
+    if (real && campaign && !creating) {
       setName(campaign.name);
       setStart(toDateInput(campaign.startDate));
       setEnd(toDateInput(campaign.endDate));
       setRewards(campaignRewards(campaign));
+      setMinReferrals(String(campaign.minReferrals ?? 6));
+      setVendorNGN(campaign.vendorNGN?._id ?? "");
+      setVendorUSD(campaign.vendorUSD?._id ?? "");
       setCreating(false);
     } else {
       setName("");
       setStart("");
       setEnd("");
-      setRewards(["", "", ""]);
+      setRewards(EMPTY_REWARDS);
+      setMinReferrals("6");
+      setVendorNGN("");
+      setVendorUSD("");
     }
-  }, [campaign, real]);
+  }, [campaign, real, creating]);
 
-  const setReward = (i: number, v: string) =>
-    setRewards((prev) => prev.map((r, idx) => (idx === i ? v : r)));
-  const addTier = () => setRewards((prev) => [...prev, ""]);
+  const setReward = (i: number, field: keyof RewardRow, v: string) =>
+    setRewards((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: v } : r)));
+  const addTier = () => setRewards((prev) => [...prev, { ...EMPTY_ROW }]);
   const removeTier = (i: number) => setRewards((prev) => prev.filter((_, idx) => idx !== i));
 
   const rewardsDirty =
@@ -498,9 +676,21 @@ function CampaignPanel({
     (name !== campaign.name ||
       start !== toDateInput(campaign.startDate) ||
       end !== toDateInput(campaign.endDate) ||
-      rewardsDirty);
+      rewardsDirty ||
+      minReferrals !== String(campaign.minReferrals ?? 6) ||
+      vendorNGN !== (campaign.vendorNGN?._id ?? "") ||
+      vendorUSD !== (campaign.vendorUSD?._id ?? ""));
 
-  const prizesPayload = () => rewards.map((r) => ({ reward: r.trim() }));
+  const prizesPayload = () =>
+    rewards.map((r) => ({
+      couponNGN: Number(r.couponNGN) || 0,
+      couponUSD: Number(r.couponUSD) || 0,
+      extraPerk: r.extraPerk.trim(),
+    }));
+  const minReferralsPayload = () => {
+    const n = Number(minReferrals);
+    return Number.isInteger(n) && n >= 0 ? n : undefined;
+  };
 
   const save = async () => {
     onError(null);
@@ -511,6 +701,9 @@ function CampaignPanel({
         startDate: startInstant(start),
         endDate: endInstant(end),
         prizes: prizesPayload(),
+        minReferrals: minReferralsPayload(),
+        vendorNGN: vendorNGN || null,
+        vendorUSD: vendorUSD || null,
       });
       onSaved(res.data.campaign);
     } catch (e: any) {
@@ -529,6 +722,9 @@ function CampaignPanel({
         startDate: startInstant(start),
         endDate: endInstant(end),
         prizes: prizesPayload(),
+        minReferrals: minReferralsPayload(),
+        vendorNGN: vendorNGN || null,
+        vendorUSD: vendorUSD || null,
       });
       onSaved(res.data.campaign);
     } catch (e: any) {
@@ -539,8 +735,19 @@ function CampaignPanel({
   };
 
   const showCreate = creating || !real;
+  const validCoupon = (v: string) => v.trim() === "" || (Number(v) >= 0 && Number.isFinite(Number(v)));
   const canSubmit =
-    !!name.trim() && !!start && !!end && rewards.length > 0 && rewards.every((r) => r.trim());
+    !!name.trim() &&
+    !!start &&
+    !!end &&
+    minReferralsPayload() !== undefined &&
+    rewards.length > 0 &&
+    rewards.every(
+      (r) =>
+        validCoupon(r.couponNGN) &&
+        validCoupon(r.couponUSD) &&
+        ((Number(r.couponNGN) || 0) > 0 || (Number(r.couponUSD) || 0) > 0)
+    );
 
   return (
     <div style={styles.panel}>
@@ -554,6 +761,7 @@ function CampaignPanel({
               {campaign?.status}
             </Badge>
           )}
+          {real && !creating && notStarted && <Badge variant="warning">Not open yet</Badge>}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {real && campaign?.status === "active" && !creating && (
@@ -561,9 +769,14 @@ function CampaignPanel({
               End campaign
             </Button>
           )}
-          {real && !creating && !hasActive && (
+          {real && !creating && (
             <Button variant="secondary" size="sm" onClick={() => setCreating(true)}>
               New campaign
+            </Button>
+          )}
+          {real && !creating && (
+            <Button variant="danger" size="sm" onClick={onDeleteClick}>
+              Delete campaign
             </Button>
           )}
           {creating && (
@@ -608,6 +821,56 @@ function CampaignPanel({
             onChange={(e) => setEnd(e.target.value)}
           />
         </Field>
+        <Field label="Min. referrals to qualify">
+          <input
+            type="number"
+            min={0}
+            step={1}
+            style={{ ...styles.input, width: 90 }}
+            value={minReferrals}
+            onChange={(e) => setMinReferrals(e.target.value)}
+          />
+        </Field>
+      </div>
+      <div style={{ ...styles.panelRow, marginTop: -6 }}>
+        A host needs at least this many verified RSVPs on their birthday event before
+        they're eligible to win a prize — there's no ceiling, ranking is purely by highest
+        verified RSVPs.
+      </div>
+
+      <div style={styles.fields}>
+        <Field label="Naira vendor">
+          <select
+            style={{ ...styles.input, minWidth: 220 }}
+            value={vendorNGN}
+            onChange={(e) => setVendorNGN(e.target.value)}
+          >
+            <option value="">Any vendor</option>
+            {vendorOptions.map((v) => (
+              <option key={v.user!._id} value={v.user!._id}>
+                {v.name || v.user?.username}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Dollar vendor">
+          <select
+            style={{ ...styles.input, minWidth: 220 }}
+            value={vendorUSD}
+            onChange={(e) => setVendorUSD(e.target.value)}
+          >
+            <option value="">Any vendor</option>
+            {vendorOptions.map((v) => (
+              <option key={v.user!._id} value={v.user!._id}>
+                {v.name || v.user?.username}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      <div style={{ ...styles.panelRow, marginTop: -6 }}>
+        Naira winners' credit is redeemable only at the Naira vendor; Dollar winners' only at
+        the Dollar vendor. Leave as "Any vendor" for credit spendable anywhere.
       </div>
 
       <div style={styles.prizeBlock}>
@@ -619,14 +882,35 @@ function CampaignPanel({
             + Add winner
           </Button>
         </div>
+        <div style={styles.prizeColumnHeads}>
+          <span style={{ ...styles.prizeRank, visibility: "hidden" }}>—</span>
+          <span style={{ ...styles.fieldLabel, width: 110 }}>Credit ₦</span>
+          <span style={{ ...styles.fieldLabel, width: 110 }}>Credit $</span>
+          <span style={{ ...styles.fieldLabel, flex: 1 }}>Extra (optional)</span>
+          <span style={{ width: 34, flexShrink: 0 }} />
+        </div>
         {rewards.map((r, i) => (
           <div key={i} style={styles.prizeRow}>
             <span style={styles.prizeRank}>{ordinal(i + 1)}</span>
             <input
+              type="number"
+              min={0}
+              style={{ ...styles.input, width: 110 }}
+              value={r.couponNGN}
+              onChange={(e) => setReward(i, "couponNGN", e.target.value)}
+            />
+            <input
+              type="number"
+              min={0}
+              style={{ ...styles.input, width: 110 }}
+              value={r.couponUSD}
+              onChange={(e) => setReward(i, "couponUSD", e.target.value)}
+            />
+            <input
               style={{ ...styles.input, flex: 1 }}
-              value={r}
-              onChange={(e) => setReward(i, e.target.value)}
-              placeholder="e.g. ₦150,000 Cash + Premium Event Pass"
+              value={r.extraPerk}
+              onChange={(e) => setReward(i, "extraPerk", e.target.value)}
+              placeholder="e.g. Premium Event Pass"
             />
             <Button
               variant="ghost"
@@ -640,6 +924,14 @@ function CampaignPanel({
           </div>
         ))}
       </div>
+      <div style={{ ...styles.panelRow, marginTop: -8 }}>
+        There's no cash prize — the amount above IS the reward, credited as OurCityVibe
+        credit (1 credit = ₦1 / $1, no exchange rate between the two — see
+        services/payments/coupon.service.js). Nigerian winners are credited in Naira,
+        everyone else in Dollars, spendable at checkout with any vendor, and it expires if
+        left unused for 30 days. A tier needs a value in Naira, Dollars, or both. "Extra" is
+        an optional non-cash bonus (e.g. an event pass) shown alongside the credit.
+      </div>
 
       <div>
         {showCreate ? (
@@ -647,10 +939,10 @@ function CampaignPanel({
             variant="primary"
             size="sm"
             onClick={create}
-            disabled={!canSubmit || hasActive}
+            disabled={!canSubmit}
             loading={saving}
           >
-            {hasActive ? "End current first" : "Create campaign"}
+            Create campaign
           </Button>
         ) : (
           <Button
@@ -736,14 +1028,19 @@ const styles: Record<string, React.CSSProperties> = {
   prizeBlock: {
     display: "flex",
     flexDirection: "column",
-    gap: 8,
-    maxWidth: 520,
+    gap: 12,
+    maxWidth: 760,
   },
   prizeHead: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
+  },
+  prizeColumnHeads: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
   },
   prizeRow: {
     display: "flex",

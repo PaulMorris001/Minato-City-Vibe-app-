@@ -20,6 +20,7 @@ const navItems = [
   { to: "/raffle", label: "Birthday Raffle", icon: "🎂" },
   { to: "/discount-codes", label: "Discount Codes", icon: "🎟️" },
   { to: "/guides", label: "Guides", icon: "📖" },
+  { to: "/guide-topics", label: "Guide Topics", icon: "🧭" },
   { to: "/analytics", label: "Analytics", icon: "📊" },
 ];
 

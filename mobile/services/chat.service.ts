@@ -83,7 +83,7 @@ export interface Message {
   chat: string;
   /** Null when the author's account was deleted; the message survives in group chats. */
   sender: User | null;
-  type: "text" | "image" | "event" | "guide" | "system" | "order";
+  type: "text" | "image" | "event" | "guide" | "system" | "order" | "profile";
   content?: string;
   imageUrl?: string;
   event?: any;
@@ -99,6 +99,18 @@ export interface Message {
     currency?: string;
   };
   order?: import("@/libs/interfaces").Order;
+  /** The shared profile's owner — present only on `type: "profile"` messages. */
+  profileUser?: {
+    _id: string;
+    username: string;
+    firstName?: string;
+    lastName?: string;
+    profilePicture?: string;
+    isVendor?: boolean;
+    businessName?: string;
+    businessPicture?: string;
+    verified?: boolean;
+  };
   status: "sent" | "delivered" | "read" | "sending" | "failed";
   readBy?: Array<{ user: string; readAt: string }>;
   replyTo?: Message;
@@ -111,11 +123,12 @@ export interface Message {
 }
 
 export interface SendMessageData {
-  type?: "text" | "image" | "event" | "guide";
+  type?: "text" | "image" | "event" | "guide" | "profile";
   content?: string;
   imageUrl?: string;
   eventId?: string;
   guideId?: string;
+  profileUserId?: string;
   replyTo?: string;
 }
 
@@ -178,6 +191,19 @@ class ChatService {
   /** The inbox as last seen. Used to paint instantly, and when offline. */
   async getCachedChats(scope: ChatScope = "client"): Promise<Chat[]> {
     return getChats(scope);
+  }
+
+  /**
+   * One chat from the local store, searched across both inboxes. Lets the chat
+   * screen paint its header instantly and stay usable offline when the
+   * `GET /chats/:id` refresh can't complete.
+   */
+  async getCachedChatById(chatId: string): Promise<Chat | null> {
+    for (const scope of ["client", "vendor"] as ChatScope[]) {
+      const found = (await getChats(scope)).find((c) => c._id === chatId);
+      if (found) return found;
+    }
+    return null;
   }
 
   /**

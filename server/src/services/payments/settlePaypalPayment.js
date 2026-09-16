@@ -67,6 +67,16 @@ export async function settlePaypalPurchase(capture) {
   const seller = sellerId ? await User.findById(sellerId).select(PAYOUT_ROUTING_FIELDS) : null;
   const settlement = seller ? getSettlementProvider(seller) : null;
 
+  // An OurCityVibe coupon knocks money off what the buyer paid, never off what
+  // the seller is owed — the platform absorbs it. `amount` here is what PayPal
+  // actually captured (already coupon-reduced at init); an order that used one
+  // is paid out on its full total instead.
+  let feeBasis = amount;
+  if (type === "order") {
+    const order = await Order.findById(id).select("total couponApplied");
+    if (order?.couponApplied > 0) feeBasis = order.total;
+  }
+
   // Stored per-sale amounts are in CENTS, even though PayPal's API speaks major
   // units — the one place this rail does a subunit conversion.
   //
@@ -76,7 +86,7 @@ export async function settlePaypalPurchase(capture) {
   // would silently divide them by 100 and pay every international seller 1% of
   // what they are owed. Converting once here keeps those readers correct and
   // untouched. `Payout.amount` stays MAJOR — see payout.model.js.
-  const { platformFee, sellerNet } = computeSplit(amount);
+  const { platformFee, sellerNet } = computeSplit(feeBasis);
   const platformFeeCents = Math.round(platformFee * 100);
   const sellerNetCents = Math.round(sellerNet * 100);
 

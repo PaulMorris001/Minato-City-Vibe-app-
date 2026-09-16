@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -29,6 +29,11 @@ interface ServicesTabProps {
   services: Service[];
   onRefresh: () => void;
   refreshing: boolean;
+  /** Opens straight into this category's item list instead of the grid —
+   *  set by the dashboard's "By category" / "Recent services" rows. */
+  initialCategoryId?: string;
+  /** Also opens this service's edit modal once its category is open. */
+  initialServiceId?: string;
 }
 
 export default function ServicesTab({
@@ -36,6 +41,8 @@ export default function ServicesTab({
   services,
   onRefresh,
   refreshing,
+  initialCategoryId,
+  initialServiceId,
 }: ServicesTabProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -122,6 +129,35 @@ export default function ServicesTab({
     setEditingItem(service);
     setItemModalVisible(true);
   };
+
+  // Applies initialCategoryId/initialServiceId once, as soon as the matching
+  // data has loaded — a route param, not local state, so it doesn't fight a
+  // refetch or a category the vendor navigates into by hand afterward.
+  const appliedInitialTarget = useRef(false);
+  useEffect(() => {
+    if (appliedInitialTarget.current) return;
+    if (!initialCategoryId && !initialServiceId) return;
+    // Nothing to match against yet — wait for the catalogue to load rather
+    // than giving up on the very first (empty) render.
+    if (categories.length === 0 && services.length === 0) return;
+
+    const targetCategoryId =
+      initialCategoryId ||
+      services.find((s) => s._id === initialServiceId)?.catalogueCategory ||
+      undefined;
+    const targetCategory = categories.find((c) => c._id === targetCategoryId);
+
+    if (targetCategory) {
+      setSelectedCategory(targetCategory);
+      if (initialServiceId) {
+        const targetService = services.find((s) => s._id === initialServiceId);
+        if (targetService) handleEditItem(targetService);
+      }
+    }
+    // Stop trying either way — a stale/deleted category or service shouldn't
+    // keep re-checking on every future catalogue refetch.
+    appliedInitialTarget.current = true;
+  }, [initialCategoryId, initialServiceId, categories, services]);
 
   const handleDeleteItem = (service: Service) => {
     Alert.alert(
@@ -250,7 +286,7 @@ export default function ServicesTab({
               </Text>
             </View>
             <View style={styles.priceChip}>
-              <Text style={styles.priceChipText}>
+              <Text style={styles.priceChipText} numberOfLines={1}>
                 {prefix}{formatPrice(item.price)}
                 {isProduct && item.unit ? ` ${item.unit}` : ""}
               </Text>
@@ -494,14 +530,18 @@ const createStyles = (c: ThemeColors) =>
     cover: { height: 132, position: "relative", justifyContent: "center", overflow: "hidden" },
     catCover: { height: 116, position: "relative", justifyContent: "center", overflow: "hidden" },
     coverEmoji: { fontSize: 120, opacity: 0.3, position: "absolute", right: -8, top: -10, transform: [{ rotate: "-12deg" }] },
-    coverTop: { position: "absolute", top: 10, left: 10, right: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-    kindPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: "rgba(124,58,237,0.55)", borderWidth: 1, borderColor: "rgba(255,255,255,0.2)" },
+    // gap (not space-between) + priceChip shrinking first: with only two
+    // pills in a row pinned to both edges (left:10/right:10), space-between
+    // gave a long price ("$1,234.00 /session") nowhere to shrink into — it
+    // just overflowed past the card's clipped bounds instead.
+    coverTop: { position: "absolute", top: 10, left: 10, right: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 6 },
+    kindPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: "rgba(124,58,237,0.55)", borderWidth: 1, borderColor: "rgba(255,255,255,0.2)", flexShrink: 0 },
     kindPillText: { fontFamily: VNF.bold, fontSize: 10, letterSpacing: 0.5, color: "#fff" },
-    statusPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, borderWidth: 1 },
+    statusPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, borderWidth: 1, flexShrink: 0 },
     statusDot: { width: 5, height: 5, borderRadius: 3 },
     statusText: { fontFamily: VNF.bold, fontSize: 10, letterSpacing: 0.5 },
-    priceChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.45)", borderWidth: 1, borderColor: "rgba(255,255,255,0.16)" },
-    priceChipText: { fontFamily: VNF.heading, fontSize: 13, color: c.white },
+    priceChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.45)", borderWidth: 1, borderColor: "rgba(255,255,255,0.16)", flexShrink: 1, minWidth: 0 },
+    priceChipText: { fontFamily: VNF.heading, fontSize: 13, color: c.white, flexShrink: 1 },
     coverBottom: { position: "absolute", left: 14, right: 14, bottom: 12 },
     coverTitle: { fontFamily: VNF.display, fontSize: 22, color: "#F4EEFF", letterSpacing: -0.6, lineHeight: 24 },
     coverSub: { fontFamily: VNF.semibold, fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 4 },

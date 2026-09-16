@@ -43,6 +43,7 @@ import {
 } from "../services/payments/discount.service.js";
 import { findEventByAnyId } from "../utils/resolveEvent.js";
 import { ticketSalesClosedReason } from "../utils/eventLifecycle.js";
+import { reserveOrderCoupon } from "../services/payments/coupon.service.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -313,7 +314,7 @@ export const initPayment = async (req, res) => {
 
     const purchase = await resolvePurchase(type, id, userId, res, tierId);
     if (!purchase) return; // resolvePurchase already responded
-    const { seller, amount, currency, tier } = purchase;
+    const { seller, amount, currency, tier, item } = purchase;
 
     if (!seller) return res.status(400).json({ message: "Seller not found" });
 
@@ -347,6 +348,26 @@ export const initPayment = async (req, res) => {
         const reference = `free-${redemption._id}`;
         await updateRedemptionReference(redemption._id, reference);
         return res.status(200).json({ provider: "none", free: true, reference });
+      }
+    }
+
+    // OurCityVibe coupon balance (orders only — "purchase from any vendor" is
+    // the Order flow; tickets/guides/bookings are untouched). Reserved NOW,
+    // same reasoning as the discount code above: atomically taken off the
+    // buyer's balance so two concurrent checkouts can't both spend coupons
+    // that only exist once. Refunded if this order is cancelled/declined/
+    // never paid — see coupon.service.js and order.controller.js.
+    let couponApplied = 0;
+    if (type === "order" && req.body?.useCoupon) {
+      const reserved = await reserveOrderCoupon({ order: item, userId, amount: chargeAmount, currency });
+      couponApplied = reserved.applied;
+      chargeAmount -= couponApplied;
+
+      // Fully covered: nothing to charge, so no provider call — same
+      // "provider: none" free path the ticket discount above uses, just
+      // keyed to this order instead of a discount redemption.
+      if (chargeAmount === 0) {
+        return res.status(200).json({ provider: "none", free: true, reference: `coupon-${item._id}` });
       }
     }
 
@@ -397,8 +418,14 @@ export const initPayment = async (req, res) => {
     // Connect then transfers to the seller's connected account.
     const settlement = getSettlementProvider(seller);
     const amountCents = Math.round(chargeAmount * 100);
-    const feeCents = Math.round(amountCents * (PLATFORM_FEE_PERCENT / 100));
-    const sellerNetCents = amountCents - feeCents;
+    // Fee/net basis: normally the amount actually charged. A coupon-covered
+    // order is the one exception — the coupon is OurCityVibe's own promo, so
+    // the PLATFORM absorbs it and the seller is paid as if `amount` (the
+    // order's full total) were charged in cash, not the reduced amount that
+    // actually went to Stripe.
+    const feeBasisCents = couponApplied > 0 ? Math.round(amount * 100) : amountCents;
+    const feeCents = Math.round(feeBasisCents * (PLATFORM_FEE_PERCENT / 100));
+    const sellerNetCents = feeBasisCents - feeCents;
 
     const params = {
       amount: amountCents,
@@ -460,7 +487,9 @@ export const confirmPayment = async (req, res) => {
       return confirmPaypal(type, id, reference, userId, res, req.body?.tierId);
     }
     if (provider === "none") {
-      // 100%-off discount purchase — no charge exists to verify.
+      // No charge exists to verify — either a 100%-off ticket discount, or (for
+      // orders) an OurCityVibe coupon that fully covered the total.
+      if (type === "order") return confirmFreeOrder(id, reference, userId, res);
       return confirmFreeTicket(type, id, reference, userId, res, req.body?.tierId);
     }
     if (provider && provider !== "stripe") {
@@ -555,15 +584,20 @@ async function confirmPaypal(type, id, reference, userId, res, tierId) {
   // tierId only picks WHICH server-known price to verify the charge against).
   const purchase = await resolvePurchaseForConfirm(type, id, userId, res, tierId);
   if (!purchase) return;
-  const { amount, currency } = purchase;
+  const { amount, currency, item } = purchase;
 
   // A discount reserved at init changes the expected charge — recompute it
   // before verification, or the capture would be rejected for paying the
-  // (correct) discounted amount.
+  // (correct) discounted amount. Same idea for an order's coupon: settlement
+  // (settlePaypalPurchase) independently re-derives the seller's payout from
+  // the order's full total, so reducing `expectedAmount` here only affects
+  // verification, never what the seller is paid.
   let expectedAmount = amount;
   if (type === "ticket") {
     const redemption = await DiscountRedemption.findOne({ reference, user: userId }).populate("code");
     if (redemption?.code) ({ total: expectedAmount } = computeDiscount(redemption.code, amount));
+  } else if (type === "order" && item?.couponApplied) {
+    expectedAmount = amount - item.couponApplied;
   }
 
   const capture = await capturePaypalOrder({
@@ -645,6 +679,62 @@ async function confirmFreeTicket(type, id, reference, userId, res, tierId) {
   return res.status(alreadyExisted ? 200 : 201).json({ message: "Ticket confirmed", ticket });
 }
 
+/**
+ * Confirm an order fully covered by an OurCityVibe coupon. No provider charge
+ * exists, so the proof is the reservation `reserveOrderCoupon` wrote onto the
+ * order itself at init (`couponApplied`) — the client's claim of "free" is
+ * never trusted, same principle as confirmFreeTicket.
+ *
+ * The seller is still paid in full: `computeSplit(order.total)` and a real
+ * Payout are queued exactly as a cash sale would, because the coupon is
+ * OurCityVibe's cost to absorb, not the seller's.
+ */
+async function confirmFreeOrder(id, reference, userId, res) {
+  const order = await Order.findById(id).populate("vendor");
+  if (!order) return res.status(404).json({ message: "Order not found" });
+  if (order.client.toString() !== userId) {
+    return res.status(403).json({ message: "This order isn't yours" });
+  }
+  if (order.paymentStatus === "paid") {
+    return res.status(200).json({ message: "Order paid", order });
+  }
+  if (reference !== `coupon-${order._id}`) {
+    return res.status(400).json({ message: "This reference does not match this order" });
+  }
+  if (order.couponApplied <= 0 || order.couponApplied < order.total) {
+    return res.status(400).json({ message: "This order's coupon does not cover its full price" });
+  }
+
+  const settlement = getSettlementProvider(order.vendor);
+  const { platformFee, sellerNet } = computeSplit(order.total);
+  const { order: fulfilled } = await fulfillOrder({
+    orderId: id,
+    provider: "none",
+    payoutProvider: settlement,
+    paymentRef: reference,
+    platformFee,
+    vendorNet: sellerNet,
+  });
+  if (settlement) {
+    await createPayout({
+      vendor: order.vendor._id || order.vendor,
+      relatedType: "order",
+      relatedId: id,
+      provider: settlement,
+      amount: sellerNet,
+      currency: order.currency,
+      reference: `order_${id}`,
+      buyer: userId,
+    });
+  } else {
+    console.error(
+      `[confirmFreeOrder] No payout rail for seller ${order.vendor?._id || order.vendor} ` +
+        `on order ${id}. Sale fulfilled; payout NOT queued — needs manual settlement.`
+    );
+  }
+  return res.status(200).json({ message: "Order paid", order: fulfilled });
+}
+
 async function confirmPaystack(type, id, reference, userId, res, tierId) {
   // A batch reference must never be redeemed as a single purchase.
   // verifyPaystackCharge only rejects UNDERpayment, so an NGN 750 two-ticket
@@ -659,7 +749,7 @@ async function confirmPaystack(type, id, reference, userId, res, tierId) {
   // tierId only picks WHICH server-known price to verify the charge against).
   const purchase = await resolvePurchaseForConfirm(type, id, userId, res, tierId);
   if (!purchase) return;
-  const { seller, amount, currency } = purchase;
+  const { seller, amount, currency, item } = purchase;
 
   // A discount reserved at init changes the expected charge — recompute it
   // before verification, or verifyPaystackCharge would hard-reject the
@@ -675,9 +765,19 @@ async function confirmPaystack(type, id, reference, userId, res, tierId) {
     }
   }
 
+  // A coupon reserved at init likewise changes what Paystack actually charged
+  // — but unlike a ticket discount, it must NOT change what the seller is
+  // paid: `expectedAmount` (the computeSplit basis below) stays the order's
+  // full total, and only `verifyAmount` (what the charge is checked against)
+  // is reduced. The platform absorbs the coupon; the seller doesn't.
+  let verifyAmount = expectedAmount;
+  if (type === "order" && item?.couponApplied) {
+    verifyAmount = expectedAmount - item.couponApplied;
+  }
+
   await verifyPaystackCharge({
     reference,
-    expectedAmount,
+    expectedAmount: verifyAmount,
     expectedCurrency: currency,
     expectedBuyerId: userId,
   });
@@ -808,6 +908,7 @@ async function resolvePurchaseForConfirm(type, id, userId, res, tierId) {
       seller: order.vendor,
       amount: order.total || 0,
       currency: order.currency || "USD",
+      item: order,
     };
   }
   return res.status(400).json({ message: "Unknown purchase type" }) && null;

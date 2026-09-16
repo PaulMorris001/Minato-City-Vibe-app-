@@ -10,6 +10,7 @@ import Cities from "./pages/Cities";
 import VendorTypes from "./pages/VendorTypes";
 import Events from "./pages/Events";
 import Guides from "./pages/Guides";
+import GuideTopics from "./pages/GuideTopics";
 import Analytics from "./pages/Analytics";
 import Verifications from "./pages/Verifications";
 import PaidEvents from "./pages/PaidEvents";
@@ -45,6 +46,7 @@ function AppRoutes() {
                 <Route path="/vendor-types" element={<VendorTypes />} />
                 <Route path="/events" element={<Events />} />
                 <Route path="/guides" element={<Guides />} />
+                <Route path="/guide-topics" element={<GuideTopics />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/verifications" element={<Verifications />} />
                 <Route path="/paid-events" element={<PaidEvents />} />

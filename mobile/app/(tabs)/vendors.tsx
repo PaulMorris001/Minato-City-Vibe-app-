@@ -514,6 +514,7 @@ const createStyles = (c: ThemeColors) =>
   emptyContainer: {
     alignItems: "center",
     paddingTop: 60,
+    paddingBottom: 28,
   },
   emptyTitle: {
     fontSize: 16,

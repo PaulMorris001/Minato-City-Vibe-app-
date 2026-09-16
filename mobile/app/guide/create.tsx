@@ -14,7 +14,8 @@ import { useRouter } from "expo-router";
 import { goBack } from "@/utils/navigation";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
-import { GUIDE_TOPICS, GuideSection, LocationSelection } from "@/libs/interfaces";
+import { GuideSection, LocationSelection } from "@/libs/interfaces";
+import { useGuideTopics } from "@/hooks/useGuideTopics";
 import { Fonts } from "@/constants/fonts";
 import { BASE_URL } from "@/constants/constants";
 import { Colors } from "@/constants/colors";
@@ -30,6 +31,7 @@ export default function CreateGuidePage() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
+  const { topicNames } = useGuideTopics();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -284,7 +286,7 @@ export default function CreateGuidePage() {
           {showTopicDropdown && (
             <View style={styles.dropdown}>
               <ScrollView style={styles.dropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                {GUIDE_TOPICS.map((t) => (
+                {topicNames.map((t) => (
                   <TouchableOpacity
                     key={t}
                     style={[styles.dropdownItem, topic === t && styles.dropdownItemSelected]}

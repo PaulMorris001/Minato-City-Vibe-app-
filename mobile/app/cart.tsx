@@ -155,7 +155,7 @@ export default function CartScreen() {
                         </TouchableOpacity>
                       </View>
 
-                      <Text style={styles.itemPrice}>
+                      <Text style={styles.itemPrice} numberOfLines={1}>
                         {currencyPrefix(item.currency)}{formatPrice(item.price)}
                       </Text>
 
@@ -182,7 +182,7 @@ export default function CartScreen() {
                           <Ionicons name="add" size={18} color={colors.primary} />
                         </TouchableOpacity>
 
-                        <Text style={styles.lineTotal}>
+                        <Text style={styles.lineTotal} numberOfLines={1}>
                           {currencyPrefix(item.currency)}{formatPrice(item.price * item.quantity)}
                         </Text>
                       </View>
@@ -197,7 +197,7 @@ export default function CartScreen() {
               <View style={styles.summary}>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Subtotal</Text>
-                  <Text style={styles.summaryValue}>
+                  <Text style={styles.summaryValue} numberOfLines={1}>
                     {currencyPrefix(cart.items[0]?.currency)}{formatPrice(cart.subtotal)}
                   </Text>
                 </View>
@@ -252,8 +252,8 @@ const createStyles = (c: ThemeColors) =>
     header: { paddingTop: 60, paddingBottom: 20, paddingHorizontal: 16 },
     headerContent: { flexDirection: "row", alignItems: "center" },
     backButton: { padding: 8, marginRight: 12 },
-    title: { fontSize: 24, fontFamily: Fonts.bold, color: c.text },
-    subtitle: { fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary, marginTop: 2 },
+    title: { fontSize: 22, fontFamily: Fonts.bold, color: c.text },
+    subtitle: { fontSize: 13, fontFamily: Fonts.regular, color: c.textSecondary, marginTop: 2 },
 
     listContent: { padding: 16, paddingBottom: 24 },
     card: {
@@ -293,7 +293,7 @@ const createStyles = (c: ThemeColors) =>
       backgroundColor: `${Colors.primary}18`,
     },
     stepperQty: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.text, minWidth: 20, textAlign: "center" },
-    lineTotal: { marginLeft: "auto", fontSize: 15, fontFamily: Fonts.bold, color: c.text },
+    lineTotal: { marginLeft: "auto", flexShrink: 1, fontSize: 15, fontFamily: Fonts.bold, color: c.text },
 
     summary: {
       backgroundColor: c.card,

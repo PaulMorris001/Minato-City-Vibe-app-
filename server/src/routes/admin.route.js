@@ -21,6 +21,9 @@ import {
   getVendorTypesAdmin,
   createVendorType,
   deleteVendorType,
+  getGuideTopicsAdmin,
+  createGuideTopic,
+  deleteGuideTopic,
   getEvents,
   toggleEventActive,
   deleteEvent,
@@ -29,6 +32,8 @@ import {
   createRaffleCampaign,
   updateRaffleCampaign,
   endRaffleCampaign,
+  deleteRaffleEntry,
+  deleteRaffleCampaign,
   drawRaffleWinners,
   setRaffleWinner,
   getGuides,
@@ -90,6 +95,11 @@ router.get("/admin/vendor-types", authenticateAdmin, getVendorTypesAdmin);
 router.post("/admin/vendor-types", authenticateAdmin, createVendorType);
 router.delete("/admin/vendor-types/:id", authenticateAdmin, deleteVendorType);
 
+// Guide Topics
+router.get("/admin/guide-topics", authenticateAdmin, getGuideTopicsAdmin);
+router.post("/admin/guide-topics", authenticateAdmin, createGuideTopic);
+router.delete("/admin/guide-topics/:id", authenticateAdmin, deleteGuideTopic);
+
 // Events
 router.get("/admin/events", authenticateAdmin, getEvents);
 router.patch("/admin/events/:id/toggle", authenticateAdmin, toggleEventActive);
@@ -100,6 +110,8 @@ router.get("/admin/raffle/campaigns", authenticateAdmin, getRaffleCampaigns);
 router.post("/admin/raffle/campaigns", authenticateAdmin, createRaffleCampaign);
 router.patch("/admin/raffle/campaigns/:id", authenticateAdmin, updateRaffleCampaign);
 router.post("/admin/raffle/campaigns/:id/end", authenticateAdmin, endRaffleCampaign);
+router.delete("/admin/raffle/campaigns/:id", authenticateAdmin, deleteRaffleCampaign);
+router.delete("/admin/raffle/entries/:id", authenticateAdmin, deleteRaffleEntry);
 // The weighted random draw the published official rules promise entrants.
 router.post("/admin/raffle/campaigns/:id/draw", authenticateAdmin, drawRaffleWinners);
 // Birthday Raffle — entries + winner selection

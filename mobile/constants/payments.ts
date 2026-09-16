@@ -251,3 +251,4 @@ export function priceLabel(
   if (price === 0 || price === null || price === undefined) return freeLabel;
   return formatMoney(price, currency);
 }
+

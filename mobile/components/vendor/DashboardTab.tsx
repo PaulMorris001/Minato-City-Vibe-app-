@@ -51,7 +51,10 @@ interface DashboardTabProps {
   statsLoading?: boolean;
   onRefresh: () => void;
   refreshing: boolean;
-  onGoToServices?: () => void;
+  // `target` opens Services already drilled into that category (and, with
+  // `serviceId`, straight into that service's edit modal) instead of always
+  // landing on the generic, unfiltered tab regardless of what was tapped.
+  onGoToServices?: (target?: { categoryId?: string | null; serviceId?: string }) => void;
 }
 
 const ACCENTS: Record<string, string> = {
@@ -247,7 +250,7 @@ export default function DashboardTab({
           label: "Add your first service",
           icon: "briefcase-outline" as const,
           done: (stats?.totalServices ?? 0) > 0,
-          onPress: onGoToServices,
+          onPress: () => onGoToServices?.(),
         },
       ].filter((item): item is NonNullable<typeof item> => item !== null)
     : [];
@@ -283,7 +286,16 @@ export default function DashboardTab({
 
       {/* Greeting */}
       <View style={styles.section}>
-        <Text style={styles.kicker}>{greeting()}</Text>
+        <View style={styles.greetingTopRow}>
+          <Text style={styles.kicker}>{greeting()}</Text>
+          {/* Moved down from the top bar — it sat next to the logo there and
+              on a narrow phone was one more thing competing for space with
+              the notification/cart icons. */}
+          <View style={styles.vendorBadge}>
+            <Ionicons name="briefcase" size={10} color={colors.primaryLight} />
+            <Text style={styles.vendorBadgeText}>VENDOR</Text>
+          </View>
+        </View>
         <Text style={styles.greetingHeadline}>
           Welcome back, <Text style={styles.greetingName}>{greetingName || "vendor"}</Text>
         </Text>
@@ -392,7 +404,7 @@ export default function DashboardTab({
       <View style={styles.sectionH}>
         <Text style={styles.sectionTitle}>Quick actions</Text>
         <View style={styles.actionsRow}>
-          <TouchableOpacity activeOpacity={0.85} style={{ flex: 1 }} onPress={onGoToServices}>
+          <TouchableOpacity activeOpacity={0.85} style={{ flex: 1 }} onPress={() => onGoToServices?.()}>
             <LinearGradient
               colors={VN_CTA_GRADIENT}
               start={{ x: 0, y: 0 }}
@@ -421,7 +433,7 @@ export default function DashboardTab({
         <View style={styles.sectionH}>
           <View style={styles.sectionTitleRow}>
             <Text style={styles.sectionTitle}>By category</Text>
-            <TouchableOpacity onPress={onGoToServices}>
+            <TouchableOpacity onPress={() => onGoToServices?.()}>
               <Text style={styles.actionLink}>Manage</Text>
             </TouchableOpacity>
           </View>
@@ -429,7 +441,12 @@ export default function DashboardTab({
             {categories.map((c) => {
               const accent = ACCENTS[c.category] || VN.purple;
               return (
-                <TouchableOpacity key={c.category} style={styles.catRow} activeOpacity={0.8} onPress={onGoToServices}>
+                <TouchableOpacity
+                  key={c.category}
+                  style={styles.catRow}
+                  activeOpacity={0.8}
+                  onPress={() => onGoToServices?.({ categoryId: c.catalogueCategoryId })}
+                >
                   <View style={[styles.catIcon, { borderColor: accent + "44" }]}>
                     <Text style={{ fontSize: 18 }}>{categoryEmoji(c.category)}</Text>
                   </View>
@@ -454,7 +471,7 @@ export default function DashboardTab({
         <View style={styles.sectionTitleRow}>
           <Text style={styles.sectionTitle}>Recent services</Text>
           {(stats?.recentServices?.length ?? 0) > 0 && (
-            <TouchableOpacity onPress={onGoToServices}>
+            <TouchableOpacity onPress={() => onGoToServices?.()}>
               <Text style={styles.actionLink}>See all</Text>
             </TouchableOpacity>
           )}
@@ -465,7 +482,12 @@ export default function DashboardTab({
               const [c1, c2] = coverGradient(s._id);
               const available = s.availability === "available" && s.isActive;
               return (
-                <TouchableOpacity key={s._id} style={styles.recentRow} activeOpacity={0.85} onPress={onGoToServices}>
+                <TouchableOpacity
+                  key={s._id}
+                  style={styles.recentRow}
+                  activeOpacity={0.85}
+                  onPress={() => onGoToServices?.({ categoryId: s.catalogueCategory, serviceId: s._id })}
+                >
                   {s.images && s.images.length > 0 ? (
                     <MediaTile uri={s.images[0]} style={styles.recentThumb} posterOnly />
                   ) : (
@@ -504,7 +526,7 @@ export default function DashboardTab({
             })}
           </View>
         ) : (
-          <TouchableOpacity onPress={onGoToServices} style={styles.recentEmpty}>
+          <TouchableOpacity onPress={() => onGoToServices?.()} style={styles.recentEmpty}>
             <Text style={styles.recentEmptyText}>+ Add your first service</Text>
           </TouchableOpacity>
         )}
@@ -529,7 +551,32 @@ const createStyles = (c: ThemeColors) =>
   },
   section: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 18 },
   sectionH: { paddingHorizontal: 18, paddingBottom: 18 },
-  kicker: { fontFamily: VNF.medium, fontSize: 12, color: c.textDim, marginBottom: 4 },
+  greetingTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 4,
+  },
+  kicker: { fontFamily: VNF.medium, fontSize: 12, color: c.textDim },
+  // Same look as the badge that used to sit in the top bar next to the logo.
+  vendorBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: c.primaryFadedStrong,
+    borderWidth: 1,
+    borderColor: "rgba(192,132,252,0.35)",
+  },
+  vendorBadgeText: {
+    color: c.primaryLight,
+    fontSize: 10.5,
+    fontFamily: VNF.bold,
+    letterSpacing: 0.8,
+  },
   greetingHeadline: { fontFamily: VNF.display, fontSize: 30, color: c.textBright, letterSpacing: -0.8, lineHeight: 33 },
   greetingName: { color: c.primaryLight },
 
