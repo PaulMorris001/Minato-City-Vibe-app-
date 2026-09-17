@@ -46,7 +46,14 @@ export function eventPlace(ev: FeedEvent): string {
   if (ev.kind === "external") {
     return ev.venueName || ev.location || [ev.city, ev.state].filter(Boolean).join(", ") || "TBA";
   }
-  return ev.isVirtual ? "Online" : ev.location;
+  return nativePlace(ev);
+}
+
+/** A native event's place on one line: venue #1, plus a count of any others. */
+export function nativePlace(ev: EventItem): string {
+  if (ev.isVirtual) return "Online";
+  const more = ev.additionalLocations?.length ?? 0;
+  return more ? `${ev.location} +${more} more` : ev.location;
 }
 
 export function formatDate(iso?: string) {

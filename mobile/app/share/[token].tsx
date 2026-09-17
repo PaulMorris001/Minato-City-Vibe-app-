@@ -22,11 +22,14 @@ import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import type { ThemeColors } from "@/constants/theme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import GlassBackButton from "@/components/shared/GlassBackButton";
+import type { EventVenue } from "@/libs/interfaces";
+import { locationWithMore } from "@/utils/location";
 interface Event {
   _id: string;
   title: string;
   date: string;
   location: string;
+  additionalLocations?: EventVenue[];
   image?: string;
   description?: string;
   shareToken: string;
@@ -250,7 +253,9 @@ export default function ShareEventScreen() {
 
           <View style={styles.detailRow}>
             <Ionicons name="location" size={18} color={colors.primary} />
-            <Text style={styles.detailText}>{event.location}</Text>
+            <Text style={styles.detailText}>
+              {locationWithMore(event.location, event.additionalLocations)}
+            </Text>
           </View>
 
           {event.description ? (

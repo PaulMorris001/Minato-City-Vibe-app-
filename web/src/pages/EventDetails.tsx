@@ -7,7 +7,7 @@ import { api } from "../lib/api";
 import { isVideoUrl, videoPosterUrl } from "../lib/media";
 import { useAuth } from "../context/AuthContext";
 import type { EventItem } from "../lib/types";
-import { fallbackGradient, formatDateTime, money, relativeDay } from "../lib/format";
+import { fallbackGradient, formatDateTime, money, nativePlace, relativeDay } from "../lib/format";
 
 export default function EventDetails() {
   const { eventId } = useParams();
@@ -170,7 +170,7 @@ export default function EventDetails() {
             {ev.title}
           </h1>
           <p className="cv-dim" style={{ fontSize: 15 }}>
-            {formatDateTime(ev.date)} · {ev.isVirtual ? "Online" : ev.location}
+            {formatDateTime(ev.date)} · {nativePlace(ev)}
           </p>
         </div>
       </div>
@@ -266,22 +266,22 @@ export default function EventDetails() {
             <h3 className="cv-h3">Details</h3>
             <div className="cv-facts">
               <Fact icon="📅" label="Date & time" value={formatDateTime(ev.date)} />
-              <Fact
-                icon={ev.isVirtual ? "💻" : "📍"}
-                label={ev.isVirtual ? "Where" : "Location"}
-                value={
-                  ev.isVirtual
-                    ? "Online — link shared with attendees"
-                    : [ev.location, ev.address].filter(Boolean).join(" · ")
-                }
-                href={
-                  ev.isVirtual
-                    ? undefined
-                    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                        [ev.address, ev.location].filter(Boolean).join(", ")
-                      )}`
-                }
-              />
+              {ev.isVirtual ? (
+                <Fact icon="💻" label="Where" value="Online — link shared with attendees" />
+              ) : (
+                // Venue #1 is the event's own fields; one ticket covers every venue.
+                [ev, ...(ev.additionalLocations ?? [])].map((venue, i, all) => (
+                  <Fact
+                    key={i}
+                    icon="📍"
+                    label={all.length > 1 ? `Location ${i + 1} of ${all.length}` : "Location"}
+                    value={[venue.location, venue.address].filter(Boolean).join(" · ")}
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                      [venue.address, venue.location].filter(Boolean).join(", ")
+                    )}`}
+                  />
+                ))
+              )}
               {ev.meetingLink && (
                 <Fact icon="🔗" label="Meeting link" value={ev.meetingLink} href={ev.meetingLink} />
               )}

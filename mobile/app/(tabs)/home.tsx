@@ -27,6 +27,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
+import { locationWithMore } from "@/utils/location";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1413,7 +1414,7 @@ export default function Home() {
                         <Text style={styles.heroTitle} numberOfLines={2}>{heroEvent.title}</Text>
                         {heroEvent.location && (
                           <Text style={styles.heroLocation} numberOfLines={1}>
-                            <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.78)" /> {heroEvent.location}
+                            <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.78)" /> {locationWithMore(heroEvent.location, heroEvent.additionalLocations)}
                           </Text>
                         )}
 

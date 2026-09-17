@@ -3,6 +3,7 @@ import Event from "../models/event.model.js";
 import User from "../models/user.model.js";
 import { passQrBuffer } from "../utils/qrcode.js";
 import { sendEventPassEmail } from "./email.service.js";
+import { venueSummary } from "../utils/eventLocations.js";
 
 /** Format an event date for the pass email, defensively. */
 function formatEventDate(date) {
@@ -106,7 +107,7 @@ export async function issueEventPass({
     // the ticket recipient when given (gifting), else the pass owner's email.
     const [user, event] = await Promise.all([
       User.findById(userId).select("email username").lean(),
-      Event.findById(eventId).select("title date location address").lean(),
+      Event.findById(eventId).select("title date location address city additionalLocations").lean(),
     ]);
     const toEmail = recipientEmail || pass.recipientEmail || user?.email;
     if (!toEmail || !event) return;
@@ -116,7 +117,7 @@ export async function issueEventPass({
       username: recipientName || user?.username || "there",
       eventTitle: event.title,
       eventDateText: formatEventDate(event.date),
-      eventLocation: event.address || event.location || "",
+      eventLocation: venueSummary(event),
       qrBuffer,
       // Printed under the QR in the PDF so door staff can key it in when a
       // screen won't scan.

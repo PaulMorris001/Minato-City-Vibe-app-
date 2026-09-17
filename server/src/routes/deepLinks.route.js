@@ -5,6 +5,7 @@ import Guide from '../models/guide.model.js';
 import User from '../models/user.model.js';
 import { isSupportUser } from '../utils/supportAccount.js';
 import { linkQrDataUrl } from '../utils/qrcode.js';
+import { allVenues } from '../utils/eventLocations.js';
 
 const router = express.Router();
 
@@ -476,7 +477,7 @@ router.get('/event/:token', async (req, res) => {
   }
 
   const when = formatEventWhen(event.date);
-  const venue = event.location || '';
+  const venue = allVenues(event).map((v) => v.location).filter(Boolean).join(' · ');
   const host = event.createdBy?.username ? `Hosted by ${event.createdBy.username}` : '';
   const priceLine = event.isPaid && event.ticketPrice
     ? `From ${formatPrice(event.ticketPrice, event.currency)}`

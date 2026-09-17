@@ -48,11 +48,21 @@ export interface AdminVendor {
   createdAt: string;
 }
 
+/** A further venue an event runs at in parallel; the event's own location is venue #1. */
+export interface EventVenue {
+  location: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
 export interface AdminEvent {
   _id: string;
   title: string;
   date: string;
   location: string;
+  additionalLocations?: EventVenue[];
   image?: string;
   description?: string;
   isPublic: boolean;

@@ -55,6 +55,18 @@ export interface LocationSelection {
   city: string;
 }
 
+// A further venue an event runs at in parallel. The event's own top-level
+// location fields are venue #1; these are the rest (server: Event.additionalLocations).
+export interface EventVenue {
+  location: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  /** GeoJSON [lng, lat], when the host pinned it. */
+  geo?: { coordinates?: number[] };
+}
+
 export interface VendorType {
   _id: string;
   name: string;

@@ -63,7 +63,10 @@ export default function Events() {
       render: (e) => (
         <div>
           <div style={{ fontWeight: 600 }}>{e.title}</div>
-          <div style={{ fontSize: 12, color: colors.textMuted }}>{e.location}</div>
+          <div style={{ fontSize: 12, color: colors.textMuted }}>
+            {e.location}
+            {e.additionalLocations?.length ? ` +${e.additionalLocations.length} more` : ""}
+          </div>
         </div>
       ),
     },

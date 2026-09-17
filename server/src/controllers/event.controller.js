@@ -31,6 +31,7 @@ import {
   parseEndDate,
 } from "../utils/eventLifecycle.js";
 import { toGeoPoint } from "../utils/geo.js";
+import { normalizeAdditionalLocations } from "../utils/eventLocations.js";
 import { issueEventPass } from "../services/pass.service.js";
 import { linkQrDataUrl } from "../utils/qrcode.js";
 import config from "../config/env.js";
@@ -171,6 +172,7 @@ export const createEvent = async (req, res) => {
       meetingLink,
       latitude,
       longitude,
+      additionalLocations,
       isBirthdayRaffle,
     } = req.body;
     const userId = req.user.id;
@@ -181,6 +183,13 @@ export const createEvent = async (req, res) => {
     }
     if (meetingLink && !isValidMeetingLink(meetingLink)) {
       return res.status(400).json({ message: "Event link must be a valid URL (https://...)" });
+    }
+
+    let extraVenues = [];
+    if (!virtual && additionalLocations !== undefined) {
+      const parsed = normalizeAdditionalLocations(additionalLocations);
+      if (parsed.error) return res.status(400).json({ message: parsed.error });
+      extraVenues = parsed.locations;
     }
 
     const parsedEnd = parseEndDate(endDate ?? null, date);
@@ -383,6 +392,7 @@ export const createEvent = async (req, res) => {
       state: virtual ? "" : (state || ""),
       country: virtual ? "" : (country || ""),
       geo: virtual ? undefined : toGeoPoint(latitude, longitude),
+      additionalLocations: extraVenues,
       isVirtual: virtual,
       meetingLink: virtual ? (meetingLink || "") : "",
       image: eventImageUrl,
@@ -1135,7 +1145,7 @@ export const updateEvent = async (req, res) => {
     const {
       title, date, endDate, location, address, city, state, country, image, images,
       description, isPublic, isVirtual, meetingLink, showAttendance,
-      latitude, longitude,
+      latitude, longitude, additionalLocations,
       // Material (pricing/capacity) fields — held for admin approval on public events.
       ticketTiers, ticketPrice, maxGuests,
     } = req.body;
@@ -1176,6 +1186,12 @@ export const updateEvent = async (req, res) => {
       { field: "Location", value: location },
       { field: "Address", value: address },
     ]);
+
+    // Validated before the image handling below, which deletes the old cover
+    // from Cloudinary — a 400 must not land after that.
+    const extraVenues =
+      additionalLocations !== undefined ? normalizeAdditionalLocations(additionalLocations) : null;
+    if (extraVenues?.error) return res.status(400).json({ message: extraVenues.error });
 
     // Handle event image upload (if provided)
     if (image !== undefined) {
@@ -1234,6 +1250,7 @@ export const updateEvent = async (req, res) => {
       event.state = "";
       event.country = "";
       event.geo = undefined;
+      event.additionalLocations = [];
     } else {
       // Switching virtual → physical requires a real location in the same request.
       if (event.isVirtual && !location) {
@@ -1251,6 +1268,10 @@ export const updateEvent = async (req, res) => {
       if (latitude !== undefined && longitude !== undefined) {
         event.geo = toGeoPoint(latitude, longitude);
       }
+      // Replaced wholesale, and only when sent: web edit and older app builds
+      // post venue #1 alone, which must not wipe the other venues. Minor field
+      // like the rest of this block — applies immediately.
+      if (extraVenues) event.additionalLocations = extraVenues.locations;
     }
     if (meetingLink !== undefined) {
       if (meetingLink && !isValidMeetingLink(meetingLink)) {
@@ -1945,11 +1966,10 @@ const NEARBY_CITY_LIMIT = 3;
 const NEARBY_EVENTS_PER_CITY = 6;
 
 async function findNearbyCityEvents({ city, state, country, blockedIds, userId }) {
-  const scopeMatch = {
+  const baseMatch = {
     isPublic: true,
     isActive: true,
     isVirtual: { $ne: true },
-    city: { $exists: true, $nin: [null, ""] },
     $and: [
       upcomingFilter(),
       { $or: [{ isPaid: { $ne: true } }, { isPaid: true, approvalStatus: "approved" }] },
@@ -1958,18 +1978,47 @@ async function findNearbyCityEvents({ city, state, country, blockedIds, userId }
   };
   // Same state first (closest proxy for "nearby"); fall back to same
   // country if no state was given; otherwise leave it unscoped rather than
-  // guessing across the whole world.
-  if (state) scopeMatch.state = exactCaseInsensitive(state);
-  else if (country) scopeMatch.country = exactCaseInsensitive(country);
+  // guessing across the whole world. Applied per VENUE, not per event.
+  const venueScope = state
+    ? { state: exactCaseInsensitive(state) }
+    : country
+      ? { country: exactCaseInsensitive(country) }
+      : {};
 
+  // Every venue counts toward its own city, so an event running in two
+  // nearby cities is on offer in both (same rule as eventCityFilter).
   const cityGroups = await Event.aggregate([
-    { $match: scopeMatch },
+    { $match: baseMatch },
+    {
+      $project: {
+        venue: {
+          $concatArrays: [
+            [{ city: "$city", state: "$state", country: "$country" }],
+            { $ifNull: ["$additionalLocations", []] },
+          ],
+        },
+      },
+    },
+    { $unwind: "$venue" },
+    {
+      $match: {
+        "venue.city": { $exists: true, $nin: [null, ""] },
+        ...Object.fromEntries(Object.entries(venueScope).map(([k, v]) => [`venue.${k}`, v])),
+      },
+    },
+    // One count per event per city, however many of its venues share that city.
     {
       $group: {
-        _id: { $toLower: "$city" },
-        city: { $first: "$city" },
-        state: { $first: "$state" },
-        country: { $first: "$country" },
+        _id: { event: "$_id", city: { $toLower: "$venue.city" } },
+        venue: { $first: "$venue" },
+      },
+    },
+    {
+      $group: {
+        _id: "$_id.city",
+        city: { $first: "$venue.city" },
+        state: { $first: "$venue.state" },
+        country: { $first: "$venue.country" },
         count: { $sum: 1 },
       },
     },
@@ -1981,7 +2030,14 @@ async function findNearbyCityEvents({ city, state, country, blockedIds, userId }
   const top = cityGroups.find((g) => g._id !== target);
   if (!top) return null;
 
-  const nearbyEvents = await Event.find({ ...scopeMatch, city: exactCaseInsensitive(top.city) })
+  const inTopCity = { ...venueScope, city: exactCaseInsensitive(top.city) };
+  const nearbyEvents = await Event.find({
+    ...baseMatch,
+    $and: [
+      ...baseMatch.$and,
+      { $or: [inTopCity, { additionalLocations: { $elemMatch: inTopCity } }] },
+    ],
+  })
     .populate('createdBy', 'username email profilePicture')
     .sort({ date: 1 })
     .limit(NEARBY_EVENTS_PER_CITY);
@@ -1992,6 +2048,24 @@ async function findNearbyCityEvents({ city, state, country, blockedIds, userId }
     country: top.country || null,
     totalThere: top.count,
     events: await attachTicketInfo(nearbyEvents, userId),
+  };
+}
+
+/**
+ * "This event is in `city`" — one OR-group, for `$and`. Matches the structured
+ * city field, the free-text location string (legacy events created before
+ * structured fields), or the city of any of the event's additional venues.
+ * Every city filter on events goes through here so a venue added somewhere
+ * can't be missed by one feed and found by another.
+ */
+function eventCityFilter(city) {
+  const exact = exactCaseInsensitive(city);
+  return {
+    $or: [
+      { city: { $regex: exact } },
+      { location: { $regex: escapeRegex(city), $options: "i" } },
+      { "additionalLocations.city": { $regex: exact } },
+    ],
   };
 }
 
@@ -2019,16 +2093,7 @@ export function buildPublicEventQuery({ city, state, country, date, online, bloc
     },
   ];
 
-  // City matches the structured field, falling back to the free-text
-  // location string for legacy events created before structured fields.
-  if (city && !onlineOnly) {
-    andConditions.push({
-      $or: [
-        { city: { $regex: exactCaseInsensitive(city) } },
-        { location: { $regex: escapeRegex(city), $options: "i" } },
-      ],
-    });
-  }
+  if (city && !onlineOnly) andConditions.push(eventCityFilter(city));
 
   // Virtual events show under the dedicated Online filter and in the
   // unfiltered feed — never under a specific place. ($ne matches legacy
@@ -2049,6 +2114,7 @@ export function buildPublicEventQuery({ city, state, country, date, online, bloc
         { description: { $regex: safe, $options: "i" } },
         { location: { $regex: safe, $options: "i" } },
         { city: { $regex: safe, $options: "i" } },
+        { "additionalLocations.location": { $regex: safe, $options: "i" } },
       ],
     });
   }
@@ -2326,8 +2392,6 @@ export const getEventHighlights = async (req, res) => {
     const now = new Date();
     const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    const esc = escapeRegex;
-
     const publicFilter = {
       isPublic: true,
       isActive: true,
@@ -2338,19 +2402,10 @@ export const getEventHighlights = async (req, res) => {
     };
 
     // Trending/upcoming should reflect the home feed's currently selected
-    // city, same matching rule as getPublicEvents: structured city field or
-    // free-text location fallback, and virtual events excluded since they
-    // don't belong to any one place.
+    // city, same matching rule as getPublicEvents (eventCityFilter), with
+    // virtual events excluded since they don't belong to any one place.
     if (city) {
-      publicFilter.$and = [
-        {
-          $or: [
-            { city: { $regex: new RegExp(`^${esc(city)}$`, "i") } },
-            { location: { $regex: esc(city), $options: "i" } },
-          ],
-        },
-        { isVirtual: { $ne: true } },
-      ];
+      publicFilter.$and = [eventCityFilter(city), { isVirtual: { $ne: true } }];
     }
 
     // "Not over yet" is an OR-group (it has to allow for an optional endDate),
@@ -2433,15 +2488,7 @@ export const getEventHighlights = async (req, res) => {
       ],
     };
     if (city) {
-      myUpcomingFilter.$and.push(
-        {
-          $or: [
-            { city: { $regex: new RegExp(`^${esc(city)}$`, "i") } },
-            { location: { $regex: esc(city), $options: "i" } },
-          ],
-        },
-        { isVirtual: { $ne: true } },
-      );
+      myUpcomingFilter.$and.push(eventCityFilter(city), { isVirtual: { $ne: true } });
     }
     const myUpcoming = userId
       ? await Event.find(myUpcomingFilter)
