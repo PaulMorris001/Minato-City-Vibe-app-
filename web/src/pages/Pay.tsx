@@ -11,7 +11,7 @@ import Layout from "../components/Layout";
 import AppPromo from "../components/AppPromo";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { money, formatDateTime } from "../lib/format";
+import { money, formatDateTime, nativePlace } from "../lib/format";
 import type { EventItem, EventTier } from "../lib/types";
 
 interface PaymentsConfig {
@@ -354,7 +354,7 @@ export default function Pay() {
       <h1 className="cv-h1">Get tickets</h1>
       <p className="cv-h2">{ev.title}</p>
       <p className="cv-muted" style={{ marginBottom: 20 }}>
-        {formatDateTime(ev.date)} · {ev.isVirtual ? "Online" : ev.location} · Prices in{" "}
+        {formatDateTime(ev.date)} · {nativePlace(ev)} · Prices in{" "}
         {ev.currency || "USD"}
       </p>
 

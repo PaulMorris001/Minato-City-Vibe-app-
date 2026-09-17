@@ -73,6 +73,15 @@ export interface Review {
   user?: PublicUser;
 }
 
+/** A further venue a native event runs at in parallel (Event.additionalLocations). */
+export interface EventVenue {
+  location: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
 /** Native CityVibe event (Event model). */
 export interface EventItem {
   _id: string;
@@ -86,6 +95,8 @@ export interface EventItem {
   city?: string;
   state?: string;
   country?: string;
+  /** Venues beyond the one above, which is venue #1. Managed in the app only. */
+  additionalLocations?: EventVenue[];
   image?: string;
   images?: string[];
   isPublic?: boolean;

@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { formatDateTime, money } from "../lib/format";
+import { formatDateTime, money, nativePlace } from "../lib/format";
 import type { EventItem } from "../lib/types";
 
 /**
@@ -74,7 +74,7 @@ export default function MyEvents() {
                 </span>
               </div>
               <p className="cv-muted" style={{ marginBottom: 12 }}>
-                {formatDateTime(ev.date)} · {ev.isVirtual ? "Online" : ev.location}
+                {formatDateTime(ev.date)} · {nativePlace(ev)}
                 {ev.isPaid ? ` · from ${money(
                   ev.ticketTiers?.length
                     ? Math.min(...ev.ticketTiers.map((t) => t.price))

@@ -59,6 +59,8 @@ import {
   vendorAccentColor,
 } from "@/utils/eventDetails";
 import { formatLocation } from "@/utils/location";
+import { openInMapsApp } from "@/utils/maps";
+import type { EventVenue } from "@/libs/interfaces";
 import { addEventToCalendar } from "@/utils/calendar";
 import { openUserProfile } from "@/utils/userNavigation";
 
@@ -113,6 +115,8 @@ interface Event {
   country?: string;
   /** Map pin, [lng, lat] per GeoJSON. Absent on events created before 1.2.0. */
   geo?: { type?: string; coordinates?: number[] };
+  /** Further venues the event runs at in parallel; the fields above are venue #1. */
+  additionalLocations?: EventVenue[];
   isVirtual?: boolean;
   meetingLink?: string;
   hasMeetingLink?: boolean;
@@ -1710,7 +1714,11 @@ export default function EventDetailsPage() {
             </GlassCard>
           ) : (!!event.address || !!event.location) && (
             <GlassCard>
-              <Text style={styles.microLabel}>WHERE</Text>
+              <Text style={styles.microLabel}>
+                {event.additionalLocations?.length
+                  ? `WHERE · ${event.additionalLocations.length + 1} LOCATIONS`
+                  : "WHERE"}
+              </Text>
               {!!event.address && <Text style={styles.aboutBody}>{event.address}</Text>}
               <View style={styles.whereRow}>
                 <Ionicons name="location-outline" size={15} color={colors.primaryLight} />
@@ -1731,6 +1739,38 @@ export default function EventDetailsPage() {
                 location={event.location}
                 title={event.title}
               />
+              {/* Other venues get a directions row rather than their own map:
+                  they're usually in other cities, and a live map per venue
+                  would weigh the screen down. */}
+              {(event.additionalLocations ?? []).map((venue, i) => {
+                const place =
+                  formatLocation({ city: venue.city, state: venue.state, country: venue.country }) ||
+                  venue.location;
+                const coords = venue.geo?.coordinates;
+                return (
+                  <View key={i} style={styles.venueDivider}>
+                    {!!venue.address && <Text style={styles.aboutBody}>{venue.address}</Text>}
+                    <View style={styles.whereRow}>
+                      <Ionicons name="location-outline" size={15} color={colors.primaryLight} />
+                      <Text style={styles.whereCity}>{place}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.whereRow}
+                      onPress={() =>
+                        openInMapsApp({
+                          latitude: coords?.[1],
+                          longitude: coords?.[0],
+                          label: [venue.address, place].filter(Boolean).join(", "),
+                        })
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="navigate-outline" size={15} color={colors.primaryLight} />
+                      <Text style={styles.venueDirections}>Get directions</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
             </GlassCard>
           )}
 
@@ -3312,6 +3352,17 @@ const createStyles = (c: ThemeColors) =>
   whereCity: {
     color: c.textDim,
     fontFamily: Fonts.regular,
+    fontSize: 13,
+  },
+  venueDivider: {
+    marginTop: 14,
+    paddingTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.glassStroke,
+  },
+  venueDirections: {
+    color: c.primaryLight,
+    fontFamily: Fonts.semiBold,
     fontSize: 13,
   },
 

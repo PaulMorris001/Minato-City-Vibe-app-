@@ -23,6 +23,8 @@ import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 import { saveBase64ImageToGallery, saveWithFeedback } from "@/utils/saveToGallery";
 import { cacheRead, cacheWrite } from "@/utils/offlineCache";
+import { locationWithMore } from "@/utils/location";
+import type { EventVenue } from "@/libs/interfaces";
 type AttendanceStatus = "incoming" | "attended" | "missed";
 
 interface Pass {
@@ -39,6 +41,7 @@ interface Pass {
     date: string;
     location?: string;
     address?: string;
+    additionalLocations?: EventVenue[];
     image?: string;
   };
 }
@@ -186,7 +189,10 @@ export default function PassesScreen() {
                       <View style={styles.metaRow}>
                         <Ionicons name="location-outline" size={13} color={colors.textDim} />
                         <Text style={styles.metaText} numberOfLines={1}>
-                          {pass.event.address || pass.event.location}
+                          {locationWithMore(
+                            pass.event.address || pass.event.location || "",
+                            pass.event.additionalLocations
+                          )}
                         </Text>
                       </View>
                     )}

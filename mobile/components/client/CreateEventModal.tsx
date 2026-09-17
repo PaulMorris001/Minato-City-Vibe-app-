@@ -31,6 +31,11 @@ import {
 import LocationPinPicker, {
   PinnedCoordinates,
 } from "@/components/shared/LocationPinPicker";
+import AdditionalLocationsEditor, {
+  LocationDraft,
+  hasIncompleteDraft,
+  venuesFromDrafts,
+} from "@/components/shared/AdditionalLocationsEditor";
 import { uploadImage, resolveImageUrls } from "@/utils/imageUpload";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import { LocationSelection } from "@/libs/interfaces";
@@ -92,6 +97,8 @@ export default function CreateEventModal({
   // Exact venue pin. Optional — an event without one still works.
   const [pinnedCoords, setPinnedCoords] = useState<PinnedCoordinates | null>(null);
   const [pinPickerOpen, setPinPickerOpen] = useState(false);
+  // Further venues the event runs at in parallel. Optional.
+  const [extraVenues, setExtraVenues] = useState<LocationDraft[]>([]);
   // Named ticket tiers (optional, max 10). While empty, the single Ticket
   // Price field is used instead. Prices are in the organizer's currency.
   // `quantity` is the optional per-tier allocation — set it on every tier to cap
@@ -146,6 +153,10 @@ export default function CreateEventModal({
     }
     if (!formData.isVirtual && (!eventLocation?.city || !eventLocation?.state)) {
       Alert.alert("Validation Error", "Please select your country, state, and city");
+      return;
+    }
+    if (!formData.isVirtual && hasIncompleteDraft(extraVenues)) {
+      Alert.alert("Validation Error", "Every added location needs a country, state, and city — or remove it");
       return;
     }
     if (formData.isVirtual && formData.meetingLink.trim() && !/^https?:\/\//i.test(formData.meetingLink.trim())) {
@@ -254,6 +265,7 @@ export default function CreateEventModal({
         // Optional map pin. Left off entirely when the host skipped it — the
         // event screen geocodes the address on the device in that case.
         ...(!formData.isVirtual && pinnedCoords ? pinnedCoords : {}),
+        additionalLocations: formData.isVirtual ? [] : venuesFromDrafts(extraVenues),
         isVirtual: formData.isVirtual,
         meetingLink: formData.isVirtual ? formData.meetingLink.trim() : "",
         description: formData.description.trim(),
@@ -316,6 +328,7 @@ export default function CreateEventModal({
     setVenueProofImage("");
     setEventLocation(null);
     setPinnedCoords(null);
+    setExtraVenues([]);
     setTiers([]);
 
     // Callback and close
@@ -588,6 +601,10 @@ export default function CreateEventModal({
                       {pinnedCoords ? "Change" : "Optional"}
                     </Text>
                   </TouchableOpacity>
+
+                  <View style={{ paddingHorizontal: 20 }}>
+                    <AdditionalLocationsEditor value={extraVenues} onChange={setExtraVenues} />
+                  </View>
                 </>
               )}
 

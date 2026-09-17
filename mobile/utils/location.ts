@@ -16,3 +16,12 @@ export function formatLocation(loc: {
   }
   return parts.join(", ");
 }
+
+/**
+ * An event's location for a one-line card or list row: venue #1, plus a count
+ * of any further venues it runs at ("Lagos, Nigeria +2 more").
+ */
+export function locationWithMore(location: string, additionalLocations?: unknown[] | null): string {
+  const more = additionalLocations?.length ?? 0;
+  return more > 0 ? `${location} +${more} more` : location;
+}

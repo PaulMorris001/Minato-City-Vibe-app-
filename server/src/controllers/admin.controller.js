@@ -42,6 +42,7 @@ import {
   isNigerianCountry,
 } from "../services/raffleCampaign.service.js";
 import { adjustCouponBalance, setCouponVendorLock } from "../services/payments/coupon.service.js";
+import { venueSummary } from "../utils/eventLocations.js";
 
 /**
  * Constant-time string comparison. Guards the username check against timing
@@ -1723,6 +1724,7 @@ export async function getEventCancellations(req, res) {
           date: obj.date,
           endDate: obj.endDate,
           location: obj.location,
+          additionalLocations: obj.additionalLocations,
           currency: obj.currency,
           createdBy: obj.createdBy,
           cancellationRequest: obj.cancellationRequest,
@@ -1837,7 +1839,7 @@ async function notifyRefundedHolders(tickets, event, eventDateText) {
       attendeeName: holder?.username,
       eventTitle: event.title,
       eventDateText,
-      eventLocation: event.location,
+      eventLocation: venueSummary(event),
       refundAmountText: formatAmountText(ticket.ticketPrice, event.currency),
       reason: event.cancellationReason,
     });

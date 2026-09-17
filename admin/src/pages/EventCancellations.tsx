@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { adminApi } from "../api/admin";
 import { colors } from "../constants/colors";
+import type { EventVenue } from "../types";
 
 const LIMIT = 20;
 
@@ -12,6 +13,7 @@ interface EventCancellation {
   date: string;
   endDate?: string | null;
   location?: string;
+  additionalLocations?: EventVenue[];
   currency?: string;
   createdBy?: { _id: string; username: string; email: string; verified?: boolean };
   cancellationRequest?: {
@@ -173,7 +175,10 @@ export default function EventCancellations() {
                   </div>
                   <div style={styles.fact}>
                     <div style={styles.factLabel}>Location</div>
-                    <div style={styles.factValue}>{e.location || "—"}</div>
+                    <div style={styles.factValue}>
+                      {e.location || "—"}
+                      {e.additionalLocations?.length ? ` +${e.additionalLocations.length} more` : ""}
+                    </div>
                   </div>
                 </div>
 

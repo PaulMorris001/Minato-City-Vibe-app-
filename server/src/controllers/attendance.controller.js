@@ -270,7 +270,7 @@ export const getMyPasses = async (req, res) => {
   try {
     const userId = req.user.id;
     const passes = await Attendance.find({ user: userId })
-      .populate("event", "title date location address image isPaid")
+      .populate("event", "title date location address additionalLocations image isPaid")
       // Tier name so ticket passes can show "VIP" etc. at the door.
       .populate("ticket", "tierName")
       .sort({ createdAt: -1 })
@@ -335,7 +335,7 @@ export const getMyPassForEvent = async (req, res) => {
     }
 
     const event = await Event.findById(eventId)
-      .select("title date location address image")
+      .select("title date location address additionalLocations image")
       .lean();
 
     res.json({

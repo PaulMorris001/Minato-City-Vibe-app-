@@ -40,7 +40,8 @@ import {
   PAYOUT_STATUS_ENDPOINTS,
 } from "@/constants/payments";
 import { isChecklistSnoozed, snoozeChecklist } from "@/utils/setupChecklist";
-import { Guide } from "@/libs/interfaces";
+import { EventVenue, Guide } from "@/libs/interfaces";
+import { locationWithMore } from "@/utils/location";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -69,6 +70,7 @@ interface UserEvent {
   title: string;
   date: string;
   location: string;
+  additionalLocations?: EventVenue[];
   image?: string;
   userStatus: "creator" | "accepted" | "pending" | "none";
   invitedUsers: unknown[];
@@ -831,7 +833,7 @@ function EventRow({ event }: { event: UserEvent }) {
           </Text>
           <View style={styles.subDot} />
           <Text style={styles.subText} numberOfLines={1}>
-            {event.location}
+            {locationWithMore(event.location, event.additionalLocations)}
           </Text>
         </View>
       </View>

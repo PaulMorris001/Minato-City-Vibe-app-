@@ -25,6 +25,35 @@ const eventSchema = mongoose.Schema({
     type: { type: String, enum: ["Point"], default: "Point" },
     coordinates: { type: [Number], default: undefined }, // [lng, lat]
   },
+  // Further venues the SAME event runs at simultaneously (watch parties in
+  // Lagos and London) — parallel venues, not an itinerary. The top-level
+  // location/address/city/state/country/geo above stay venue #1, so every
+  // reader that predates this field (old app builds, web edit, emails) keeps
+  // working, and an edit that only sends those fields leaves this list intact.
+  // One pass covers every venue. Discover matches an event in any venue's city
+  // — see eventCityFilter in controllers/event.controller.js.
+  additionalLocations: {
+    type: [
+      new mongoose.Schema(
+        {
+          location: { type: String, required: true },
+          address: { type: String, default: "" },
+          city: { type: String, required: true },
+          state: { type: String, default: "" },
+          country: { type: String, default: "" },
+          // No `default: "Point"` on type: a default writes a coordinate-less
+          // point for every venue without a pin. toGeoPoint() sets the whole
+          // object or nothing.
+          geo: {
+            type: { type: String, enum: ["Point"] },
+            coordinates: { type: [Number], default: undefined },
+          },
+        },
+        { _id: false }
+      ),
+    ],
+    default: [],
+  },
   // Virtual events have no physical venue; location is stored as "Online".
   isVirtual: { type: Boolean, default: false },
   // Optional meeting URL (Zoom/Meet/etc). Only returned to attendees.
@@ -276,6 +305,8 @@ const eventSchema = mongoose.Schema({
 // for type-ahead.)
 eventSchema.index({ isPublic: 1, isActive: 1, date: 1 });
 eventSchema.index({ city: 1, date: 1 });
+// Same lookup for an event's other venues (see eventCityFilter).
+eventSchema.index({ "additionalLocations.city": 1, date: 1 });
 
 // Generate share token + slug before saving. Async hook — mongoose waits on
 // the returned promise, so no next() callback is needed.

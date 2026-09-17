@@ -6,6 +6,7 @@ import Notification from "../models/notification.model.js";
 import User from "../models/user.model.js";
 import { sendPushNotification } from "../services/notification.service.js";
 import { sendEventReminderEmail } from "../services/email.service.js";
+import { venueSummary } from "../utils/eventLocations.js";
 
 /** Base for the event deep link, same host the share/preview routes use. */
 const SITE_BASE = "https://api.ourcityvibe.com";
@@ -98,7 +99,7 @@ async function collectEmailTargets(event, users) {
 /** Send in small batches — the mailer opens a fresh SMTP connection per send. */
 async function sendEmails(targets, event) {
   const eventDateText = formatEventDate(event.date);
-  const eventLocation = event.address || event.location || "";
+  const eventLocation = venueSummary(event);
   const eventUrl = `${SITE_BASE}/event/${event.slug || event.shareToken || event._id}`;
 
   let sent = 0;
