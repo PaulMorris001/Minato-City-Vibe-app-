@@ -34,6 +34,15 @@ interface Pass {
   attendedAt: string | null;
   /** Ticket tier purchased ("VIP", …) — null for RSVP passes and single-price tickets. */
   tierName?: string | null;
+  /**
+   * The venue this pass gets the holder into, on a multi-venue event. Snapshot
+   * taken when they picked, so it stays what they were told even if the host
+   * has since edited the event's venue list. null = single-venue event, or a
+   * pass issued before the picker existed.
+   */
+  locationIndex?: number | null;
+  locationName?: string;
+  locationCity?: string;
   qr: string; // data URL
   event: {
     _id: string;
@@ -185,16 +194,28 @@ export default function PassesScreen() {
                         })}
                       </Text>
                     </View>
-                    {!!(pass.event.address || pass.event.location) && (
+                    {/* A pass that named a venue shows only THAT venue — the
+                        holder needs their own door, not the event's full list.
+                        Everything else falls back to the old summary. */}
+                    {pass.locationIndex != null ? (
                       <View style={styles.metaRow}>
-                        <Ionicons name="location-outline" size={13} color={colors.textDim} />
-                        <Text style={styles.metaText} numberOfLines={1}>
-                          {locationWithMore(
-                            pass.event.address || pass.event.location || "",
-                            pass.event.additionalLocations
-                          )}
+                        <Ionicons name="location" size={13} color={colors.primaryLight} />
+                        <Text style={[styles.metaText, styles.metaTextVenue]} numberOfLines={1}>
+                          {[pass.locationName, pass.locationCity].filter(Boolean).join(", ")}
                         </Text>
                       </View>
+                    ) : (
+                      !!(pass.event.address || pass.event.location) && (
+                        <View style={styles.metaRow}>
+                          <Ionicons name="location-outline" size={13} color={colors.textDim} />
+                          <Text style={styles.metaText} numberOfLines={1}>
+                            {locationWithMore(
+                              pass.event.address || pass.event.location || "",
+                              pass.event.additionalLocations
+                            )}
+                          </Text>
+                        </View>
+                      )
                     )}
 
                     {/* QR — dimmed once attended or missed */}
@@ -320,6 +341,7 @@ const createStyles = (c: ThemeColors) =>
   badgeText: { fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 0.4 },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3 },
   metaText: { fontFamily: Fonts.medium, fontSize: 12.5, color: c.textDim, flexShrink: 1 },
+  metaTextVenue: { color: c.primarySoft, fontFamily: Fonts.semiBold },
   qrWrap: {
     alignSelf: "center",
     marginTop: 18,

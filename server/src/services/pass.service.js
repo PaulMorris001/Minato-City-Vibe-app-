@@ -3,7 +3,7 @@ import Event from "../models/event.model.js";
 import User from "../models/user.model.js";
 import { passQrBuffer } from "../utils/qrcode.js";
 import { sendEventPassEmail } from "./email.service.js";
-import { venueSummary } from "../utils/eventLocations.js";
+import { allVenues, venueLabel, venueSummary } from "../utils/eventLocations.js";
 
 /** Format an event date for the pass email, defensively. */
 function formatEventDate(date) {
@@ -42,6 +42,10 @@ function formatEventDate(date) {
  * @param {string} [args.ticketId]          required for per-ticket passes
  * @param {string} [args.recipientEmail]    where to send the QR (defaults to owner email)
  * @param {string} [args.recipientName]     display name for the email greeting
+ * @param {object} [args.venueChoice]       `{ locationIndex, locationName, locationCity }`
+ *   from resolveVenueChoice(), for a multi-venue event. Re-RSVPing with a
+ *   different venue MOVES an existing RSVP pass (same QR, new door) — the code
+ *   is the entitlement and does not need reissuing to change where it is used.
  * @returns {Promise<void>}
  */
 export async function issueEventPass({
@@ -51,6 +55,7 @@ export async function issueEventPass({
   ticketId = null,
   recipientEmail = null,
   recipientName = null,
+  venueChoice = null,
   sendEmail = true,
 }) {
   try {
@@ -69,6 +74,7 @@ export async function issueEventPass({
             ticket: ticketId,
             recipientEmail: recipientEmail || undefined,
             code: generatePassCode(),
+            ...(venueChoice || {}),
           });
           shouldEmail = true;
         } catch (err) {
@@ -87,6 +93,7 @@ export async function issueEventPass({
             user: userId,
             type: "rsvp",
             code: generatePassCode(),
+            ...(venueChoice || {}),
           });
           shouldEmail = true;
         } catch (err) {
@@ -94,6 +101,11 @@ export async function issueEventPass({
             pass = await Attendance.findOne({ event: eventId, user: userId, type: "rsvp" });
           else throw err;
         }
+      } else if (venueChoice && pass.locationIndex !== venueChoice.locationIndex) {
+        // Switching venue on a pass they already hold. Only ever from an
+        // explicit new pick, so a client that sends nothing can't blank it.
+        Object.assign(pass, venueChoice);
+        await pass.save();
       }
     }
 
@@ -112,12 +124,19 @@ export async function issueEventPass({
     const toEmail = recipientEmail || pass.recipientEmail || user?.email;
     if (!toEmail || !event) return;
 
+    // A pass that named a venue must say where THAT holder is going; listing
+    // every venue of a multi-city event sends them to the wrong door. Read off
+    // the live venue rather than the pass's snapshot because this email goes out
+    // moments after the pick, and the live copy carries the street address.
+    const pickedVenue =
+      pass.locationIndex != null ? allVenues(event)[pass.locationIndex] : null;
+
     const qrBuffer = await passQrBuffer(pass.code);
     await sendEventPassEmail(toEmail, {
       username: recipientName || user?.username || "there",
       eventTitle: event.title,
       eventDateText: formatEventDate(event.date),
-      eventLocation: venueSummary(event),
+      eventLocation: pickedVenue ? venueLabel(pickedVenue) : venueSummary(event),
       qrBuffer,
       // Printed under the QR in the PDF so door staff can key it in when a
       // screen won't scan.

@@ -15,6 +15,12 @@ const ticketOrderItemSchema = mongoose.Schema(
     price: { type: Number, required: true },
     recipientEmail: { type: String, required: true },
     recipientName: { type: String },
+    // Per-ticket venue pick, frozen at init so the fan-out (and the webhook
+    // fallback, which never sees the buyer's request) issues each pass against
+    // the venue that was chosen for it. See ticket.model.js.
+    locationIndex: { type: Number },
+    locationName: { type: String },
+    locationCity: { type: String },
   },
   { _id: false }
 );

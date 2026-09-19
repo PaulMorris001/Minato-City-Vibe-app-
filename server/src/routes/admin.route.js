@@ -25,6 +25,7 @@ import {
   createGuideTopic,
   deleteGuideTopic,
   getEvents,
+  getEventSignupsAdmin,
   toggleEventActive,
   deleteEvent,
   getRaffleEntries,
@@ -102,6 +103,7 @@ router.delete("/admin/guide-topics/:id", authenticateAdmin, deleteGuideTopic);
 
 // Events
 router.get("/admin/events", authenticateAdmin, getEvents);
+router.get("/admin/events/:id/signups", authenticateAdmin, getEventSignupsAdmin);
 router.patch("/admin/events/:id/toggle", authenticateAdmin, toggleEventActive);
 router.delete("/admin/events/:id", authenticateAdmin, deleteEvent);
 

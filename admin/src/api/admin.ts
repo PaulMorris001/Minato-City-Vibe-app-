@@ -4,6 +4,7 @@ import type {
   AdminUser,
   AdminVendor,
   AdminEvent,
+  EventSignups,
   AdminGuide,
   AdminDiscountCode,
   AdminRaffleEntry,
@@ -70,6 +71,9 @@ export const adminApi = {
       "/admin/events",
       { params }
     ),
+  // Who is going to an event and — for a multi-venue event — to which venue.
+  // Not cached: a door roster is only useful fresh.
+  getEventSignups: (id: string) => client.get<EventSignups>(`/admin/events/${id}/signups`),
   toggleEventActive: (id: string) =>
     client.patch<{ isActive: boolean }>(`/admin/events/${id}/toggle`).then((r) => { bustCache("/admin/events"); return r; }),
   deleteEvent: (id: string) =>

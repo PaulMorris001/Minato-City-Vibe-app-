@@ -33,7 +33,8 @@ export function usePayment() {
     id: string,
     tierId?: string,
     discountCode?: string,
-    useCoupon?: boolean
+    useCoupon?: boolean,
+    locationIndex?: number | null
   ): Promise<PaymentResult> => {
     const token = await SecureStore.getItemAsync("token");
     if (!token) return { success: false, error: "Not authenticated" };
@@ -52,6 +53,11 @@ export function usePayment() {
           ...(tierId ? { tierId } : {}),
           ...(discountCode ? { discountCode } : {}),
           ...(useCoupon ? { useCoupon: true } : {}),
+          // Which venue of a multi-venue event this ticket is for. Stripe and
+          // PayPal keep it on their own payment metadata from here, so their
+          // webhooks issue the pass against the right door even if this app
+          // never gets to confirm.
+          ...(locationIndex != null ? { locationIndex } : {}),
         }),
       });
       init = await res.json();
@@ -70,6 +76,7 @@ export function usePayment() {
         provider: "none",
         reference: init.reference,
         tierId,
+        locationIndex,
       });
     }
 
@@ -81,6 +88,7 @@ export function usePayment() {
         provider: "stripe",
         reference: stripeRes.reference!,
         tierId,
+        locationIndex,
       });
     }
 
@@ -98,6 +106,7 @@ export function usePayment() {
           provider: init.provider,
           reference: init.reference,
           tierId,
+          locationIndex,
         });
         if (rescued.success) return rescued;
       }
@@ -110,6 +119,7 @@ export function usePayment() {
       provider: init.provider,
       reference: hosted.reference!,
       tierId,
+      locationIndex,
     });
   };
 
@@ -117,7 +127,12 @@ export function usePayment() {
     type: PurchaseType,
     id: string,
     token: string,
-    body: { provider: string; reference: string; tierId?: string }
+    body: {
+      provider: string;
+      reference: string;
+      tierId?: string;
+      locationIndex?: number | null;
+    }
   ): Promise<PaymentResult> => {
     try {
       const res = await fetch(`${BASE_URL}/payments/confirm/${type}/${id}`, {
@@ -194,8 +209,12 @@ export function usePayment() {
     }
   };
 
-  const payForTicket = (eventId: string, tierId?: string, discountCode?: string) =>
-    pay("ticket", eventId, tierId, discountCode);
+  const payForTicket = (
+    eventId: string,
+    tierId?: string,
+    discountCode?: string,
+    locationIndex?: number | null
+  ) => pay("ticket", eventId, tierId, discountCode, undefined, locationIndex);
   const payForGuide = (guideId: string) => pay("guide", guideId);
   const payForBooking = (bookingId: string) => pay("booking", bookingId);
   const payForOrder = (orderId: string, useCoupon?: boolean) =>

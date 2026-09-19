@@ -6,6 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -25,6 +26,14 @@ import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 
+/** One venue a person is attending, and how many of their passes are for it. */
+interface SignupLocation {
+  index: number;
+  name: string;
+  city: string;
+  count: number;
+}
+
 interface Signup {
   userId: string;
   username: string;
@@ -33,9 +42,25 @@ interface Signup {
   type: "rsvp" | "ticket";
   ticketCount: number;
   tiers: string[];
+  /** Empty for a single-venue event, or when they never picked. */
+  locations: SignupLocation[];
   checkedIn: boolean;
   attendedAt: string | null;
   joinedAt: string | null;
+}
+
+/** Per-venue headcount. Empty for a single-venue event. */
+interface VenueSummary {
+  index: number;
+  location: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  total: number;
+  rsvpCount: number;
+  ticketCount: number;
+  attendedCount: number;
 }
 
 interface SignupsResponse {
@@ -44,10 +69,14 @@ interface SignupsResponse {
   ticketCount: number;
   ticketsIssued: number;
   attendedCount: number;
+  venues: VenueSummary[];
+  unspecifiedVenue: { total: number; rsvpCount: number; ticketCount: number; attendedCount: number };
   attendees: Signup[];
 }
 
 type Filter = "all" | "ticket" | "rsvp";
+/** A venue index, "none" for the never-picked bucket, or every venue. */
+type VenueFilter = "all" | "none" | number;
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "All" },
@@ -69,6 +98,7 @@ export default function EventAttendeesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
+  const [venueFilter, setVenueFilter] = useState<VenueFilter>("all");
 
   const fetchSignups = useCallback(async () => {
     if (!eventId) return;
@@ -103,8 +133,20 @@ export default function EventAttendeesScreen() {
 
   const attendees = useMemo(() => {
     const all = data?.attendees ?? [];
-    return filter === "all" ? all : all.filter((a) => a.type === filter);
-  }, [data, filter]);
+    const byType = filter === "all" ? all : all.filter((a) => a.type === filter);
+    if (venueFilter === "all") return byType;
+    if (venueFilter === "none") return byType.filter((a) => a.locations.length === 0);
+    return byType.filter((a) => a.locations.some((l) => l.index === venueFilter));
+  }, [data, filter, venueFilter]);
+
+  const venues = data?.venues ?? [];
+  const unplaced = data?.unspecifiedVenue?.total ?? 0;
+
+  /** "Lagos" / "Lagos ×2 · Abuja" — which door(s) this person is coming to. */
+  const locationTextFor = (item: Signup) =>
+    item.locations
+      .map((l) => `${l.city || l.name || "Location"}${l.count > 1 ? ` ×${l.count}` : ""}`)
+      .join(" · ");
 
   /** "2 tickets · VIP" / "RSVP", plus the check-in state once scanned. */
   const subtitleFor = (item: Signup) => {
@@ -134,6 +176,24 @@ export default function EventAttendeesScreen() {
         <Text style={styles.userSub} numberOfLines={1}>
           {subtitleFor(item)}
         </Text>
+        {/* Which venue they're coming to. Only rendered for a multi-venue
+            event; "Location not picked" flags the ones the organizer can't
+            place — old app builds and share-page joins never asked. */}
+        {venues.length > 0 && (
+          <View style={styles.venueRow}>
+            <Ionicons
+              name={item.locations.length ? "location" : "help-circle-outline"}
+              size={12}
+              color={item.locations.length ? colors.primaryLight : colors.textMuted}
+            />
+            <Text
+              style={[styles.venueText, !item.locations.length && styles.venueTextMuted]}
+              numberOfLines={1}
+            >
+              {item.locations.length ? locationTextFor(item) : "Location not picked"}
+            </Text>
+          </View>
+        )}
       </View>
       {item.checkedIn ? (
         <View style={styles.checkedInPill}>
@@ -212,6 +272,49 @@ export default function EventAttendeesScreen() {
                   );
                 })}
               </View>
+              {/* Per-venue headcount, so the organizer can staff each door and
+                  see at a glance who is going where. */}
+              {venues.length > 0 && (
+                <>
+                  <Text style={styles.venueSectionLabel}>BY LOCATION</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.venueChipRow}
+                  >
+                    {[
+                      { key: "all" as VenueFilter, label: "All locations", count: data?.total ?? 0 },
+                      ...venues.map((v) => ({
+                        key: v.index as VenueFilter,
+                        label: v.city || v.location || `Location ${v.index + 1}`,
+                        count: v.total,
+                      })),
+                      ...(unplaced > 0
+                        ? [{ key: "none" as VenueFilter, label: "Not picked", count: unplaced }]
+                        : []),
+                    ].map((chip) => {
+                      const active = venueFilter === chip.key;
+                      return (
+                        <TouchableOpacity
+                          key={String(chip.key)}
+                          style={[styles.filterChip, active && styles.filterChipActive]}
+                          onPress={() => setVenueFilter(chip.key)}
+                          activeOpacity={0.8}
+                        >
+                          <Text
+                            style={[
+                              styles.filterChipText,
+                              active && styles.filterChipTextActive,
+                            ]}
+                          >
+                            {chip.label} {chip.count}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </>
+              )}
             </View>
           }
           refreshControl={
@@ -316,6 +419,35 @@ const createStyles = (c: ThemeColors) =>
       fontFamily: Fonts.regular,
       color: c.textMuted,
       marginTop: 2,
+    },
+    venueRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      marginTop: 2,
+    },
+    venueText: {
+      fontSize: 12,
+      fontFamily: Fonts.medium,
+      color: c.primaryLight,
+      flexShrink: 1,
+    },
+    venueTextMuted: {
+      color: c.textMuted,
+      fontFamily: Fonts.regular,
+    },
+    venueSectionLabel: {
+      fontSize: 11,
+      fontFamily: Fonts.semiBold,
+      letterSpacing: 0.7,
+      color: c.textSecondary,
+      marginTop: 14,
+      marginBottom: 8,
+    },
+    venueChipRow: {
+      flexDirection: "row",
+      gap: 8,
+      paddingRight: 8,
     },
     checkedInPill: {
       flexDirection: "row",
