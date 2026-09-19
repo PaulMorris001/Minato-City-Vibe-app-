@@ -148,6 +148,11 @@ export interface EventItem {
   shareToken?: string;
   // Present on the detail endpoint (GET /events/:id).
   userRsvp?: boolean;
+  /**
+   * Which venue the viewer picked, on a multi-venue event — an index into
+   * [event, ...additionalLocations]. null when they haven't picked one.
+   */
+  userLocationIndex?: number | null;
   userStatus?: "creator" | "accepted" | "pending" | "requested" | "none";
   ticketingReady?: boolean;
   approvalStatus?: "pending" | "approved" | "rejected";

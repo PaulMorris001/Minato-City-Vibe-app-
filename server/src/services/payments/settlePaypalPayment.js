@@ -44,13 +44,13 @@ import { applyRedemptionByReference } from "./discount.service.js";
  * Fulfill a completed PayPal capture and queue the seller's payout.
  *
  * @param {object} capture  normalized by capturePaypalOrder / normalizeCaptureResource:
- *   { orderId, captureId, amount, currency, custom: { type, id, buyerId, tierId } }
+ *   { orderId, captureId, amount, currency, custom: { type, id, buyerId, tierId, locationIndex } }
  * @returns {Promise<{type: string, result: object, payout: object|null}>}
  * @throws when the custom_id context is unusable or the fulfillment fails
  */
 export async function settlePaypalPurchase(capture) {
   const { orderId, amount, currency, custom } = capture;
-  const { type, id, buyerId, tierId } = custom || {};
+  const { type, id, buyerId, tierId, locationIndex } = custom || {};
 
   if (!type || !buyerId) {
     throw new Error(`settlePaypalPurchase: order ${orderId} has no type/buyerId in custom_id`);
@@ -140,6 +140,9 @@ export async function settlePaypalPurchase(capture) {
       // Chosen at init — the order was created for that tier's price and the
       // capture was verified against it.
       tierId,
+      // Venue chosen at init, for a multi-venue event. On custom_id so the
+      // capture webhook issues the pass against the right door too.
+      locationIndex,
       amountPaid: amount,
       ...(redemption?.code
         ? {

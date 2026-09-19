@@ -19,10 +19,17 @@ export function useEventActions({ onDone }: { onDone?: () => void } = {}) {
   const { payForTicket } = usePayment();
 
   const purchaseTicket = useCallback(
-    async (eventId: string, eventTitle: string) => {
+    async (eventId: string, eventTitle: string, multiVenue?: boolean) => {
       const token = await SecureStore.getItemAsync("token");
       if (!token) {
         router.push("/login");
+        return;
+      }
+      // A multi-venue event needs a venue picked before it can be charged for,
+      // and a feed card has nowhere to ask — same hand-off as a multi-tier
+      // event below.
+      if (multiVenue) {
+        router.push(`/event/${eventId}`);
         return;
       }
       // The hook runs checkout AND confirms server-side before returning.
@@ -44,11 +51,17 @@ export function useEventActions({ onDone }: { onDone?: () => void } = {}) {
   );
 
   const joinFreeEvent = useCallback(
-    async (eventId: string, eventTitle: string) => {
+    async (eventId: string, eventTitle: string, multiVenue?: boolean) => {
       try {
         const token = await SecureStore.getItemAsync("token");
         if (!token) {
           router.push("/login");
+          return;
+        }
+        // See purchaseTicket: joining without naming a venue would leave the
+        // organizer's guest list unable to say which door to expect them at.
+        if (multiVenue) {
+          router.push(`/event/${eventId}`);
           return;
         }
         const res = await fetch(`${BASE_URL}/events/${eventId}/join`, {

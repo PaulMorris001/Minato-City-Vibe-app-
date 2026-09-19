@@ -43,6 +43,7 @@ import {
 } from "../services/payments/discount.service.js";
 import { findEventByAnyId } from "../utils/resolveEvent.js";
 import { ticketSalesClosedReason } from "../utils/eventLifecycle.js";
+import { resolveVenueChoice } from "../utils/eventLocations.js";
 import { reserveOrderCoupon } from "../services/payments/coupon.service.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -318,6 +319,17 @@ export const initPayment = async (req, res) => {
 
     if (!seller) return res.status(400).json({ message: "Seller not found" });
 
+    // Which venue of a multi-venue event this ticket is for. Validated here and
+    // carried on the provider's own metadata (Stripe) / custom_id (PayPal), so
+    // the capture webhook — which never sees this request — issues the pass
+    // against the right door. Paystack and the free path re-send it at confirm.
+    let venueChoice = null;
+    if (type === "ticket") {
+      const resolved = resolveVenueChoice(item, req.body?.locationIndex);
+      if (resolved.error) return res.status(400).json({ message: resolved.error });
+      venueChoice = resolved.choice;
+    }
+
     // Discount codes (tickets only): reserve a redemption slot NOW so a
     // "first N" cap can't oversell between init and confirm. The discounted
     // total becomes the charge amount; the reservation is pointed at the
@@ -404,7 +416,10 @@ export const initPayment = async (req, res) => {
         amount: chargeAmount,
         currency,
         buyer,
-        ...(tier ? { meta: { tierId: tier.tierId.toString() } } : {}),
+        meta: {
+          ...(tier ? { tierId: tier.tierId.toString() } : {}),
+          ...(venueChoice ? { locationIndex: venueChoice.locationIndex } : {}),
+        },
       });
       // The reference is PayPal's order id, which only exists after the order is
       // created — unlike Paystack, where we mint it ourselves before the call.
@@ -442,6 +457,7 @@ export const initPayment = async (req, res) => {
     if (type === "ticket") {
       params.metadata.eventId = id.toString();
       if (tier) params.metadata.tierId = tier.tierId.toString();
+      if (venueChoice) params.metadata.locationIndex = String(venueChoice.locationIndex);
       params.transfer_group = `event_${id}`;
     } else if (type === "guide") {
       params.metadata.guideId = id.toString();
@@ -480,8 +496,13 @@ export const confirmPayment = async (req, res) => {
     if (!TYPES.has(type)) return res.status(400).json({ message: "Unknown purchase type" });
     if (!reference) return res.status(400).json({ message: "reference is required" });
 
+    // Stripe and PayPal read the venue pick back off their own payment metadata,
+    // written at init; these two rails have nowhere to keep it, so the client
+    // re-sends it — same channel tierId already travels on.
+    const locationIndex = req.body?.locationIndex;
+
     if (provider === "paystack") {
-      return confirmPaystack(type, id, reference, userId, res, req.body?.tierId);
+      return confirmPaystack(type, id, reference, userId, res, req.body?.tierId, locationIndex);
     }
     if (provider === "paypal") {
       return confirmPaypal(type, id, reference, userId, res, req.body?.tierId);
@@ -490,7 +511,7 @@ export const confirmPayment = async (req, res) => {
       // No charge exists to verify — either a 100%-off ticket discount, or (for
       // orders) an OurCityVibe coupon that fully covered the total.
       if (type === "order") return confirmFreeOrder(id, reference, userId, res);
-      return confirmFreeTicket(type, id, reference, userId, res, req.body?.tierId);
+      return confirmFreeTicket(type, id, reference, userId, res, req.body?.tierId, locationIndex);
     }
     if (provider && provider !== "stripe") {
       // e.g. a stale client sending the retired "flutterwave" — never let it
@@ -635,7 +656,7 @@ async function confirmPaypal(type, id, reference, userId, res, tierId) {
  * total is re-derived server-side from the event price + the reserved code —
  * the client's claim of "free" is never trusted.
  */
-async function confirmFreeTicket(type, id, reference, userId, res, tierId) {
+async function confirmFreeTicket(type, id, reference, userId, res, tierId, locationIndex) {
   if (type !== "ticket") {
     return res.status(400).json({ message: "Unsupported payment provider" });
   }
@@ -670,6 +691,7 @@ async function confirmFreeTicket(type, id, reference, userId, res, tierId) {
     platformFeeCents: 0,
     sellerNetCents: 0,
     tierId,
+    locationIndex,
     amountPaid: 0,
     discountCode: redemption.code.code,
     discountAmount,
@@ -735,7 +757,7 @@ async function confirmFreeOrder(id, reference, userId, res) {
   return res.status(200).json({ message: "Order paid", order: fulfilled });
 }
 
-async function confirmPaystack(type, id, reference, userId, res, tierId) {
+async function confirmPaystack(type, id, reference, userId, res, tierId, locationIndex) {
   // A batch reference must never be redeemed as a single purchase.
   // verifyPaystackCharge only rejects UNDERpayment, so an NGN 750 two-ticket
   // charge would verify happily against a NGN 250 tier and issue ONE ticket,
@@ -795,6 +817,9 @@ async function confirmPaystack(type, id, reference, userId, res, tierId) {
       sellerNetCents: sellerNet,
       // Safe to honor: the charge was just verified against this tier's price.
       tierId,
+      // Which venue the buyer picked. No price impact, so nothing to verify —
+      // fulfillTicket drops an index that names no venue.
+      locationIndex,
       ...(discountCode
         ? { amountPaid: expectedAmount, discountCode, discountAmount }
         : {}),
@@ -918,7 +943,7 @@ async function resolvePurchaseForConfirm(type, id, userId, res, tierId) {
 
 /**
  * POST /payments/init/tickets/:eventId
- * body: { items: [{ tierId?, recipientEmail, recipientName? }] }
+ * body: { items: [{ tierId?, recipientEmail, recipientName?, locationIndex? }] }
  *
  * One charge for N tickets, each destined for a recipient email (the buyer's own
  * or someone else's — multiple to the same email is allowed). Works for a guest
@@ -966,6 +991,12 @@ export const initTicketBatch = async (req, res) => {
       }
       const { tier, error, code } = resolveTicketTier(event, raw?.tierId);
       if (error) return res.status(400).json({ message: error, code });
+      // Per item, not per order: a buyer can send one pass to the Lagos date and
+      // another to the Abuja one in a single charge. Frozen onto the order so the
+      // fan-out — and the webhook that runs it when the browser never comes
+      // back — issues each pass against the venue it was bought for.
+      const venue = resolveVenueChoice(event, raw?.locationIndex);
+      if (venue.error) return res.status(400).json({ message: venue.error });
       const key = tier?.tierId ? tier.tierId.toString() : "_single";
       perTierRequested.set(key, (perTierRequested.get(key) || 0) + 1);
       lineItems.push({
@@ -974,6 +1005,7 @@ export const initTicketBatch = async (req, res) => {
         price: tier ? tier.price : event.ticketPrice,
         recipientEmail: email,
         recipientName: String(raw?.recipientName || "").trim() || undefined,
+        ...(venue.choice || {}),
       });
     }
 

@@ -45,6 +45,7 @@ import EventQRModal from "@/components/shared/EventQRModal";
 import { ImageViewerModal } from "@/components/shared";
 import MediaTile from "@/components/shared/MediaTile";
 import EventLocationMap from "@/components/shared/EventLocationMap";
+import VenuePicker, { eventVenues, needsVenuePick } from "@/components/shared/VenuePicker";
 import CollapsibleDescription from "@/components/shared/CollapsibleDescription";
 import { cacheRead, cacheWrite } from "@/utils/offlineCache";
 import { ensureOnline } from "@/utils/requireOnline";
@@ -191,6 +192,11 @@ interface Event {
   rsvpCount?: number;
   rsvpUsers?: RsvpUser[];
   userRsvp: boolean;
+  /**
+   * Which venue the viewer picked, for a multi-venue event — an index into
+   * eventVenues(). null when they haven't picked (or aren't going yet).
+   */
+  userLocationIndex?: number | null;
   friendsGoing?: number;
   groupChatUnread?: number;
   groupChatId?: { _id: string; name: string; groupImage?: string } | null;
@@ -390,6 +396,14 @@ export default function EventDetailsPage() {
   // Checkout sheet shown before every paid purchase — tier rows (one synthetic
   // row for single-price events) plus the discount-code entry.
   const [tierPickerVisible, setTierPickerVisible] = useState(false);
+  // Which venue the viewer is attending, on a multi-venue event. Seeded from
+  // the server's `userLocationIndex` so someone already going sees their own
+  // pick rather than being asked again; `venueSheetVisible` is the RSVP-side
+  // prompt (the paid side asks inside the checkout sheet instead).
+  const [venueIndex, setVenueIndex] = useState<number | null>(null);
+  // Which action is waiting on a venue pick, so the sheet knows what to run on
+  // confirm. Both paths mark the viewer as attending; nothing else asks.
+  const [venueSheetFor, setVenueSheetFor] = useState<"rsvp" | "invite" | null>(null);
   const [codeInput, setCodeInput] = useState("");
   const [applyingCode, setApplyingCode] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
@@ -657,7 +671,13 @@ export default function EventDetailsPage() {
     }
   };
 
-  const handleRsvp = async (status: "going" | "not_going") => {
+  // Seeded from the server so someone already going sees their own pick instead
+  // of being asked again, and so switching venue starts from where they are.
+  useEffect(() => {
+    setVenueIndex(event?.userLocationIndex ?? null);
+  }, [event?.userLocationIndex]);
+
+  const handleRsvp = async (status: "going" | "not_going", locationIndex?: number | null) => {
     if (!event) return;
     if (!requireAuth("RSVP to this event")) return;
     if (!ensureOnline("RSVP to an event")) return;
@@ -667,7 +687,10 @@ export default function EventDetailsPage() {
       const res = await fetch(`${BASE_URL}/events/${event._id}/rsvp`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          ...(locationIndex != null ? { locationIndex } : {}),
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -678,11 +701,13 @@ export default function EventDetailsPage() {
             ? {
                 ...prev,
                 userRsvp: status === "going",
+                userLocationIndex: data.userLocationIndex ?? null,
                 rsvpCount:
                   typeof data.rsvpCount === "number" ? data.rsvpCount : prev.rsvpCount,
               }
             : prev
         );
+        setVenueIndex(data.userLocationIndex ?? null);
         trackEvent("event_rsvp", { eventId: event._id, status });
       } else {
         showError(data.message || "Could not update RSVP");
@@ -694,7 +719,10 @@ export default function EventDetailsPage() {
     }
   };
 
-  const handleRespondInvite = async (status: "accepted" | "declined") => {
+  const handleRespondInvite = async (
+    status: "accepted" | "declined",
+    locationIndex?: number | null
+  ) => {
     if (!event) return;
     if (!requireAuth("respond to this invite")) return;
     setInviteResponding(true);
@@ -703,7 +731,10 @@ export default function EventDetailsPage() {
       const res = await fetch(`${BASE_URL}/events/${event._id}/respond-invite`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          ...(locationIndex != null ? { locationIndex } : {}),
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -958,6 +989,20 @@ export default function EventDetailsPage() {
     );
   };
 
+  /**
+   * Confirming attendance on a multi-venue event needs a venue first — ask,
+   * then run the action with the answer. A single-venue event falls straight
+   * through, exactly as before.
+   */
+  const confirmAttendance = (intent: "rsvp" | "invite", index: number | null) => {
+    if (event && needsVenuePick(event) && index === null) {
+      setVenueSheetFor(intent);
+      return;
+    }
+    if (intent === "rsvp") handleRsvp("going", index);
+    else handleRespondInvite("accepted", index);
+  };
+
   const handlePurchaseTicket = async () => {
     if (!event) return;
     if (!requireAuth("purchase a ticket")) return;
@@ -1016,7 +1061,7 @@ export default function EventDetailsPage() {
       // The hook runs the provider checkout AND confirms server-side (issuing
       // the ticket) before returning, so success here means the ticket is
       // ready. 100%-off codes complete inside the hook with no payment sheet.
-      const result = await payForTicket(event._id, tierId, discountCode);
+      const result = await payForTicket(event._id, tierId, discountCode, venueIndex);
       if (!result.success) {
         if (result.code === "discount_invalid") {
           // The code got invalidated between preview and init (expired, cap
@@ -1285,6 +1330,12 @@ export default function EventDetailsPage() {
   // the UI that renders them so a guest gets a clean layout instead of zeroes
   // and empty bars.
   const canSeeAttendance = isCreatorOrCohost || !!event.showAttendance;
+
+  // Multi-venue events ask the attendee which venue they're going to, so the
+  // organizer knows who to expect at each door. The index of each entry is what
+  // the server persists — see VenuePicker.
+  const venues = eventVenues(event);
+  const mustPickVenue = needsVenuePick(event);
 
   // Rows for the checkout sheet — real tiers when the event has them, or one
   // synthetic row for single-price events (its tierId stays undefined so the
@@ -1598,7 +1649,7 @@ export default function EventDetailsPage() {
               <View style={styles.inviteActions}>
                 <TouchableOpacity
                   style={[styles.inviteBtn, styles.inviteAcceptBtn]}
-                  onPress={() => handleRespondInvite("accepted")}
+                  onPress={() => confirmAttendance("invite", venueIndex)}
                   disabled={inviteResponding}
                 >
                   {inviteResponding ? (
@@ -1719,6 +1770,30 @@ export default function EventDetailsPage() {
                   ? `WHERE · ${event.additionalLocations.length + 1} LOCATIONS`
                   : "WHERE"}
               </Text>
+              {/* Which venue the viewer is going to, once they've picked one.
+                  Tapping re-opens the picker: the server moves the pass rather
+                  than reissuing it, so switching is free. */}
+              {mustPickVenue && venueIndex !== null && (
+                <TouchableOpacity
+                  style={styles.yourVenueRow}
+                  onPress={() => setVenueSheetFor("rsvp")}
+                  disabled={!!event.isPaid}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="checkmark-circle" size={15} color={colors.successLight} />
+                  <Text style={styles.yourVenueText} numberOfLines={1}>
+                    You&apos;re going to{" "}
+                    {formatLocation({
+                      city: venues[venueIndex]?.city,
+                      state: venues[venueIndex]?.state,
+                      country: venues[venueIndex]?.country,
+                    }) || venues[venueIndex]?.location}
+                  </Text>
+                  {/* A ticket admits to the venue it was sold for — changing
+                      that is a refund-and-rebuy, not a tap. */}
+                  {!event.isPaid && <Text style={styles.yourVenueChange}>Change</Text>}
+                </TouchableOpacity>
+              )}
               {!!event.address && <Text style={styles.aboutBody}>{event.address}</Text>}
               <View style={styles.whereRow}>
                 <Ionicons name="location-outline" size={15} color={colors.primaryLight} />
@@ -2307,7 +2382,7 @@ export default function EventDetailsPage() {
               rsvpLoading={rsvpLoading}
               requestingJoin={requestingJoin}
               onPurchase={handlePurchaseTicket}
-              onRsvp={() => handleRsvp("going")}
+              onRsvp={() => confirmAttendance("rsvp", venueIndex)}
               onCancelRsvp={() => handleRsvp("not_going")}
               onRequestJoin={handleRequestToJoin}
               onViewTicket={() => router.push("/passes" as any)}
@@ -2315,6 +2390,55 @@ export default function EventDetailsPage() {
           </SafeAreaView>
         </View>
       )}
+
+      {/* ─── VENUE SHEET — which location are you going to? ────── */}
+      <Modal
+        visible={venueSheetFor !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setVenueSheetFor(null)}
+      >
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
+          <Pressable style={styles.sheetBackdrop} onPress={() => setVenueSheetFor(null)} />
+          <SafeAreaView edges={["bottom"]}>
+            <View style={styles.sheetCard}>
+              <Text style={styles.tierPickerTitle}>
+                {event.userRsvp ? "Change your location" : "Where are you going?"}
+              </Text>
+              <Text style={styles.venueSheetHint}>
+                This event runs at {venues.length} locations. Your pass is for the one you
+                pick, and it&apos;s what the organizer sees on their guest list.
+              </Text>
+              <View style={styles.checkoutVenueBlock}>
+                <VenuePicker
+                  venues={venues}
+                  value={venueIndex}
+                  onChange={setVenueIndex}
+                  label="Pick a location"
+                />
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.venueSheetConfirm,
+                  venueIndex === null && styles.venueSheetConfirmDisabled,
+                ]}
+                onPress={() => {
+                  const intent = venueSheetFor;
+                  setVenueSheetFor(null);
+                  if (intent === "rsvp") handleRsvp("going", venueIndex);
+                  else if (intent === "invite") handleRespondInvite("accepted", venueIndex);
+                }}
+                disabled={venueIndex === null || rsvpLoading || inviteResponding}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.venueSheetConfirmText}>
+                  {rsvpLoading || inviteResponding ? "…" : "Confirm"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
 
       {/* ─── CHECKOUT SHEET — tier rows + discount code ────── */}
       <Modal
@@ -2331,12 +2455,28 @@ export default function EventDetailsPage() {
           <SafeAreaView edges={["bottom"]}>
             <View style={styles.sheetCard}>
               <Text style={styles.tierPickerTitle}>Choose your ticket</Text>
+              {/* Multi-venue events: which date/city this ticket admits to has
+                  to be settled before a tier row can charge for it. */}
+              {mustPickVenue && (
+                <View style={styles.checkoutVenueBlock}>
+                  <VenuePicker
+                    venues={venues}
+                    value={venueIndex}
+                    onChange={setVenueIndex}
+                    label="Which location is this ticket for?"
+                    compact
+                  />
+                </View>
+              )}
               {checkoutTiers.map((tier) => (
                 <TouchableOpacity
                   key={tier._id ?? "single"}
-                  style={styles.tierPickerRow}
+                  style={[
+                    styles.tierPickerRow,
+                    mustPickVenue && venueIndex === null && styles.tierPickerRowDisabled,
+                  ]}
                   onPress={() => purchaseTier(tier._id, appliedDiscount?.code)}
-                  disabled={purchasing}
+                  disabled={purchasing || (mustPickVenue && venueIndex === null)}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.tierPickerName} numberOfLines={1}>
@@ -3365,6 +3505,27 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.semiBold,
     fontSize: 13,
   },
+  yourVenueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: c.glassFillSubtle,
+  },
+  yourVenueText: {
+    flex: 1,
+    color: c.textBody,
+    fontFamily: Fonts.semiBold,
+    fontSize: 13,
+  },
+  yourVenueChange: {
+    color: c.primaryLight,
+    fontFamily: Fonts.semiBold,
+    fontSize: 12,
+  },
 
   // Host
   hostRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 10 },
@@ -3754,6 +3915,31 @@ const createStyles = (c: ThemeColors) =>
     paddingVertical: 14,
     borderTopWidth: 1,
     borderTopColor: c.glassFill,
+  },
+  tierPickerRowDisabled: { opacity: 0.4 },
+  checkoutVenueBlock: { paddingHorizontal: 18, paddingBottom: 4 },
+  venueSheetHint: {
+    fontSize: 13,
+    fontFamily: Fonts.regular,
+    color: c.textSecondary,
+    paddingHorizontal: 18,
+    paddingBottom: 14,
+    lineHeight: 19,
+  },
+  venueSheetConfirm: {
+    marginHorizontal: 18,
+    marginTop: 6,
+    marginBottom: 12,
+    paddingVertical: 15,
+    borderRadius: 16,
+    alignItems: "center",
+    backgroundColor: c.primary,
+  },
+  venueSheetConfirmDisabled: { opacity: 0.4 },
+  venueSheetConfirmText: {
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: c.white,
   },
   tierPickerName: {
     flex: 1,

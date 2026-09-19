@@ -26,6 +26,7 @@ import { notifyUser } from "../notification.service.js";
 import { sendSaleEmail, sendPurchaseReceiptEmail } from "../email.service.js";
 import { computeSplit } from "./split.js";
 import { issueEventPass } from "../pass.service.js";
+import { resolveVenueChoice } from "../../utils/eventLocations.js";
 import { invalidateCachePattern } from "../../utils/cache.js";
 import config from "../../config/env.js";
 import TicketOrder from "../../models/ticketOrder.model.js";
@@ -56,6 +57,11 @@ export function formatAmountText(amount, currency) {
  * @param {number} [args.amountPaid]      what was actually charged (major units; absent = face price)
  * @param {string} [args.discountCode]    applied discount code, if any
  * @param {number} [args.discountAmount]  discount taken off the face price (major units)
+ * @param {number|string} [args.locationIndex] which venue of a multi-venue event
+ *   the buyer picked, resolved here against the loaded event. An index that no
+ *   longer names a venue (the organizer deleted it between init and capture) is
+ *   dropped, not thrown — refusing to issue a ticket that has already been paid
+ *   for, over a venue label, would be the worse failure.
  * @returns {Promise<{ ticket: object, alreadyExisted: boolean }>}
  */
 export async function fulfillTicket({
@@ -71,6 +77,7 @@ export async function fulfillTicket({
   amountPaid,
   discountCode,
   discountAmount,
+  locationIndex,
 }) {
   const existing = await Ticket.findOne({ event: eventId, user: userId, isValid: true });
   if (existing) return { ticket: existing, alreadyExisted: true };
@@ -82,6 +89,9 @@ export async function fulfillTicket({
   // The tierId comes from payment metadata (Stripe) or the confirm body after
   // amount verification (Paystack), both established at init time.
   const tier = tierId && event.ticketTiers?.length ? event.ticketTiers.id(tierId) : null;
+
+  // Venue picked at init, snapshotted onto the ticket — see eventLocations.js.
+  const { choice: venueChoice } = resolveVenueChoice(event, locationIndex);
 
   const ticketData = {
     event: eventId,
@@ -101,6 +111,7 @@ export async function fulfillTicket({
     ...(amountPaid !== undefined ? { amountPaid } : {}),
     ...(discountCode ? { discountCode } : {}),
     ...(discountAmount !== undefined ? { discountAmount } : {}),
+    ...(venueChoice || {}),
   };
   if (provider === "paystack") ticketData.paystackReference = paymentRef;
   else if (provider === "paypal") ticketData.paypalOrderId = paymentRef;
@@ -111,9 +122,13 @@ export async function fulfillTicket({
   const ticket = await Ticket.create(ticketData);
 
   // Issue the attendance pass + email the QR ticket (fire-and-forget).
-  issueEventPass({ userId, eventId, type: "ticket", ticketId: ticket._id }).catch((e) =>
-    console.error("issueEventPass (fulfillTicket) failed:", e)
-  );
+  issueEventPass({
+    userId,
+    eventId,
+    type: "ticket",
+    ticketId: ticket._id,
+    venueChoice,
+  }).catch((e) => console.error("issueEventPass (fulfillTicket) failed:", e));
 
   // Surface the buyer as a confirmed attendee so going-count / capacity reflect
   // the purchase immediately.
@@ -199,6 +214,10 @@ export async function fulfillTicket({
  * @param {number} [args.amountPaid]        what was actually charged for this ticket (major units)
  * @param {string} [args.discountCode]      applied discount code, if any
  * @param {number} [args.discountAmount]    discount taken off the face price (major units)
+ * @param {object|null} [args.venueChoice]  `{ locationIndex, locationName, locationCity }`
+ *   already frozen onto the order's line item at init. Passed through rather
+ *   than re-resolved: the index was validated when the buyer picked it, and a
+ *   venue deleted since then must not be able to throw mid-fan-out.
  * @returns {Promise<object>} the created ticket
  */
 export async function issueRecipientTicket({
@@ -217,6 +236,7 @@ export async function issueRecipientTicket({
   amountPaid,
   discountCode,
   discountAmount,
+  venueChoice = null,
   sendPassEmail = true,
 }) {
   const ticketData = {
@@ -236,6 +256,7 @@ export async function issueRecipientTicket({
     ...(amountPaid !== undefined ? { amountPaid } : {}),
     ...(discountCode ? { discountCode } : {}),
     ...(discountAmount !== undefined ? { discountAmount } : {}),
+    ...(venueChoice || {}),
   };
   if (provider === "paystack") ticketData.paystackReference = paymentRef;
   else if (provider === "paypal") ticketData.paypalOrderId = paymentRef;
@@ -253,6 +274,7 @@ export async function issueRecipientTicket({
     ticketId: ticket._id,
     recipientEmail,
     recipientName,
+    venueChoice,
     sendEmail: sendPassEmail,
   }).catch((e) => console.error("issueEventPass (issueRecipientTicket) failed:", e));
 
@@ -362,6 +384,16 @@ export async function fulfillTicketOrder({ order, event: loadedEvent, notifyBuye
       const tier = item.tierId
         ? { tierId: item.tierId, name: item.tierName, price: item.price }
         : null;
+      // Frozen at init, per line item: a buyer can send one pass to the Lagos
+      // date and another to the Abuja one in a single charge.
+      const venueChoice =
+        item.locationIndex != null
+          ? {
+              locationIndex: item.locationIndex,
+              locationName: item.locationName,
+              locationCity: item.locationCity,
+            }
+          : null;
       const ticket = await issueRecipientTicket({
         event,
         recipientUserId: recipient._id,
@@ -375,6 +407,7 @@ export async function fulfillTicketOrder({ order, event: loadedEvent, notifyBuye
         sellerNetCents,
         recipientEmail: item.recipientEmail,
         recipientName: item.recipientName,
+        venueChoice,
         sendPassEmail: notifyBuyers,
         ...(claimed.discountCode
           ? {

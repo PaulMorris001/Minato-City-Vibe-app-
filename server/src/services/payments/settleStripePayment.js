@@ -105,6 +105,9 @@ export async function settleStripePurchase(paymentIntent) {
       sellerNetCents,
       // Tier chosen at init — the PI was created for that tier's price.
       tierId: meta.tierId,
+      // Venue chosen at init, for a multi-venue event. On the PI so the webhook
+      // fallback issues the pass against the right door too.
+      locationIndex: meta.locationIndex,
       // What was actually charged (discounted when a code applied at init).
       amountPaid: paymentIntent.amount / 100,
       ...(meta.discountCode

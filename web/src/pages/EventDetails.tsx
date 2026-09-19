@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
 import AppPromo from "../components/AppPromo";
+import VenueChoice, { venueCount } from "../components/VenueChoice";
 import { api } from "../lib/api";
 import { isVideoUrl, videoPosterUrl } from "../lib/media";
 import { useAuth } from "../context/AuthContext";
@@ -32,6 +33,11 @@ export default function EventDetails() {
   const [rsvpError, setRsvpError] = useState("");
   const [justJoined, setJustJoined] = useState(false);
 
+  // Multi-venue events ask which venue the attendee is going to, so the
+  // organizer knows who to expect at each door. The index is what the server
+  // stores; the order below must stay "venue #1, then additionalLocations".
+  const [venueIndex, setVenueIndex] = useState<number | null>(null);
+
   function loadEvent() {
     // The detail endpoint wraps the event: { event: {...} }.
     return api<{ event: EventItem }>(`/events/${eventId}`).then(({ event }) => {
@@ -40,6 +46,8 @@ export default function EventDetails() {
       if (event.ticketTiers && event.ticketTiers.length === 1) {
         setSelectedTier(event.ticketTiers[0]._id);
       }
+      // Seeded from the server so someone already going sees their own pick.
+      setVenueIndex(event.userLocationIndex ?? null);
       return event;
     });
   }
@@ -57,8 +65,12 @@ export default function EventDetails() {
     // on the Pay page). A pre-selected tier is passed through as the builder's
     // starting point.
     const tiers = ev?.ticketTiers || [];
-    const q = tiers.length > 1 && selectedTier ? `?tier=${selectedTier}` : "";
-    navigate(`/events/${eventId}/pay${q}`);
+    const params = new URLSearchParams();
+    if (tiers.length > 1 && selectedTier) params.set("tier", selectedTier);
+    // Seeds every ticket in the builder; each one can still be re-pointed there.
+    if (venueIndex !== null) params.set("venue", String(venueIndex));
+    const q = params.toString();
+    navigate(`/events/${eventId}/pay${q ? `?${q}` : ""}`);
   }
 
   async function rsvpFree() {
@@ -69,7 +81,10 @@ export default function EventDetails() {
     setRsvpError("");
     setRsvping(true);
     try {
-      await api(`/events/${eventId}/join`, { method: "POST" });
+      await api(`/events/${eventId}/join`, {
+        method: "POST",
+        body: venueIndex !== null ? { locationIndex: venueIndex } : {},
+      });
       setJustJoined(true);
       loadEvent().catch(() => {});
     } catch (err: any) {
@@ -386,6 +401,8 @@ export default function EventDetails() {
               rsvpError={rsvpError}
               onRsvp={rsvpFree}
               onPay={goToPay}
+              venueIndex={venueIndex}
+              setVenueIndex={setVenueIndex}
             />
             <button className="cv-btn cv-btn-ghost" style={{ marginTop: 10 }} onClick={share}>
               {copied ? "Link copied ✓" : "Share this event"}
@@ -512,6 +529,8 @@ function TicketBox({
   rsvpError,
   onRsvp,
   onPay,
+  venueIndex,
+  setVenueIndex,
 }: {
   ev: EventItem;
   user: { username: string } | null;
@@ -523,6 +542,8 @@ function TicketBox({
   rsvpError: string;
   onRsvp: () => void;
   onPay: () => void;
+  venueIndex: number | null;
+  setVenueIndex: (i: number) => void;
 }) {
   const multiTier = tiers.length > 1;
   // The server sends soldOut to every viewer precisely because ticketsRemaining
@@ -544,8 +565,13 @@ function TicketBox({
         <p className="cv-muted" style={{ marginBottom: 16 }}>
           RSVP to join the guest list — no charge.
         </p>
+        <VenueChoice ev={ev} value={venueIndex} onChange={setVenueIndex} />
         {rsvpError && <div className="cv-error">{rsvpError}</div>}
-        <button className="cv-btn" onClick={onRsvp} disabled={rsvping}>
+        <button
+          className="cv-btn"
+          onClick={onRsvp}
+          disabled={rsvping || (venueCount(ev) > 1 && venueIndex === null)}
+        >
           {rsvping ? "Joining…" : user ? "RSVP — I'm going" : "Log in to RSVP"}
         </button>
       </>
@@ -665,7 +691,15 @@ function TicketBox({
         </div>
       )}
 
-      <button className="cv-btn" onClick={onPay} disabled={multiTier && !selectedTier}>
+      <VenueChoice ev={ev} value={venueIndex} onChange={setVenueIndex} />
+
+      <button
+        className="cv-btn"
+        onClick={onPay}
+        disabled={
+          (multiTier && !selectedTier) || (venueCount(ev) > 1 && venueIndex === null)
+        }
+      >
         Continue to payment
       </button>
     </>

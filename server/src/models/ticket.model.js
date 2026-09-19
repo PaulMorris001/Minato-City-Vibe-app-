@@ -43,6 +43,14 @@ const ticketSchema = mongoose.Schema({
   discountCode: { type: String },
   discountAmount: { type: Number },
 
+  // Which venue of a multi-venue event this ticket admits to. Index into
+  // allVenues(event) with the name/city snapshotted beside it — same convention
+  // (and same reason) as tierId/tierName above. Absent on single-venue events
+  // and on tickets sold before the picker shipped.
+  locationIndex: { type: Number },
+  locationName: { type: String },
+  locationCity: { type: String },
+
   // Ticket status
   isValid: { type: Boolean, default: true },
 

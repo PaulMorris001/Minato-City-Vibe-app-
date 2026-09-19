@@ -9,6 +9,7 @@ import {
 } from "@stripe/react-stripe-js";
 import Layout from "../components/Layout";
 import AppPromo from "../components/AppPromo";
+import VenueChoice, { venueCount } from "../components/VenueChoice";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { money, formatDateTime, nativePlace } from "../lib/format";
@@ -30,6 +31,10 @@ interface Slot {
   email: string;
   confirmEmail: string;
   name: string;
+  // Which venue of a multi-venue event this one pass admits to. Per ticket, not
+  // per order: one charge can send a pass to the Lagos date and another to
+  // Abuja. null until picked; -1 is never used.
+  locationIndex: number | null;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -71,6 +76,9 @@ export default function Pay() {
   const { eventId } = useParams();
   const [params] = useSearchParams();
   const preselectTier = params.get("tier") || "";
+  // The event page's own pick, carried over to seed every ticket in the builder.
+  const preselectVenueRaw = Number(params.get("venue"));
+  const preselectVenue = Number.isInteger(preselectVenueRaw) ? preselectVenueRaw : null;
   const { user } = useAuth();
 
   const [ev, setEv] = useState<EventItem | null>(null);
@@ -149,6 +157,10 @@ export default function Pay() {
       email: "",
       confirmEmail: "",
       name: "",
+      // Single-venue events have nothing to pick, so 0 is the only answer and
+      // the server ignores it; multi-venue ones start on whatever the event page
+      // was showing and can be re-pointed per ticket below.
+      locationIndex: venueCount(ev!) > 1 ? preselectVenue : null,
     };
   }
 
@@ -336,13 +348,20 @@ export default function Pay() {
         : EMAIL_RE.test(s.email) && s.email.trim().toLowerCase() === s.confirmEmail.trim().toLowerCase()
     );
 
-  const canPay = buyerReady && recipientsValid && total >= 0 && slots.length > 0;
+  // Every ticket of a multi-venue event has to name its venue — the organizer's
+  // guest list is the whole point, and a blank would land in "not picked".
+  const venuesChosen =
+    venueCount(ev) === 1 || slots.every((s) => s.locationIndex !== null);
+
+  const canPay =
+    buyerReady && recipientsValid && venuesChosen && total >= 0 && slots.length > 0;
 
   function buildItems() {
     return slots.map((s) => ({
       tierId: s.tierId || undefined,
       recipientEmail: (s.mode === "me" ? buyerEmail : s.email).trim().toLowerCase(),
       recipientName: s.name.trim() || undefined,
+      ...(s.locationIndex !== null ? { locationIndex: s.locationIndex } : {}),
     }));
   }
 
@@ -446,6 +465,12 @@ export default function Pay() {
                   </strong>
                   <strong>{money(s.price, ev.currency)}</strong>
                 </div>
+                <VenueChoice
+                  ev={ev}
+                  value={s.locationIndex}
+                  onChange={(idx) => updateSlot(s.id, { locationIndex: idx })}
+                  label="Which location is this ticket for?"
+                />
                 <div className="cv-chips" style={{ marginBottom: 10 }}>
                   <button
                     type="button"
@@ -762,7 +787,12 @@ function GuestEmailGate({
 // ── Stripe (USD) ─────────────────────────────────────────────────────────────
 
 type PaidResult = { recipients: string[] };
-type ItemsPayload = { tierId?: string; recipientEmail: string; recipientName?: string }[];
+type ItemsPayload = {
+  tierId?: string;
+  recipientEmail: string;
+  recipientName?: string;
+  locationIndex?: number;
+}[];
 
 const stripeCache: Record<string, Promise<Stripe | null>> = {};
 function stripePromiseFor(key: string) {

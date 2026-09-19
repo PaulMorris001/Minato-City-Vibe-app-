@@ -44,6 +44,16 @@ const attendanceSchema = mongoose.Schema(
     // guessed or forged; the scanner sends it back and we look the pass up.
     code: { type: String, unique: true, required: true },
 
+    // Which venue of a multi-venue event the holder is attending. An index into
+    // allVenues(event) — 0 is the event's own location, 1..n its
+    // additionalLocations — with the name/city SNAPSHOT beside it, because the
+    // organizer can reorder or rewrite that list afterwards. All three are
+    // absent on a single-venue event and on passes issued before the picker
+    // shipped; see resolveVenueChoice() in utils/eventLocations.js.
+    locationIndex: { type: Number },
+    locationName: { type: String },
+    locationCity: { type: String },
+
     // Attendance lifecycle. "issued" until scanned, then "attended".
     status: { type: String, enum: ["issued", "attended"], default: "issued" },
     attendedAt: { type: Date },

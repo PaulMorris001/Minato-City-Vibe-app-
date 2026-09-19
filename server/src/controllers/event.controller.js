@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Event from "../models/event.model.js";
 import User from "../models/user.model.js";
 import Ticket from "../models/ticket.model.js";
+import Attendance from "../models/attendance.model.js";
 import DiscountCode from "../models/discountCode.model.js";
 import { Vendor } from "../models/vendor.model.js";
 import Chat from "../models/chat.model.js";
@@ -31,7 +32,7 @@ import {
   parseEndDate,
 } from "../utils/eventLifecycle.js";
 import { toGeoPoint } from "../utils/geo.js";
-import { normalizeAdditionalLocations } from "../utils/eventLocations.js";
+import { normalizeAdditionalLocations, resolveVenueChoice } from "../utils/eventLocations.js";
 import { issueEventPass } from "../services/pass.service.js";
 import { linkQrDataUrl } from "../utils/qrcode.js";
 import config from "../config/env.js";
@@ -775,6 +776,21 @@ export const getEventById = async (req, res) => {
     delete eventObj.viewedBy; // don't leak the viewer list
     eventObj.userRsvp = !!userId && event.rsvpUsers.some(u => u._id.toString() === userId);
     eventObj.rsvpCount = event.rsvpUsers.length;
+
+    // The viewer's own venue pick on a multi-venue event, so the screen can show
+    // which door they chose (and offer to change it) instead of asking again.
+    // Their pass is the single record both an RSVP and a ticket write it to.
+    // Only queried when there is a choice to have made and they are actually
+    // going, so single-venue events pay nothing; this read is cached per viewer
+    // alongside the rest of the response.
+    eventObj.userLocationIndex = null;
+    if (userId && (event.additionalLocations || []).length && (eventObj.userRsvp || hasTicket)) {
+      const myPass = await Attendance.findOne({ event: event._id, user: userId })
+        .select("locationIndex")
+        .sort({ createdAt: 1 })
+        .lean();
+      if (myPass?.locationIndex != null) eventObj.userLocationIndex = myPass.locationIndex;
+    }
 
     // Meeting link is attendees-only: host, cohosts, accepted guests, RSVPs,
     // ticket holders. Everyone else just learns a link exists.
@@ -1670,7 +1686,7 @@ async function ensureEventGroupChatMember(event, userId) {
 export const respondToInvite = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { status } = req.body; // "accepted" | "declined"
+    const { status, locationIndex } = req.body; // "accepted" | "declined"
     const userId = req.user.id;
 
     if (!["accepted", "declined"].includes(status)) {
@@ -1679,6 +1695,10 @@ export const respondToInvite = async (req, res) => {
 
     const event = await Event.findById(eventId);
     if (!event) return res.status(404).json({ message: "Event not found" });
+
+    // Accepting is an RSVP, so it carries the same venue pick — see rsvpEvent.
+    const { choice: venueChoice, error: venueError } = resolveVenueChoice(event, locationIndex);
+    if (venueError) return res.status(400).json({ message: venueError });
 
     // Must have a pending invite
     const isPending = event.pendingInvites.some(id => id.toString() === userId);
@@ -1721,7 +1741,7 @@ export const respondToInvite = async (req, res) => {
 
     // Accepting an invite is an RSVP — issue the entry pass + email the QR.
     if (status === "accepted") {
-      issueEventPass({ userId, eventId, type: "rsvp" }).catch((e) =>
+      issueEventPass({ userId, eventId, type: "rsvp", venueChoice }).catch((e) =>
         console.error("issueEventPass (respondToInvite) failed:", e)
       );
     }
@@ -1770,6 +1790,15 @@ export const joinEventByShareLink = async (req, res) => {
       return res.status(400).json({ message: "You are the creator of this event" });
     }
 
+    // Joining via a link is an RSVP, so it carries the venue pick too. Absent
+    // when the link was opened by a surface with no picker (the server-rendered
+    // share page), which leaves the guest list honest about not knowing.
+    const { choice: venueChoice, error: venueError } = resolveVenueChoice(
+      event,
+      req.body?.locationIndex
+    );
+    if (venueError) return res.status(400).json({ message: venueError });
+
     // Paid events are always public and ticketed — a share link can't grant
     // free entry. Send them through the purchase flow instead. (Private events
     // are always free, so this never blocks the private-invite case.)
@@ -1805,7 +1834,7 @@ export const joinEventByShareLink = async (req, res) => {
 
     // Joining via a share link — including a private-event invite link — is an
     // automatic RSVP, so issue the entry pass + email the QR.
-    issueEventPass({ userId, eventId: event._id, type: "rsvp" }).catch((e) =>
+    issueEventPass({ userId, eventId: event._id, type: "rsvp", venueChoice }).catch((e) =>
       console.error("issueEventPass (joinByShareLink) failed:", e)
     );
 
@@ -1884,6 +1913,14 @@ export const joinFreePublicEvent = async (req, res) => {
       return res.status(400).json({ message: "You have already joined this event" });
     }
 
+    // Which venue they're attending, for a multi-venue event. Changing it later
+    // goes through rsvpEvent — this endpoint refuses a second join outright.
+    const { choice: venueChoice, error: venueError } = resolveVenueChoice(
+      event,
+      req.body?.locationIndex
+    );
+    if (venueError) return res.status(400).json({ message: venueError });
+
     event.invitedUsers.push(userId);
     // Mark them as going so the event's going-count / capacity / friends-going
     // stats pick them up without a separate RSVP step.
@@ -1894,7 +1931,7 @@ export const joinFreePublicEvent = async (req, res) => {
 
     // Joining a free public event is an RSVP — issue the entry pass + email QR.
     // Keyed on the resolved `_id`, never the raw param (which may be a slug).
-    issueEventPass({ userId, eventId: event._id, type: "rsvp" }).catch((e) =>
+    issueEventPass({ userId, eventId: event._id, type: "rsvp", venueChoice }).catch((e) =>
       console.error("issueEventPass (joinFreePublicEvent) failed:", e)
     );
 
@@ -2273,7 +2310,7 @@ export const getUserTickets = async (req, res) => {
 export const rsvpEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { status } = req.body; // "going" | "not_going"
+    const { status, locationIndex } = req.body; // "going" | "not_going"
     const userId = req.user.id;
 
     if (!["going", "not_going"].includes(status)) {
@@ -2282,6 +2319,12 @@ export const rsvpEvent = async (req, res) => {
 
     const event = await Event.findById(eventId);
     if (!event) return res.status(404).json({ message: "Event not found" });
+
+    // Which venue they're attending, for a multi-venue event. Re-sending the
+    // RSVP with a different index moves their pass, so this doubles as "change
+    // where I'm going" without a separate endpoint.
+    const { choice: venueChoice, error: venueError } = resolveVenueChoice(event, locationIndex);
+    if (venueError) return res.status(400).json({ message: venueError });
 
     // Must be invited (or creator) to RSVP
     const isCreator = event.createdBy.toString() === userId;
@@ -2314,7 +2357,7 @@ export const rsvpEvent = async (req, res) => {
     // fire-and-forget — re-RSVPing won't re-send. (Ticket holders already got a
     // pass at purchase; issueEventPass dedupes per event+user.)
     if (status === "going") {
-      issueEventPass({ userId, eventId, type: "rsvp" }).catch((e) =>
+      issueEventPass({ userId, eventId, type: "rsvp", venueChoice }).catch((e) =>
         console.error("issueEventPass (rsvp) failed:", e)
       );
     }
@@ -2328,6 +2371,9 @@ export const rsvpEvent = async (req, res) => {
     res.json({
       message: status === "going" ? "You're marked as going!" : "RSVP removed",
       userRsvp: status === "going",
+      // Echoed so the screen can show which venue it landed on without waiting
+      // for the fire-and-forget pass write above.
+      userLocationIndex: status === "going" ? venueChoice?.locationIndex ?? null : null,
       ...(isOrganizer ? { rsvpCount: event.rsvpUsers.length } : {}),
     });
   } catch (error) {

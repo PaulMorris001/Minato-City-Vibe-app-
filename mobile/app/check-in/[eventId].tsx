@@ -22,7 +22,14 @@ import type { ThemeColors } from "@/constants/theme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 type ScanResult =
-  | { kind: "success"; name: string; type: string; already: boolean }
+  | {
+      kind: "success";
+      name: string;
+      type: string;
+      already: boolean;
+      /** The venue this pass was issued for — "" on a single-venue event. */
+      venue: string;
+    }
   | { kind: "error"; message: string };
 
 /**
@@ -67,6 +74,16 @@ export default function CheckInScreen() {
           name: d.attendee?.username || "Guest",
           type: d.attendee?.type === "ticket" ? "Ticket" : "RSVP",
           already: !!d.alreadyCheckedIn,
+          // Surfaced, not enforced — the server checks the pass belongs to this
+          // EVENT, and one organizer may be scanning every door. Showing the
+          // venue lets door staff spot a Lagos pass turning up in Abuja and
+          // decide for themselves.
+          venue:
+            d.attendee?.locationIndex != null
+              ? [d.attendee.locationName, d.attendee.locationCity]
+                  .filter(Boolean)
+                  .join(", ")
+              : "",
         });
       } catch (err: any) {
         setResult({
@@ -146,6 +163,7 @@ export default function CheckInScreen() {
                       {result.already
                         ? `Already checked in · ${result.type}`
                         : `Checked in · ${result.type}`}
+                      {result.venue ? `\n${result.venue}` : ""}
                     </Text>
                     <TouchableOpacity style={styles.againBtn} onPress={scanAgain}>
                       <Text style={styles.againBtnText}>Scan next guest</Text>

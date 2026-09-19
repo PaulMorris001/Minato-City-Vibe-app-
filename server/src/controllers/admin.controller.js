@@ -24,6 +24,7 @@ import {
   sendEventCancellationApprovedEmail,
 } from "../services/email.service.js";
 import { formatAmountText } from "../services/payments/fulfillment.js";
+import { buildEventSignups } from "../services/eventSignups.service.js";
 import { invalidateCachePattern } from "../utils/cache.js";
 import { markVerified } from "../services/verification.service.js";
 import { getSocketInstance } from "../services/socket.service.js";
@@ -343,6 +344,30 @@ export async function getEvents(req, res) {
     res.json({ events, total, page: Number(page), limit: Number(limit) });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+}
+
+/**
+ * GET /admin/events/:id/signups
+ *
+ * Who is going to an event and — for a multi-venue event — to which venue.
+ * Same answer the organizer gets from `GET /events/:eventId/signups`; the two
+ * differ only in the gate, since an admin token is signed with a different
+ * secret and can never satisfy `authenticate`.
+ */
+export async function getEventSignupsAdmin(req, res) {
+  try {
+    const { id } = req.params;
+    const event = await Event.findById(id).select(
+      "title date rsvpUsers invitedUsers location address city state country additionalLocations"
+    );
+    if (!event) return res.status(404).json({ message: "Event not found" });
+
+    const signups = await buildEventSignups(event);
+    res.json({ event: { id: event._id, title: event.title, date: event.date }, ...signups });
+  } catch (error) {
+    console.error("getEventSignupsAdmin:", error);
+    res.status(500).json({ message: "Failed to load signups" });
   }
 }
 
