@@ -284,7 +284,7 @@ export default function SubEventsEditor({
 
           <TextInput
             style={styles.input}
-            placeholder="Address, e.g. 12 Allen Ave, Ikeja"
+            placeholder="Address, e.g. 221B Baker Street, London"
             placeholderTextColor={colors.textGhost}
             value={draft.address}
             onChangeText={(address) => update(draft.key, { address })}

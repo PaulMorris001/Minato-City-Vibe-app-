@@ -283,7 +283,7 @@ export default function CreateEventScreen() {
       if (/verif/i.test(errorMessage)) {
         Alert.alert("Verification required", errorMessage, [
           { text: "Cancel", style: "cancel" },
-          { text: "Get Verified", onPress: () => router.push("/settings" as any) },
+          { text: "Get Verified", onPress: () => router.push("/public-event-verification" as any) },
         ]);
       } else {
         Alert.alert("Error", errorMessage);
@@ -575,7 +575,7 @@ export default function CreateEventScreen() {
                         "Only verified users can create public events.",
                         [
                           { text: "Cancel", style: "cancel" },
-                          { text: "Get Verified", onPress: () => router.push("/settings" as any) },
+                          { text: "Get Verified", onPress: () => router.push("/public-event-verification" as any) },
                         ]
                       );
                       return;
@@ -604,7 +604,7 @@ export default function CreateEventScreen() {
               {!draft.isVerified && (
                 <TouchableOpacity
                   style={styles.verifyLinkRow}
-                  onPress={() => router.push("/settings" as any)}
+                  onPress={() => router.push("/public-event-verification" as any)}
                   activeOpacity={0.8}
                 >
                   <Ionicons name="shield-checkmark-outline" size={15} color={colors.primary} />

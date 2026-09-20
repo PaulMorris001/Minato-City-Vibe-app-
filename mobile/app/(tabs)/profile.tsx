@@ -198,8 +198,12 @@ export default function ProfileScreen() {
     () => events.filter((e) => e.userStatus === "creator"),
     [events]
   );
+  // "Attended" is a history tab — an accepted invite only belongs here once
+  // the event has actually happened. An accepted invite to something still
+  // upcoming used to land here immediately, which read as "you attended this"
+  // for an event that hadn't started yet.
   const attended = useMemo(
-    () => events.filter((e) => e.userStatus === "accepted"),
+    () => events.filter((e) => e.userStatus === "accepted" && new Date(e.date).getTime() < Date.now()),
     [events]
   );
   const pending = useMemo(

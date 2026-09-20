@@ -28,6 +28,23 @@ import { VN } from "@/components/vendor/vendorTheme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 
+interface DashboardVenue {
+  location: string;
+  address?: string;
+  city: string;
+}
+
+interface DashboardSubEvent {
+  _id: string;
+  title: string;
+  date: string;
+  location: string;
+  city?: string;
+  ticketPrice?: number;
+  maxGuests?: number;
+  ticketSalesClosedAt?: string | null;
+}
+
 interface DashboardEvent {
   _id: string;
   title: string;
@@ -48,6 +65,11 @@ interface DashboardEvent {
   vendorInvites?: { status: "pending" | "accepted" | "declined" }[];
   invitedUsers?: { _id: string }[];
   createdBy: { _id: string };
+  /** "Same event, several venues" — one ticket covers every venue listed. */
+  additionalLocations?: DashboardVenue[];
+  /** "One invitation, different things" — each stop sells on its own. Mutually
+   *  exclusive with additionalLocations (see utils/subEvents.js server-side). */
+  subEvents?: DashboardSubEvent[];
 }
 
 interface AttendanceSummary {
@@ -61,12 +83,29 @@ interface TicketSale {
   ticketPrice?: number;
   purchaseDate: string;
   user?: { username: string };
+  subEvent?: string | null;
+  subEventTitle?: string;
+}
+
+/** One row of getEventTicketSales' `stops` breakdown — allStops() puts the
+ *  main event first with `id: null`, so a non-programme event still gets a
+ *  single-entry list here. */
+interface StopSales {
+  id: string | null;
+  title: string;
+  date: string;
+  ticketPrice: number;
+  maxGuests: number;
+  ticketSalesClosedAt: string | null;
+  sold: number;
+  remaining: number | null;
 }
 
 interface SalesSummary {
   ticketsSold: number;
   ticketsRemaining: number;
   totalRevenue: number;
+  stops: StopSales[];
   tickets: TicketSale[];
 }
 
@@ -92,6 +131,14 @@ function relativeDate(iso: string) {
  * event-vendors/[eventId].tsx screen (remove/withdraw only — adding a
  * vendor stays on event/[id].tsx); "Edit event" hands off to
  * manage-events.tsx via its `?editEventId` deep-link effect.
+ *
+ * Also reflects the two "more than one place" event shapes from
+ * create-event/{locations,sub-events}.tsx, which are mutually exclusive on
+ * any one event: `additionalLocations` (one ticket, several simultaneous
+ * venues) renders as a plain venue list, while a `subEvents` programme (each
+ * stop sells and toggles independently) replaces the single Ticket Sales
+ * panel with one card per stop, sourced from getEventTicketSales' `stops`
+ * breakdown and PATCH /events/:eventId/sub-events/:subEventId/ticket-sales.
  */
 export default function EventDashboardScreen() {
   const { colors } = useTheme();
@@ -118,9 +165,13 @@ export default function EventDashboardScreen() {
       const ev: DashboardEvent = eventRes.data.event;
       setEvent(ev);
 
+      // A programme stop can charge even when the umbrella event itself is
+      // free (isPaid only reflects the main event's own price) — so fetch
+      // sales whenever either could have something to show.
+      const hasProgramme = (ev.subEvents?.length ?? 0) > 0;
       const [attendanceRes, salesRes] = await Promise.all([
         axios.get(`${BASE_URL}/events/${eventId}/attendance`, { headers }).catch(() => null),
-        ev.isPaid
+        ev.isPaid || hasProgramme
           ? axios.get(`${BASE_URL}/events/${eventId}/tickets`, { headers }).catch(() => null)
           : Promise.resolve(null),
       ]);
@@ -164,6 +215,25 @@ export default function EventDashboardScreen() {
     }
   };
 
+  const handleToggleStopTicketSales = async (subEventId: string, close: boolean) => {
+    if (!event) return;
+    setTogglingSales(true);
+    try {
+      const headers = await authHeaders();
+      await axios.patch(
+        `${BASE_URL}/events/${event._id}/sub-events/${subEventId}/ticket-sales`,
+        { closed: close },
+        { headers }
+      );
+      showSuccess(close ? "Ticket sales closed for this stop." : "Ticket sales reopened for this stop.");
+      await load();
+    } catch (error: any) {
+      showError(error.response?.data?.message || "Couldn't update ticket sales.");
+    } finally {
+      setTogglingSales(false);
+    }
+  };
+
   const handleShare = async () => {
     if (!event) return;
     try {
@@ -193,6 +263,9 @@ export default function EventDashboardScreen() {
   const going = event.isPaid ? event.ticketsSold ?? 0 : event.rsvpCount ?? 0;
   const capacity = event.maxGuests ?? 0;
   const soldRatio = capacity > 0 ? Math.min(1, (event.ticketsSold ?? 0) / capacity) : 0;
+  const venues = event.additionalLocations ?? [];
+  const programme = event.subEvents ?? [];
+  const hasProgramme = programme.length > 0;
 
   const tiles: {
     key: string;
@@ -294,7 +367,7 @@ export default function EventDashboardScreen() {
             value={attendance?.attendedCount ?? 0}
             sub={`of ${attendance?.total ?? going}`}
           />
-          {event.isPaid && (
+          {(event.isPaid || hasProgramme) && (
             <StatCard
               icon="cash"
               accent={VN.amber}
@@ -305,57 +378,148 @@ export default function EventDashboardScreen() {
           )}
         </View>
 
-        {event.isPaid && (
+        {/* "Same event, several venues" — one ticket covers every venue, so
+            this is a plain list, not a sales breakdown. Mutually exclusive
+            with a programme (see utils/eventLocations.js server-side). */}
+        {venues.length > 0 && (
           <>
-            <Text style={styles.sectionLabel}>TICKET SALES</Text>
+            <Text style={styles.sectionLabel}>LOCATIONS</Text>
             <View style={styles.salesPanel}>
-              <View style={styles.salesHeaderRow}>
-                <View style={styles.salesHeaderLeft}>
-                  <View style={[styles.salesIconWrap, { backgroundColor: VN.amber + "22" }]}>
-                    <Ionicons name="ticket" size={16} color={VN.amber} />
-                  </View>
-                  <View>
-                    <Text style={styles.salesHeaderTitle}>
-                      {event.ticketsSold ?? 0} sold{capacity > 0 ? ` of ${capacity}` : ""}
+              {[{ location: event.title, address: undefined, city: undefined }, ...venues].map((v, i) => (
+                <View key={i} style={i === 0 ? undefined : styles.saleRow}>
+                  <Ionicons name={i === 0 ? "star-outline" : "location-outline"} size={16} color={colors.primary} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.saleName} numberOfLines={1}>
+                      {i === 0 ? "Main venue" : v.location}
                     </Text>
-                    <Text style={styles.salesHeaderSub}>
-                      {event.ticketSalesClosedAt ? "Sales closed" : "Sales open"}
-                    </Text>
+                    {!!v.city && <Text style={styles.saleMeta}>{v.city}</Text>}
                   </View>
                 </View>
-                <Switch
-                  value={!event.ticketSalesClosedAt}
-                  onValueChange={(open) => handleToggleTicketSales(!open)}
-                  disabled={togglingSales}
-                  trackColor={{ false: colors.borderMuted, true: colors.primary }}
-                  thumbColor="#fff"
-                />
-              </View>
-
-              {capacity > 0 && (
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${soldRatio * 100}%` }]} />
-                </View>
-              )}
-
-              <View style={styles.salesDivider} />
-
-              <Text style={styles.cardSectionTitle}>RECENT SALES</Text>
-              {sales && sales.tickets.length > 0 ? (
-                sales.tickets.slice(0, 8).map((t) => (
-                  <View key={t._id} style={styles.saleRow}>
-                    <Text style={styles.saleName} numberOfLines={1}>{t.user?.username || "Guest"}</Text>
-                    <Text style={styles.saleMeta}>{relativeDate(t.purchaseDate)}</Text>
-                    <Text style={styles.saleAmount}>
-                      {formatMoney(t.amountPaid ?? t.ticketPrice ?? 0, event.currency)}
-                    </Text>
-                  </View>
-                ))
-              ) : (
-                <Text style={styles.emptyText}>No tickets sold yet.</Text>
-              )}
+              ))}
             </View>
           </>
+        )}
+
+        {hasProgramme ? (
+          <>
+            <Text style={styles.sectionLabel}>PROGRAMME</Text>
+            <View style={{ gap: 10 }}>
+              {(sales?.stops ?? []).map((stop) => {
+                const isMain = stop.id === null;
+                const stopRatio = stop.maxGuests > 0 ? Math.min(1, stop.sold / stop.maxGuests) : 0;
+                const showToggle = isMain ? event.isPaid : stop.ticketPrice > 0;
+                return (
+                  <View key={stop.id ?? "main"} style={styles.salesPanel}>
+                    <View style={styles.salesHeaderRow}>
+                      <View style={styles.salesHeaderLeft}>
+                        <View style={[styles.salesIconWrap, { backgroundColor: VN.amber + "22" }]}>
+                          <Ionicons name={isMain ? "star" : "flag"} size={16} color={VN.amber} />
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={styles.salesHeaderTitle} numberOfLines={1}>{stop.title}</Text>
+                          <Text style={styles.salesHeaderSub}>
+                            {stop.ticketPrice > 0
+                              ? `${stop.sold} sold${stop.maxGuests > 0 ? ` of ${stop.maxGuests}` : ""} · ${formatMoney(stop.ticketPrice, event.currency)}`
+                              : `Free${stop.maxGuests > 0 ? ` · ${stop.sold} of ${stop.maxGuests}` : ""}`}
+                          </Text>
+                        </View>
+                      </View>
+                      {showToggle && (
+                        <Switch
+                          value={!stop.ticketSalesClosedAt}
+                          onValueChange={(open) =>
+                            isMain
+                              ? handleToggleTicketSales(!open)
+                              : handleToggleStopTicketSales(stop.id as string, !open)
+                          }
+                          disabled={togglingSales}
+                          trackColor={{ false: colors.borderMuted, true: colors.primary }}
+                          thumbColor="#fff"
+                        />
+                      )}
+                    </View>
+                    {stop.maxGuests > 0 && (
+                      <View style={styles.progressTrack}>
+                        <View style={[styles.progressFill, { width: `${stopRatio * 100}%` }]} />
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+
+            {sales && sales.tickets.length > 0 && (
+              <>
+                <Text style={styles.sectionLabel}>RECENT SALES</Text>
+                <View style={styles.salesPanel}>
+                  {sales.tickets.slice(0, 8).map((t) => (
+                    <View key={t._id} style={styles.saleRow}>
+                      <Text style={styles.saleName} numberOfLines={1}>{t.user?.username || "Guest"}</Text>
+                      <Text style={styles.saleMeta} numberOfLines={1}>
+                        {t.subEventTitle || "Main event"} · {relativeDate(t.purchaseDate)}
+                      </Text>
+                      <Text style={styles.saleAmount}>
+                        {formatMoney(t.amountPaid ?? t.ticketPrice ?? 0, event.currency)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
+          </>
+        ) : (
+          event.isPaid && (
+            <>
+              <Text style={styles.sectionLabel}>TICKET SALES</Text>
+              <View style={styles.salesPanel}>
+                <View style={styles.salesHeaderRow}>
+                  <View style={styles.salesHeaderLeft}>
+                    <View style={[styles.salesIconWrap, { backgroundColor: VN.amber + "22" }]}>
+                      <Ionicons name="ticket" size={16} color={VN.amber} />
+                    </View>
+                    <View>
+                      <Text style={styles.salesHeaderTitle}>
+                        {event.ticketsSold ?? 0} sold{capacity > 0 ? ` of ${capacity}` : ""}
+                      </Text>
+                      <Text style={styles.salesHeaderSub}>
+                        {event.ticketSalesClosedAt ? "Sales closed" : "Sales open"}
+                      </Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={!event.ticketSalesClosedAt}
+                    onValueChange={(open) => handleToggleTicketSales(!open)}
+                    disabled={togglingSales}
+                    trackColor={{ false: colors.borderMuted, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+
+                {capacity > 0 && (
+                  <View style={styles.progressTrack}>
+                    <View style={[styles.progressFill, { width: `${soldRatio * 100}%` }]} />
+                  </View>
+                )}
+
+                <View style={styles.salesDivider} />
+
+                <Text style={styles.cardSectionTitle}>RECENT SALES</Text>
+                {sales && sales.tickets.length > 0 ? (
+                  sales.tickets.slice(0, 8).map((t) => (
+                    <View key={t._id} style={styles.saleRow}>
+                      <Text style={styles.saleName} numberOfLines={1}>{t.user?.username || "Guest"}</Text>
+                      <Text style={styles.saleMeta}>{relativeDate(t.purchaseDate)}</Text>
+                      <Text style={styles.saleAmount}>
+                        {formatMoney(t.amountPaid ?? t.ticketPrice ?? 0, event.currency)}
+                      </Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.emptyText}>No tickets sold yet.</Text>
+                )}
+              </View>
+            </>
+          )
         )}
 
         <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
