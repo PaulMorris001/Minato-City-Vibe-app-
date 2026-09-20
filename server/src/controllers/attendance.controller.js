@@ -6,6 +6,7 @@ import {
 } from "../services/pass.service.js";
 import { parsePassCode, passQrDataUrl } from "../utils/qrcode.js";
 import { buildEventSignups } from "../services/eventSignups.service.js";
+import { findStop } from "../utils/subEvents.js";
 
 /**
  * POST /api/events/:eventId/check-in   { code }
@@ -25,7 +26,7 @@ export const checkInAttendee = async (req, res) => {
     }
 
     const event = await Event.findById(eventId).select(
-      "createdBy title location city additionalLocations"
+      "createdBy title location city additionalLocations subEvents"
     );
     if (!event) return res.status(404).json({ message: "Event not found" });
 
@@ -63,6 +64,12 @@ export const checkInAttendee = async (req, res) => {
       locationIndex: pass.locationIndex ?? null,
       locationName: pass.locationName || "",
       locationCity: pass.locationCity || "",
+      // Which STOP of a programme this pass is for — same "surfaced, not
+      // enforced" stance: a brunch pass turning up at the after-party is worth
+      // seeing, not a hard door refusal that isn't ours to decide.
+      subEvent: pass.subEvent != null ? String(pass.subEvent) : null,
+      subEventTitle:
+        pass.subEventTitle || (pass.subEvent != null ? findStop(event, pass.subEvent)?.title : null) || null,
     };
 
     if (pass.status === "attended") {
@@ -125,6 +132,9 @@ export const getEventAttendance = async (req, res) => {
       locationIndex: p.locationIndex ?? null,
       locationName: p.locationName || "",
       locationCity: p.locationCity || "",
+      // Which stop of a programme this pass is for.
+      subEvent: p.subEvent != null ? String(p.subEvent) : null,
+      subEventTitle: p.subEventTitle || null,
     }));
 
     const attendedCount = attendees.filter((a) => a.status === "attended").length;
@@ -160,7 +170,7 @@ export const getEventSignups = async (req, res) => {
     const userId = req.user.id;
 
     const event = await Event.findById(eventId).select(
-      "createdBy cohosts rsvpUsers invitedUsers date title location address city state country additionalLocations"
+      "createdBy cohosts rsvpUsers invitedUsers date title location address city state country additionalLocations subEvents"
     );
     if (!event) return res.status(404).json({ message: "Event not found" });
 
@@ -189,7 +199,7 @@ export const getMyPasses = async (req, res) => {
   try {
     const userId = req.user.id;
     const passes = await Attendance.find({ user: userId })
-      .populate("event", "title date location address additionalLocations image isPaid")
+      .populate("event", "title date location address additionalLocations subEvents image isPaid")
       // Tier name so ticket passes can show "VIP" etc. at the door.
       .populate("ticket", "tierName")
       .sort({ createdAt: -1 })
@@ -202,7 +212,10 @@ export const getMyPasses = async (req, res) => {
       valid.map(async (p) => ({
         id: p._id,
         type: p.type,
-        status: computeAttendanceStatus(p, p.event?.date),
+        // A pass for ONE STOP of a programme is missed/incoming by THAT stop's
+        // own date, not the umbrella's — the event overall can still be running
+        // (a later stop hasn't happened yet) while this holder's own stop is done.
+        status: computeAttendanceStatus(p, p.subEventDate || p.event?.date),
         attendedAt: p.attendedAt || null,
         event: p.event,
         tierName: p.ticket?.tierName || null,
@@ -212,6 +225,11 @@ export const getMyPasses = async (req, res) => {
         locationIndex: p.locationIndex ?? null,
         locationName: p.locationName || "",
         locationCity: p.locationCity || "",
+        // Which stop of a programme this pass admits to — null is the main
+        // event. Snapshot title/date, same reasoning as the location fields.
+        subEvent: p.subEvent != null ? String(p.subEvent) : null,
+        subEventTitle: p.subEventTitle || null,
+        subEventDate: p.subEventDate || null,
         qr: await passQrDataUrl(p.code),
       }))
     );
@@ -226,18 +244,24 @@ export const getMyPasses = async (req, res) => {
 /**
  * GET /api/my-passes/:eventId
  *
- * The signed-in user's pass for one event (with QR). Lazily issues a pass if
- * the user is a confirmed attendee but somehow doesn't have one yet (e.g. they
- * RSVPed before the pass feature shipped).
+ * The signed-in user's passes for one event (with QR) — plural, because a
+ * programme event can hand out one pass PER STOP the guest joined. Lazily
+ * issues a main-event pass if the user is a confirmed attendee but somehow
+ * doesn't have one yet (e.g. they RSVPed before the pass feature shipped);
+ * that backfill can only ever be for the main stop, since there's no way to
+ * know which sub-events, if any, a pre-pass-era attendee meant to join.
+ *
+ * `pass` (singular) is kept alongside `passes` for any caller expecting the
+ * old one-pass shape — it's simply `passes[0]`.
  */
 export const getMyPassForEvent = async (req, res) => {
   try {
     const userId = req.user.id;
     const { eventId } = req.params;
 
-    let pass = await Attendance.findOne({ event: eventId, user: userId }).lean();
+    let passes = await Attendance.find({ event: eventId, user: userId }).lean();
 
-    if (!pass) {
+    if (!passes.length) {
       // Backfill for attendees who predate the pass feature.
       const event = await Event.findById(eventId).select("rsvpUsers isPaid");
       const isAttendee =
@@ -249,33 +273,38 @@ export const getMyPassForEvent = async (req, res) => {
           eventId,
           type: event.isPaid ? "ticket" : "rsvp",
         });
-        pass = await Attendance.findOne({ event: eventId, user: userId }).lean();
+        passes = await Attendance.find({ event: eventId, user: userId }).lean();
       }
     }
 
-    if (!pass) {
+    if (!passes.length) {
       return res
         .status(404)
         .json({ message: "No pass found for this event." });
     }
 
     const event = await Event.findById(eventId)
-      .select("title date location address additionalLocations image")
+      .select("title date location address additionalLocations subEvents image")
       .lean();
 
-    res.json({
-      pass: {
+    const result = await Promise.all(
+      passes.map(async (pass) => ({
         id: pass._id,
         type: pass.type,
-        status: computeAttendanceStatus(pass, event?.date),
+        status: computeAttendanceStatus(pass, pass.subEventDate || event?.date),
         attendedAt: pass.attendedAt || null,
         event,
         locationIndex: pass.locationIndex ?? null,
         locationName: pass.locationName || "",
         locationCity: pass.locationCity || "",
+        subEvent: pass.subEvent != null ? String(pass.subEvent) : null,
+        subEventTitle: pass.subEventTitle || null,
+        subEventDate: pass.subEventDate || null,
         qr: await passQrDataUrl(pass.code),
-      },
-    });
+      }))
+    );
+
+    res.json({ passes: result, pass: result[0] });
   } catch (error) {
     console.error("getMyPassForEvent error:", error);
     res.status(500).json({ message: "Failed to load pass", details: error.message });

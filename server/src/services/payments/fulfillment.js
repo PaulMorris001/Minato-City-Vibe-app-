@@ -218,6 +218,15 @@ export async function fulfillTicket({
  *   already frozen onto the order's line item at init. Passed through rather
  *   than re-resolved: the index was validated when the buyer picked it, and a
  *   venue deleted since then must not be able to throw mid-fan-out.
+ * @param {string|null} [args.subEvent]       which stop of a programme this
+ *   ticket admits to, frozen onto the order's line item at init — passed through
+ *   for the same reason as venueChoice, and so the pass issued below carries it.
+ * @param {string} [args.subEventTitle]
+ * @param {Date} [args.subEventDate]
+ * @param {number} args.facePrice            the item's pre-discount price, frozen
+ *   at init — the flat-price fallback below. NOT `event.ticketPrice`: for a
+ *   sub-event item that field would be the wrong thing entirely (the umbrella
+ *   event's own price, unrelated to the stop actually being bought).
  * @returns {Promise<object>} the created ticket
  */
 export async function issueRecipientTicket({
@@ -237,6 +246,10 @@ export async function issueRecipientTicket({
   discountCode,
   discountAmount,
   venueChoice = null,
+  subEvent = null,
+  subEventTitle = undefined,
+  subEventDate = undefined,
+  facePrice,
   sendPassEmail = true,
 }) {
   const ticketData = {
@@ -244,7 +257,7 @@ export async function issueRecipientTicket({
     user: recipientUserId,
     buyer: buyerUserId,
     recipientEmail,
-    ticketPrice: tier ? tier.price : event.ticketPrice,
+    ticketPrice: tier ? tier.price : facePrice,
     ...(tier ? { tierId: tier.tierId, tierName: tier.name } : {}),
     provider,
     // See fulfillTicket — absent when the seller has no payout rail.
@@ -257,6 +270,7 @@ export async function issueRecipientTicket({
     ...(discountCode ? { discountCode } : {}),
     ...(discountAmount !== undefined ? { discountAmount } : {}),
     ...(venueChoice || {}),
+    ...(subEvent ? { subEvent, subEventTitle, subEventDate } : {}),
   };
   if (provider === "paystack") ticketData.paystackReference = paymentRef;
   else if (provider === "paypal") ticketData.paypalOrderId = paymentRef;
@@ -275,6 +289,9 @@ export async function issueRecipientTicket({
     recipientEmail,
     recipientName,
     venueChoice,
+    subEvent,
+    subEventTitle,
+    subEventDate,
     sendEmail: sendPassEmail,
   }).catch((e) => console.error("issueEventPass (issueRecipientTicket) failed:", e));
 
@@ -346,18 +363,33 @@ export async function fulfillTicketOrder({ order, event: loadedEvent, notifyBuye
 
   // Discounted orders spread the charge across items proportionally
   // (scale = total/subtotal) so per-ticket accounting sums to exactly what was
-  // paid; the rounding remainder lands on the last item. Undiscounted orders
-  // have no `subtotal`, scale 1. Computed for EVERY item up front so a resumed
-  // run gives the remainder to the same item a clean run would have.
+  // paid; the rounding remainder lands on the last item WITH A NONZERO PRICE.
+  // Not simply the last item: a mixed basket can end with a free sub-event
+  // (price 0), and dumping the remainder there would charge a stop that was
+  // never supposed to cost anything. Undiscounted orders have no `subtotal`,
+  // scale 1. Computed for EVERY item up front so a resumed run gives the
+  // remainder to the same item a clean run would have.
   const round2 = (n) => Math.round(n * 100) / 100;
   const scale = claimed.subtotal ? claimed.total / claimed.subtotal : 1;
+  const lastPricedIndex = (() => {
+    for (let i = claimed.items.length - 1; i >= 0; i--) {
+      if (claimed.items[i].price > 0) return i;
+    }
+    // Every item is free (a 100%-off code, or an all-free selection) — there is
+    // no remainder to place; every item is simply 0.
+    return -1;
+  })();
   const amounts = [];
   let paidSoFar = 0;
   for (let i = 0; i < claimed.items.length; i++) {
-    const isLast = i === claimed.items.length - 1;
-    const paidForItem = isLast
-      ? round2(claimed.total - paidSoFar)
-      : round2(claimed.items[i].price * scale);
+    let paidForItem;
+    if (claimed.items[i].price === 0) {
+      paidForItem = 0;
+    } else if (i === lastPricedIndex) {
+      paidForItem = round2(claimed.total - paidSoFar);
+    } else {
+      paidForItem = round2(claimed.items[i].price * scale);
+    }
     paidSoFar = round2(paidSoFar + paidForItem);
     amounts.push(paidForItem);
   }
@@ -408,6 +440,10 @@ export async function fulfillTicketOrder({ order, event: loadedEvent, notifyBuye
         recipientEmail: item.recipientEmail,
         recipientName: item.recipientName,
         venueChoice,
+        subEvent: item.subEvent ? String(item.subEvent) : null,
+        subEventTitle: item.subEventTitle,
+        subEventDate: item.subEventDate,
+        facePrice: item.price,
         sendPassEmail: notifyBuyers,
         ...(claimed.discountCode
           ? {

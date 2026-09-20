@@ -4,10 +4,11 @@ import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
 import AppPromo from "../components/AppPromo";
 import VenueChoice, { venueCount } from "../components/VenueChoice";
+import ProgrammePicker, { eventStops, selectionTotal } from "../components/ProgrammePicker";
 import { api } from "../lib/api";
 import { isVideoUrl, videoPosterUrl } from "../lib/media";
 import { useAuth } from "../context/AuthContext";
-import type { EventItem } from "../lib/types";
+import type { EventItem, EventSubEvent } from "../lib/types";
 import { fallbackGradient, formatDateTime, money, nativePlace, relativeDay } from "../lib/format";
 
 export default function EventDetails() {
@@ -38,6 +39,10 @@ export default function EventDetails() {
   // stores; the order below must stay "venue #1, then additionalLocations".
   const [venueIndex, setVenueIndex] = useState<number | null>(null);
 
+  // Which stops of a programme the viewer is picking. Seeded from the server so
+  // someone already going sees their own picks; a guest starts with none ticked.
+  const [selectedStops, setSelectedStops] = useState<(string | null)[]>([]);
+
   function loadEvent() {
     // The detail endpoint wraps the event: { event: {...} }.
     return api<{ event: EventItem }>(`/events/${eventId}`).then(({ event }) => {
@@ -48,6 +53,7 @@ export default function EventDetails() {
       }
       // Seeded from the server so someone already going sees their own pick.
       setVenueIndex(event.userLocationIndex ?? null);
+      setSelectedStops(event.userSubEvents ?? []);
       return event;
     });
   }
@@ -69,6 +75,11 @@ export default function EventDetails() {
     if (tiers.length > 1 && selectedTier) params.set("tier", selectedTier);
     // Seeds every ticket in the builder; each one can still be re-pointed there.
     if (venueIndex !== null) params.set("venue", String(venueIndex));
+    // A programme: hand Pay the exact stops ticked here, main event as "main"
+    // (URLSearchParams can't carry a literal null through a query string).
+    if (ev?.subEvents?.length) {
+      params.set("stops", selectedStops.map((id) => id ?? "main").join(","));
+    }
     const q = params.toString();
     navigate(`/events/${eventId}/pay${q ? `?${q}` : ""}`);
   }
@@ -81,10 +92,20 @@ export default function EventDetails() {
     setRsvpError("");
     setRsvping(true);
     try {
-      await api(`/events/${eventId}/join`, {
-        method: "POST",
-        body: venueIndex !== null ? { locationIndex: venueIndex } : {},
-      });
+      if (ev?.subEvents?.length) {
+        // The multi-select reconcile: `selectedStops` is the guest's full,
+        // authoritative pick (main event as null), resent on every change —
+        // /join has no notion of "which stops" and only ever allows one join.
+        await api(`/events/${eventId}/rsvp`, {
+          method: "POST",
+          body: { subEvents: selectedStops },
+        });
+      } else {
+        await api(`/events/${eventId}/join`, {
+          method: "POST",
+          body: venueIndex !== null ? { locationIndex: venueIndex } : {},
+        });
+      }
       setJustJoined(true);
       loadEvent().catch(() => {});
     } catch (err: any) {
@@ -319,6 +340,54 @@ export default function EventDetails() {
             </div>
           </section>
 
+          {/* Programme — the stops of a multi-part event, already time-ordered
+              by the server. */}
+          {!!ev.subEvents?.length && (
+            <section className="cv-panel cv-section">
+              <h3 className="cv-h3">Programme</h3>
+              <p className="cv-muted" style={{ marginBottom: 12 }}>
+                {ev.subEvents.length} sub-event{ev.subEvents.length === 1 ? "" : "s"} — come to
+                whichever you like.
+              </p>
+              {ev.subEvents.map((stop) => (
+                <div key={stop._id} className="cv-list-row">
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontWeight: 650 }}>{stop.title}</span>
+                    <span className="cv-muted" style={{ display: "block" }}>
+                      {formatDateTime(stop.date)}
+                    </span>
+                    <span className="cv-muted" style={{ display: "block" }}>
+                      {[stop.address, stop.location].filter(Boolean).join(" · ")}
+                    </span>
+                    {!!stop.description && (
+                      <span className="cv-muted" style={{ display: "block", marginTop: 4 }}>
+                        {stop.description}
+                      </span>
+                    )}
+                  </span>
+                  <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    <strong>{stopPriceText(stop, ev.currency)}</strong>
+                    {/* Availability survives the organiser's attendance
+                        opt-out; the numbers behind it don't. */}
+                    {stop.salesClosed ? (
+                      <span className="cv-muted" style={{ display: "block" }}>
+                        {stop.salesClosedReason === "ended" ? "Over" : "Closed"}
+                      </span>
+                    ) : stop.soldOut ? (
+                      <span className="cv-muted" style={{ display: "block" }}>
+                        Full
+                      </span>
+                    ) : typeof stop.remaining === "number" ? (
+                      <span className="cv-muted" style={{ display: "block" }}>
+                        {stop.remaining} left
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+              ))}
+            </section>
+          )}
+
           {/* Vendors */}
           {!!ev.vendors?.length && (
             <section className="cv-panel cv-section">
@@ -403,6 +472,8 @@ export default function EventDetails() {
               onPay={goToPay}
               venueIndex={venueIndex}
               setVenueIndex={setVenueIndex}
+              selectedStops={selectedStops}
+              setSelectedStops={setSelectedStops}
             />
             <button className="cv-btn cv-btn-ghost" style={{ marginTop: 10 }} onClick={share}>
               {copied ? "Link copied ✓" : "Share this event"}
@@ -518,6 +589,15 @@ const SALES_CLOSED_COPY: Record<string, { heading: string; detail: string }> = {
   },
 };
 
+/** "Free" / "$5" / "From $5" for one stop of a programme. */
+function stopPriceText(stop: EventSubEvent, currency?: string) {
+  const tiers = stop.ticketTiers ?? [];
+  const price = tiers.length ? Math.min(...tiers.map((t) => t.price)) : stop.ticketPrice ?? 0;
+  if (!price) return "Free";
+  const amount = money(price, currency);
+  return tiers.length > 1 ? `From ${amount}` : amount;
+}
+
 function TicketBox({
   ev,
   user,
@@ -531,6 +611,8 @@ function TicketBox({
   onPay,
   venueIndex,
   setVenueIndex,
+  selectedStops,
+  setSelectedStops,
 }: {
   ev: EventItem;
   user: { username: string } | null;
@@ -544,12 +626,51 @@ function TicketBox({
   onPay: () => void;
   venueIndex: number | null;
   setVenueIndex: (i: number) => void;
+  selectedStops: (string | null)[];
+  setSelectedStops: (stops: (string | null)[]) => void;
 }) {
   const multiTier = tiers.length > 1;
   // The server sends soldOut to every viewer precisely because ticketsRemaining
   // is now withheld from non-organizers; fall back for older API responses.
   const soldOut =
     ev.soldOut ?? (ev.ticketsRemaining !== undefined && ev.ticketsRemaining <= 0);
+
+  // A programme overrides the ordinary paid/free branching below entirely —
+  // what matters is the PRICE OF WHAT'S TICKED, not the main event's own
+  // isPaid flag. A free main event with one priced stop still needs the
+  // picker shown before anything is confirmed, exactly like a fully paid one.
+  if (ev.subEvents?.length) {
+    const stops = eventStops(ev);
+    const total = selectionTotal(stops, selectedStops);
+    const nothingTicked = selectedStops.length === 0;
+    return (
+      <>
+        <h3 className="cv-h3">{going ? "You're going 🎉" : "Pick what you're going to"}</h3>
+        <p className="cv-muted" style={{ marginBottom: 16 }}>
+          {going
+            ? "Change your picks any time before the event."
+            : "Tick as many stops as you like — one checkout covers all of them."}
+        </p>
+        <ProgrammePicker ev={ev} value={selectedStops} onChange={setSelectedStops} currency={ev.currency} />
+        {rsvpError && <div className="cv-error">{rsvpError}</div>}
+        <button
+          className="cv-btn"
+          onClick={total > 0 ? onPay : onRsvp}
+          disabled={rsvping || nothingTicked}
+        >
+          {!user
+            ? "Log in to continue"
+            : nothingTicked
+              ? "Pick at least one"
+              : rsvping
+                ? "Saving…"
+                : total > 0
+                  ? `Continue to payment · ${money(total, ev.currency)}`
+                  : "Confirm — it's free"}
+        </button>
+      </>
+    );
+  }
 
   if (!ev.isPaid) {
     return going ? (

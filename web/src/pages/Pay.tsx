@@ -10,6 +10,7 @@ import {
 import Layout from "../components/Layout";
 import AppPromo from "../components/AppPromo";
 import VenueChoice, { venueCount } from "../components/VenueChoice";
+import { eventStops, stopFacePrice, type Stop } from "../components/ProgrammePicker";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { money, formatDateTime, nativePlace } from "../lib/format";
@@ -35,6 +36,11 @@ interface Slot {
   // per order: one charge can send a pass to the Lagos date and another to
   // Abuja. null until picked; -1 is never used.
   locationIndex: number | null;
+  // Which stop of a programme this pass is for — undefined for a plain event.
+  // Set once at seeding and never changes; programme slots are one per stop,
+  // not a quantity stepper (see the `programmeMode` render branch below).
+  subEvent?: string | null;
+  subEventTitle?: string;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -79,6 +85,14 @@ export default function Pay() {
   // The event page's own pick, carried over to seed every ticket in the builder.
   const preselectVenueRaw = Number(params.get("venue"));
   const preselectVenue = Number.isInteger(preselectVenueRaw) ? preselectVenueRaw : null;
+  // Which stops of a programme the event page's picker sent us here for. Its
+  // presence is what turns this page into "one slot per stop" mode instead of
+  // the ordinary tier stepper — see the effects and render branch below.
+  const stopsParam = params.get("stops");
+  const selectedStopIds = useMemo<(string | null)[]>(
+    () => (stopsParam ? stopsParam.split(",").map((s) => (s === "main" ? null : s)) : []),
+    [stopsParam]
+  );
   const { user } = useAuth();
 
   const [ev, setEv] = useState<EventItem | null>(null);
@@ -135,9 +149,27 @@ export default function Pay() {
     ];
   }, [ev]);
 
-  // Seed one ticket for the preselected/only tier the first time the event loads.
+  // A programme event checks out one slot PER STOP the guest picked on the
+  // event page — not the tier stepper below, which assumes one undifferentiated
+  // pool of tickets. Each slot defaults to its stop's cheapest tier; a stop with
+  // more than one tier gets its own small picker inline (see the render branch).
+  const programmeMode = !!ev?.subEvents?.length && selectedStopIds.length > 0;
+
   useEffect(() => {
-    if (!ev || slots.length) return;
+    if (!ev || !programmeMode || slots.length) return;
+    const stops = eventStops(ev);
+    const seeded = selectedStopIds
+      .map((id) => stops.find((s) => s.id === id))
+      .filter((s): s is Stop => !!s)
+      .map((stop) => makeStopSlot(stop));
+    if (seeded.length) setSlots(seeded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ev, programmeMode]);
+
+  // Seed one ticket for the preselected/only tier the first time the event loads.
+  // Skipped in programme mode — the effect above owns seeding there.
+  useEffect(() => {
+    if (!ev || slots.length || programmeMode) return;
     const seed =
       saleTiers.find((t) => t._id === preselectTier) ||
       (saleTiers.length === 1 ? saleTiers[0] : null);
@@ -145,7 +177,7 @@ export default function Pay() {
       setSlots([makeSlot(seed)]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ev]);
+  }, [ev, programmeMode]);
 
   function makeSlot(t: EventTier): Slot {
     return {
@@ -161,6 +193,27 @@ export default function Pay() {
       // the server ignores it; multi-venue ones start on whatever the event page
       // was showing and can be re-pointed per ticket below.
       locationIndex: venueCount(ev!) > 1 ? preselectVenue : null,
+    };
+  }
+
+  /** One slot for a picked stop, defaulting to its cheapest tier if it has any. */
+  function makeStopSlot(stop: Stop): Slot {
+    const tiers = stop.ticketTiers ?? [];
+    const cheapest = tiers.length
+      ? tiers.reduce((min, t) => (t.price < min.price ? t : min), tiers[0])
+      : null;
+    return {
+      id: nextSlotId(),
+      tierId: cheapest?._id ?? "",
+      tierName: cheapest?.name ?? "",
+      price: cheapest ? cheapest.price : stopFacePrice(stop),
+      mode: "me",
+      email: "",
+      confirmEmail: "",
+      name: "",
+      locationIndex: null,
+      subEvent: stop.id,
+      subEventTitle: stop.title,
     };
   }
 
@@ -192,7 +245,10 @@ export default function Pay() {
   // The preview endpoint re-derives prices server-side, so it only needs the
   // tier make-up of the cart — not the recipient details.
   function previewItems() {
-    return slots.map((s) => ({ tierId: s.tierId || undefined }));
+    return slots.map((s) => ({
+      tierId: s.tierId || undefined,
+      ...(s.subEvent !== undefined ? { subEvent: s.subEvent ?? undefined } : {}),
+    }));
   }
 
   async function applyCode() {
@@ -362,6 +418,7 @@ export default function Pay() {
       recipientEmail: (s.mode === "me" ? buyerEmail : s.email).trim().toLowerCase(),
       recipientName: s.name.trim() || undefined,
       ...(s.locationIndex !== null ? { locationIndex: s.locationIndex } : {}),
+      ...(s.subEvent !== undefined ? { subEvent: s.subEvent ?? undefined } : {}),
     }));
   }
 
@@ -378,7 +435,70 @@ export default function Pay() {
       </p>
 
       <div style={{ maxWidth: 560 }}>
+        {/* 1 — Programme mode: one card per stop the guest picked on the event
+            page, each priced on its own; a stop with several tiers gets a small
+            radio picker inline. No stepper here — a guest attends each stop
+            once, so the picker on the event page is what decides the list. */}
+        {programmeMode && (
+          <section className="cv-card cv-section" style={{ marginLeft: 0 }}>
+            <h3 className="cv-h3" style={{ marginBottom: 4 }}>
+              1. Your tickets
+            </h3>
+            <Link to={`/events/${eventId}`} className="cv-muted" style={{ fontSize: 13 }}>
+              ← Change what you're going to
+            </Link>
+            {slots.map((s) => {
+              const stop = eventStops(ev).find((st) => st.id === s.subEvent);
+              const tiers = stop?.ticketTiers ?? [];
+              return (
+                <div key={s.id} style={{ marginTop: 16 }}>
+                  <div className="cv-row">
+                    <strong>{s.subEventTitle}</strong>
+                    {!tiers.length && <strong>{money(s.price, ev.currency)}</strong>}
+                  </div>
+                  {tiers.length > 0 && (
+                    <div style={{ marginTop: 6 }}>
+                      {tiers.map((t) => {
+                        const tierSoldOut = t.soldOut ?? (t.remaining !== undefined && t.remaining <= 0);
+                        return (
+                          <label
+                            key={t._id}
+                            className={`cv-tier${s.tierId === t._id ? " cv-tier-on" : ""}`}
+                            style={tierSoldOut ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
+                          >
+                            <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <input
+                                type="radio"
+                                name={`tier-${s.id}`}
+                                checked={s.tierId === t._id}
+                                disabled={tierSoldOut}
+                                onChange={() =>
+                                  updateSlot(s.id, { tierId: t._id, tierName: t.name, price: t.price })
+                                }
+                              />
+                              <span>
+                                {t.name}
+                                {tierSoldOut && (
+                                  <span className="cv-muted" style={{ display: "block", fontSize: 12 }}>
+                                    Sold out
+                                  </span>
+                                )}
+                              </span>
+                            </span>
+                            <strong>{money(t.price, ev.currency)}</strong>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </section>
+        )}
+
         {/* 1 — Choose tickets */}
+        {!programmeMode && (
         <section className="cv-card cv-section" style={{ marginLeft: 0 }}>
           <h3 className="cv-h3" style={{ marginBottom: 12 }}>
             1. Choose your tickets
@@ -436,9 +556,12 @@ export default function Pay() {
             );
           })}
         </section>
+        )}
 
-        {/* 2 — Who each ticket is for */}
-        {slots.length > 0 && (
+        {/* 2 — Who each ticket is for. Skipped in programme mode: every slot
+            there is the buyer's own attendance at a stop they picked, not a
+            ticket that could be gifted elsewhere. */}
+        {!programmeMode && slots.length > 0 && (
           <section className="cv-card cv-section" style={{ marginLeft: 0 }}>
             <h3 className="cv-h3" style={{ marginBottom: 4 }}>
               2. Who are they for?
