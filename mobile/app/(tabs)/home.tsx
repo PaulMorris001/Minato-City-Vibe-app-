@@ -2,7 +2,6 @@ import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import CreateEventTooltip from "@/components/shared/CreateEventTooltip";
-import VerifiedBadgePopup from "@/components/shared/VerifiedBadgePopup";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { currencyPrefix, priceLabel } from "@/constants/payments";

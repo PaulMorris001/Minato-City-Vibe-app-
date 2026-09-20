@@ -8,6 +8,7 @@ import {
   getEventQr,
   updateEvent,
   setTicketSales,
+  setStopTicketSales,
   deleteEvent,
   inviteUserByUsername,
   requestToJoinEvent,
@@ -62,6 +63,7 @@ router.get("/events/:eventId/tickets", authenticate, getEventTicketSales);
 // Organizer's stop/resume switch for ticket sales. Above "/events/:eventId"
 // like every other specific path here.
 router.patch("/events/:eventId/ticket-sales", authenticate, setTicketSales);
+router.patch("/events/:eventId/sub-events/:subEventId/ticket-sales", authenticate, setStopTicketSales);
 
 // Discount codes for an event (organizer only) — admins create the codes;
 // the creator can view them and toggle their own disable flag.

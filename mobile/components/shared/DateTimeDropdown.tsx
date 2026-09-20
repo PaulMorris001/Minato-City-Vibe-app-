@@ -211,11 +211,11 @@ const createStyles = (c: ThemeColors) =>
       alignItems: "center",
       gap: 8,
       borderWidth: 1,
-      borderColor: c.glassStroke,
+      borderColor: c.glassStrokeStrong,
       borderRadius: 12,
       paddingHorizontal: 12,
       paddingVertical: 13,
-      backgroundColor: c.glassFillSubtle,
+      backgroundColor: c.card,
     },
     fieldText: {
       flex: 1,

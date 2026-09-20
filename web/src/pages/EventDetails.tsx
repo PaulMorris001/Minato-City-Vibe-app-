@@ -251,8 +251,10 @@ export default function EventDetails() {
           )}
 
           {/* Stats — attendance numbers are organizer-only unless the host
-              opted in; Views is organizer-only regardless. */}
-          {(canSeeAttendance || !!ev.seenCount) && (
+              opted in. View counts are deliberately not shown on the website
+              at all (mobile's Event Dashboard is the organizer-only place
+              for that number). */}
+          {canSeeAttendance && (
           <section className="cv-panel cv-section">
             <div className="cv-stats">
               {attending !== undefined && (
@@ -277,12 +279,6 @@ export default function EventDetails() {
                 <div>
                   <div className="cv-stat-n">{ev.friendsGoing}</div>
                   <div className="cv-stat-l">Friends going</div>
-                </div>
-              )}
-              {!!ev.seenCount && (
-                <div>
-                  <div className="cv-stat-n">{ev.seenCount}</div>
-                  <div className="cv-stat-l">Views</div>
                 </div>
               )}
             </div>

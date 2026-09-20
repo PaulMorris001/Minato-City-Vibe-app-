@@ -548,7 +548,13 @@ export default function EventsPage() {
   };
 
   useEffect(() => {
-    const searchMutualFollows = async (query: string) => {
+    // Was /follow/mutual — restricted to accounts you follow AND who follow
+    // you back, which is empty for most people and made this modal look
+    // broken ("no people or vendors found") even though plenty of both exist.
+    // /users/search (the same endpoint event/[id].tsx's own invite/vendor
+    // search uses) searches every user by username/email and already
+    // includes isVendor, which is all the People/Vendor tab split needs.
+    const searchUsers = async (query: string) => {
       if (query.trim().length < 2) {
         setSearchedUsers([]);
         return;
@@ -558,7 +564,7 @@ export default function EventsPage() {
         setSearchingUsers(true);
         const token = await SecureStore.getItemAsync("token");
         const response = await fetch(
-          `${BASE_URL}/follow/mutual?query=${encodeURIComponent(query)}`,
+          `${BASE_URL}/users/search?query=${encodeURIComponent(query)}`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -582,7 +588,7 @@ export default function EventsPage() {
           setSearchedUsers(filteredUsers);
         }
       } catch (error) {
-        console.error("Error searching mutual follows:", error);
+        console.error("Error searching users:", error);
       } finally {
         setSearchingUsers(false);
       }
@@ -590,7 +596,7 @@ export default function EventsPage() {
 
     if (inviteUsername.trim().length >= 2) {
       const debounce = setTimeout(() => {
-        searchMutualFollows(inviteUsername);
+        searchUsers(inviteUsername);
       }, 300);
       return () => clearTimeout(debounce);
     } else {
