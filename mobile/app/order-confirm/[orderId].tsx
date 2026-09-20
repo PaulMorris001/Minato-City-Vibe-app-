@@ -46,6 +46,10 @@ export default function OrderConfirm() {
   const [paying, setPaying] = useState(false);
   const [couponBalanceNGN, setCouponBalanceNGN] = useState(0);
   const [couponBalanceUSD, setCouponBalanceUSD] = useState(0);
+  // A raffle-won balance can be locked to one vendor (see coupon.service.js) —
+  // populated to just the id here since that's all the mismatch check needs.
+  const [couponVendorNGN, setCouponVendorNGN] = useState<string | null>(null);
+  const [couponVendorUSD, setCouponVendorUSD] = useState<string | null>(null);
   const [useCoupon, setUseCoupon] = useState(false);
 
   useEffect(() => {
@@ -70,6 +74,8 @@ export default function OrderConfirm() {
           const profileData = await profileRes.json();
           setCouponBalanceNGN(profileData?.user?.couponBalanceNGN || 0);
           setCouponBalanceUSD(profileData?.user?.couponBalanceUSD || 0);
+          setCouponVendorNGN(profileData?.user?.couponVendorNGN?._id || profileData?.user?.couponVendorNGN || null);
+          setCouponVendorUSD(profileData?.user?.couponVendorUSD?._id || profileData?.user?.couponVendorUSD || null);
         }
       } catch {
         setError("Network error. Please try again.");
@@ -93,8 +99,17 @@ export default function OrderConfirm() {
 
   // A coupon is only ever spent against an order in its OWN currency — 1
   // coupon = 1 unit of that same currency, no conversion between balances.
-  const couponAvailable =
+  const orderVendorId = order?.vendor && typeof order.vendor === "object" ? (order.vendor as any)._id : order?.vendor;
+  const lockedVendor =
+    order?.currency === "NGN" ? couponVendorNGN : order?.currency === "USD" ? couponVendorUSD : null;
+  // A locked balance only counts as "available" here when this order's
+  // vendor IS the one it's locked to — mirrors coupon.service.js's
+  // reserveOrderCoupon so this screen never promises coverage the server
+  // will actually refuse.
+  const vendorLocked = !!lockedVendor && String(lockedVendor) !== String(orderVendorId);
+  const rawCouponBalance =
     order?.currency === "NGN" ? couponBalanceNGN : order?.currency === "USD" ? couponBalanceUSD : 0;
+  const couponAvailable = vendorLocked ? 0 : rawCouponBalance;
   const couponApplied = order ? Math.min(couponAvailable, order.total) : 0;
   const payableAfterCoupon = order ? Math.max(0, order.total - couponApplied) : 0;
 
@@ -233,6 +248,16 @@ export default function OrderConfirm() {
             <Text style={styles.grandTotalValue} numberOfLines={1}>{money(order.total)}</Text>
           </View>
         </View>
+
+        {payable && vendorLocked && rawCouponBalance > 0 && (
+          <View style={[styles.card, styles.couponCard]}>
+            <Text style={styles.couponTitle}>OurCityVibe credit not usable here</Text>
+            <Text style={styles.couponSubtitle}>
+              Your {money(rawCouponBalance)} credit is locked to the vendor you won it from and
+              can&apos;t be spent with {vendorName()}.
+            </Text>
+          </View>
+        )}
 
         {payable && couponAvailable > 0 && (
           <View style={[styles.card, styles.couponCard]}>

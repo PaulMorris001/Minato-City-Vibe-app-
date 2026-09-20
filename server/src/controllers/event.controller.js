@@ -2653,7 +2653,10 @@ export const getMyVendorEventInvites = async (req, res) => {
   }
 };
 
-// Remove a vendor from an event (creator only)
+// Remove a vendor from an event (creator only) — covers both an already
+// -accepted vendor and one with only a pending/declined invite, so this one
+// endpoint is the organizer's single "un-vendor" action regardless of where
+// that vendor was in the invite lifecycle.
 export const removeVendorFromEvent = async (req, res) => {
   try {
     const { eventId, vendorId } = req.params;
@@ -2665,7 +2668,14 @@ export const removeVendorFromEvent = async (req, res) => {
       return res.status(403).json({ message: "Only the event creator can remove vendors" });
     }
 
+    const wasAccepted = event.vendors.some(v => v.toString() === vendorId);
+    const hadInvite = event.vendorInvites.some(vi => vi.vendor.toString() === vendorId);
+    if (!wasAccepted && !hadInvite) {
+      return res.status(404).json({ message: "This vendor isn't on the event" });
+    }
+
     event.vendors = event.vendors.filter(v => v.toString() !== vendorId);
+    event.vendorInvites = event.vendorInvites.filter(vi => vi.vendor.toString() !== vendorId);
     await event.save();
 
     invalidateCachePattern(`event_detail_${eventId}_`);

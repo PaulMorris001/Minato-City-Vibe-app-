@@ -25,6 +25,8 @@ import DiscoverPeoplePreview from "@/components/shared/DiscoverPeoplePreview";
 import GuestGate from "@/components/shared/GuestGate";
 import CreateEventModal from "@/components/client/CreateEventModal";
 import ImageViewerModal from "@/components/shared/ImageViewerModal";
+import VerifiedBadgePopup from "@/components/shared/VerifiedBadgePopup";
+import MediaTile from "@/components/shared/MediaTile";
 import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
 import { displayName } from "@/utils/displayName";
 import { AU } from "@/components/auth/tokens";
@@ -303,6 +305,7 @@ export default function ProfileScreen() {
           loadData(true);
         }}
       />
+      <VerifiedBadgePopup onCreateEvent={() => setCreateEventVisible(true)} />
     </View>
   );
 }
@@ -462,6 +465,14 @@ function Header({
           <Text style={styles.profileActionText}>Share Profile</Text>
         </TouchableOpacity>
       </View>
+      <TouchableOpacity
+        style={styles.dashboardActionBtn}
+        activeOpacity={0.8}
+        onPress={() => router.push("/manage-events" as any)}
+      >
+        <Ionicons name="speedometer-outline" size={16} color={colors.textBright} />
+        <Text style={styles.profileActionText}>Event Dashboard</Text>
+      </TouchableOpacity>
 
       {/* "Complete your setup" checklist — auto-hides once every item is done. */}
       <SetupChecklist user={user} sellsGuides={guidesTotal > 0} />
@@ -809,7 +820,7 @@ function EventRow({ event }: { event: UserEvent }) {
     >
       <View style={styles.thumbWrap}>
         {event.image ? (
-          <Image source={{ uri: event.image }} style={StyleSheet.absoluteFill} contentFit="cover" />
+          <MediaTile uri={event.image} style={StyleSheet.absoluteFill} posterOnly />
         ) : (
           <LinearGradient
             colors={[colors.accentCyan, colors.primaryDark, colors.accentPink]}
@@ -1075,6 +1086,19 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.semiBold,
     fontSize: 14,
     color: c.textBright,
+  },
+  dashboardActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: c.glassFillSubtle,
+    borderWidth: 1,
+    borderColor: c.glassFill,
+    marginHorizontal: 18,
+    marginTop: 10,
   },
 
   // Hero

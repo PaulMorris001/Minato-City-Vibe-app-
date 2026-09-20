@@ -87,6 +87,11 @@ const orderSchema = new mongoose.Schema(
       enum: ["requested", "quoted", "paid", "cancelled", "declined"],
       default: "requested",
     },
+    // Set when a vendor declines/cancels a requested-or-quoted order — the
+    // comment they're required to give the client for why it didn't go
+    // through. Blank for a client-initiated cancelOrder (no reason required
+    // there today).
+    cancellationReason: { type: String, default: "" },
 
     // ── Payment block (mirrors booking.model.js) ──
     paymentStatus: {

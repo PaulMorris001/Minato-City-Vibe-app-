@@ -4,23 +4,33 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
+import { scaleFontSize } from "@/utils/responsive";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
-import { ImagePickerButton } from "@/components/shared";
+import { ImagePickerButton, PrimaryButton } from "@/components/shared";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 
 type VerificationStatus = "none" | "pending" | "approved" | "rejected";
+
+const STATUS_META: Record<
+  Exclude<VerificationStatus, "none">,
+  { icon: React.ComponentProps<typeof Ionicons>["name"]; label: string; colorKey: "success" | "warning" | "error" }
+> = {
+  approved: { icon: "checkmark-circle", label: "Verified", colorKey: "success" },
+  pending: { icon: "time-outline", label: "Under review", colorKey: "warning" },
+  rejected: { icon: "close-circle", label: "Not approved", colorKey: "error" },
+};
 
 /**
  * Identity verification, on its own screen. Used to be a section inside
@@ -92,6 +102,9 @@ export default function VerifyAccountScreen() {
     }
   };
 
+  const canSubmit = status === "none" || status === "rejected";
+  const statusMeta = status !== "none" ? STATUS_META[status] : null;
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -104,63 +117,96 @@ export default function VerifyAccountScreen() {
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <Text style={styles.description}>
-            {isVendor
-              ? "Submit a government-issued ID to get a verification badge on your profile. Verified vendors and hosts get priority approval for paid events."
-              : "Submit a government-issued ID to get a verification badge and become a trusted host. Verified hosts get faster approval for paid events."}
-          </Text>
-
-          {status === "approved" && (
-            <View style={styles.statusRow}>
-              <Ionicons name="checkmark-circle" size={22} color={colors.success} />
-              <Text style={[styles.statusText, { color: colors.success }]}>Verified</Text>
-            </View>
-          )}
-
-          {status === "pending" && (
-            <View style={styles.statusRow}>
-              <Ionicons name="time-outline" size={22} color={colors.warning} />
-              <Text style={[styles.statusText, { color: colors.warning }]}>Under review</Text>
-            </View>
-          )}
-
-          {status === "rejected" && (
-            <>
-              <View style={styles.statusRow}>
-                <Ionicons name="close-circle" size={22} color={colors.error} />
-                <Text style={[styles.statusText, { color: colors.error }]}>Not approved</Text>
-              </View>
-              {!!notes && <Text style={styles.notes}>Reason: {notes}</Text>}
-            </>
-          )}
-
-          {(status === "none" || status === "rejected") && (
-            <>
-              <ImagePickerButton
-                imageUri={licenseImage}
-                onImageSelected={setLicenseImage}
-                label="Government-issued ID"
-                size={120}
-                shape="square"
-              />
-              <TouchableOpacity
-                style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
-                onPress={handleSubmit}
-                disabled={submitting}
+        <>
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.hero}>
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroBadge}
               >
-                {submitting ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <>
-                    <Ionicons name="shield-checkmark-outline" size={20} color="#fff" />
-                    <Text style={styles.submitButtonText}>Submit for verification</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </>
+                <Ionicons name="shield-checkmark" size={36} color="#fff" />
+              </LinearGradient>
+              <Text style={styles.heroTitle}>Get your verified badge</Text>
+              <Text style={styles.description}>
+                {isVendor
+                  ? "Submit a government-issued ID to get a verification badge on your profile. Verified vendors and hosts get priority approval for paid events."
+                  : "Submit a government-issued ID to get a verification badge and become a trusted host. Verified hosts get faster approval for paid events."}
+              </Text>
+            </View>
+
+            {statusMeta && (
+              <View
+                style={[
+                  styles.statusCard,
+                  {
+                    backgroundColor: colors[statusMeta.colorKey] + "1A",
+                    borderColor: colors[statusMeta.colorKey] + "40",
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.statusIconWrap,
+                    { backgroundColor: colors[statusMeta.colorKey] + "26" },
+                  ]}
+                >
+                  <Ionicons name={statusMeta.icon} size={22} color={colors[statusMeta.colorKey]} />
+                </View>
+                <View style={styles.statusTextWrap}>
+                  <Text style={[styles.statusText, { color: colors[statusMeta.colorKey] }]}>
+                    {statusMeta.label}
+                  </Text>
+                  {status === "pending" && (
+                    <Text style={styles.statusSubtext}>
+                      We'll notify you as soon as a review is complete.
+                    </Text>
+                  )}
+                  {status === "rejected" && !!notes && (
+                    <Text style={styles.statusSubtext}>Reason: {notes}</Text>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {canSubmit && (
+              <View style={styles.uploadCard}>
+                <Text style={styles.uploadLabel}>Government-issued ID</Text>
+                <Text style={styles.uploadHint}>
+                  A clear photo of your driver's license, passport or national ID.
+                </Text>
+                <View style={styles.uploadPickerWrap}>
+                  <ImagePickerButton
+                    imageUri={licenseImage}
+                    onImageSelected={setLicenseImage}
+                    label="Upload ID"
+                    size={140}
+                    shape="square"
+                  />
+                </View>
+              </View>
+            )}
+          </ScrollView>
+
+          {canSubmit && (
+            <View style={styles.footer}>
+              <PrimaryButton
+                onPress={handleSubmit}
+                loading={submitting}
+                disabled={submitting}
+                icon="shield-checkmark-outline"
+                iconPosition="left"
+              >
+                Submit for verification
+              </PrimaryButton>
+            </View>
           )}
-        </ScrollView>
+        </>
       )}
     </SafeAreaView>
   );
@@ -179,22 +225,76 @@ const createStyles = (c: ThemeColors) =>
       gap: 12,
     },
     backButton: {},
-    headerTitle: { fontSize: 20, fontFamily: Fonts.bold, color: c.text },
+    headerTitle: { fontSize: scaleFontSize(22), fontFamily: Fonts.bold, color: c.text },
     loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
-    content: { padding: 20, paddingBottom: 40, gap: 16 },
-    description: { fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary, lineHeight: 20 },
-    statusRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-    statusText: { fontSize: 16, fontFamily: Fonts.semiBold },
-    notes: { fontSize: 13, fontFamily: Fonts.regular, color: c.textMuted },
-    submitButton: {
-      flexDirection: "row",
+    scroll: { flex: 1 },
+    content: { padding: 20, paddingBottom: 32, gap: 20 },
+    hero: { alignItems: "center", gap: 12, paddingVertical: 8 },
+    heroBadge: {
+      width: 88,
+      height: 88,
+      borderRadius: 44,
       alignItems: "center",
       justifyContent: "center",
-      gap: 8,
-      height: 50,
-      borderRadius: 12,
-      backgroundColor: c.primary,
+      shadowColor: c.primary,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.35,
+      shadowRadius: 16,
+      elevation: 8,
     },
-    submitButtonDisabled: { opacity: 0.6 },
-    submitButtonText: { fontSize: 15, fontFamily: Fonts.semiBold, color: "#fff" },
+    heroTitle: { fontSize: 19, fontFamily: Fonts.bold, color: c.text, textAlign: "center" },
+    description: {
+      fontSize: 14,
+      fontFamily: Fonts.regular,
+      color: c.textSecondary,
+      lineHeight: 20,
+      textAlign: "center",
+      paddingHorizontal: 8,
+    },
+    statusCard: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 12,
+      padding: 16,
+      borderRadius: 16,
+      borderWidth: 1,
+    },
+    statusIconWrap: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    statusTextWrap: { flex: 1, gap: 4 },
+    statusText: { fontSize: 16, fontFamily: Fonts.semiBold },
+    statusSubtext: { fontSize: 13, fontFamily: Fonts.regular, color: c.textMuted, lineHeight: 18 },
+    uploadCard: {
+      backgroundColor: c.card,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: c.border,
+      borderStyle: "dashed",
+      padding: 20,
+      alignItems: "center",
+      gap: 6,
+    },
+    uploadLabel: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.text },
+    uploadHint: {
+      fontSize: 13,
+      fontFamily: Fonts.regular,
+      color: c.textMuted,
+      textAlign: "center",
+      lineHeight: 18,
+      marginBottom: 8,
+    },
+    uploadPickerWrap: { marginTop: 4 },
+    footer: {
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: 20,
+      borderTopWidth: 1,
+      borderTopColor: c.border,
+      backgroundColor: c.background,
+    },
   });

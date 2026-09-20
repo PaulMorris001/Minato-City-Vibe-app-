@@ -3,6 +3,7 @@ import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import CreateEventTooltip from "@/components/shared/CreateEventTooltip";
+import VerifiedBadgePopup from "@/components/shared/VerifiedBadgePopup";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { currencyPrefix, priceLabel } from "@/constants/payments";
@@ -25,6 +26,7 @@ import { ensureOnline } from "@/utils/requireOnline";
 import { fullName } from "@/utils/displayName";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import MediaTile from "@/components/shared/MediaTile";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -322,7 +324,7 @@ function SmallEventCard({
       <LinearGradient colors={[colors.cardGradientStart, colors.cardGradientEnd]} style={styles.smallCardInner}>
         <View style={styles.smallCardImageWrap}>
           {event.image ? (
-            <Image source={{ uri: event.image }} style={styles.smallCardImage} contentFit="cover" />
+            <MediaTile uri={event.image} style={styles.smallCardImage} posterOnly />
           ) : (
             <View style={[styles.smallCardImage, { backgroundColor: colors.cardAlt, justifyContent: "center", alignItems: "center" }]}>
               <Ionicons name="calendar" size={24} color={colors.primary} />
@@ -396,7 +398,7 @@ function SmallExternalEventCard({
       <LinearGradient colors={[colors.cardGradientStart, colors.cardGradientEnd]} style={styles.smallCardInner}>
         <View style={styles.smallCardImageWrap}>
           {event.image ? (
-            <Image source={{ uri: event.image }} style={styles.smallCardImage} contentFit="cover" />
+            <MediaTile uri={event.image} style={styles.smallCardImage} posterOnly />
           ) : (
             <View style={[styles.smallCardImage, { backgroundColor: colors.cardAlt, justifyContent: "center", alignItems: "center" }]}>
               <Ionicons name="calendar" size={24} color={colors.primary} />
@@ -1909,6 +1911,8 @@ export default function Home() {
           onEventCreated={() => fetchPublicEvents(selectedCity)}
           isBirthdayRaffle={isBirthdayRaffle}
         />
+
+        <VerifiedBadgePopup onCreateEvent={openCreateEvent} />
     </>
   );
 }

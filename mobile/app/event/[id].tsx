@@ -44,6 +44,7 @@ import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
 import EventQRModal from "@/components/shared/EventQRModal";
 import { ImageViewerModal } from "@/components/shared";
 import MediaTile from "@/components/shared/MediaTile";
+import { isVideoUrl } from "@/utils/media";
 import EventLocationMap from "@/components/shared/EventLocationMap";
 import CollapsibleDescription from "@/components/shared/CollapsibleDescription";
 import { cacheRead, cacheWrite } from "@/utils/offlineCache";
@@ -1309,14 +1310,21 @@ export default function EventDetailsPage() {
             photo on the screen background, so text never fights the image
             for contrast and the layout reads the same in light and dark. */}
         <View style={styles.hero}>
-          {/* Cover image (or fallback gradient) */}
+          {/* Cover image or video (or fallback gradient). A video cover
+              self-plays here — muted, since this is a passive hero and not a
+              deliberate "watch this" tap (see MediaTile's autoPlay/muted
+              contract). */}
           {event.image ? (
-            <Image
-              source={{ uri: event.image }}
-              style={styles.heroImage}
-              contentFit="cover"
-              transition={200}
-            />
+            isVideoUrl(event.image) ? (
+              <MediaTile uri={event.image} style={styles.heroImage} autoPlay />
+            ) : (
+              <Image
+                source={{ uri: event.image }}
+                style={styles.heroImage}
+                contentFit="cover"
+                transition={200}
+              />
+            )
           ) : null}
           <LinearGradient
             colors={
@@ -1815,7 +1823,7 @@ export default function EventDetailsPage() {
               <View style={styles.rowBetween}>
                 <Text style={[styles.microLabel, { paddingHorizontal: 0 }]}>ON THE BILL</Text>
                 {isCreator && (
-                  <TouchableOpacity onPress={() => setVendorSearchVisible(true)}>
+                  <TouchableOpacity onPress={() => router.push(`/event-vendors/${event._id}` as any)}>
                     <Text style={styles.seeAll}>Manage</Text>
                   </TouchableOpacity>
                 )}
@@ -2494,10 +2502,18 @@ export default function EventDetailsPage() {
                 />
                 <SheetAction
                   icon="briefcase-outline"
-                  label="Manage vendors"
+                  label="Add a vendor"
                   onPress={() => {
                     setActionSheetVisible(false);
                     setVendorSearchVisible(true);
+                  }}
+                />
+                <SheetAction
+                  icon="options-outline"
+                  label="Manage vendors"
+                  onPress={() => {
+                    setActionSheetVisible(false);
+                    router.push(`/event-vendors/${event._id}` as any);
                   }}
                 />
               </>

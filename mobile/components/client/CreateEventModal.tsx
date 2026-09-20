@@ -641,7 +641,7 @@ export default function CreateEventModal({
                             text: "Get Verified",
                             onPress: () => {
                               onClose();
-                              router.push("/settings" as any);
+                              router.push("/public-event-verification" as any);
                             },
                           },
                         ]
@@ -674,7 +674,7 @@ export default function CreateEventModal({
                   style={styles.verifyLinkRow}
                   onPress={() => {
                     onClose();
-                    router.push("/settings" as any);
+                    router.push("/public-event-verification" as any);
                   }}
                   activeOpacity={0.8}
                 >

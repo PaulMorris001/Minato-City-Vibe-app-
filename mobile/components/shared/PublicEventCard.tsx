@@ -14,6 +14,8 @@ import { currencyPrefix } from "@/constants/payments";
 import { scaleFontSize } from "@/utils/responsive";
 import { useFormatPrice } from "@/hooks/useFormatPrice";
 import { usePosterAspect } from "@/hooks/usePosterAspect";
+import { isVideoUrl } from "@/utils/media";
+import MediaTile from "./MediaTile";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 
@@ -107,14 +109,21 @@ export default function PublicEventCard({
     >
       <View style={styles.eventCardInner}>
         {event.image ? (
-          <Image
-            source={{ uri: event.image }}
-            style={styles.eventCardImage}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-            transition={200}
-            onLoad={poster.onLoad}
-          />
+          isVideoUrl(event.image) ? (
+            // No usePosterAspect measurement for a video cover — the still
+            // frame comes from Cloudinary, not a decode we get an onLoad for
+            // here, so the card keeps its default box instead of a learned one.
+            <MediaTile uri={event.image} style={styles.eventCardImage} posterOnly />
+          ) : (
+            <Image
+              source={{ uri: event.image }}
+              style={styles.eventCardImage}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              transition={200}
+              onLoad={poster.onLoad}
+            />
+          )
         ) : (
           <LinearGradient
             colors={["#667eea", "#764ba2"]}

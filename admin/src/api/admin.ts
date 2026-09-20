@@ -1,11 +1,13 @@
 import client, { cachedGet, bustCache } from "./client";
 import type {
   Stats,
+  ActionItems,
   AdminUser,
   AdminVendor,
   AdminEvent,
   AdminGuide,
   AdminDiscountCode,
+  AdminCouponTransaction,
   AdminRaffleEntry,
   AdminRaffleCampaign,
   City,
@@ -22,6 +24,35 @@ export const adminApi = {
     client.post<{ token: string }>("/admin/login", { username, password }),
 
   getStats: () => cachedGet<Stats>("/admin/stats"),
+
+  // Dashboard "Action Items" — pending counts across every admin review
+  // queue. No dedicated count-only endpoint exists server-side, so this
+  // reuses each queue's own paginated endpoint at limit=1: every one of them
+  // already returns a total/pagination.total/openCount field independent of
+  // the page size, so this stays cheap without adding new server routes.
+  getActionItems: async (): Promise<{ data: ActionItems }> => {
+    const [verifications, payouts, eventEdits, reports, paidEvents, cancellations, stats] =
+      await Promise.all([
+        adminApi.getVerifications({ status: "pending", limit: 1 }),
+        adminApi.getPayouts({ status: "awaiting_approval", limit: 1 }),
+        adminApi.getEventEdits({ status: "pending", limit: 1 }),
+        adminApi.getReports({ limit: 1 }),
+        adminApi.getPaidEvents({ status: "pending", limit: 1 }),
+        adminApi.getEventCancellations({ status: "pending", limit: 1 }),
+        adminApi.getStats(),
+      ]);
+    return {
+      data: {
+        verifications: verifications.data.total,
+        payouts: payouts.data.pagination.total,
+        eventEdits: eventEdits.data.total,
+        reports: reports.data.openCount,
+        paidEvents: paidEvents.data.total,
+        cancellations: cancellations.data.total,
+        newUsersToday: stats.data.newUsersToday,
+      },
+    };
+  },
 
   // Users
   getUsers: (params?: { search?: string; page?: number; limit?: number }) =>
@@ -180,6 +211,19 @@ export const adminApi = {
     client.patch<{ isActive: boolean }>(`/admin/discount-codes/${id}/toggle`).then((r) => { bustCache("/admin/discount-codes"); return r; }),
   deleteDiscountCode: (id: string) =>
     client.delete(`/admin/discount-codes/${id}`).then((r) => { bustCache("/admin/discount-codes"); return r; }),
+
+  // OurCityVibe credit — read-only ledger
+  getCouponTransactions: (params?: {
+    search?: string;
+    type?: string;
+    currency?: string;
+    page?: number;
+    limit?: number;
+  }) =>
+    cachedGet<{ transactions: AdminCouponTransaction[]; total: number; page: number; limit: number }>(
+      "/admin/coupons",
+      { params }
+    ),
 
   // Verifications
   getVerifications: (params?: { status?: string; page?: number; limit?: number }) =>

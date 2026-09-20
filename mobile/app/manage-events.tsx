@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import * as SecureStore from "expo-secure-store";
 import {
   View,
@@ -7,7 +7,6 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
-  Image,
   Alert,
   Modal,
   TextInput,
@@ -18,7 +17,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
@@ -48,6 +47,7 @@ import LocationPinPicker, {
 } from "@/components/shared/LocationPinPicker";
 import { formatLocation } from "@/utils/location";
 import { resolveImageUrls } from "@/utils/imageUpload";
+import MediaTile from "@/components/shared/MediaTile";
 
 import type { ThemeColors } from "@/constants/theme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -112,6 +112,9 @@ export default function EventsPage() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
+  const rawParams = useLocalSearchParams();
+  const editEventIdParam =
+    typeof rawParams.editEventId === "string" ? rawParams.editEventId : undefined;
   const { payForTicket } = usePayment();
 
   // Tab state
@@ -128,6 +131,7 @@ export default function EventsPage() {
   const [loading, setLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [updatingEvent, setUpdatingEvent] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [isInviteModalVisible, setIsInviteModalVisible] = useState(false);
   const [inviteUsername, setInviteUsername] = useState("");
@@ -503,6 +507,19 @@ export default function EventsPage() {
     setIsEditModalVisible(true);
   };
 
+  // Deep-link from the Event Dashboard's "Edit Event" button
+  // (?editEventId=<id>) — opens the same edit modal the card's own Edit
+  // button does, once that event shows up in the fetched list. Guarded to
+  // fire only once so closing the modal doesn't reopen it on a re-render.
+  const openedEditFromParamRef = useRef(false);
+  useEffect(() => {
+    if (openedEditFromParamRef.current || !editEventIdParam) return;
+    const target = events.find((e) => e._id === editEventIdParam);
+    if (!target) return;
+    openedEditFromParamRef.current = true;
+    openEditModal(target);
+  }, [editEventIdParam, events]);
+
   const openInviteModal = (event: Event) => {
     setSelectedEvent(event);
     setInviteUsername("");
@@ -611,6 +628,7 @@ export default function EventsPage() {
       }
     }
 
+    setUpdatingEvent(true);
     try {
       const token = await SecureStore.getItemAsync("token");
 
@@ -687,6 +705,8 @@ export default function EventsPage() {
     } catch (error) {
       console.error("Update event error:", error);
       Alert.alert("Error", "Failed to update event");
+    } finally {
+      setUpdatingEvent(false);
     }
   };
 
@@ -805,7 +825,7 @@ export default function EventsPage() {
         activeOpacity={0.8}
       >
         {event.image ? (
-          <Image source={{ uri: event.image }} style={styles.eventImage} />
+          <MediaTile uri={event.image} style={styles.eventImage} posterOnly />
         ) : (
           <View style={styles.placeholderImage}>
             <Ionicons name="calendar-outline" size={40} color={colors.textMuted} />
@@ -918,6 +938,16 @@ export default function EventsPage() {
 
             {isCreator && (
               <>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    router.push(`/event-dashboard/${event._id}` as any);
+                  }}
+                >
+                  <Ionicons name="speedometer-outline" size={20} color={colors.primary} />
+                </TouchableOpacity>
+
                 <TouchableOpacity
                   style={styles.actionButton}
                   onPress={(e) => {
@@ -1096,7 +1126,7 @@ export default function EventsPage() {
                           activeOpacity={0.8}
                         >
                           {event.image ? (
-                            <Image source={{ uri: event.image }} style={styles.pendingImage} />
+                            <MediaTile uri={event.image} style={styles.pendingImage} posterOnly />
                           ) : (
                             <View style={styles.pendingImagePlaceholder}>
                               <Ionicons name="calendar-outline" size={28} color={colors.textMuted} />
@@ -1599,12 +1629,14 @@ export default function EventsPage() {
               <TouchableOpacity
                 style={styles.cancelButton}
                 onPress={() => setIsEditModalVisible(false)}
+                disabled={updatingEvent}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.createButton}
+                style={[styles.createButton, updatingEvent && { opacity: 0.7 }]}
                 onPress={handleUpdateEvent}
+                disabled={updatingEvent}
               >
                 <LinearGradient
                   colors={[colors.primary, colors.primaryDark]}
@@ -1612,7 +1644,11 @@ export default function EventsPage() {
                   end={{ x: 1, y: 0 }}
                   style={styles.createButtonGradient}
                 >
-                  <Text style={styles.createButtonText}>Update Event</Text>
+                  {updatingEvent ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.createButtonText}>Update Event</Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
             </View>
