@@ -1,338 +1,262 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import React, { useState } from "react";
+import { Alert, Modal, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Fonts } from "@/constants/fonts";
-import PickerModal, { PickerItemText } from "./PickerModal";
+import DateTimePicker, {
+  DateTimePickerAndroid,
+  type DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 
+import { Fonts } from "@/constants/fonts";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
+
 interface DateTimeDropdownProps {
   value: Date | null;
   onChange: (date: Date) => void;
   minimumDate?: Date;
+  maximumDate?: Date;
   /** Time applied when a date is picked before any time was chosen. */
   defaultHour?: number;
-  /** Hide the time dropdown for date-only selection. */
+  /** Hide the time field for date-only selection. */
   showTime?: boolean;
 }
 
-interface DropdownItem {
-  _id: string;
-  label: string;
+function formatDate(d: Date) {
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-interface DraftDate {
-  day: number | null;
-  month: number | null; // 0-11
-  year: number | null;
+function formatTime(d: Date) {
+  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
-function startOfDay(d: Date) {
-  const s = new Date(d);
-  s.setHours(0, 0, 0, 0);
-  return s;
+/** Clamp a full timestamp into [min, max], each optional. */
+function clamp(d: Date, min?: Date, max?: Date): Date {
+  let t = d.getTime();
+  if (min && t < min.getTime()) t = min.getTime();
+  if (max && t > max.getTime()) t = max.getTime();
+  return new Date(t);
 }
 
-function timeLabel(hour: number, minute: number) {
-  const d = new Date();
-  d.setHours(hour, minute, 0, 0);
-  return d.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
-
-const MONTH_LONG = Array.from({ length: 12 }, (_, m) =>
-  new Date(2000, m, 1).toLocaleDateString("en-US", { month: "long" })
-);
-const MONTH_SHORT = Array.from({ length: 12 }, (_, m) =>
-  new Date(2000, m, 1).toLocaleDateString("en-US", { month: "short" })
-);
-
-function daysInMonth(year: number, month: number) {
-  return new Date(year, month + 1, 0).getDate();
-}
-
-function draftFromValue(value: Date | null): DraftDate {
-  return value
-    ? { day: value.getDate(), month: value.getMonth(), year: value.getFullYear() }
-    : { day: null, month: null, year: null };
+function seedValue(minimumDate: Date | undefined, maximumDate: Date | undefined, defaultHour: number) {
+  const seed = minimumDate ? new Date(minimumDate) : new Date();
+  seed.setHours(defaultHour, 0, 0, 0);
+  return clamp(seed, minimumDate, maximumDate);
 }
 
 /**
- * Dropdown-style date & time selector: separate day / month / year dropdowns
- * plus a time dropdown, each opening a list (same pattern as LocationPicker)
- * instead of the native wheel pickers.
+ * Date & time entry using each platform's OWN system picker — the wheel/
+ * calendar UIKit gives iOS, the Material dialogs Android gives Android —
+ * instead of a bespoke set of day/month/year/time dropdowns. Same external
+ * contract as before (`value`/`onChange`/`minimumDate`/`defaultHour`), plus
+ * `maximumDate` for gating a sub-event's time to its umbrella event's window.
+ *
+ * iOS genuinely enforces a combined min/max on one `mode="datetime"` wheel —
+ * you cannot scroll a value out of range. Android has no equivalent combined
+ * dialog, and critically its native TIME dialog has no min/max concept of its
+ * own (a platform limitation, not a gap in this component) — so on Android the
+ * date and time are picked in two separate native dialogs, and the merged
+ * result is clamped afterward, with a short explanation if that clamp actually
+ * had to move the pick.
  */
 export default function DateTimeDropdown({
   value,
   onChange,
   minimumDate,
+  maximumDate,
   defaultHour = 20,
   showTime = true,
 }: DateTimeDropdownProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const [dayOpen, setDayOpen] = useState(false);
-  const [monthOpen, setMonthOpen] = useState(false);
-  const [yearOpen, setYearOpen] = useState(false);
-  const [timeOpen, setTimeOpen] = useState(false);
+  // iOS only: which combined sheet is open, if any.
+  const [iosSheetOpen, setIosSheetOpen] = useState(false);
+  // The sheet's own draft, committed onChange only when the user taps Done —
+  // matches iOS's own date pickers elsewhere in the app (e.g. the OS share
+  // sheet) rather than firing on every wheel tick.
+  const [iosDraft, setIosDraft] = useState<Date | null>(null);
 
-  const min = minimumDate ?? new Date();
-  const today = startOfDay(min);
-  const minYear = min.getFullYear();
-  const minMonth = min.getMonth();
-  const minDay = min.getDate();
+  const current = value ?? seedValue(minimumDate, maximumDate, defaultHour);
 
-  // Partial selection lives here; onChange only fires once all three parts
-  // are chosen, so parents never see a half-picked date.
-  const [draft, setDraft] = useState<DraftDate>(() => draftFromValue(value));
-
-  // Parents can set/reset the value externally (e.g. quick-date buttons).
-  useEffect(() => {
-    setDraft(draftFromValue(value));
-  }, [value?.getTime()]);
-
-  // Lists assume the minimum when a part is unpicked, so they never offer
-  // anything the min-date constraint would reject.
-  const effYear = draft.year ?? minYear;
-  const effMonth = draft.month ?? (effYear === minYear ? minMonth : 0);
-
-  const yearItems: DropdownItem[] = useMemo(
-    () =>
-      Array.from({ length: 3 }, (_, i) => {
-        const y = minYear + i;
-        return { _id: String(y), label: String(y) };
-      }),
-    [minYear]
-  );
-
-  const monthItems: DropdownItem[] = useMemo(() => {
-    const start = effYear === minYear ? minMonth : 0;
-    const items: DropdownItem[] = [];
-    for (let m = start; m < 12; m++) {
-      items.push({ _id: String(m), label: MONTH_LONG[m] });
+  const boundaryNotice = () => {
+    if (minimumDate && maximumDate) {
+      return `This has to fall between ${formatDate(minimumDate)} ${formatTime(minimumDate)} and ${formatDate(maximumDate)} ${formatTime(maximumDate)}.`;
     }
-    return items;
-  }, [effYear, minYear, minMonth]);
+    if (minimumDate) return `This can't be before ${formatDate(minimumDate)} ${formatTime(minimumDate)}.`;
+    if (maximumDate) return `This can't be after ${formatDate(maximumDate)} ${formatTime(maximumDate)}.`;
+    return "";
+  };
 
-  const dayItems: DropdownItem[] = useMemo(() => {
-    const start = effYear === minYear && effMonth === minMonth ? minDay : 1;
-    const end = daysInMonth(effYear, effMonth);
-    const items: DropdownItem[] = [];
-    for (let d = start; d <= end; d++) {
-      items.push({ _id: String(d), label: String(d) });
-    }
-    return items;
-  }, [effYear, effMonth, minYear, minMonth, minDay]);
-
-  const timeItems: DropdownItem[] = useMemo(() => {
-    const items: DropdownItem[] = [];
-    const isMinDay = value && startOfDay(value).getTime() === today.getTime();
-    for (let h = 0; h < 24; h++) {
-      for (const m of [0, 30]) {
-        // On the minimum day, hide slots that are already in the past.
-        if (isMinDay) {
-          const slot = new Date(value);
-          slot.setHours(h, m, 0, 0);
-          if (slot <= min) continue;
-        }
-        items.push({ _id: `${h}:${m}`, label: timeLabel(h, m) });
-      }
-    }
-    return items;
-  }, [value?.getTime(), today.getTime(), min.getTime()]);
-
-  const selectPart = (part: keyof DraftDate, num: number) => {
-    const next: DraftDate = { ...draft, [part]: num };
-
-    // Clamp the draft into the valid range for the chosen month/year. A
-    // past year can be in the draft when editing something dated in the
-    // past — never let a pick commit a date before the minimum.
-    if (next.year != null && next.year < minYear) {
-      next.year = minYear;
-    }
-    if (next.year === minYear && next.month != null && next.month < minMonth) {
-      next.month = minMonth;
-    }
-    if (next.day != null && next.month != null) {
-      next.day = Math.min(next.day, daysInMonth(next.year ?? minYear, next.month));
-    }
-    if (
-      next.year === minYear &&
-      next.month === minMonth &&
-      next.day != null &&
-      next.day < minDay
-    ) {
-      next.day = minDay;
-    }
-
-    setDraft(next);
-
-    if (next.day != null && next.month != null && next.year != null) {
-      const picked = new Date(next.year, next.month, next.day);
-      if (value) {
-        picked.setHours(value.getHours(), value.getMinutes(), 0, 0);
-      } else {
-        picked.setHours(defaultHour, 0, 0, 0);
-      }
-      // If the merged result lands in the past (e.g. today + earlier time),
-      // bump to the next upcoming half-hour.
-      if (picked <= min) {
-        const nextSlot = new Date(min);
-        nextSlot.setMinutes(nextSlot.getMinutes() < 30 ? 30 : 60, 0, 0);
-        picked.setHours(nextSlot.getHours(), nextSlot.getMinutes(), 0, 0);
-      }
-      onChange(picked);
+  const commit = (next: Date, { clamped }: { clamped: boolean }) => {
+    onChange(next);
+    if (clamped) {
+      // Android's time dialog can't be told the boundary up front (see the
+      // component doc comment) — this is the only point a guest learns why
+      // their pick moved instead of it silently landing somewhere they didn't
+      // choose.
+      Alert.alert("Time adjusted", boundaryNotice());
     }
   };
 
-  const selectTime = (item: DropdownItem) => {
-    const [h, m] = item._id.split(":").map(Number);
-    const picked = value ? new Date(value) : new Date(today);
-    picked.setHours(h, m, 0, 0);
-    setTimeOpen(false);
-    onChange(picked);
+  // ── Android: two independent native dialogs ──────────────────────────────
+  const openAndroidDate = () => {
+    DateTimePickerAndroid.open({
+      value: current,
+      mode: "date",
+      minimumDate,
+      maximumDate,
+      onChange: (event: DateTimePickerEvent, picked?: Date) => {
+        if (event.type !== "set" || !picked) return;
+        const next = new Date(current);
+        next.setFullYear(picked.getFullYear(), picked.getMonth(), picked.getDate());
+        const bounded = clamp(next, minimumDate, maximumDate);
+        commit(bounded, { clamped: bounded.getTime() !== next.getTime() });
+      },
+    });
   };
 
-  const selectedTimeId = value ? `${value.getHours()}:${value.getMinutes()}` : undefined;
+  const openAndroidTime = () => {
+    DateTimePickerAndroid.open({
+      value: current,
+      mode: "time",
+      onChange: (event: DateTimePickerEvent, picked?: Date) => {
+        if (event.type !== "set" || !picked) return;
+        const next = new Date(current);
+        next.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
+        const bounded = clamp(next, minimumDate, maximumDate);
+        commit(bounded, { clamped: bounded.getTime() !== next.getTime() });
+      },
+    });
+  };
+
+  // ── iOS: one combined sheet ───────────────────────────────────────────────
+  const openIosSheet = () => {
+    setIosDraft(current);
+    setIosSheetOpen(true);
+  };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.row}>
-        <TouchableOpacity
-          style={[styles.dropdown, { flex: 0.8 }]}
-          onPress={() => setDayOpen(true)}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.dropdownText, draft.day == null && styles.placeholder]} numberOfLines={1}>
-            {draft.day != null ? String(draft.day) : "Day"}
-          </Text>
-          <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.dropdown, { flex: 1.2 }]}
-          onPress={() => setMonthOpen(true)}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.dropdownText, draft.month == null && styles.placeholder]} numberOfLines={1}>
-            {draft.month != null ? MONTH_SHORT[draft.month] : "Month"}
-          </Text>
-          <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.dropdown, { flex: 1 }]}
-          onPress={() => setYearOpen(true)}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.dropdownText, draft.year == null && styles.placeholder]} numberOfLines={1}>
-            {draft.year != null ? String(draft.year) : "Year"}
-          </Text>
-          <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
-      </View>
+    <View style={styles.row}>
+      <TouchableOpacity
+        style={[styles.field, { flex: showTime ? 1.3 : 1 }]}
+        onPress={Platform.OS === "android" ? openAndroidDate : openIosSheet}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="calendar-outline" size={17} color={colors.primary} />
+        <Text style={[styles.fieldText, !value && styles.placeholder]} numberOfLines={1}>
+          {value ? formatDate(value) : "Select date"}
+        </Text>
+      </TouchableOpacity>
 
       {showTime && (
         <TouchableOpacity
-          style={styles.dropdown}
-          onPress={() => setTimeOpen(true)}
+          style={[styles.field, { flex: 1 }]}
+          onPress={Platform.OS === "android" ? openAndroidTime : openIosSheet}
           activeOpacity={0.8}
         >
-          <Ionicons name="time-outline" size={18} color={colors.primary} />
-          <Text style={[styles.dropdownText, !value && styles.placeholder]} numberOfLines={1}>
-            {value ? timeLabel(value.getHours(), value.getMinutes()) : "Time"}
+          <Ionicons name="time-outline" size={17} color={colors.primary} />
+          <Text style={[styles.fieldText, !value && styles.placeholder]} numberOfLines={1}>
+            {value ? formatTime(value) : "Select time"}
           </Text>
-          <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
         </TouchableOpacity>
       )}
 
-      <PickerModal
-        visible={dayOpen}
-        onClose={() => setDayOpen(false)}
-        title="Select day"
-        data={dayItems}
-        selectedId={draft.day != null ? String(draft.day) : undefined}
-        onSelect={(item) => {
-          setDayOpen(false);
-          selectPart("day", Number(item._id));
-        }}
-        renderItem={(item, isSelected) => (
-          <PickerItemText text={item.label} isSelected={isSelected} />
-        )}
-      />
-      <PickerModal
-        visible={monthOpen}
-        onClose={() => setMonthOpen(false)}
-        title="Select month"
-        data={monthItems}
-        selectedId={draft.month != null ? String(draft.month) : undefined}
-        onSelect={(item) => {
-          setMonthOpen(false);
-          selectPart("month", Number(item._id));
-        }}
-        renderItem={(item, isSelected) => (
-          <PickerItemText text={item.label} isSelected={isSelected} />
-        )}
-      />
-      <PickerModal
-        visible={yearOpen}
-        onClose={() => setYearOpen(false)}
-        title="Select year"
-        data={yearItems}
-        selectedId={draft.year != null ? String(draft.year) : undefined}
-        onSelect={(item) => {
-          setYearOpen(false);
-          selectPart("year", Number(item._id));
-        }}
-        renderItem={(item, isSelected) => (
-          <PickerItemText text={item.label} isSelected={isSelected} />
-        )}
-      />
-      <PickerModal
-        visible={timeOpen}
-        onClose={() => setTimeOpen(false)}
-        title="Select time"
-        data={timeItems}
-        selectedId={selectedTimeId}
-        onSelect={selectTime}
-        renderItem={(item, isSelected) => (
-          <PickerItemText text={item.label} isSelected={isSelected} />
-        )}
-      />
+      {Platform.OS === "ios" && (
+        <Modal
+          visible={iosSheetOpen}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setIosSheetOpen(false)}
+        >
+          <View style={styles.iosSheetWrap}>
+            <Pressable style={styles.iosSheetBackdrop} onPress={() => setIosSheetOpen(false)} />
+            <View style={styles.iosSheetCard}>
+              <View style={styles.iosSheetHeader}>
+                <TouchableOpacity onPress={() => setIosSheetOpen(false)} hitSlop={10}>
+                  <Text style={styles.iosSheetCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (iosDraft) commit(clamp(iosDraft, minimumDate, maximumDate), { clamped: false });
+                    setIosSheetOpen(false);
+                  }}
+                  hitSlop={10}
+                >
+                  <Text style={styles.iosSheetDone}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={iosDraft ?? current}
+                mode={showTime ? "datetime" : "date"}
+                display="spinner"
+                minimumDate={minimumDate}
+                maximumDate={maximumDate}
+                onChange={(_event, picked) => picked && setIosDraft(picked)}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-  container: {
-    gap: 10,
-  },
-  row: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  dropdown: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderWidth: 1,
-    borderColor: c.glassStroke,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 13,
-    backgroundColor: c.glassFillSubtle,
-  },
-  dropdownText: {
-    flex: 1,
-    fontSize: 15,
-    fontFamily: Fonts.regular,
-    color: c.textBright,
-  },
-  placeholder: {
-    color: c.textFaint,
-  },
-});
+    row: {
+      flexDirection: "row",
+      gap: 10,
+    },
+    field: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      borderWidth: 1,
+      borderColor: c.glassStroke,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 13,
+      backgroundColor: c.glassFillSubtle,
+    },
+    fieldText: {
+      flex: 1,
+      fontSize: 15,
+      fontFamily: Fonts.regular,
+      color: c.textBright,
+    },
+    placeholder: {
+      color: c.textFaint,
+    },
+    iosSheetWrap: {
+      flex: 1,
+      justifyContent: "flex-end",
+    },
+    iosSheetBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: c.modalOverlay,
+    },
+    iosSheetCard: {
+      backgroundColor: c.card,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      paddingBottom: 20,
+    },
+    iosSheetHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: 18,
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.glassStroke,
+    },
+    iosSheetCancel: {
+      fontFamily: Fonts.regular,
+      fontSize: 15,
+      color: c.textDim,
+    },
+    iosSheetDone: {
+      fontFamily: Fonts.semiBold,
+      fontSize: 15,
+      color: c.primary,
+    },
+  });

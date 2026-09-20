@@ -15,6 +15,11 @@ const ticketOrderItemSchema = mongoose.Schema(
     price: { type: Number, required: true },
     recipientEmail: { type: String, required: true },
     recipientName: { type: String },
+    // Which stop of a programme this line item buys, frozen at init alongside
+    // its price so the fan-out issues the pass against the right stop.
+    subEvent: { type: mongoose.Schema.Types.ObjectId, default: null },
+    subEventTitle: { type: String },
+    subEventDate: { type: Date },
     // Per-ticket venue pick, frozen at init so the fan-out (and the webhook
     // fallback, which never sees the buyer's request) issues each pass against
     // the venue that was chosen for it. See ticket.model.js.

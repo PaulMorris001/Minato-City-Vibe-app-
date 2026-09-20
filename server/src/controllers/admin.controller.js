@@ -359,7 +359,7 @@ export async function getEventSignupsAdmin(req, res) {
   try {
     const { id } = req.params;
     const event = await Event.findById(id).select(
-      "title date rsvpUsers invitedUsers location address city state country additionalLocations"
+      "title date rsvpUsers invitedUsers location address city state country additionalLocations subEvents"
     );
     if (!event) return res.status(404).json({ message: "Event not found" });
 
@@ -1479,6 +1479,15 @@ export async function approveEventEdit(req, res) {
       rejectReason: undefined,
     };
     await event.save();
+
+    // The approved values are only live once the cached detail payloads go.
+    // Cached under whichever param the caller used, so drop all three keys —
+    // see fulfillTicketOrder for the same pattern.
+    for (const key of [event._id, event.slug, event.shareToken].filter(Boolean)) {
+      invalidateCachePattern(`event_detail_${key}_`);
+    }
+    invalidateCachePattern("public_events_");
+    invalidateCachePattern("event_highlights_");
 
     await Notification.create({
       user: event.createdBy._id,
