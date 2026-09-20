@@ -24,6 +24,7 @@ import { ensureOnline } from "@/utils/requireOnline";
 import { fullName } from "@/utils/displayName";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import MediaTile from "@/components/shared/MediaTile";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { locationWithMore } from "@/utils/location";
@@ -322,7 +323,7 @@ function SmallEventCard({
       <LinearGradient colors={[colors.cardGradientStart, colors.cardGradientEnd]} style={styles.smallCardInner}>
         <View style={styles.smallCardImageWrap}>
           {event.image ? (
-            <Image source={{ uri: event.image }} style={styles.smallCardImage} contentFit="cover" />
+            <MediaTile uri={event.image} style={styles.smallCardImage} posterOnly />
           ) : (
             <View style={[styles.smallCardImage, { backgroundColor: colors.cardAlt, justifyContent: "center", alignItems: "center" }]}>
               <Ionicons name="calendar" size={24} color={colors.primary} />
@@ -396,7 +397,7 @@ function SmallExternalEventCard({
       <LinearGradient colors={[colors.cardGradientStart, colors.cardGradientEnd]} style={styles.smallCardInner}>
         <View style={styles.smallCardImageWrap}>
           {event.image ? (
-            <Image source={{ uri: event.image }} style={styles.smallCardImage} contentFit="cover" />
+            <MediaTile uri={event.image} style={styles.smallCardImage} posterOnly />
           ) : (
             <View style={[styles.smallCardImage, { backgroundColor: colors.cardAlt, justifyContent: "center", alignItems: "center" }]}>
               <Ionicons name="calendar" size={24} color={colors.primary} />
@@ -1906,6 +1907,7 @@ export default function Home() {
           keeps the FAB tappable through it. */}
       <CreateEventTooltip hidden={!feedAtTop} />
 
+      
     </>
   );
 }

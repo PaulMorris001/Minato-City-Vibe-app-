@@ -1,15 +1,43 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { adminApi } from "../api/admin";
-import type { Stats } from "../types";
+import type { ActionItems, Stats } from "../types";
 import StatCard from "../components/ui/StatCard";
 import { colors } from "../constants/colors";
 
+interface ActionItemConfig {
+  key: keyof ActionItems;
+  label: string;
+  icon: string;
+  route: string;
+  /** Informational items (new signups) always render in the info color,
+   *  never the "needs attention" amber/red treatment. */
+  informational?: boolean;
+}
+
+const ACTION_ITEMS: ActionItemConfig[] = [
+  { key: "verifications", label: "Identity Verifications", icon: "🛡️", route: "/verifications" },
+  { key: "payouts", label: "Payouts", icon: "💸", route: "/payouts" },
+  { key: "eventEdits", label: "Event Edits", icon: "✏️", route: "/event-edits" },
+  { key: "paidEvents", label: "Paid Events", icon: "🎫", route: "/paid-events" },
+  { key: "cancellations", label: "Cancellations", icon: "🚫", route: "/event-cancellations" },
+  { key: "reports", label: "Reports", icon: "🚩", route: "/reports" },
+  { key: "newUsersToday", label: "New Users Today", icon: "👋", route: "/users", informational: true },
+];
+
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState<Stats | null>(null);
+  const [actionItems, setActionItems] = useState<ActionItems | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    adminApi.getStats().then((r) => setStats(r.data)).finally(() => setLoading(false));
+    Promise.all([adminApi.getStats(), adminApi.getActionItems()])
+      .then(([statsRes, actionRes]) => {
+        setStats(statsRes.data);
+        setActionItems(actionRes.data);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const formatDate = (iso: string) =>
@@ -18,8 +46,50 @@ export default function Dashboard() {
   if (loading) return <div style={styles.loading}>Loading...</div>;
   if (!stats) return null;
 
+  const totalPending = actionItems
+    ? ACTION_ITEMS.filter((i) => !i.informational).reduce((sum, i) => sum + actionItems[i.key], 0)
+    : 0;
+
   return (
     <div style={styles.page}>
+      <div style={styles.card}>
+        <div style={styles.cardHeader}>
+          <h3 style={styles.cardTitle}>Action Items</h3>
+          {totalPending > 0 && (
+            <span style={styles.headerBadge}>{totalPending} need{totalPending === 1 ? "s" : ""} attention</span>
+          )}
+        </div>
+        <div style={styles.actionGrid}>
+          {actionItems &&
+            ACTION_ITEMS.map((item) => {
+              const count = actionItems[item.key];
+              const active = !item.informational && count > 0;
+              return (
+                <button
+                  key={item.key}
+                  style={{
+                    ...styles.actionTile,
+                    borderColor: active ? colors.warning : colors.border,
+                    background: active ? "rgba(245, 158, 11, 0.08)" : colors.surface,
+                  }}
+                  onClick={() => navigate(item.route)}
+                >
+                  <span style={styles.actionIcon}>{item.icon}</span>
+                  <span
+                    style={{
+                      ...styles.actionCount,
+                      color: item.informational ? colors.info : active ? colors.warning : colors.textMuted,
+                    }}
+                  >
+                    {count}
+                  </span>
+                  <span style={styles.actionLabel}>{item.label}</span>
+                </button>
+              );
+            })}
+        </div>
+      </div>
+
       <div style={styles.statsRow}>
         <StatCard label="Total Users" value={stats.totalUsers} icon="👥" accent={colors.primary} />
         <StatCard label="Vendors" value={stats.totalVendors} icon="🏪" accent={colors.success} />
@@ -81,10 +151,47 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
   },
   cardHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
     padding: "16px 20px",
     borderBottom: `1px solid ${colors.border}`,
   },
   cardTitle: { fontSize: 15, fontWeight: 600, color: colors.text },
+  headerBadge: {
+    background: "rgba(245, 158, 11, 0.12)",
+    color: colors.warning,
+    border: `1px solid ${colors.warning}`,
+    borderRadius: 20,
+    padding: "3px 10px",
+    fontSize: 12,
+    fontWeight: 600,
+    whiteSpace: "nowrap",
+  },
+  actionGrid: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 12,
+    padding: 20,
+  },
+  actionTile: {
+    flex: "1 1 140px",
+    minWidth: 140,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 4,
+    padding: "14px 16px",
+    borderRadius: 10,
+    border: `1px solid ${colors.border}`,
+    cursor: "pointer",
+    textAlign: "left",
+    font: "inherit",
+  },
+  actionIcon: { fontSize: 18 },
+  actionCount: { fontSize: 24, fontWeight: 700, lineHeight: 1.2 },
+  actionLabel: { fontSize: 12.5, color: colors.textMuted, fontWeight: 500 },
   table: { width: "100%", minWidth: 520, borderCollapse: "collapse", fontSize: 13 },
   th: {
     padding: "10px 16px",

@@ -258,9 +258,20 @@ export async function quoteOrder(req, res) {
   }
 }
 
-/** PATCH /orders/:id/decline  (vendor only) */
+/**
+ * PATCH /orders/:id/decline  (vendor only)
+ * Doubles as the vendor's "cancel" action on an already-quoted, still-unpaid
+ * order — the client can't be charged for something the vendor won't fulfil,
+ * so this stays open through "quoted" the same way it's open on "requested".
+ * A reason is required either way so the client isn't left guessing.
+ */
 export async function declineOrder(req, res) {
   try {
+    const reason = String(req.body?.reason || "").trim();
+    if (!reason) {
+      return res.status(400).json({ message: "A reason is required to decline this order" });
+    }
+
     const order = await Order.findOne({ _id: req.params.id, vendor: req.user.id });
     if (!order) return res.status(404).json({ message: "Order not found" });
     if (!["requested", "quoted"].includes(order.status)) {
@@ -268,11 +279,12 @@ export async function declineOrder(req, res) {
     }
 
     order.status = "declined";
+    order.cancellationReason = reason;
     await order.save();
     // Give back any coupon balance reserved at payment init — there's nothing
     // left to spend it on.
     await refundOrderCoupon(order);
-    await postOrderSystemMessage(order.chat, req.user.id, "Vendor declined this order");
+    await postOrderSystemMessage(order.chat, req.user.id, `Vendor declined this order: ${reason}`);
 
     await populateOrder(order);
     res.status(200).json({ message: "Order declined", order });

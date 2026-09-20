@@ -33,9 +33,11 @@ import socketService from "@/services/socket.service";
 import { clearLocalData } from "@/utils/localData";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "@/components/shared/Avatar";
+import AccountSwitchToggle from "@/components/shared/AccountSwitchToggle";
 import { getCircularAvatarUrl } from "@/utils/imageUpload";
 import { openSupportChat } from "@/utils/userNavigation";
 import { ensureAuth } from "@/utils/requireAuth";
+import { resetToAccountRoot } from "@/utils/navigation";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -389,20 +391,26 @@ export default function TabsLayout() {
         <Text style={[styles.emailText, isTranslucentModal && styles.glassTextSecondary]}>
           {user.email}
         </Text>
-        <LinearGradient
-          colors={[colors.info, "#1d4ed8"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.accountTypeBadge}
-        >
-          <Ionicons name="person" size={14} color="#fff" />
-          <Text style={styles.accountTypeText}>
-            Client Account
-            {user.isVendor && (
-              <Text style={styles.accountTypeSubtext}> • Has Vendor</Text>
-            )}
-          </Text>
-        </LinearGradient>
+        {user.isVendor ? (
+          <AccountSwitchToggle
+            hasVendorAccount
+            onSwitched={(target) => {
+              setIsProfileModalVisible(false);
+              resetToAccountRoot(target);
+            }}
+            style={styles.accountSwitchToggle}
+          />
+        ) : (
+          <LinearGradient
+            colors={[colors.info, "#1d4ed8"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.accountTypeBadge}
+          >
+            <Ionicons name="person" size={14} color="#fff" />
+            <Text style={styles.accountTypeText}>Client Account</Text>
+          </LinearGradient>
+        )}
       </View>
 
       <View style={[styles.divider, isTranslucentModal && styles.glassDivider]} />
@@ -1039,10 +1047,9 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.semiBold,
     color: c.text,
   },
-  accountTypeSubtext: {
-    fontSize: 11,
-    fontFamily: Fonts.regular,
-    color: c.textDim,
+  accountSwitchToggle: {
+    width: "100%",
+    marginTop: 4,
   },
   divider: {
     height: 1,

@@ -31,6 +31,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
+import { Fonts } from "@/constants/fonts";
+import { scaleFontSize } from "@/utils/responsive";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
@@ -193,13 +195,11 @@ export default function EarningsScreen() {
     }
   };
 
+  // No header/title while loading — it and the content it describes should
+  // appear together, not have the title pop in a beat before the numbers do.
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <GlassBackButton style={styles.backButton} />
-          <Text style={styles.headerTitle}>Earnings</Text>
-        </View>
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
@@ -216,7 +216,6 @@ export default function EarningsScreen() {
       <View style={styles.header}>
         <GlassBackButton style={styles.backButton} />
         <Text style={styles.headerTitle}>Earnings</Text>
-        <View style={styles.backButton} />
       </View>
 
       <ScrollView
@@ -399,17 +398,11 @@ const createStyles = (c: ThemeColors) =>
     header: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
       paddingHorizontal: 16,
       paddingVertical: 12,
     },
-    backButton: { width: 40 },
-    headerTitle: {
-      fontFamily: VNF.heading,
-      fontSize: 20,
-      color: c.textBright,
-      letterSpacing: -0.4,
-    },
+    backButton: { marginRight: 16 },
+    headerTitle: { fontSize: scaleFontSize(22), fontFamily: Fonts.bold, color: c.text },
     scrollContent: { paddingHorizontal: 16, paddingBottom: 48, gap: 16 },
 
     banner: {

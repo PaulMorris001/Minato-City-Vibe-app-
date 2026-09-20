@@ -11,9 +11,9 @@ interface MediaTileProps {
   style?: StyleProp<ViewStyle & ImageStyle>;
   contentFit?: ImageContentFit;
   /**
-   * Render videos as a still frame with a play badge instead of a live player.
-   * Use in lists and grids — a screen full of AVPlayers is expensive, and the
-   * user is picking something to open, not watching yet.
+   * Render videos as a still frame instead of a live player. Use in lists and
+   * grids — a screen full of AVPlayers is expensive, and the user is picking
+   * something to open, not watching yet.
    */
   posterOnly?: boolean;
   /** Start playing as soon as the player is ready. Ignored when posterOnly. */
@@ -120,9 +120,11 @@ export default function MediaTile({
 }
 
 /**
- * Still frame + play badge. A local video that hasn't been uploaded yet has no
- * derivable poster, so it falls back to a dark tile — the badge is what tells
- * the user it's a video either way.
+ * Still frame, no play badge — a video preview should read like any other
+ * photo thumbnail. The one exception is a local video that hasn't been
+ * uploaded yet, which has no derivable poster at all: with nothing to show, a
+ * bare dark tile looks like a broken image rather than a picked video, so
+ * that fallback case alone keeps a small indicator.
  */
 function VideoPoster({
   uri,
@@ -134,16 +136,12 @@ function VideoPoster({
   contentFit: ImageContentFit;
 }) {
   const poster = videoPosterUrl(uri);
+  if (poster) {
+    return <Image source={{ uri: poster }} style={style} contentFit={contentFit} />;
+  }
   return (
-    <View style={[style, styles.posterWrap]}>
-      {poster ? (
-        <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={contentFit} />
-      ) : (
-        <View style={[StyleSheet.absoluteFill, styles.posterFallback]} />
-      )}
-      <View style={styles.playBadge}>
-        <Ionicons name="play" size={16} color="#fff" />
-      </View>
+    <View style={[style, styles.posterWrap, styles.posterFallback]}>
+      <Ionicons name="videocam" size={20} color="#fff" />
     </View>
   );
 }
@@ -195,15 +193,5 @@ const styles = StyleSheet.create({
   },
   posterFallback: {
     backgroundColor: "#1a1a1a",
-  },
-  playBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    alignItems: "center",
-    justifyContent: "center",
-    // Optical centering — the play glyph's mass sits left of its box.
-    paddingLeft: 2,
   },
 });

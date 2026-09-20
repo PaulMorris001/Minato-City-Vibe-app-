@@ -28,6 +28,8 @@ import { useCart } from "@/contexts/CartContext";
 import { useUnread } from "@/contexts/UnreadContext";
 import socketService from "@/services/socket.service";
 import { clearLocalData } from "@/utils/localData";
+import { resetToAccountRoot } from "@/utils/navigation";
+import AccountSwitchToggle from "@/components/shared/AccountSwitchToggle";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -214,15 +216,14 @@ export default function VendorLayout() {
           {capitalize(vendorDisplayName(user))}
         </Text>
         <Text style={styles.emailText}>{user.email}</Text>
-        <LinearGradient
-          colors={["#22c55e", "#16a34a"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.accountTypeBadge}
-        >
-          <Ionicons name="briefcase" size={14} color="#fff" />
-          <Text style={styles.accountTypeText}>Vendor Account</Text>
-        </LinearGradient>
+        <AccountSwitchToggle
+          hasVendorAccount
+          onSwitched={(target) => {
+            setIsProfileModalVisible(false);
+            resetToAccountRoot(target);
+          }}
+          style={styles.accountSwitchToggle}
+        />
       </View>
 
       <View style={[styles.divider, isTranslucentModal && styles.glassDivider]} />
@@ -237,7 +238,7 @@ export default function VendorLayout() {
         <View style={styles.menuIconContainer}>
           <Ionicons name="person-outline" size={20} color={colors.primary} />
         </View>
-        <Text style={styles.menuItemText}>Account</Text>
+        <Text style={styles.menuItemText}>Profile</Text>
         <Ionicons
           name="chevron-forward"
           size={20}
@@ -679,20 +680,9 @@ const createStyles = (c: ThemeColors) =>
     color: c.textSecondary,
     marginBottom: 12,
   },
-  accountTypeBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  accountTypeText: {
-    // Sits on a fixed green gradient in both themes, so this stays white
-    // rather than following c.text (which is near-black in light mode).
-    fontSize: 13,
-    fontFamily: Fonts.semiBold,
-    color: "#fff",
+  accountSwitchToggle: {
+    width: "100%",
+    marginTop: 4,
   },
   divider: {
     height: 1,
