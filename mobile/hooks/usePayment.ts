@@ -12,6 +12,14 @@ interface PaymentResult {
 
 type PurchaseType = "ticket" | "guide" | "booking" | "order";
 
+/** One stop of a programme the buyer is checking out. */
+export interface ProgrammeItem {
+  subEvent: string | null;
+  tierId?: string;
+  recipientEmail: string;
+  recipientName?: string;
+}
+
 /**
  * Provider-agnostic payment hook.
  *
@@ -209,6 +217,90 @@ export function usePayment() {
     }
   };
 
+  /**
+   * A programme checkout: one charge covering every stop the buyer picked,
+   * whatever mix of free and paid — the batch rail (`/payments/init/tickets`),
+   * not the single-item one above. A programme event refuses the single rail
+   * server-side, so this is the only path for buying into one.
+   */
+  const payForProgramme = async (
+    eventId: string,
+    items: ProgrammeItem[],
+    discountCode?: string
+  ): Promise<PaymentResult> => {
+    const token = await SecureStore.getItemAsync("token");
+    if (!token) return { success: false, error: "Not authenticated" };
+
+    let init: any;
+    try {
+      const res = await fetch(`${BASE_URL}/payments/init/tickets/${eventId}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ items, ...(discountCode ? { discountCode } : {}) }),
+      });
+      init = await res.json();
+      if (!res.ok) {
+        return { success: false, error: init.message || "Payment setup failed", code: init.code };
+      }
+    } catch {
+      return { success: false, error: "Network error. Please try again." };
+    }
+
+    const confirmBatch = (body: { provider: string; reference: string }) =>
+      confirmPurchaseBatch(eventId, token, body);
+
+    // An all-free selection (every ticked stop is free, or a 100%-off code
+    // zeroed the total) — no provider call at all.
+    if (init.provider === "none" && init.free) {
+      return confirmBatch({ provider: "none", reference: init.reference });
+    }
+
+    if (init.provider === "stripe") {
+      const stripeRes = await payWithStripe(init.clientSecret);
+      if (!stripeRes.success) return stripeRes;
+      return confirmBatch({ provider: "stripe", reference: stripeRes.reference! });
+    }
+
+    const hosted = await payWithHostedCheckout(init);
+    if (!hosted.success) {
+      if (!hosted.error && init.reference) {
+        const rescued = await confirmBatch({ provider: init.provider, reference: init.reference });
+        if (rescued.success) return rescued;
+      }
+      return hosted;
+    }
+    return confirmBatch({ provider: init.provider, reference: hosted.reference! });
+  };
+
+  const confirmPurchaseBatch = async (
+    eventId: string,
+    token: string,
+    body: { provider: string; reference: string }
+  ): Promise<PaymentResult> => {
+    try {
+      const res = await fetch(`${BASE_URL}/payments/confirm/tickets/${eventId}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          error:
+            d.message ||
+            "Payment succeeded but access could not be granted. Please contact support@ourcityvibe.com.",
+        };
+      }
+      return { success: true };
+    } catch {
+      return {
+        success: false,
+        error: "Payment succeeded but confirmation failed. Please contact support.",
+      };
+    }
+  };
+
   const payForTicket = (
     eventId: string,
     tierId?: string,
@@ -220,7 +312,7 @@ export function usePayment() {
   const payForOrder = (orderId: string, useCoupon?: boolean) =>
     pay("order", orderId, undefined, undefined, useCoupon);
 
-  return { payForTicket, payForGuide, payForBooking, payForOrder };
+  return { payForTicket, payForGuide, payForBooking, payForOrder, payForProgramme };
 }
 
 /** Parse the query string off a redirect URL into a plain object. */

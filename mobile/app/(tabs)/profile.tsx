@@ -23,7 +23,6 @@ import axios from "axios";
 import { Avatar } from "@/components/shared/Avatar";
 import DiscoverPeoplePreview from "@/components/shared/DiscoverPeoplePreview";
 import GuestGate from "@/components/shared/GuestGate";
-import CreateEventModal from "@/components/client/CreateEventModal";
 import ImageViewerModal from "@/components/shared/ImageViewerModal";
 import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
 import { displayName } from "@/utils/displayName";
@@ -90,9 +89,6 @@ export default function ProfileScreen() {
   const [isGuest, setIsGuest] = useState(false);
   const [avatarViewerVisible, setAvatarViewerVisible] = useState(false);
   const [respondingInvite, setRespondingInvite] = useState<string | null>(null);
-  // Mounted here rather than navigating: CreateEventModal is a self-contained
-  // component, and the events tab it used to live behind is gone.
-  const [createEventVisible, setCreateEventVisible] = useState(false);
 
   const fetchProfile = async () => {
     try {
@@ -270,7 +266,7 @@ export default function ProfileScreen() {
           }
           ListEmptyComponent={
             loading ? null : (
-              <EmptyState tab={tab} onCreateEvent={() => setCreateEventVisible(true)} />
+              <EmptyState tab={tab} onCreateEvent={() => router.push("/create-event" as any)} />
             )
           }
           ListFooterComponent={
@@ -297,14 +293,6 @@ export default function ProfileScreen() {
           onClose={() => setAvatarViewerVisible(false)}
         />
       ) : null}
-      <CreateEventModal
-        visible={createEventVisible}
-        onClose={() => setCreateEventVisible(false)}
-        onEventCreated={() => {
-          setCreateEventVisible(false);
-          loadData(true);
-        }}
-      />
     </View>
   );
 }

@@ -24,9 +24,11 @@ interface EventEdit {
 
 const FIELD_LABELS: Record<string, string> = {
   date: "Date & time",
+  endDate: "End date",
   ticketPrice: "Ticket price (from)",
   maxGuests: "Capacity",
   ticketTiers: "Ticket tiers",
+  subEvents: "Programme",
 };
 
 function formatValue(key: string, value: any, currency?: string): string {
@@ -44,6 +46,23 @@ function formatValue(key: string, value: any, currency?: string): string {
       .join("  ·  ");
   }
   if (key === "ticketPrice") return `${currency || "USD"} ${value}`;
+  if (key === "subEvents") {
+    if (!Array.isArray(value) || value.length === 0) return "—";
+    // One line per stop: name, its own date, and what it costs — the same
+    // three things a reviewer needs to sanity-check a tier change with.
+    return value
+      .map((s: any) => {
+        const tiers = Array.isArray(s.ticketTiers) ? s.ticketTiers : [];
+        const price = tiers.length
+          ? `From ${currency || "USD"} ${Math.min(...tiers.map((t: any) => t.price))}`
+          : s.ticketPrice
+            ? `${currency || "USD"} ${s.ticketPrice}`
+            : "Free";
+        const when = s.date ? new Date(s.date).toLocaleString() : "";
+        return `${s.title} — ${when} — ${price}`;
+      })
+      .join("\n");
+  }
   return String(value);
 }
 

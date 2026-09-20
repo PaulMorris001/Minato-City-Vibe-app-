@@ -216,7 +216,7 @@ const handlePrimaryCTA = async () => {
     // User already has a qualifying event → go to status page
     router.push("/birthday-raffle/status" as any);
   } else {
-    // No event yet → go to Home and open CreateEventModal with birthday flag.
+    // No event yet → go to Home, which pushes /create-event with the flag.
     // Must be the "home" screen specifically, not the bare "(tabs)" group —
     // that's just the folder name, not a navigable route, and Home is the
     // only screen reading `openCreate` (see its useLocalSearchParams effect).

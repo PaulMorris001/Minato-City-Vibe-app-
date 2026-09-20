@@ -2,6 +2,7 @@ import Attendance from "../models/attendance.model.js";
 import Ticket from "../models/ticket.model.js";
 import User from "../models/user.model.js";
 import { venueOptions } from "../utils/eventLocations.js";
+import { allStops } from "../utils/subEvents.js";
 
 /**
  * The organizer's guest list for one event: one row per PERSON who signed up,
@@ -12,13 +13,14 @@ import { venueOptions } from "../utils/eventLocations.js";
  * console's `GET /admin/events/:id/signups` — two different auth gates (user
  * token vs. the admin-only secret) over one answer, so the two can't drift.
  *
- * The venue breakdown is counted off PASSES, not tickets or rsvpUsers: a pass is
- * exactly one body arriving at exactly one door, which is the number an
- * organizer staffs against and the number their scanner will see. `ticketCount`
- * and `tiers` still come from tickets, which is where the money is recorded.
+ * The venue AND programme breakdowns are counted off PASSES, not tickets or
+ * rsvpUsers: a pass is exactly one body arriving at exactly one door, which is
+ * the number an organizer staffs against and the number their scanner will
+ * see. `ticketCount` and `tiers` still come from tickets, which is where the
+ * money is recorded.
  *
  * @param {object} event  an Event doc (needs rsvpUsers, invitedUsers, location,
- *   city and additionalLocations selected)
+ *   city, additionalLocations and subEvents selected)
  * @returns {Promise<object>} the response body both endpoints return
  */
 export async function buildEventSignups(event) {
@@ -35,7 +37,9 @@ export async function buildEventSignups(event) {
       .select("user tierName purchaseDate")
       .lean(),
     Attendance.find({ event: eventId })
-      .select("user type status attendedAt createdAt locationIndex locationName locationCity")
+      .select(
+        "user type status attendedAt createdAt locationIndex locationName locationCity subEvent subEventTitle"
+      )
       .lean(),
   ]);
 
@@ -67,6 +71,25 @@ export async function buildEventSignups(event) {
   // would invent attendance the organizer then staffs against.
   const unspecified = { total: 0, rsvpCount: 0, ticketCount: 0, attendedCount: 0 };
 
+  // Same idea, one level deeper: per-stop totals for a programme event. Empty
+  // when the event has no sub-events — nothing to break down.
+  const stops = allStops(event);
+  const hasProgramme = stops.length > 1;
+  const subEventBuckets = hasProgramme
+    ? stops.map((s) => ({
+        id: s.id,
+        title: s.title,
+        total: 0,
+        rsvpCount: 0,
+        ticketCount: 0,
+        attendedCount: 0,
+      }))
+    : [];
+  // A pass whose stop the organizer has since removed from the programme —
+  // updateEvent refuses to drop a stop with outstanding passes/tickets, so
+  // this is a defensive fallback, not an expected path.
+  const unspecifiedSubEvent = { total: 0, rsvpCount: 0, ticketCount: 0, attendedCount: 0 };
+
   // Pass state gives us check-in status, a "signed up" time for RSVPs, and which
   // door each of a person's passes is for.
   const passByUser = new Map();
@@ -76,6 +99,15 @@ export async function buildEventSignups(event) {
     // who failed to answer a question they were never asked.
     if (venues.length) {
       const bucket = (p.locationIndex != null && venues[p.locationIndex]) || unspecified;
+      bucket.total += 1;
+      if (p.type === "ticket") bucket.ticketCount += 1;
+      else bucket.rsvpCount += 1;
+      if (p.status === "attended") bucket.attendedCount += 1;
+    }
+
+    if (hasProgramme) {
+      const stopKey = p.subEvent != null ? String(p.subEvent) : null;
+      const bucket = subEventBuckets.find((b) => b.id === stopKey) || unspecifiedSubEvent;
       bucket.total += 1;
       if (p.type === "ticket") bucket.ticketCount += 1;
       else bucket.rsvpCount += 1;
@@ -92,6 +124,7 @@ export async function buildEventSignups(event) {
         attendedAt: p.attendedAt || null,
         createdAt: p.createdAt || null,
         locations: new Map(),
+        subEvents: new Map(),
       };
       passByUser.set(key, existing);
     } else {
@@ -114,6 +147,19 @@ export async function buildEventSignups(event) {
           // pick still reads as what the attendee was actually told.
           name: p.locationName || "",
           city: p.locationCity || "",
+          count: 1,
+        });
+      }
+    }
+    if (hasProgramme) {
+      const stopKey = p.subEvent != null ? String(p.subEvent) : "main";
+      const existingStop = existing.subEvents.get(stopKey);
+      if (existingStop) existingStop.count += 1;
+      else {
+        existing.subEvents.set(stopKey, {
+          id: p.subEvent != null ? String(p.subEvent) : null,
+          // The pass's own snapshot — same reasoning as the venue name above.
+          title: p.subEventTitle || (p.subEvent != null ? "" : event.title),
           count: 1,
         });
       }
@@ -143,6 +189,9 @@ export async function buildEventSignups(event) {
       // buyer can hold passes for more than one date of a multi-venue event.
       // Empty means they never picked (or the event has one venue).
       locations: pass ? [...pass.locations.values()].sort((a, b) => a.index - b.index) : [],
+      // Which stop(s) of a programme this person is going to. Empty means
+      // either they never picked, or the event has no programme.
+      subEvents: pass ? [...pass.subEvents.values()] : [],
       checkedIn: !!pass?.checkedIn,
       attendedAt: pass?.attendedAt || null,
       joinedAt: ticket?.firstAt || pass?.createdAt || null,
@@ -166,6 +215,8 @@ export async function buildEventSignups(event) {
     attendedCount: attendees.filter((a) => a.checkedIn).length,
     venues,
     unspecifiedVenue: unspecified,
+    subEvents: subEventBuckets,
+    unspecifiedSubEvent,
     attendees,
   };
 }

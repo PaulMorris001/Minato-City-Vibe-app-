@@ -54,6 +54,61 @@ const eventSchema = mongoose.Schema({
     ],
     default: [],
   },
+  // A PROGRAMME of distinct activities under one umbrella event — brunch, then
+  // lunch, then clubbing. Each stop has its own title, venue, start time, price
+  // and RSVP cap, and a guest says yes to any subset, paying once and receiving
+  // one pass per stop.
+  //
+  // Not the same feature as additionalLocations above, and an event uses one or
+  // the other: that list is the SAME thing in several places (one pass covers
+  // all), this is DIFFERENT things sharing an invitation.
+  //
+  // These subdocuments keep their `_id` — unlike additionalLocations, where a
+  // venue pick is only a label. A sub-event id decides which thing someone
+  // bought, so identity has to survive the wholesale array replacement that
+  // updateEvent performs. See utils/subEvents.js.
+  subEvents: {
+    type: [
+      new mongoose.Schema({
+        title: { type: String, required: true, trim: true, maxlength: 80 },
+        description: { type: String, default: "" },
+        location: { type: String, required: true },
+        address: { type: String, default: "" },
+        city: { type: String, required: true },
+        state: { type: String, default: "" },
+        country: { type: String, default: "" },
+        // No `default: "Point"` on type — same trap as additionalLocations.
+        geo: {
+          type: { type: String, enum: ["Point"] },
+          coordinates: { type: [Number], default: undefined },
+        },
+        // This stop's own start, and its optional end. Read through
+        // stopEndsAt()/stopSalesClosedReason() in utils/eventLifecycle.js so a
+        // stop that has finished closes while its siblings stay open.
+        date: { type: Date, required: true },
+        endDate: { type: Date, default: null },
+        // 0 = this stop is free. Mirrors the cheapest tier when tiered, exactly
+        // as the event's own ticketPrice does.
+        ticketPrice: { type: Number, default: 0 },
+        ticketTiers: [
+          {
+            name: { type: String, trim: true, maxlength: 40 },
+            price: { type: Number, min: 0 },
+            quantity: { type: Number, min: 0 },
+          },
+        ],
+        // This stop's own cap. 0 = uncapped. Counted in PASSES at that stop —
+        // one pass is one body at one door. The event's maxGuests is untouched
+        // and keeps meaning what it always did.
+        maxGuests: { type: Number, default: 0 },
+        ticketSalesClosedAt: { type: Date, default: null },
+        // Per-stop twin of the event's `reminderSent`: each stop reminds its own
+        // attendees 24h before its own start.
+        reminderSent: { type: Boolean, default: false },
+      }),
+    ],
+    default: [],
+  },
   // Virtual events have no physical venue; location is stored as "Online".
   isVirtual: { type: Boolean, default: false },
   // Optional meeting URL (Zoom/Meet/etc). Only returned to attendees.
@@ -307,6 +362,8 @@ eventSchema.index({ isPublic: 1, isActive: 1, date: 1 });
 eventSchema.index({ city: 1, date: 1 });
 // Same lookup for an event's other venues (see eventCityFilter).
 eventSchema.index({ "additionalLocations.city": 1, date: 1 });
+// The reminder job scans for stops starting in ~24h across every event.
+eventSchema.index({ "subEvents.date": 1 });
 
 // Generate share token + slug before saving. Async hook — mongoose waits on
 // the returned promise, so no next() callback is needed.
