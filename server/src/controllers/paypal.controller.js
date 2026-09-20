@@ -54,7 +54,14 @@ export async function buildPaypalInit({ type, id, amount, currency, buyer, meta,
   // survives onto the capture webhook, so it carries just what settlement can't
   // re-derive. A discount is looked up by reference instead of packed in here —
   // codes are free text and would blow the cap.
-  const customId = [type, id, buyer._id, meta?.tierId || ""].join("|");
+  const customId = [
+    type,
+    id,
+    buyer._id,
+    meta?.tierId || "",
+    // Appended last so a custom_id written before venues existed still decodes.
+    meta?.locationIndex ?? "",
+  ].join("|");
   // Our own reference, distinct from the PayPal order id the client confirms
   // with. Date.now() keeps it unique — PayPal rejects a repeated invoice_id,
   // which would otherwise block a buyer retrying a failed checkout.
@@ -261,10 +268,18 @@ export async function capturePaypalOrder({
   };
 }
 
-/** Decode the `type|id|buyerId|tierId` string packed onto custom_id at init. */
+/** Decode the `type|id|buyerId|tierId|locationIndex` string packed onto custom_id at init. */
 export function parseCustomId(customId) {
-  const [type, id, buyerId, tierId] = String(customId || "").split("|");
-  return { type, id, buyerId, tierId: tierId || undefined };
+  const [type, id, buyerId, tierId, locationIndex] = String(customId || "").split("|");
+  return {
+    type,
+    id,
+    buyerId,
+    tierId: tierId || undefined,
+    // "" for a single-venue event, and absent entirely on ids written before
+    // the picker shipped — both mean "no venue was chosen".
+    locationIndex: locationIndex === "" || locationIndex === undefined ? undefined : locationIndex,
+  };
 }
 
 /**

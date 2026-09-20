@@ -73,6 +73,41 @@ export interface Review {
   user?: PublicUser;
 }
 
+/**
+ * One stop of an event's programme — a distinct activity with its own venue,
+ * time, price and guest limit. A different feature from EventVenue below: that
+ * is the same event in several places, this is different things sharing one
+ * invitation.
+ */
+export interface EventSubEvent {
+  _id: string;
+  title: string;
+  description?: string;
+  location: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  date: string;
+  endDate?: string | null;
+  ticketPrice?: number;
+  ticketTiers?: { _id?: string; name: string; price: number; quantity?: number; soldOut?: boolean; remaining?: number }[];
+  maxGuests?: number;
+  soldOut?: boolean;
+  remaining?: number;
+  salesClosed?: boolean;
+  salesClosedReason?: string | null;
+}
+
+/** A further venue a native event runs at in parallel (Event.additionalLocations). */
+export interface EventVenue {
+  location: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
 /** Native CityVibe event (Event model). */
 export interface EventItem {
   _id: string;
@@ -86,6 +121,10 @@ export interface EventItem {
   city?: string;
   state?: string;
   country?: string;
+  /** Venues beyond the one above, which is venue #1. Managed in the app only. */
+  additionalLocations?: EventVenue[];
+  /** A programme of distinct stops. Mutually exclusive with the above. */
+  subEvents?: EventSubEvent[];
   image?: string;
   images?: string[];
   isPublic?: boolean;
@@ -137,6 +176,13 @@ export interface EventItem {
   shareToken?: string;
   // Present on the detail endpoint (GET /events/:id).
   userRsvp?: boolean;
+  /**
+   * Which venue the viewer picked, on a multi-venue event — an index into
+   * [event, ...additionalLocations]. null when they haven't picked one.
+   */
+  userLocationIndex?: number | null;
+  /** Every stop of a programme the viewer holds a pass for (null = main). */
+  userSubEvents?: (string | null)[];
   userStatus?: "creator" | "accepted" | "pending" | "requested" | "none";
   ticketingReady?: boolean;
   approvalStatus?: "pending" | "approved" | "rejected";

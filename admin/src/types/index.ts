@@ -48,11 +48,21 @@ export interface AdminVendor {
   createdAt: string;
 }
 
+/** A further venue an event runs at in parallel; the event's own location is venue #1. */
+export interface EventVenue {
+  location: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
 export interface AdminEvent {
   _id: string;
   title: string;
   date: string;
   location: string;
+  additionalLocations?: EventVenue[];
   image?: string;
   description?: string;
   isPublic: boolean;
@@ -61,6 +71,60 @@ export interface AdminEvent {
   isActive: boolean;
   createdBy?: { _id: string; username: string; email: string };
   createdAt: string;
+}
+
+/** One venue a person is attending, and how many of their passes are for it. */
+export interface SignupLocation {
+  index: number;
+  name: string;
+  city: string;
+  count: number;
+}
+
+/** Per-venue headcount for an event. Empty for a single-venue event. */
+export interface VenueSummary {
+  index: number;
+  location: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  total: number;
+  rsvpCount: number;
+  ticketCount: number;
+  attendedCount: number;
+}
+
+export interface EventSignup {
+  userId: string;
+  username: string;
+  profilePicture?: string;
+  isGuest: boolean;
+  type: "rsvp" | "ticket";
+  ticketCount: number;
+  tiers: string[];
+  locations: SignupLocation[];
+  checkedIn: boolean;
+  attendedAt: string | null;
+  joinedAt: string | null;
+}
+
+/** GET /admin/events/:id/signups — who is going, and to which venue. */
+export interface EventSignups {
+  event: { id: string; title: string; date: string };
+  total: number;
+  rsvpCount: number;
+  ticketCount: number;
+  ticketsIssued: number;
+  attendedCount: number;
+  venues: VenueSummary[];
+  unspecifiedVenue: {
+    total: number;
+    rsvpCount: number;
+    ticketCount: number;
+    attendedCount: number;
+  };
+  attendees: EventSignup[];
 }
 
 export interface AdminGuide {

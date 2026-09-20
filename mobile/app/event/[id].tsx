@@ -46,6 +46,8 @@ import { ImageViewerModal } from "@/components/shared";
 import MediaTile from "@/components/shared/MediaTile";
 import { isVideoUrl } from "@/utils/media";
 import EventLocationMap from "@/components/shared/EventLocationMap";
+import VenuePicker, { eventVenues, needsVenuePick } from "@/components/shared/VenuePicker";
+import StopPicker, { eventStops, selectionTotal } from "@/components/shared/StopPicker";
 import CollapsibleDescription from "@/components/shared/CollapsibleDescription";
 import { cacheRead, cacheWrite } from "@/utils/offlineCache";
 import { ensureOnline } from "@/utils/requireOnline";
@@ -60,6 +62,8 @@ import {
   vendorAccentColor,
 } from "@/utils/eventDetails";
 import { formatLocation } from "@/utils/location";
+import { openInMapsApp } from "@/utils/maps";
+import type { EventSubEvent, EventVenue } from "@/libs/interfaces";
 import { addEventToCalendar } from "@/utils/calendar";
 import { openUserProfile } from "@/utils/userNavigation";
 
@@ -114,6 +118,10 @@ interface Event {
   country?: string;
   /** Map pin, [lng, lat] per GeoJSON. Absent on events created before 1.2.0. */
   geo?: { type?: string; coordinates?: number[] };
+  /** Further venues the event runs at in parallel; the fields above are venue #1. */
+  additionalLocations?: EventVenue[];
+  /** A programme of distinct stops. Mutually exclusive with the above. */
+  subEvents?: EventSubEvent[];
   isVirtual?: boolean;
   meetingLink?: string;
   hasMeetingLink?: boolean;
@@ -188,6 +196,13 @@ interface Event {
   rsvpCount?: number;
   rsvpUsers?: RsvpUser[];
   userRsvp: boolean;
+  /**
+   * Which venue the viewer picked, for a multi-venue event — an index into
+   * eventVenues(). null when they haven't picked (or aren't going yet).
+   */
+  userLocationIndex?: number | null;
+  /** Every stop of a programme the viewer holds a pass for (null = main). */
+  userSubEvents?: (string | null)[];
   friendsGoing?: number;
   groupChatUnread?: number;
   groupChatId?: { _id: string; name: string; groupImage?: string } | null;
@@ -325,6 +340,29 @@ function GlassRoundIcon({
  * Buyer-facing copy per `salesClosedReason` from the API. Keyed by the server's
  * reason string so the client never re-derives why sales are shut.
  */
+/** "Sat 19 Sep · 4:00 PM" — one stop's start, short enough for a meta row. */
+function formatStopTime(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** "Free" / "$5" / "From $5" for one stop of a programme. */
+function stopPriceText(stop: EventSubEvent, currency?: string) {
+  const tiers = stop.ticketTiers ?? [];
+  const price = tiers.length ? Math.min(...tiers.map((t) => t.price)) : stop.ticketPrice ?? 0;
+  if (!price) return "Free";
+  const amount = `${currencyPrefix(currency)}${price.toLocaleString()}`;
+  return tiers.length > 1 ? `From ${amount}` : amount;
+}
+
 const CTA_LABELS: Record<string, string> = {
   cancelled: "Event cancelled",
   cancellation_pending: "Sales paused",
@@ -387,6 +425,20 @@ export default function EventDetailsPage() {
   // Checkout sheet shown before every paid purchase — tier rows (one synthetic
   // row for single-price events) plus the discount-code entry.
   const [tierPickerVisible, setTierPickerVisible] = useState(false);
+  // Which venue the viewer is attending, on a multi-venue event. Seeded from
+  // the server's `userLocationIndex` so someone already going sees their own
+  // pick rather than being asked again; `venueSheetVisible` is the RSVP-side
+  // prompt (the paid side asks inside the checkout sheet instead).
+  const [venueIndex, setVenueIndex] = useState<number | null>(null);
+  // Which action is waiting on a venue pick, so the sheet knows what to run on
+  // confirm. Both paths mark the viewer as attending; nothing else asks.
+  const [venueSheetFor, setVenueSheetFor] = useState<"rsvp" | "invite" | null>(null);
+
+  // Which stops of a programme the viewer is picking, and the sheet that hosts
+  // the checkbox list + the dynamic RSVP-or-pay button.
+  const [programmeSheetVisible, setProgrammeSheetVisible] = useState(false);
+  const [programmeSelection, setProgrammeSelection] = useState<(string | null)[]>([]);
+  const [programmeSubmitting, setProgrammeSubmitting] = useState(false);
   const [codeInput, setCodeInput] = useState("");
   const [applyingCode, setApplyingCode] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
@@ -406,7 +458,7 @@ export default function EventDetailsPage() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
-  const { payForTicket } = usePayment();
+  const { payForTicket, payForProgramme } = usePayment();
 
   // ─── Data fetching ────────────────────────────────────────────────────────
   const authToken = () => SecureStore.getItemAsync("token");
@@ -654,7 +706,19 @@ export default function EventDetailsPage() {
     }
   };
 
-  const handleRsvp = async (status: "going" | "not_going") => {
+  // Seeded from the server so someone already going sees their own pick instead
+  // of being asked again, and so switching venue starts from where they are.
+  useEffect(() => {
+    setVenueIndex(event?.userLocationIndex ?? null);
+  }, [event?.userLocationIndex]);
+
+  // Same idea for a programme: whoever already picked stops sees those ticked
+  // when the sheet reopens, rather than starting from a blank list.
+  useEffect(() => {
+    setProgrammeSelection(event?.userSubEvents ?? []);
+  }, [event?.userSubEvents]);
+
+  const handleRsvp = async (status: "going" | "not_going", locationIndex?: number | null) => {
     if (!event) return;
     if (!requireAuth("RSVP to this event")) return;
     if (!ensureOnline("RSVP to an event")) return;
@@ -664,7 +728,10 @@ export default function EventDetailsPage() {
       const res = await fetch(`${BASE_URL}/events/${event._id}/rsvp`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          ...(locationIndex != null ? { locationIndex } : {}),
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -675,11 +742,13 @@ export default function EventDetailsPage() {
             ? {
                 ...prev,
                 userRsvp: status === "going",
+                userLocationIndex: data.userLocationIndex ?? null,
                 rsvpCount:
                   typeof data.rsvpCount === "number" ? data.rsvpCount : prev.rsvpCount,
               }
             : prev
         );
+        setVenueIndex(data.userLocationIndex ?? null);
         trackEvent("event_rsvp", { eventId: event._id, status });
       } else {
         showError(data.message || "Could not update RSVP");
@@ -691,7 +760,10 @@ export default function EventDetailsPage() {
     }
   };
 
-  const handleRespondInvite = async (status: "accepted" | "declined") => {
+  const handleRespondInvite = async (
+    status: "accepted" | "declined",
+    locationIndex?: number | null
+  ) => {
     if (!event) return;
     if (!requireAuth("respond to this invite")) return;
     setInviteResponding(true);
@@ -700,7 +772,10 @@ export default function EventDetailsPage() {
       const res = await fetch(`${BASE_URL}/events/${event._id}/respond-invite`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          ...(locationIndex != null ? { locationIndex } : {}),
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -955,6 +1030,92 @@ export default function EventDetailsPage() {
     );
   };
 
+  /**
+   * Confirming attendance on a multi-venue event needs a venue first — ask,
+   * then run the action with the answer. A single-venue event falls straight
+   * through, exactly as before.
+   */
+  const confirmAttendance = (intent: "rsvp" | "invite", index: number | null) => {
+    if (event && needsVenuePick(event) && index === null) {
+      setVenueSheetFor(intent);
+      return;
+    }
+    if (intent === "rsvp") handleRsvp("going", index);
+    else handleRespondInvite("accepted", index);
+  };
+
+  /**
+   * One sheet for the whole programme: tick stops, then either RSVP for free
+   * (nothing ticked costs anything) or pay for the lot at once. Whichever
+   * stops are ticked when this runs is the guest's full, authoritative pick —
+   * both the RSVP reconcile and the checkout basket work that way.
+   */
+  const handleProgrammeConfirm = async () => {
+    if (!event) return;
+    if (!requireAuth("continue")) return;
+    if (!ensureOnline("continue")) return;
+    const stops = eventStops(event);
+    const total = selectionTotal(stops, programmeSelection);
+
+    setProgrammeSubmitting(true);
+    try {
+      if (total === 0) {
+        const token = await authToken();
+        const res = await fetch(`${BASE_URL}/events/${event._id}/rsvp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ subEvents: programmeSelection }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showError(data.message || "Could not update your picks");
+          return;
+        }
+        setEvent((prev) =>
+          prev
+            ? {
+                ...prev,
+                userRsvp: !!data.userSubEvents?.length,
+                userSubEvents: data.userSubEvents ?? [],
+                rsvpCount: typeof data.rsvpCount === "number" ? data.rsvpCount : prev.rsvpCount,
+              }
+            : prev
+        );
+        setProgrammeSheetVisible(false);
+        showSuccess(data.message || "Saved!");
+        return;
+      }
+
+      // Paid — every ticked stop, priced or free, rides the SAME order so one
+      // charge covers all of it. Recipient is always the buyer's own account;
+      // gifting a sub-event pass to someone else isn't offered here.
+      const userJson = await SecureStore.getItemAsync("user");
+      const myEmail = userJson ? JSON.parse(userJson)?.email : undefined;
+      if (!myEmail) {
+        showError("Add an email to your account in Settings before buying a ticket.");
+        return;
+      }
+      const items = programmeSelection.map((id) => {
+        const stop = stops.find((s) => s.id === id)!;
+        const tiers = stop.ticketTiers ?? [];
+        const cheapest = tiers.length
+          ? tiers.reduce((min, t) => (t.price < min.price ? t : min), tiers[0])
+          : null;
+        return { subEvent: id, tierId: cheapest?._id, recipientEmail: myEmail };
+      });
+      const result = await payForProgramme(event._id, items);
+      if (!result.success) {
+        if (result.error) showError(result.error, "Payment Failed");
+        return;
+      }
+      setProgrammeSheetVisible(false);
+      showSuccess("You're in! Check your passes.", "🎉");
+      fetchEventDetails();
+    } finally {
+      setProgrammeSubmitting(false);
+    }
+  };
+
   const handlePurchaseTicket = async () => {
     if (!event) return;
     if (!requireAuth("purchase a ticket")) return;
@@ -1013,7 +1174,7 @@ export default function EventDetailsPage() {
       // The hook runs the provider checkout AND confirms server-side (issuing
       // the ticket) before returning, so success here means the ticket is
       // ready. 100%-off codes complete inside the hook with no payment sheet.
-      const result = await payForTicket(event._id, tierId, discountCode);
+      const result = await payForTicket(event._id, tierId, discountCode, venueIndex);
       if (!result.success) {
         if (result.code === "discount_invalid") {
           // The code got invalidated between preview and init (expired, cap
@@ -1282,6 +1443,17 @@ export default function EventDetailsPage() {
   // the UI that renders them so a guest gets a clean layout instead of zeroes
   // and empty bars.
   const canSeeAttendance = isCreatorOrCohost || !!event.showAttendance;
+
+  // The programme's stops, already in time order from the server. A separate
+  // feature from the venue list below — different things sharing one
+  // invitation, rather than the same thing in several places.
+  const programme = event.subEvents ?? [];
+
+  // Multi-venue events ask the attendee which venue they're going to, so the
+  // organizer knows who to expect at each door. The index of each entry is what
+  // the server persists — see VenuePicker.
+  const venues = eventVenues(event);
+  const mustPickVenue = needsVenuePick(event);
 
   // Rows for the checkout sheet — real tiers when the event has them, or one
   // synthetic row for single-price events (its tierId stays undefined so the
@@ -1602,7 +1774,7 @@ export default function EventDetailsPage() {
               <View style={styles.inviteActions}>
                 <TouchableOpacity
                   style={[styles.inviteBtn, styles.inviteAcceptBtn]}
-                  onPress={() => handleRespondInvite("accepted")}
+                  onPress={() => confirmAttendance("invite", venueIndex)}
                   disabled={inviteResponding}
                 >
                   {inviteResponding ? (
@@ -1687,6 +1859,60 @@ export default function EventDetailsPage() {
             </GlassCard>
           )}
 
+          {/* ─── PROGRAMME — the stops of a multi-part event ────── */}
+          {!!programme.length && (
+            <GlassCard>
+              <Text style={styles.microLabel}>
+                PROGRAMME · {programme.length} SUB-EVENT{programme.length === 1 ? "" : "S"}
+              </Text>
+              {programme.map((stop, i) => (
+                <View
+                  key={stop._id}
+                  style={[styles.stopRow, i > 0 && styles.stopRowDivided]}
+                >
+                  <View style={styles.stopHeader}>
+                    <Text style={styles.stopTitle} numberOfLines={2}>
+                      {stop.title}
+                    </Text>
+                    <Text style={styles.stopPrice}>
+                      {stopPriceText(stop, event.currency)}
+                    </Text>
+                  </View>
+                  <View style={styles.stopMetaRow}>
+                    <Ionicons name="time-outline" size={14} color={colors.primaryLight} />
+                    <Text style={styles.stopMeta} numberOfLines={1}>
+                      {formatStopTime(stop.date)}
+                    </Text>
+                  </View>
+                  <View style={styles.stopMetaRow}>
+                    <Ionicons name="location-outline" size={14} color={colors.textDim} />
+                    <Text style={styles.stopMeta} numberOfLines={1}>
+                      {[stop.address, formatLocation({ city: stop.city, state: stop.state, country: stop.country }) || stop.location]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </Text>
+                  </View>
+                  {!!stop.description && (
+                    <Text style={styles.stopDescription} numberOfLines={3}>
+                      {stop.description}
+                    </Text>
+                  )}
+                  {/* Availability survives the attendance opt-out; the numbers
+                      behind it don't — see applyAttendanceVisibility. */}
+                  {stop.salesClosed ? (
+                    <Text style={styles.stopClosed}>
+                      {stop.salesClosedReason === "ended" ? "This one's over" : "Closed"}
+                    </Text>
+                  ) : stop.soldOut ? (
+                    <Text style={styles.stopClosed}>Full</Text>
+                  ) : typeof stop.remaining === "number" ? (
+                    <Text style={styles.stopRemaining}>{stop.remaining} spots left</Text>
+                  ) : null}
+                </View>
+              ))}
+            </GlassCard>
+          )}
+
           {/* Where */}
           {event.isVirtual ? (
             <GlassCard>
@@ -1718,7 +1944,35 @@ export default function EventDetailsPage() {
             </GlassCard>
           ) : (!!event.address || !!event.location) && (
             <GlassCard>
-              <Text style={styles.microLabel}>WHERE</Text>
+              <Text style={styles.microLabel}>
+                {event.additionalLocations?.length
+                  ? `WHERE · ${event.additionalLocations.length + 1} LOCATIONS`
+                  : "WHERE"}
+              </Text>
+              {/* Which venue the viewer is going to, once they've picked one.
+                  Tapping re-opens the picker: the server moves the pass rather
+                  than reissuing it, so switching is free. */}
+              {mustPickVenue && venueIndex !== null && (
+                <TouchableOpacity
+                  style={styles.yourVenueRow}
+                  onPress={() => setVenueSheetFor("rsvp")}
+                  disabled={!!event.isPaid}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="checkmark-circle" size={15} color={colors.successLight} />
+                  <Text style={styles.yourVenueText} numberOfLines={1}>
+                    You&apos;re going to{" "}
+                    {formatLocation({
+                      city: venues[venueIndex]?.city,
+                      state: venues[venueIndex]?.state,
+                      country: venues[venueIndex]?.country,
+                    }) || venues[venueIndex]?.location}
+                  </Text>
+                  {/* A ticket admits to the venue it was sold for — changing
+                      that is a refund-and-rebuy, not a tap. */}
+                  {!event.isPaid && <Text style={styles.yourVenueChange}>Change</Text>}
+                </TouchableOpacity>
+              )}
               {!!event.address && <Text style={styles.aboutBody}>{event.address}</Text>}
               <View style={styles.whereRow}>
                 <Ionicons name="location-outline" size={15} color={colors.primaryLight} />
@@ -1739,6 +1993,38 @@ export default function EventDetailsPage() {
                 location={event.location}
                 title={event.title}
               />
+              {/* Other venues get a directions row rather than their own map:
+                  they're usually in other cities, and a live map per venue
+                  would weigh the screen down. */}
+              {(event.additionalLocations ?? []).map((venue, i) => {
+                const place =
+                  formatLocation({ city: venue.city, state: venue.state, country: venue.country }) ||
+                  venue.location;
+                const coords = venue.geo?.coordinates;
+                return (
+                  <View key={i} style={styles.venueDivider}>
+                    {!!venue.address && <Text style={styles.aboutBody}>{venue.address}</Text>}
+                    <View style={styles.whereRow}>
+                      <Ionicons name="location-outline" size={15} color={colors.primaryLight} />
+                      <Text style={styles.whereCity}>{place}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.whereRow}
+                      onPress={() =>
+                        openInMapsApp({
+                          latitude: coords?.[1],
+                          longitude: coords?.[0],
+                          label: [venue.address, place].filter(Boolean).join(", "),
+                        })
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="navigate-outline" size={15} color={colors.primaryLight} />
+                      <Text style={styles.venueDirections}>Get directions</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
             </GlassCard>
           )}
 
@@ -2275,14 +2561,120 @@ export default function EventDetailsPage() {
               rsvpLoading={rsvpLoading}
               requestingJoin={requestingJoin}
               onPurchase={handlePurchaseTicket}
-              onRsvp={() => handleRsvp("going")}
+              onRsvp={() => confirmAttendance("rsvp", venueIndex)}
               onCancelRsvp={() => handleRsvp("not_going")}
               onRequestJoin={handleRequestToJoin}
               onViewTicket={() => router.push("/passes" as any)}
+              onOpenProgramme={() => setProgrammeSheetVisible(true)}
             />
           </SafeAreaView>
         </View>
       )}
+
+      {/* ─── VENUE SHEET — which location are you going to? ────── */}
+      <Modal
+        visible={venueSheetFor !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setVenueSheetFor(null)}
+      >
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
+          <Pressable style={styles.sheetBackdrop} onPress={() => setVenueSheetFor(null)} />
+          <SafeAreaView edges={["bottom"]}>
+            <View style={styles.sheetCard}>
+              <Text style={styles.tierPickerTitle}>
+                {event.userRsvp ? "Change your location" : "Where are you going?"}
+              </Text>
+              <Text style={styles.venueSheetHint}>
+                This event runs at {venues.length} locations. Your pass is for the one you
+                pick, and it&apos;s what the organizer sees on their guest list.
+              </Text>
+              <View style={styles.checkoutVenueBlock}>
+                <VenuePicker
+                  venues={venues}
+                  value={venueIndex}
+                  onChange={setVenueIndex}
+                  label="Pick a location"
+                />
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.venueSheetConfirm,
+                  venueIndex === null && styles.venueSheetConfirmDisabled,
+                ]}
+                onPress={() => {
+                  const intent = venueSheetFor;
+                  setVenueSheetFor(null);
+                  if (intent === "rsvp") handleRsvp("going", venueIndex);
+                  else if (intent === "invite") handleRespondInvite("accepted", venueIndex);
+                }}
+                disabled={venueIndex === null || rsvpLoading || inviteResponding}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.venueSheetConfirmText}>
+                  {rsvpLoading || inviteResponding ? "…" : "Confirm"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
+
+      {/* ─── PROGRAMME SHEET — pick your stops, then RSVP or pay for the lot ─── */}
+      <Modal
+        visible={programmeSheetVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setProgrammeSheetVisible(false)}
+      >
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
+          <Pressable
+            style={styles.sheetBackdrop}
+            onPress={() => setProgrammeSheetVisible(false)}
+          />
+          <SafeAreaView edges={["bottom"]}>
+            <View style={styles.sheetCard}>
+              <Text style={styles.tierPickerTitle}>
+                {event.userRsvp || userHasTicket ? "Your picks" : "What are you going to?"}
+              </Text>
+              <Text style={styles.venueSheetHint}>
+                Tick as many as you like — one checkout (or one free RSVP, if nothing
+                ticked costs anything) covers all of them.
+              </Text>
+              <View style={styles.checkoutVenueBlock}>
+                <StopPicker
+                  stops={eventStops(event)}
+                  value={programmeSelection}
+                  onChange={setProgrammeSelection}
+                  currency={event.currency}
+                />
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.venueSheetConfirm,
+                  programmeSelection.length === 0 && styles.venueSheetConfirmDisabled,
+                ]}
+                onPress={handleProgrammeConfirm}
+                disabled={programmeSelection.length === 0 || programmeSubmitting}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.venueSheetConfirmText}>
+                  {programmeSubmitting
+                    ? "…"
+                    : programmeSelection.length === 0
+                      ? "Pick at least one"
+                      : (() => {
+                          const total = selectionTotal(eventStops(event), programmeSelection);
+                          return total > 0
+                            ? `Continue to payment · ${currencyPrefix(event.currency)}${total.toLocaleString()}`
+                            : "Confirm — it's free";
+                        })()}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
 
       {/* ─── CHECKOUT SHEET — tier rows + discount code ────── */}
       <Modal
@@ -2299,12 +2691,28 @@ export default function EventDetailsPage() {
           <SafeAreaView edges={["bottom"]}>
             <View style={styles.sheetCard}>
               <Text style={styles.tierPickerTitle}>Choose your ticket</Text>
+              {/* Multi-venue events: which date/city this ticket admits to has
+                  to be settled before a tier row can charge for it. */}
+              {mustPickVenue && (
+                <View style={styles.checkoutVenueBlock}>
+                  <VenuePicker
+                    venues={venues}
+                    value={venueIndex}
+                    onChange={setVenueIndex}
+                    label="Which location is this ticket for?"
+                    compact
+                  />
+                </View>
+              )}
               {checkoutTiers.map((tier) => (
                 <TouchableOpacity
                   key={tier._id ?? "single"}
-                  style={styles.tierPickerRow}
+                  style={[
+                    styles.tierPickerRow,
+                    mustPickVenue && venueIndex === null && styles.tierPickerRowDisabled,
+                  ]}
                   onPress={() => purchaseTier(tier._id, appliedDiscount?.code)}
-                  disabled={purchasing}
+                  disabled={purchasing || (mustPickVenue && venueIndex === null)}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.tierPickerName} numberOfLines={1}>
@@ -2826,6 +3234,7 @@ function StickyCTA(props: {
   onCancelRsvp: () => void;
   onRequestJoin: () => void;
   onViewTicket: () => void;
+  onOpenProgramme: () => void;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -2847,10 +3256,35 @@ function StickyCTA(props: {
     onCancelRsvp,
     onRequestJoin,
     onViewTicket,
+    onOpenProgramme,
   } = props;
 
   // Pending invite: handled inline above with Accept/Decline; hide sticky.
   if (userIsPendingInvite || isCreator) return null;
+
+  // A programme overrides everything below: what matters is the price of
+  // whatever stops are ticked, not the main event's own isPaid/soldOut/
+  // salesClosed — those are main-stop-only and a picker (with each stop's own
+  // state) is what answers the real question here.
+  if ((event.subEvents?.length ?? 0) > 0) {
+    return (
+      <View style={styles.ctaPill}>
+        <PriceBlock event={event} />
+        <TouchableOpacity activeOpacity={0.85} onPress={onOpenProgramme} style={styles.ctaBtn}>
+          <LinearGradient
+            colors={[colors.primary, colors.primaryDark, colors.accentPink]}
+            locations={[0, 0.5, 1]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={styles.ctaBtnGradient}
+          />
+          <Text style={styles.ctaBtnText}>
+            {userIsGoing || userHasTicket ? "Manage your picks →" : "Pick what you're going to →"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   // Sales shut for a reason that isn't capacity — the event ended, the
   // organizer paused it, it's cancelled or under review. Checked before
@@ -3330,6 +3764,88 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.regular,
     fontSize: 13,
   },
+  venueDivider: {
+    marginTop: 14,
+    paddingTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.glassStroke,
+  },
+  stopRow: { paddingVertical: 10 },
+  stopRowDivided: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.glassStroke,
+    marginTop: 2,
+  },
+  stopHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 6,
+  },
+  stopTitle: {
+    flex: 1,
+    color: c.textBright,
+    fontFamily: Fonts.semiBold,
+    fontSize: 15,
+  },
+  stopPrice: {
+    color: c.primaryLight,
+    fontFamily: Fonts.bold,
+    fontSize: 14,
+  },
+  stopMetaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
+  stopMeta: {
+    flex: 1,
+    color: c.textDim,
+    fontFamily: Fonts.regular,
+    fontSize: 13,
+  },
+  stopDescription: {
+    color: c.textSecondary,
+    fontFamily: Fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 6,
+  },
+  stopClosed: {
+    color: c.textMuted,
+    fontFamily: Fonts.semiBold,
+    fontSize: 12,
+    marginTop: 6,
+  },
+  stopRemaining: {
+    color: c.successLight,
+    fontFamily: Fonts.semiBold,
+    fontSize: 12,
+    marginTop: 6,
+  },
+  venueDirections: {
+    color: c.primaryLight,
+    fontFamily: Fonts.semiBold,
+    fontSize: 13,
+  },
+  yourVenueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: c.glassFillSubtle,
+  },
+  yourVenueText: {
+    flex: 1,
+    color: c.textBody,
+    fontFamily: Fonts.semiBold,
+    fontSize: 13,
+  },
+  yourVenueChange: {
+    color: c.primaryLight,
+    fontFamily: Fonts.semiBold,
+    fontSize: 12,
+  },
 
   // Host
   hostRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 10 },
@@ -3719,6 +4235,31 @@ const createStyles = (c: ThemeColors) =>
     paddingVertical: 14,
     borderTopWidth: 1,
     borderTopColor: c.glassFill,
+  },
+  tierPickerRowDisabled: { opacity: 0.4 },
+  checkoutVenueBlock: { paddingHorizontal: 18, paddingBottom: 4 },
+  venueSheetHint: {
+    fontSize: 13,
+    fontFamily: Fonts.regular,
+    color: c.textSecondary,
+    paddingHorizontal: 18,
+    paddingBottom: 14,
+    lineHeight: 19,
+  },
+  venueSheetConfirm: {
+    marginHorizontal: 18,
+    marginTop: 6,
+    marginBottom: 12,
+    paddingVertical: 15,
+    borderRadius: 16,
+    alignItems: "center",
+    backgroundColor: c.primary,
+  },
+  venueSheetConfirmDisabled: { opacity: 0.4 },
+  venueSheetConfirmText: {
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: c.white,
   },
   tierPickerName: {
     flex: 1,

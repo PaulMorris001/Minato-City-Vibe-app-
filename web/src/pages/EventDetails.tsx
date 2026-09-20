@@ -3,11 +3,13 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
 import AppPromo from "../components/AppPromo";
+import VenueChoice, { venueCount } from "../components/VenueChoice";
+import ProgrammePicker, { eventStops, selectionTotal } from "../components/ProgrammePicker";
 import { api } from "../lib/api";
 import { isVideoUrl, videoPosterUrl } from "../lib/media";
 import { useAuth } from "../context/AuthContext";
-import type { EventItem } from "../lib/types";
-import { fallbackGradient, formatDateTime, money, relativeDay } from "../lib/format";
+import type { EventItem, EventSubEvent } from "../lib/types";
+import { fallbackGradient, formatDateTime, money, nativePlace, relativeDay } from "../lib/format";
 
 export default function EventDetails() {
   const { eventId } = useParams();
@@ -32,6 +34,15 @@ export default function EventDetails() {
   const [rsvpError, setRsvpError] = useState("");
   const [justJoined, setJustJoined] = useState(false);
 
+  // Multi-venue events ask which venue the attendee is going to, so the
+  // organizer knows who to expect at each door. The index is what the server
+  // stores; the order below must stay "venue #1, then additionalLocations".
+  const [venueIndex, setVenueIndex] = useState<number | null>(null);
+
+  // Which stops of a programme the viewer is picking. Seeded from the server so
+  // someone already going sees their own picks; a guest starts with none ticked.
+  const [selectedStops, setSelectedStops] = useState<(string | null)[]>([]);
+
   function loadEvent() {
     // The detail endpoint wraps the event: { event: {...} }.
     return api<{ event: EventItem }>(`/events/${eventId}`).then(({ event }) => {
@@ -40,6 +51,9 @@ export default function EventDetails() {
       if (event.ticketTiers && event.ticketTiers.length === 1) {
         setSelectedTier(event.ticketTiers[0]._id);
       }
+      // Seeded from the server so someone already going sees their own pick.
+      setVenueIndex(event.userLocationIndex ?? null);
+      setSelectedStops(event.userSubEvents ?? []);
       return event;
     });
   }
@@ -57,8 +71,17 @@ export default function EventDetails() {
     // on the Pay page). A pre-selected tier is passed through as the builder's
     // starting point.
     const tiers = ev?.ticketTiers || [];
-    const q = tiers.length > 1 && selectedTier ? `?tier=${selectedTier}` : "";
-    navigate(`/events/${eventId}/pay${q}`);
+    const params = new URLSearchParams();
+    if (tiers.length > 1 && selectedTier) params.set("tier", selectedTier);
+    // Seeds every ticket in the builder; each one can still be re-pointed there.
+    if (venueIndex !== null) params.set("venue", String(venueIndex));
+    // A programme: hand Pay the exact stops ticked here, main event as "main"
+    // (URLSearchParams can't carry a literal null through a query string).
+    if (ev?.subEvents?.length) {
+      params.set("stops", selectedStops.map((id) => id ?? "main").join(","));
+    }
+    const q = params.toString();
+    navigate(`/events/${eventId}/pay${q ? `?${q}` : ""}`);
   }
 
   async function rsvpFree() {
@@ -69,7 +92,20 @@ export default function EventDetails() {
     setRsvpError("");
     setRsvping(true);
     try {
-      await api(`/events/${eventId}/join`, { method: "POST" });
+      if (ev?.subEvents?.length) {
+        // The multi-select reconcile: `selectedStops` is the guest's full,
+        // authoritative pick (main event as null), resent on every change —
+        // /join has no notion of "which stops" and only ever allows one join.
+        await api(`/events/${eventId}/rsvp`, {
+          method: "POST",
+          body: { subEvents: selectedStops },
+        });
+      } else {
+        await api(`/events/${eventId}/join`, {
+          method: "POST",
+          body: venueIndex !== null ? { locationIndex: venueIndex } : {},
+        });
+      }
       setJustJoined(true);
       loadEvent().catch(() => {});
     } catch (err: any) {
@@ -170,7 +206,7 @@ export default function EventDetails() {
             {ev.title}
           </h1>
           <p className="cv-dim" style={{ fontSize: 15 }}>
-            {formatDateTime(ev.date)} · {ev.isVirtual ? "Online" : ev.location}
+            {formatDateTime(ev.date)} · {nativePlace(ev)}
           </p>
         </div>
       </div>
@@ -266,22 +302,22 @@ export default function EventDetails() {
             <h3 className="cv-h3">Details</h3>
             <div className="cv-facts">
               <Fact icon="📅" label="Date & time" value={formatDateTime(ev.date)} />
-              <Fact
-                icon={ev.isVirtual ? "💻" : "📍"}
-                label={ev.isVirtual ? "Where" : "Location"}
-                value={
-                  ev.isVirtual
-                    ? "Online — link shared with attendees"
-                    : [ev.location, ev.address].filter(Boolean).join(" · ")
-                }
-                href={
-                  ev.isVirtual
-                    ? undefined
-                    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                        [ev.address, ev.location].filter(Boolean).join(", ")
-                      )}`
-                }
-              />
+              {ev.isVirtual ? (
+                <Fact icon="💻" label="Where" value="Online — link shared with attendees" />
+              ) : (
+                // Venue #1 is the event's own fields; one ticket covers every venue.
+                [ev, ...(ev.additionalLocations ?? [])].map((venue, i, all) => (
+                  <Fact
+                    key={i}
+                    icon="📍"
+                    label={all.length > 1 ? `Location ${i + 1} of ${all.length}` : "Location"}
+                    value={[venue.location, venue.address].filter(Boolean).join(" · ")}
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                      [venue.address, venue.location].filter(Boolean).join(", ")
+                    )}`}
+                  />
+                ))
+              )}
               {ev.meetingLink && (
                 <Fact icon="🔗" label="Meeting link" value={ev.meetingLink} href={ev.meetingLink} />
               )}
@@ -303,6 +339,54 @@ export default function EventDetails() {
               {!!ev.maxGuests && <Fact icon="👥" label="Capacity" value={`${ev.maxGuests} guests`} />}
             </div>
           </section>
+
+          {/* Programme — the stops of a multi-part event, already time-ordered
+              by the server. */}
+          {!!ev.subEvents?.length && (
+            <section className="cv-panel cv-section">
+              <h3 className="cv-h3">Programme</h3>
+              <p className="cv-muted" style={{ marginBottom: 12 }}>
+                {ev.subEvents.length} sub-event{ev.subEvents.length === 1 ? "" : "s"} — come to
+                whichever you like.
+              </p>
+              {ev.subEvents.map((stop) => (
+                <div key={stop._id} className="cv-list-row">
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontWeight: 650 }}>{stop.title}</span>
+                    <span className="cv-muted" style={{ display: "block" }}>
+                      {formatDateTime(stop.date)}
+                    </span>
+                    <span className="cv-muted" style={{ display: "block" }}>
+                      {[stop.address, stop.location].filter(Boolean).join(" · ")}
+                    </span>
+                    {!!stop.description && (
+                      <span className="cv-muted" style={{ display: "block", marginTop: 4 }}>
+                        {stop.description}
+                      </span>
+                    )}
+                  </span>
+                  <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    <strong>{stopPriceText(stop, ev.currency)}</strong>
+                    {/* Availability survives the organiser's attendance
+                        opt-out; the numbers behind it don't. */}
+                    {stop.salesClosed ? (
+                      <span className="cv-muted" style={{ display: "block" }}>
+                        {stop.salesClosedReason === "ended" ? "Over" : "Closed"}
+                      </span>
+                    ) : stop.soldOut ? (
+                      <span className="cv-muted" style={{ display: "block" }}>
+                        Full
+                      </span>
+                    ) : typeof stop.remaining === "number" ? (
+                      <span className="cv-muted" style={{ display: "block" }}>
+                        {stop.remaining} left
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+              ))}
+            </section>
+          )}
 
           {/* Vendors */}
           {!!ev.vendors?.length && (
@@ -386,6 +470,10 @@ export default function EventDetails() {
               rsvpError={rsvpError}
               onRsvp={rsvpFree}
               onPay={goToPay}
+              venueIndex={venueIndex}
+              setVenueIndex={setVenueIndex}
+              selectedStops={selectedStops}
+              setSelectedStops={setSelectedStops}
             />
             <button className="cv-btn cv-btn-ghost" style={{ marginTop: 10 }} onClick={share}>
               {copied ? "Link copied ✓" : "Share this event"}
@@ -501,6 +589,15 @@ const SALES_CLOSED_COPY: Record<string, { heading: string; detail: string }> = {
   },
 };
 
+/** "Free" / "$5" / "From $5" for one stop of a programme. */
+function stopPriceText(stop: EventSubEvent, currency?: string) {
+  const tiers = stop.ticketTiers ?? [];
+  const price = tiers.length ? Math.min(...tiers.map((t) => t.price)) : stop.ticketPrice ?? 0;
+  if (!price) return "Free";
+  const amount = money(price, currency);
+  return tiers.length > 1 ? `From ${amount}` : amount;
+}
+
 function TicketBox({
   ev,
   user,
@@ -512,6 +609,10 @@ function TicketBox({
   rsvpError,
   onRsvp,
   onPay,
+  venueIndex,
+  setVenueIndex,
+  selectedStops,
+  setSelectedStops,
 }: {
   ev: EventItem;
   user: { username: string } | null;
@@ -523,12 +624,53 @@ function TicketBox({
   rsvpError: string;
   onRsvp: () => void;
   onPay: () => void;
+  venueIndex: number | null;
+  setVenueIndex: (i: number) => void;
+  selectedStops: (string | null)[];
+  setSelectedStops: (stops: (string | null)[]) => void;
 }) {
   const multiTier = tiers.length > 1;
   // The server sends soldOut to every viewer precisely because ticketsRemaining
   // is now withheld from non-organizers; fall back for older API responses.
   const soldOut =
     ev.soldOut ?? (ev.ticketsRemaining !== undefined && ev.ticketsRemaining <= 0);
+
+  // A programme overrides the ordinary paid/free branching below entirely —
+  // what matters is the PRICE OF WHAT'S TICKED, not the main event's own
+  // isPaid flag. A free main event with one priced stop still needs the
+  // picker shown before anything is confirmed, exactly like a fully paid one.
+  if (ev.subEvents?.length) {
+    const stops = eventStops(ev);
+    const total = selectionTotal(stops, selectedStops);
+    const nothingTicked = selectedStops.length === 0;
+    return (
+      <>
+        <h3 className="cv-h3">{going ? "You're going 🎉" : "Pick what you're going to"}</h3>
+        <p className="cv-muted" style={{ marginBottom: 16 }}>
+          {going
+            ? "Change your picks any time before the event."
+            : "Tick as many stops as you like — one checkout covers all of them."}
+        </p>
+        <ProgrammePicker ev={ev} value={selectedStops} onChange={setSelectedStops} currency={ev.currency} />
+        {rsvpError && <div className="cv-error">{rsvpError}</div>}
+        <button
+          className="cv-btn"
+          onClick={total > 0 ? onPay : onRsvp}
+          disabled={rsvping || nothingTicked}
+        >
+          {!user
+            ? "Log in to continue"
+            : nothingTicked
+              ? "Pick at least one"
+              : rsvping
+                ? "Saving…"
+                : total > 0
+                  ? `Continue to payment · ${money(total, ev.currency)}`
+                  : "Confirm — it's free"}
+        </button>
+      </>
+    );
+  }
 
   if (!ev.isPaid) {
     return going ? (
@@ -544,8 +686,13 @@ function TicketBox({
         <p className="cv-muted" style={{ marginBottom: 16 }}>
           RSVP to join the guest list — no charge.
         </p>
+        <VenueChoice ev={ev} value={venueIndex} onChange={setVenueIndex} />
         {rsvpError && <div className="cv-error">{rsvpError}</div>}
-        <button className="cv-btn" onClick={onRsvp} disabled={rsvping}>
+        <button
+          className="cv-btn"
+          onClick={onRsvp}
+          disabled={rsvping || (venueCount(ev) > 1 && venueIndex === null)}
+        >
           {rsvping ? "Joining…" : user ? "RSVP — I'm going" : "Log in to RSVP"}
         </button>
       </>
@@ -665,7 +812,15 @@ function TicketBox({
         </div>
       )}
 
-      <button className="cv-btn" onClick={onPay} disabled={multiTier && !selectedTier}>
+      <VenueChoice ev={ev} value={venueIndex} onChange={setVenueIndex} />
+
+      <button
+        className="cv-btn"
+        onClick={onPay}
+        disabled={
+          (multiTier && !selectedTier) || (venueCount(ev) > 1 && venueIndex === null)
+        }
+      >
         Continue to payment
       </button>
     </>

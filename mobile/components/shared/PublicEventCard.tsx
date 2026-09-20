@@ -21,11 +21,14 @@ import { BASE_URL } from "@/constants/constants";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
+import type { EventVenue } from "@/libs/interfaces";
+import { locationWithMore } from "@/utils/location";
 export interface PublicEvent {
   _id: string;
   title: string;
   date: string;
   location: string;
+  additionalLocations?: EventVenue[];
   isVirtual?: boolean;
   image?: string;
   description?: string;
@@ -62,8 +65,8 @@ export interface PublicEvent {
 
 interface PublicEventCardProps {
   event: PublicEvent;
-  onPurchaseTicket?: (eventId: string, eventTitle: string) => void;
-  onJoinFreeEvent?: (eventId: string, eventTitle: string) => void;
+  onPurchaseTicket?: (eventId: string, eventTitle: string, multiVenue?: boolean) => void;
+  onJoinFreeEvent?: (eventId: string, eventTitle: string, multiVenue?: boolean) => void;
   style?: any;
 }
 
@@ -163,7 +166,7 @@ export default function PublicEventCard({
             <View style={styles.eventCardDetail}>
               <Ionicons name={event.isVirtual ? "videocam" : "location"} size={14} color={colors.primary} />
               <Text style={styles.eventCardDetailText} numberOfLines={1}>
-                {event.location}
+                {locationWithMore(event.location, event.additionalLocations)}
               </Text>
             </View>
 
@@ -212,7 +215,11 @@ export default function PublicEventCard({
                         router.push(`/event/${event._id}` as any);
                         return;
                       }
-                      onPurchaseTicket(event._id, event.title);
+                      onPurchaseTicket(
+                        event._id,
+                        event.title,
+                        !!event.additionalLocations?.length
+                      );
                     }}
                     activeOpacity={0.8}
                   >
@@ -258,7 +265,11 @@ export default function PublicEventCard({
                     style={styles.joinEventButton}
                     onPress={(e) => {
                       e.stopPropagation();
-                      onJoinFreeEvent(event._id, event.title);
+                      onJoinFreeEvent(
+                        event._id,
+                        event.title,
+                        !!event.additionalLocations?.length
+                      );
                     }}
                     activeOpacity={0.8}
                   >

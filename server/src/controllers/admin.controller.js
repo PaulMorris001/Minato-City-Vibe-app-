@@ -24,6 +24,7 @@ import {
   sendEventCancellationApprovedEmail,
 } from "../services/email.service.js";
 import { formatAmountText } from "../services/payments/fulfillment.js";
+import { buildEventSignups } from "../services/eventSignups.service.js";
 import { invalidateCachePattern } from "../utils/cache.js";
 import { markVerified } from "../services/verification.service.js";
 import { getSocketInstance } from "../services/socket.service.js";
@@ -42,6 +43,7 @@ import {
   isNigerianCountry,
 } from "../services/raffleCampaign.service.js";
 import { adjustCouponBalance, setCouponVendorLock } from "../services/payments/coupon.service.js";
+import { venueSummary } from "../utils/eventLocations.js";
 
 /**
  * Constant-time string comparison. Guards the username check against timing
@@ -346,6 +348,30 @@ export async function getEvents(req, res) {
     res.json({ events, total, page: Number(page), limit: Number(limit) });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+}
+
+/**
+ * GET /admin/events/:id/signups
+ *
+ * Who is going to an event and — for a multi-venue event — to which venue.
+ * Same answer the organizer gets from `GET /events/:eventId/signups`; the two
+ * differ only in the gate, since an admin token is signed with a different
+ * secret and can never satisfy `authenticate`.
+ */
+export async function getEventSignupsAdmin(req, res) {
+  try {
+    const { id } = req.params;
+    const event = await Event.findById(id).select(
+      "title date rsvpUsers invitedUsers location address city state country additionalLocations subEvents"
+    );
+    if (!event) return res.status(404).json({ message: "Event not found" });
+
+    const signups = await buildEventSignups(event);
+    res.json({ event: { id: event._id, title: event.title, date: event.date }, ...signups });
+  } catch (error) {
+    console.error("getEventSignupsAdmin:", error);
+    res.status(500).json({ message: "Failed to load signups" });
   }
 }
 
@@ -1458,6 +1484,15 @@ export async function approveEventEdit(req, res) {
     };
     await event.save();
 
+    // The approved values are only live once the cached detail payloads go.
+    // Cached under whichever param the caller used, so drop all three keys —
+    // see fulfillTicketOrder for the same pattern.
+    for (const key of [event._id, event.slug, event.shareToken].filter(Boolean)) {
+      invalidateCachePattern(`event_detail_${key}_`);
+    }
+    invalidateCachePattern("public_events_");
+    invalidateCachePattern("event_highlights_");
+
     await Notification.create({
       user: event.createdBy._id,
       type: "event_edit_approved",
@@ -1727,6 +1762,7 @@ export async function getEventCancellations(req, res) {
           date: obj.date,
           endDate: obj.endDate,
           location: obj.location,
+          additionalLocations: obj.additionalLocations,
           currency: obj.currency,
           createdBy: obj.createdBy,
           cancellationRequest: obj.cancellationRequest,
@@ -1841,7 +1877,7 @@ async function notifyRefundedHolders(tickets, event, eventDateText) {
       attendeeName: holder?.username,
       eventTitle: event.title,
       eventDateText,
-      eventLocation: event.location,
+      eventLocation: venueSummary(event),
       refundAmountText: formatAmountText(ticket.ticketPrice, event.currency),
       reason: event.cancellationReason,
     });

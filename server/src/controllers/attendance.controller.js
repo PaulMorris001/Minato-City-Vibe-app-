@@ -1,12 +1,12 @@
 import Attendance from "../models/attendance.model.js";
 import Event from "../models/event.model.js";
-import Ticket from "../models/ticket.model.js";
-import User from "../models/user.model.js";
 import {
   issueEventPass,
   computeAttendanceStatus,
 } from "../services/pass.service.js";
 import { parsePassCode, passQrDataUrl } from "../utils/qrcode.js";
+import { buildEventSignups } from "../services/eventSignups.service.js";
+import { findStop } from "../utils/subEvents.js";
 
 /**
  * POST /api/events/:eventId/check-in   { code }
@@ -25,7 +25,9 @@ export const checkInAttendee = async (req, res) => {
       return res.status(400).json({ message: "That's not a valid OurCityvibe pass code." });
     }
 
-    const event = await Event.findById(eventId).select("createdBy title");
+    const event = await Event.findById(eventId).select(
+      "createdBy title location city additionalLocations subEvents"
+    );
     if (!event) return res.status(404).json({ message: "Event not found" });
 
     // Only the organizer may check attendees in.
@@ -55,6 +57,19 @@ export const checkInAttendee = async (req, res) => {
       username: pass.user?.username,
       profilePicture: pass.user?.profilePicture || "",
       type: pass.type,
+      // Which venue this pass was issued for, so staff on the door of a
+      // multi-venue event can see a Lagos pass turning up in Abuja. Surfaced,
+      // not enforced: one organizer scans every door, and turning a paying
+      // guest away over a mis-tapped radio button isn't ours to decide.
+      locationIndex: pass.locationIndex ?? null,
+      locationName: pass.locationName || "",
+      locationCity: pass.locationCity || "",
+      // Which STOP of a programme this pass is for — same "surfaced, not
+      // enforced" stance: a brunch pass turning up at the after-party is worth
+      // seeing, not a hard door refusal that isn't ours to decide.
+      subEvent: pass.subEvent != null ? String(pass.subEvent) : null,
+      subEventTitle:
+        pass.subEventTitle || (pass.subEvent != null ? findStop(event, pass.subEvent)?.title : null) || null,
     };
 
     if (pass.status === "attended") {
@@ -113,6 +128,13 @@ export const getEventAttendance = async (req, res) => {
       type: p.type,
       status: p.status,
       attendedAt: p.attendedAt || null,
+      // Which door this pass is for, on a multi-venue event.
+      locationIndex: p.locationIndex ?? null,
+      locationName: p.locationName || "",
+      locationCity: p.locationCity || "",
+      // Which stop of a programme this pass is for.
+      subEvent: p.subEvent != null ? String(p.subEvent) : null,
+      subEventTitle: p.subEventTitle || null,
     }));
 
     const attendedCount = attendees.filter((a) => a.status === "attended").length;
@@ -134,10 +156,13 @@ export const getEventAttendance = async (req, res) => {
  * The organizer's guest list: one row per person who signed up, whether they
  * RSVP'd to a free event or paid for a ticket. Unlike /attendance (which lists
  * passes, so a buyer of three tickets appears three times) this is
- * people-shaped — it's what the "Who's coming" screen renders.
+ * people-shaped — it's what the "Who's coming" screen renders. For a
+ * multi-venue event it also breaks the headcount down per venue, so the
+ * organizer knows who to expect at which door.
  *
  * Open to the creator and co-hosts, matching the gate the event screen already
- * uses to show attendance at all.
+ * uses to show attendance at all. The admin console reads the same answer
+ * through its own endpoint — see buildEventSignups.
  */
 export const getEventSignups = async (req, res) => {
   try {
@@ -145,7 +170,7 @@ export const getEventSignups = async (req, res) => {
     const userId = req.user.id;
 
     const event = await Event.findById(eventId).select(
-      "createdBy cohosts rsvpUsers invitedUsers date title"
+      "createdBy cohosts rsvpUsers invitedUsers date title location address city state country additionalLocations subEvents"
     );
     if (!event) return res.status(404).json({ message: "Event not found" });
 
@@ -157,103 +182,7 @@ export const getEventSignups = async (req, res) => {
         .json({ message: "Only the organizer can view who signed up." });
     }
 
-    // RSVP side: people who confirmed, plus anyone already counted as attending
-    // (joined via link or accepted an invite).
-    const rsvpIds = [
-      ...new Set(
-        [...(event.rsvpUsers || []), ...(event.invitedUsers || [])].map(String)
-      ),
-    ];
-
-    const [tickets, passes] = await Promise.all([
-      Ticket.find({ event: eventId, isValid: true })
-        .select("user tierName purchaseDate")
-        .lean(),
-      Attendance.find({ event: eventId })
-        .select("user status attendedAt createdAt")
-        .lean(),
-    ]);
-
-    // Ticket rows collapse to one entry per holder.
-    const ticketsByUser = new Map();
-    for (const t of tickets) {
-      if (!t.user) continue;
-      const key = String(t.user);
-      const row = ticketsByUser.get(key) || { count: 0, tiers: [], firstAt: null };
-      row.count += 1;
-      if (t.tierName && !row.tiers.includes(t.tierName)) row.tiers.push(t.tierName);
-      if (t.purchaseDate && (!row.firstAt || t.purchaseDate < row.firstAt)) {
-        row.firstAt = t.purchaseDate;
-      }
-      ticketsByUser.set(key, row);
-    }
-
-    // Pass state gives us check-in status and, for RSVPs, a "signed up" time.
-    const passByUser = new Map();
-    for (const p of passes) {
-      if (!p.user) continue;
-      const key = String(p.user);
-      const existing = passByUser.get(key);
-      const attended = p.status === "attended";
-      if (!existing) {
-        passByUser.set(key, {
-          checkedIn: attended,
-          attendedAt: p.attendedAt || null,
-          createdAt: p.createdAt || null,
-        });
-      } else {
-        if (attended && !existing.checkedIn) {
-          existing.checkedIn = true;
-          existing.attendedAt = p.attendedAt || existing.attendedAt;
-        }
-        if (p.createdAt && (!existing.createdAt || p.createdAt < existing.createdAt)) {
-          existing.createdAt = p.createdAt;
-        }
-      }
-    }
-
-    const allIds = [...new Set([...rsvpIds, ...ticketsByUser.keys()])];
-    const users = await User.find({ _id: { $in: allIds } })
-      .select("username profilePicture isGuest")
-      .lean();
-
-    const attendees = users.map((u) => {
-      const key = String(u._id);
-      const ticket = ticketsByUser.get(key);
-      const pass = passByUser.get(key);
-      return {
-        userId: key,
-        username: u.username,
-        profilePicture: u.profilePicture || "",
-        // Guest accounts are created for ticket recipients who never installed
-        // the app — the client shouldn't link to an empty profile.
-        isGuest: !!u.isGuest,
-        type: ticket ? "ticket" : "rsvp",
-        ticketCount: ticket?.count || 0,
-        tiers: ticket?.tiers || [],
-        checkedIn: !!pass?.checkedIn,
-        attendedAt: pass?.attendedAt || null,
-        joinedAt: ticket?.firstAt || pass?.createdAt || null,
-      };
-    });
-
-    // Most recent signups first; anyone without a timestamp (legacy RSVPs with
-    // no pass) sorts to the end alphabetically.
-    attendees.sort((a, b) => {
-      if (a.joinedAt && b.joinedAt) return new Date(b.joinedAt) - new Date(a.joinedAt);
-      if (a.joinedAt) return -1;
-      if (b.joinedAt) return 1;
-      return (a.username || "").localeCompare(b.username || "");
-    });
-
-    res.json({
-      total: attendees.length,
-      rsvpCount: attendees.filter((a) => a.type === "rsvp").length,
-      ticketCount: attendees.filter((a) => a.type === "ticket").length,
-      ticketsIssued: tickets.length,
-      attendedCount: attendees.filter((a) => a.checkedIn).length,
-      attendees,
-    });
+    res.json(await buildEventSignups(event));
   } catch (error) {
     console.error("getEventSignups error:", error);
     res.status(500).json({ message: "Failed to load signups", details: error.message });
@@ -270,7 +199,7 @@ export const getMyPasses = async (req, res) => {
   try {
     const userId = req.user.id;
     const passes = await Attendance.find({ user: userId })
-      .populate("event", "title date location address image isPaid")
+      .populate("event", "title date location address additionalLocations subEvents image isPaid")
       // Tier name so ticket passes can show "VIP" etc. at the door.
       .populate("ticket", "tierName")
       .sort({ createdAt: -1 })
@@ -283,10 +212,24 @@ export const getMyPasses = async (req, res) => {
       valid.map(async (p) => ({
         id: p._id,
         type: p.type,
-        status: computeAttendanceStatus(p, p.event?.date),
+        // A pass for ONE STOP of a programme is missed/incoming by THAT stop's
+        // own date, not the umbrella's — the event overall can still be running
+        // (a later stop hasn't happened yet) while this holder's own stop is done.
+        status: computeAttendanceStatus(p, p.subEventDate || p.event?.date),
         attendedAt: p.attendedAt || null,
         event: p.event,
         tierName: p.ticket?.tierName || null,
+        // Where THIS pass gets the holder in, for a multi-venue event. The
+        // snapshot, not a live lookup — it's what they were told when they
+        // picked, and the event's venue list can have moved on since.
+        locationIndex: p.locationIndex ?? null,
+        locationName: p.locationName || "",
+        locationCity: p.locationCity || "",
+        // Which stop of a programme this pass admits to — null is the main
+        // event. Snapshot title/date, same reasoning as the location fields.
+        subEvent: p.subEvent != null ? String(p.subEvent) : null,
+        subEventTitle: p.subEventTitle || null,
+        subEventDate: p.subEventDate || null,
         qr: await passQrDataUrl(p.code),
       }))
     );
@@ -301,18 +244,24 @@ export const getMyPasses = async (req, res) => {
 /**
  * GET /api/my-passes/:eventId
  *
- * The signed-in user's pass for one event (with QR). Lazily issues a pass if
- * the user is a confirmed attendee but somehow doesn't have one yet (e.g. they
- * RSVPed before the pass feature shipped).
+ * The signed-in user's passes for one event (with QR) — plural, because a
+ * programme event can hand out one pass PER STOP the guest joined. Lazily
+ * issues a main-event pass if the user is a confirmed attendee but somehow
+ * doesn't have one yet (e.g. they RSVPed before the pass feature shipped);
+ * that backfill can only ever be for the main stop, since there's no way to
+ * know which sub-events, if any, a pre-pass-era attendee meant to join.
+ *
+ * `pass` (singular) is kept alongside `passes` for any caller expecting the
+ * old one-pass shape — it's simply `passes[0]`.
  */
 export const getMyPassForEvent = async (req, res) => {
   try {
     const userId = req.user.id;
     const { eventId } = req.params;
 
-    let pass = await Attendance.findOne({ event: eventId, user: userId }).lean();
+    let passes = await Attendance.find({ event: eventId, user: userId }).lean();
 
-    if (!pass) {
+    if (!passes.length) {
       // Backfill for attendees who predate the pass feature.
       const event = await Event.findById(eventId).select("rsvpUsers isPaid");
       const isAttendee =
@@ -324,30 +273,38 @@ export const getMyPassForEvent = async (req, res) => {
           eventId,
           type: event.isPaid ? "ticket" : "rsvp",
         });
-        pass = await Attendance.findOne({ event: eventId, user: userId }).lean();
+        passes = await Attendance.find({ event: eventId, user: userId }).lean();
       }
     }
 
-    if (!pass) {
+    if (!passes.length) {
       return res
         .status(404)
         .json({ message: "No pass found for this event." });
     }
 
     const event = await Event.findById(eventId)
-      .select("title date location address image")
+      .select("title date location address additionalLocations subEvents image")
       .lean();
 
-    res.json({
-      pass: {
+    const result = await Promise.all(
+      passes.map(async (pass) => ({
         id: pass._id,
         type: pass.type,
-        status: computeAttendanceStatus(pass, event?.date),
+        status: computeAttendanceStatus(pass, pass.subEventDate || event?.date),
         attendedAt: pass.attendedAt || null,
         event,
+        locationIndex: pass.locationIndex ?? null,
+        locationName: pass.locationName || "",
+        locationCity: pass.locationCity || "",
+        subEvent: pass.subEvent != null ? String(pass.subEvent) : null,
+        subEventTitle: pass.subEventTitle || null,
+        subEventDate: pass.subEventDate || null,
         qr: await passQrDataUrl(pass.code),
-      },
-    });
+      }))
+    );
+
+    res.json({ passes: result, pass: result[0] });
   } catch (error) {
     console.error("getMyPassForEvent error:", error);
     res.status(500).json({ message: "Failed to load pass", details: error.message });

@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Event from "../models/event.model.js";
 import User from "../models/user.model.js";
 import Ticket from "../models/ticket.model.js";
+import Attendance from "../models/attendance.model.js";
 import DiscountCode from "../models/discountCode.model.js";
 import { Vendor } from "../models/vendor.model.js";
 import Chat from "../models/chat.model.js";
@@ -27,10 +28,14 @@ import { findEventByAnyId } from "../utils/resolveEvent.js";
 import {
   isEventPast,
   ticketSalesClosedReason,
+  stopSalesClosedReason,
+  stopEndsAt,
   upcomingFilter,
   parseEndDate,
 } from "../utils/eventLifecycle.js";
 import { toGeoPoint } from "../utils/geo.js";
+import { normalizeAdditionalLocations, resolveVenueChoice } from "../utils/eventLocations.js";
+import { normalizeSubEvents, allStops, findStop } from "../utils/subEvents.js";
 import { issueEventPass } from "../services/pass.service.js";
 import { linkQrDataUrl } from "../utils/qrcode.js";
 import config from "../config/env.js";
@@ -114,6 +119,40 @@ function applyAttendanceVisibility(eventObj, { isOrganizer }) {
     });
   }
 
+  // Each stop of a programme gets the same treatment as a tier: availability
+  // survives, the numbers behind it don't. A per-stop headcount or cap is the
+  // same class of number as maxGuests below.
+  if (Array.isArray(eventObj.subEvents) && eventObj.subEvents.length > 0) {
+    eventObj.subEvents = eventObj.subEvents.map((s) => {
+      const stop = { ...s };
+      if (typeof s.remaining === "number") stop.soldOut = s.remaining <= 0;
+
+      // Per-stop sales state, so a finished brunch reads as closed while the
+      // club night stays open.
+      const stopReason = stopSalesClosedReason(eventObj, s);
+      stop.salesClosedReason = stopReason;
+      stop.salesClosed = stopReason !== null;
+
+      if (Array.isArray(stop.ticketTiers) && stop.ticketTiers.length > 0) {
+        stop.ticketTiers = stop.ticketTiers.map((t) => {
+          const tier = { ...t };
+          if (typeof t.remaining === "number") tier.soldOut = t.remaining <= 0;
+          if (!canSeeCounts) {
+            delete tier.remaining;
+            delete tier.quantity;
+          }
+          return tier;
+        });
+      }
+      if (!canSeeCounts) {
+        delete stop.remaining;
+        delete stop.rsvpCount;
+        delete stop.maxGuests;
+      }
+      return stop;
+    });
+  }
+
   // The guest list is never part of the opt-in — it's other attendees' data.
   if (!isOrganizer) delete eventObj.rsvpUsers;
 
@@ -171,6 +210,8 @@ export const createEvent = async (req, res) => {
       meetingLink,
       latitude,
       longitude,
+      additionalLocations,
+      subEvents,
       isBirthdayRaffle,
     } = req.body;
     const userId = req.user.id;
@@ -183,8 +224,35 @@ export const createEvent = async (req, res) => {
       return res.status(400).json({ message: "Event link must be a valid URL (https://...)" });
     }
 
+    let extraVenues = [];
+    if (!virtual && additionalLocations !== undefined) {
+      const parsed = normalizeAdditionalLocations(additionalLocations);
+      if (parsed.error) return res.status(400).json({ message: parsed.error });
+      extraVenues = parsed.locations;
+    }
+
     const parsedEnd = parseEndDate(endDate ?? null, date);
     if (parsedEnd.error) return res.status(400).json({ message: parsedEnd.error });
+
+    // A programme of sub-events. Mutually exclusive with additionalLocations:
+    // that list is the same event in several places, this is different things
+    // sharing one invitation, and an event that claimed both would be
+    // unanswerable at the door.
+    let programme = [];
+    if (!virtual && subEvents !== undefined) {
+      const parsed = normalizeSubEvents(subEvents, {
+        eventStart: date,
+        eventEnd: parsedEnd.value,
+      });
+      if (parsed.error) return res.status(400).json({ message: parsed.error });
+      programme = parsed.subEvents;
+    }
+    if (programme.length && extraVenues.length) {
+      return res.status(400).json({
+        message:
+          "An event can run at several locations, or have a programme of sub-events — not both.",
+      });
+    }
 
     // Reject JSON/operator payloads and symbol-soup titles before they're stored
     // and displayed as an event name.
@@ -383,6 +451,8 @@ export const createEvent = async (req, res) => {
       state: virtual ? "" : (state || ""),
       country: virtual ? "" : (country || ""),
       geo: virtual ? undefined : toGeoPoint(latitude, longitude),
+      additionalLocations: extraVenues,
+      subEvents: programme,
       isVirtual: virtual,
       meetingLink: virtual ? (meetingLink || "") : "",
       image: eventImageUrl,
@@ -766,6 +836,33 @@ export const getEventById = async (req, res) => {
     eventObj.userRsvp = !!userId && event.rsvpUsers.some(u => u._id.toString() === userId);
     eventObj.rsvpCount = event.rsvpUsers.length;
 
+    // The viewer's own venue pick on a multi-venue event, so the screen can show
+    // which door they chose (and offer to change it) instead of asking again.
+    // Their pass is the single record both an RSVP and a ticket write it to.
+    // Only queried when there is a choice to have made and they are actually
+    // going, so single-venue events pay nothing; this read is cached per viewer
+    // alongside the rest of the response.
+    eventObj.userLocationIndex = null;
+    if (userId && (event.additionalLocations || []).length && (eventObj.userRsvp || hasTicket)) {
+      const myPass = await Attendance.findOne({ event: event._id, user: userId })
+        .select("locationIndex")
+        .sort({ createdAt: 1 })
+        .lean();
+      if (myPass?.locationIndex != null) eventObj.userLocationIndex = myPass.locationIndex;
+    }
+
+    // The viewer's own stop picks on a programme event — every one they hold
+    // a pass for, not just one, since sub-events are multi-select. Feeds the
+    // checkbox list's initial state so re-opening the event shows what they
+    // already chose instead of asking again.
+    eventObj.userSubEvents = [];
+    if (userId && (event.subEvents || []).length) {
+      const myPasses = await Attendance.find({ event: event._id, user: userId })
+        .select("subEvent")
+        .lean();
+      eventObj.userSubEvents = myPasses.map((p) => (p.subEvent != null ? String(p.subEvent) : null));
+    }
+
     // Meeting link is attendees-only: host, cohosts, accepted guests, RSVPs,
     // ticket holders. Everyone else just learns a link exists.
     const canSeeMeetingLink =
@@ -1135,7 +1232,7 @@ export const updateEvent = async (req, res) => {
     const {
       title, date, endDate, location, address, city, state, country, image, images,
       description, isPublic, isVirtual, meetingLink, showAttendance,
-      latitude, longitude,
+      latitude, longitude, additionalLocations, subEvents,
       // Material (pricing/capacity) fields — held for admin approval on public events.
       ticketTiers, ticketPrice, maxGuests,
     } = req.body;
@@ -1176,6 +1273,58 @@ export const updateEvent = async (req, res) => {
       { field: "Location", value: location },
       { field: "Address", value: address },
     ]);
+
+    // Validated before the image handling below, which deletes the old cover
+    // from Cloudinary — a 400 must not land after that.
+    const extraVenues =
+      additionalLocations !== undefined ? normalizeAdditionalLocations(additionalLocations) : null;
+    if (extraVenues?.error) return res.status(400).json({ message: extraVenues.error });
+
+    // The programme, normalized against the live stops so each one KEEPS ITS
+    // _id. Without that, replacing the array would renumber every stop and
+    // silently move attendees between them.
+    let programme = null;
+    if (subEvents !== undefined) {
+      const nextStart = date !== undefined ? new Date(date) : event.date;
+      const parsed = normalizeSubEvents(subEvents, {
+        existing: event.subEvents,
+        eventStart: nextStart,
+        eventEnd:
+          endDate !== undefined
+            ? parseEndDate(endDate, nextStart).value
+            : event.endDate,
+      });
+      if (parsed.error) return res.status(400).json({ message: parsed.error });
+      programme = parsed.subEvents;
+
+      // Mutually exclusive with the venue list — see createEvent.
+      const venuesAfter = extraVenues ? extraVenues.locations : event.additionalLocations || [];
+      if (programme.length && venuesAfter.length) {
+        return res.status(400).json({
+          message:
+            "An event can run at several locations, or have a programme of sub-events — not both.",
+        });
+      }
+
+      // A stop people already hold passes or tickets for cannot just vanish —
+      // those QR codes would point at nothing. The organizer closes its sales
+      // instead. Checked before anything is written.
+      const keptIds = new Set(programme.map((s) => String(s._id)));
+      const dropped = (event.subEvents || []).filter((s) => !keptIds.has(String(s._id)));
+      if (dropped.length) {
+        const droppedIds = dropped.map((s) => s._id);
+        const [passCount, ticketCount] = await Promise.all([
+          Attendance.countDocuments({ event: event._id, subEvent: { $in: droppedIds } }),
+          Ticket.countDocuments({ event: event._id, subEvent: { $in: droppedIds }, isValid: true }),
+        ]);
+        if (passCount > 0 || ticketCount > 0) {
+          const names = dropped.map((s) => `"${s.title}"`).join(", ");
+          return res.status(400).json({
+            message: `${names} already has guests booked, so it can't be removed. Close its sales instead.`,
+          });
+        }
+      }
+    }
 
     // Handle event image upload (if provided)
     if (image !== undefined) {
@@ -1234,6 +1383,7 @@ export const updateEvent = async (req, res) => {
       event.state = "";
       event.country = "";
       event.geo = undefined;
+      event.additionalLocations = [];
     } else {
       // Switching virtual → physical requires a real location in the same request.
       if (event.isVirtual && !location) {
@@ -1251,6 +1401,10 @@ export const updateEvent = async (req, res) => {
       if (latitude !== undefined && longitude !== undefined) {
         event.geo = toGeoPoint(latitude, longitude);
       }
+      // Replaced wholesale, and only when sent: web edit and older app builds
+      // post venue #1 alone, which must not wipe the other venues. Minor field
+      // like the rest of this block — applies immediately.
+      if (extraVenues) event.additionalLocations = extraVenues.locations;
     }
     if (meetingLink !== undefined) {
       if (meetingLink && !isValidMeetingLink(meetingLink)) {
@@ -1325,6 +1479,35 @@ export const updateEvent = async (req, res) => {
           if (Number(maxGuests) !== Number(event.maxGuests)) material.maxGuests = Number(maxGuests);
         }
       }
+    }
+
+    // The programme splits by whether a change touches MONEY. Renaming a stop,
+    // moving it or changing its guest limit goes live at once; adding a priced
+    // stop or repricing one waits for review, same as the event's own pricing.
+    //
+    // When it does hold, the WHOLE array goes into pendingEdits — not a delta.
+    // approveEventEdit blind-copies `event[key] = value`, so a partial array
+    // would wipe the stops it left out. Held exactly the way ticketTiers is.
+    if (programme) {
+      const money = (stop) =>
+        JSON.stringify({
+          price: Number(stop.ticketPrice || 0),
+          tiers: (stop.ticketTiers || []).map((t) => ({
+            name: t.name,
+            price: Number(t.price),
+            quantity: t.quantity === undefined ? null : Number(t.quantity),
+          })),
+        });
+      const before = new Map((event.subEvents || []).map((s) => [String(s._id), money(s)]));
+      const costsMoney = programme.some((s) => {
+        const prev = before.get(String(s._id));
+        // A brand-new stop only counts when it actually charges for something.
+        if (prev === undefined) return Number(s.ticketPrice || 0) > 0;
+        return prev !== money(s);
+      });
+
+      if (costsMoney) material.subEvents = programme;
+      else event.subEvents = programme;
     }
 
     const materialKeys = Object.keys(material);
@@ -1649,7 +1832,7 @@ async function ensureEventGroupChatMember(event, userId) {
 export const respondToInvite = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { status } = req.body; // "accepted" | "declined"
+    const { status, locationIndex } = req.body; // "accepted" | "declined"
     const userId = req.user.id;
 
     if (!["accepted", "declined"].includes(status)) {
@@ -1658,6 +1841,10 @@ export const respondToInvite = async (req, res) => {
 
     const event = await Event.findById(eventId);
     if (!event) return res.status(404).json({ message: "Event not found" });
+
+    // Accepting is an RSVP, so it carries the same venue pick — see rsvpEvent.
+    const { choice: venueChoice, error: venueError } = resolveVenueChoice(event, locationIndex);
+    if (venueError) return res.status(400).json({ message: venueError });
 
     // Must have a pending invite
     const isPending = event.pendingInvites.some(id => id.toString() === userId);
@@ -1700,7 +1887,7 @@ export const respondToInvite = async (req, res) => {
 
     // Accepting an invite is an RSVP — issue the entry pass + email the QR.
     if (status === "accepted") {
-      issueEventPass({ userId, eventId, type: "rsvp" }).catch((e) =>
+      issueEventPass({ userId, eventId, type: "rsvp", venueChoice }).catch((e) =>
         console.error("issueEventPass (respondToInvite) failed:", e)
       );
     }
@@ -1749,6 +1936,15 @@ export const joinEventByShareLink = async (req, res) => {
       return res.status(400).json({ message: "You are the creator of this event" });
     }
 
+    // Joining via a link is an RSVP, so it carries the venue pick too. Absent
+    // when the link was opened by a surface with no picker (the server-rendered
+    // share page), which leaves the guest list honest about not knowing.
+    const { choice: venueChoice, error: venueError } = resolveVenueChoice(
+      event,
+      req.body?.locationIndex
+    );
+    if (venueError) return res.status(400).json({ message: venueError });
+
     // Paid events are always public and ticketed — a share link can't grant
     // free entry. Send them through the purchase flow instead. (Private events
     // are always free, so this never blocks the private-invite case.)
@@ -1784,7 +1980,7 @@ export const joinEventByShareLink = async (req, res) => {
 
     // Joining via a share link — including a private-event invite link — is an
     // automatic RSVP, so issue the entry pass + email the QR.
-    issueEventPass({ userId, eventId: event._id, type: "rsvp" }).catch((e) =>
+    issueEventPass({ userId, eventId: event._id, type: "rsvp", venueChoice }).catch((e) =>
       console.error("issueEventPass (joinByShareLink) failed:", e)
     );
 
@@ -1863,6 +2059,14 @@ export const joinFreePublicEvent = async (req, res) => {
       return res.status(400).json({ message: "You have already joined this event" });
     }
 
+    // Which venue they're attending, for a multi-venue event. Changing it later
+    // goes through rsvpEvent — this endpoint refuses a second join outright.
+    const { choice: venueChoice, error: venueError } = resolveVenueChoice(
+      event,
+      req.body?.locationIndex
+    );
+    if (venueError) return res.status(400).json({ message: venueError });
+
     event.invitedUsers.push(userId);
     // Mark them as going so the event's going-count / capacity / friends-going
     // stats pick them up without a separate RSVP step.
@@ -1873,7 +2077,7 @@ export const joinFreePublicEvent = async (req, res) => {
 
     // Joining a free public event is an RSVP — issue the entry pass + email QR.
     // Keyed on the resolved `_id`, never the raw param (which may be a slug).
-    issueEventPass({ userId, eventId: event._id, type: "rsvp" }).catch((e) =>
+    issueEventPass({ userId, eventId: event._id, type: "rsvp", venueChoice }).catch((e) =>
       console.error("issueEventPass (joinFreePublicEvent) failed:", e)
     );
 
@@ -1945,11 +2149,10 @@ const NEARBY_CITY_LIMIT = 3;
 const NEARBY_EVENTS_PER_CITY = 6;
 
 async function findNearbyCityEvents({ city, state, country, blockedIds, userId }) {
-  const scopeMatch = {
+  const baseMatch = {
     isPublic: true,
     isActive: true,
     isVirtual: { $ne: true },
-    city: { $exists: true, $nin: [null, ""] },
     $and: [
       upcomingFilter(),
       { $or: [{ isPaid: { $ne: true } }, { isPaid: true, approvalStatus: "approved" }] },
@@ -1958,18 +2161,47 @@ async function findNearbyCityEvents({ city, state, country, blockedIds, userId }
   };
   // Same state first (closest proxy for "nearby"); fall back to same
   // country if no state was given; otherwise leave it unscoped rather than
-  // guessing across the whole world.
-  if (state) scopeMatch.state = exactCaseInsensitive(state);
-  else if (country) scopeMatch.country = exactCaseInsensitive(country);
+  // guessing across the whole world. Applied per VENUE, not per event.
+  const venueScope = state
+    ? { state: exactCaseInsensitive(state) }
+    : country
+      ? { country: exactCaseInsensitive(country) }
+      : {};
 
+  // Every venue counts toward its own city, so an event running in two
+  // nearby cities is on offer in both (same rule as eventCityFilter).
   const cityGroups = await Event.aggregate([
-    { $match: scopeMatch },
+    { $match: baseMatch },
+    {
+      $project: {
+        venue: {
+          $concatArrays: [
+            [{ city: "$city", state: "$state", country: "$country" }],
+            { $ifNull: ["$additionalLocations", []] },
+          ],
+        },
+      },
+    },
+    { $unwind: "$venue" },
+    {
+      $match: {
+        "venue.city": { $exists: true, $nin: [null, ""] },
+        ...Object.fromEntries(Object.entries(venueScope).map(([k, v]) => [`venue.${k}`, v])),
+      },
+    },
+    // One count per event per city, however many of its venues share that city.
     {
       $group: {
-        _id: { $toLower: "$city" },
-        city: { $first: "$city" },
-        state: { $first: "$state" },
-        country: { $first: "$country" },
+        _id: { event: "$_id", city: { $toLower: "$venue.city" } },
+        venue: { $first: "$venue" },
+      },
+    },
+    {
+      $group: {
+        _id: "$_id.city",
+        city: { $first: "$venue.city" },
+        state: { $first: "$venue.state" },
+        country: { $first: "$venue.country" },
         count: { $sum: 1 },
       },
     },
@@ -1981,7 +2213,14 @@ async function findNearbyCityEvents({ city, state, country, blockedIds, userId }
   const top = cityGroups.find((g) => g._id !== target);
   if (!top) return null;
 
-  const nearbyEvents = await Event.find({ ...scopeMatch, city: exactCaseInsensitive(top.city) })
+  const inTopCity = { ...venueScope, city: exactCaseInsensitive(top.city) };
+  const nearbyEvents = await Event.find({
+    ...baseMatch,
+    $and: [
+      ...baseMatch.$and,
+      { $or: [inTopCity, { additionalLocations: { $elemMatch: inTopCity } }] },
+    ],
+  })
     .populate('createdBy', 'username email profilePicture')
     .sort({ date: 1 })
     .limit(NEARBY_EVENTS_PER_CITY);
@@ -1992,6 +2231,24 @@ async function findNearbyCityEvents({ city, state, country, blockedIds, userId }
     country: top.country || null,
     totalThere: top.count,
     events: await attachTicketInfo(nearbyEvents, userId),
+  };
+}
+
+/**
+ * "This event is in `city`" — one OR-group, for `$and`. Matches the structured
+ * city field, the free-text location string (legacy events created before
+ * structured fields), or the city of any of the event's additional venues.
+ * Every city filter on events goes through here so a venue added somewhere
+ * can't be missed by one feed and found by another.
+ */
+function eventCityFilter(city) {
+  const exact = exactCaseInsensitive(city);
+  return {
+    $or: [
+      { city: { $regex: exact } },
+      { location: { $regex: escapeRegex(city), $options: "i" } },
+      { "additionalLocations.city": { $regex: exact } },
+    ],
   };
 }
 
@@ -2019,16 +2276,7 @@ export function buildPublicEventQuery({ city, state, country, date, online, bloc
     },
   ];
 
-  // City matches the structured field, falling back to the free-text
-  // location string for legacy events created before structured fields.
-  if (city && !onlineOnly) {
-    andConditions.push({
-      $or: [
-        { city: { $regex: exactCaseInsensitive(city) } },
-        { location: { $regex: escapeRegex(city), $options: "i" } },
-      ],
-    });
-  }
+  if (city && !onlineOnly) andConditions.push(eventCityFilter(city));
 
   // Virtual events show under the dedicated Online filter and in the
   // unfiltered feed — never under a specific place. ($ne matches legacy
@@ -2049,6 +2297,7 @@ export function buildPublicEventQuery({ city, state, country, date, online, bloc
         { description: { $regex: safe, $options: "i" } },
         { location: { $regex: safe, $options: "i" } },
         { city: { $regex: safe, $options: "i" } },
+        { "additionalLocations.location": { $regex: safe, $options: "i" } },
       ],
     });
   }
@@ -2207,25 +2456,47 @@ export const getUserTickets = async (req, res) => {
 export const rsvpEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { status } = req.body; // "going" | "not_going"
+    const { status, locationIndex, subEvents: subEventIds } = req.body;
     const userId = req.user.id;
+
+    const event = await Event.findById(eventId);
+    if (!event) return res.status(404).json({ message: "Event not found" });
+
+    const isCreator = event.createdBy.toString() === userId;
+    const isInvited = event.invitedUsers.some(id => id.toString() === userId);
+    const isTicketHolder = await Ticket.findOne({ event: eventId, user: userId, isValid: true });
+
+    // Two shapes on one endpoint:
+    //  - `subEvents` present: the AUTHORITATIVE set of stops (main = null) the
+    //    guest wants — a checkbox list, resent in full on every change. Gated
+    //    on the event being PUBLIC, not on it being free: a programme can price
+    //    its main event while leaving a stop free, and anyone should be able to
+    //    join that free stop the same way joinFreePublicEvent always allowed. The
+    //    real money gate is the priced-stop rejection inside the function itself.
+    //  - otherwise: the original single-stop `status` toggle, unchanged, for
+    //    events with no programme and for clients that predate this feature.
+    if (Array.isArray(subEventIds)) {
+      if (!isCreator && !isInvited && !isTicketHolder && !event.isPublic) {
+        return res.status(403).json({ message: "You must be invited to RSVP" });
+      }
+      return reconcileStopRsvp({ res, event, userId, isCreator, subEventIds });
+    }
+
+    // Must be invited (or creator) to RSVP
+    const isFreePublic = event.isPublic && !event.isPaid;
+    if (!isCreator && !isInvited && !isTicketHolder && !isFreePublic) {
+      return res.status(403).json({ message: "You must be invited to RSVP" });
+    }
 
     if (!["going", "not_going"].includes(status)) {
       return res.status(400).json({ message: "Status must be 'going' or 'not_going'" });
     }
 
-    const event = await Event.findById(eventId);
-    if (!event) return res.status(404).json({ message: "Event not found" });
-
-    // Must be invited (or creator) to RSVP
-    const isCreator = event.createdBy.toString() === userId;
-    const isInvited = event.invitedUsers.some(id => id.toString() === userId);
-    const isTicketHolder = await Ticket.findOne({ event: eventId, user: userId, isValid: true });
-    const isFreePublic = event.isPublic && !event.isPaid;
-
-    if (!isCreator && !isInvited && !isTicketHolder && !isFreePublic) {
-      return res.status(403).json({ message: "You must be invited to RSVP" });
-    }
+    // Which venue they're attending, for a multi-venue event. Re-sending the
+    // RSVP with a different index moves their pass, so this doubles as "change
+    // where I'm going" without a separate endpoint.
+    const { choice: venueChoice, error: venueError } = resolveVenueChoice(event, locationIndex);
+    if (venueError) return res.status(400).json({ message: venueError });
 
     const alreadyRsvp = event.rsvpUsers.some(id => id.toString() === userId);
 
@@ -2248,7 +2519,7 @@ export const rsvpEvent = async (req, res) => {
     // fire-and-forget — re-RSVPing won't re-send. (Ticket holders already got a
     // pass at purchase; issueEventPass dedupes per event+user.)
     if (status === "going") {
-      issueEventPass({ userId, eventId, type: "rsvp" }).catch((e) =>
+      issueEventPass({ userId, eventId, type: "rsvp", venueChoice }).catch((e) =>
         console.error("issueEventPass (rsvp) failed:", e)
       );
     }
@@ -2262,6 +2533,9 @@ export const rsvpEvent = async (req, res) => {
     res.json({
       message: status === "going" ? "You're marked as going!" : "RSVP removed",
       userRsvp: status === "going",
+      // Echoed so the screen can show which venue it landed on without waiting
+      // for the fire-and-forget pass write above.
+      userLocationIndex: status === "going" ? venueChoice?.locationIndex ?? null : null,
       ...(isOrganizer ? { rsvpCount: event.rsvpUsers.length } : {}),
     });
   } catch (error) {
@@ -2269,6 +2543,125 @@ export const rsvpEvent = async (req, res) => {
     res.status(500).json({ message: "Error updating RSVP", error: error.message });
   }
 };
+
+/**
+ * POST /events/:eventId/rsvp   body: { subEvents: (string|null)[] }
+ *
+ * The multi-select RSVP for a programme: `subEvents` is the guest's full,
+ * authoritative pick — main event as `null` alongside any sub-event ids — sent
+ * fresh every time the checkbox list changes. This function issues passes for
+ * newly-ticked stops and deletes them for unticked ones; it never partially
+ * applies a change.
+ *
+ * A PRICED stop can never be granted here — that would be a free ticket. The
+ * client is expected to route a selection containing any priced stop to
+ * checkout instead (see initTicketBatch); this is the server-side backstop for
+ * that rule, not merely a client convenience.
+ */
+async function reconcileStopRsvp({ res, event, userId, isCreator, subEventIds }) {
+  // De-dupe: "" and null and undefined all mean the main event.
+  const wantedKeys = [...new Set(subEventIds.map((id) => (id ? String(id) : null)))];
+
+  const wanted = [];
+  for (const key of wantedKeys) {
+    const stop = findStop(event, key);
+    if (!stop) {
+      return res.status(400).json({ message: "One of the selected stops doesn't exist on this event." });
+    }
+    wanted.push({ key, stop });
+  }
+
+  const priced = wanted.filter(
+    ({ stop }) => Number(stop.ticketPrice || 0) > 0 || (stop.ticketTiers || []).length > 0
+  );
+  if (priced.length) {
+    return res.status(400).json({
+      message: `${priced.map((p) => `"${p.stop.title}"`).join(", ")} ${
+        priced.length === 1 ? "requires" : "require"
+      } a ticket — buy ${priced.length === 1 ? "it" : "them"} instead of RSVPing.`,
+    });
+  }
+
+  const existingPasses = await Attendance.find({ event: event._id, user: userId, type: "rsvp" }).select(
+    "subEvent"
+  );
+  const existingKeys = existingPasses.map((p) => (p.subEvent != null ? String(p.subEvent) : null));
+  const wantedKeySet = new Set(wantedKeys);
+
+  const toAdd = wanted.filter(({ key }) => !existingKeys.includes(key));
+  const toRemove = existingKeys.filter((key) => !wantedKeySet.has(key));
+
+  // A stop's own end blocks JOINING it, same rule as the single-stop path
+  // above — withdrawing from a finished stop stays allowed regardless.
+  for (const { key, stop } of toAdd) {
+    const endsAt = stopEndsAt(stop);
+    if (endsAt && Date.now() > endsAt.getTime()) {
+      return res.status(400).json({ message: `"${stop.title}" has already happened.` });
+    }
+  }
+
+  // Per-stop capacity (D3): only a stop with its own cap enforces one, counted
+  // in PASSES — one pass is one body at one door, same rule buildEventSignups
+  // uses. The main stop's `maxGuests` is 0 on every free event, so this is a
+  // no-op there, matching the existing (uncapped) free-RSVP behavior.
+  for (const { key, stop } of toAdd) {
+    if (stop.maxGuests > 0) {
+      const count = await Attendance.countDocuments({
+        event: event._id,
+        subEvent: key,
+        type: { $in: ["rsvp", "ticket"] },
+      });
+      if (count >= stop.maxGuests) {
+        return res.status(400).json({ message: `"${stop.title}" is full.` });
+      }
+    }
+  }
+
+  await Promise.all(
+    toAdd.map(({ key, stop }) =>
+      issueEventPass({
+        userId,
+        eventId: event._id,
+        type: "rsvp",
+        subEvent: key,
+        subEventTitle: key ? stop.title : undefined,
+        subEventDate: key ? stop.date : undefined,
+      })
+    )
+  );
+  if (toRemove.length) {
+    await Attendance.deleteMany({
+      event: event._id,
+      user: userId,
+      type: "rsvp",
+      subEvent: { $in: toRemove },
+    });
+  }
+
+  // event.rsvpUsers tracks "attending ANY part of this event" — the same
+  // aggregate every capacity/friends-going stat already reads.
+  const stillGoing = wanted.length > 0;
+  const alreadyListed = event.rsvpUsers.some((id) => id.toString() === userId);
+  if (stillGoing && !alreadyListed) {
+    event.rsvpUsers.push(userId);
+    await event.save();
+  } else if (!stillGoing && alreadyListed) {
+    event.rsvpUsers = event.rsvpUsers.filter((id) => id.toString() !== userId);
+    await event.save();
+  }
+
+  invalidateCachePattern("public_events_");
+  invalidateCachePattern("event_highlights_");
+  invalidateCachePattern(`event_detail_${event._id}_`);
+
+  const isOrganizer = isCreator || listHasUser(event.cohosts, userId);
+  res.json({
+    message: stillGoing ? "You're marked as going!" : "RSVP removed",
+    userRsvp: stillGoing,
+    userSubEvents: wantedKeys,
+    ...(isOrganizer ? { rsvpCount: event.rsvpUsers.length } : {}),
+  });
+}
 
 // Get ticket sales for an event (organizer only)
 export const getEventTicketSales = async (req, res) => {
@@ -2326,8 +2719,6 @@ export const getEventHighlights = async (req, res) => {
     const now = new Date();
     const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    const esc = escapeRegex;
-
     const publicFilter = {
       isPublic: true,
       isActive: true,
@@ -2338,19 +2729,10 @@ export const getEventHighlights = async (req, res) => {
     };
 
     // Trending/upcoming should reflect the home feed's currently selected
-    // city, same matching rule as getPublicEvents: structured city field or
-    // free-text location fallback, and virtual events excluded since they
-    // don't belong to any one place.
+    // city, same matching rule as getPublicEvents (eventCityFilter), with
+    // virtual events excluded since they don't belong to any one place.
     if (city) {
-      publicFilter.$and = [
-        {
-          $or: [
-            { city: { $regex: new RegExp(`^${esc(city)}$`, "i") } },
-            { location: { $regex: esc(city), $options: "i" } },
-          ],
-        },
-        { isVirtual: { $ne: true } },
-      ];
+      publicFilter.$and = [eventCityFilter(city), { isVirtual: { $ne: true } }];
     }
 
     // "Not over yet" is an OR-group (it has to allow for an optional endDate),
@@ -2433,15 +2815,7 @@ export const getEventHighlights = async (req, res) => {
       ],
     };
     if (city) {
-      myUpcomingFilter.$and.push(
-        {
-          $or: [
-            { city: { $regex: new RegExp(`^${esc(city)}$`, "i") } },
-            { location: { $regex: esc(city), $options: "i" } },
-          ],
-        },
-        { isVirtual: { $ne: true } },
-      );
+      myUpcomingFilter.$and.push(eventCityFilter(city), { isVirtual: { $ne: true } });
     }
     const myUpcoming = userId
       ? await Event.find(myUpcomingFilter)

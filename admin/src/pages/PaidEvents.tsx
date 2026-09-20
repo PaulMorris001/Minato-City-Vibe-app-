@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { adminApi } from "../api/admin";
 import { colors } from "../constants/colors";
+import type { EventVenue } from "../types";
 
 const LIMIT = 20;
 
@@ -12,6 +13,7 @@ interface PaidEvent {
   description?: string;
   date: string;
   location: string;
+  additionalLocations?: EventVenue[];
   image?: string;
   venueProofImage?: string;
   ticketPrice: number;
@@ -196,6 +198,16 @@ export default function PaidEvents() {
                     <div style={styles.cardMeta}>
                       {new Date(e.date).toLocaleString()} · {e.location}
                     </div>
+                    {/* Every venue is listed — approving the event puts it in
+                        Discover for each of these cities, not just the first. */}
+                    {!!e.additionalLocations?.length && (
+                      <div style={styles.cardMeta}>
+                        Also at:{" "}
+                        {e.additionalLocations
+                          .map((v) => [v.address, v.location].filter(Boolean).join(", "))
+                          .join(" · ")}
+                      </div>
+                    )}
                   </div>
                   <span
                     style={{

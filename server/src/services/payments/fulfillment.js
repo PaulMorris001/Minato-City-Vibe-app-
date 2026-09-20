@@ -26,6 +26,7 @@ import { notifyUser } from "../notification.service.js";
 import { sendSaleEmail, sendPurchaseReceiptEmail } from "../email.service.js";
 import { computeSplit } from "./split.js";
 import { issueEventPass } from "../pass.service.js";
+import { resolveVenueChoice } from "../../utils/eventLocations.js";
 import { invalidateCachePattern } from "../../utils/cache.js";
 import config from "../../config/env.js";
 import TicketOrder from "../../models/ticketOrder.model.js";
@@ -56,6 +57,11 @@ export function formatAmountText(amount, currency) {
  * @param {number} [args.amountPaid]      what was actually charged (major units; absent = face price)
  * @param {string} [args.discountCode]    applied discount code, if any
  * @param {number} [args.discountAmount]  discount taken off the face price (major units)
+ * @param {number|string} [args.locationIndex] which venue of a multi-venue event
+ *   the buyer picked, resolved here against the loaded event. An index that no
+ *   longer names a venue (the organizer deleted it between init and capture) is
+ *   dropped, not thrown — refusing to issue a ticket that has already been paid
+ *   for, over a venue label, would be the worse failure.
  * @returns {Promise<{ ticket: object, alreadyExisted: boolean }>}
  */
 export async function fulfillTicket({
@@ -71,6 +77,7 @@ export async function fulfillTicket({
   amountPaid,
   discountCode,
   discountAmount,
+  locationIndex,
 }) {
   const existing = await Ticket.findOne({ event: eventId, user: userId, isValid: true });
   if (existing) return { ticket: existing, alreadyExisted: true };
@@ -82,6 +89,9 @@ export async function fulfillTicket({
   // The tierId comes from payment metadata (Stripe) or the confirm body after
   // amount verification (Paystack), both established at init time.
   const tier = tierId && event.ticketTiers?.length ? event.ticketTiers.id(tierId) : null;
+
+  // Venue picked at init, snapshotted onto the ticket — see eventLocations.js.
+  const { choice: venueChoice } = resolveVenueChoice(event, locationIndex);
 
   const ticketData = {
     event: eventId,
@@ -101,6 +111,7 @@ export async function fulfillTicket({
     ...(amountPaid !== undefined ? { amountPaid } : {}),
     ...(discountCode ? { discountCode } : {}),
     ...(discountAmount !== undefined ? { discountAmount } : {}),
+    ...(venueChoice || {}),
   };
   if (provider === "paystack") ticketData.paystackReference = paymentRef;
   else if (provider === "paypal") ticketData.paypalOrderId = paymentRef;
@@ -111,9 +122,13 @@ export async function fulfillTicket({
   const ticket = await Ticket.create(ticketData);
 
   // Issue the attendance pass + email the QR ticket (fire-and-forget).
-  issueEventPass({ userId, eventId, type: "ticket", ticketId: ticket._id }).catch((e) =>
-    console.error("issueEventPass (fulfillTicket) failed:", e)
-  );
+  issueEventPass({
+    userId,
+    eventId,
+    type: "ticket",
+    ticketId: ticket._id,
+    venueChoice,
+  }).catch((e) => console.error("issueEventPass (fulfillTicket) failed:", e));
 
   // Surface the buyer as a confirmed attendee so going-count / capacity reflect
   // the purchase immediately.
@@ -199,6 +214,19 @@ export async function fulfillTicket({
  * @param {number} [args.amountPaid]        what was actually charged for this ticket (major units)
  * @param {string} [args.discountCode]      applied discount code, if any
  * @param {number} [args.discountAmount]    discount taken off the face price (major units)
+ * @param {object|null} [args.venueChoice]  `{ locationIndex, locationName, locationCity }`
+ *   already frozen onto the order's line item at init. Passed through rather
+ *   than re-resolved: the index was validated when the buyer picked it, and a
+ *   venue deleted since then must not be able to throw mid-fan-out.
+ * @param {string|null} [args.subEvent]       which stop of a programme this
+ *   ticket admits to, frozen onto the order's line item at init — passed through
+ *   for the same reason as venueChoice, and so the pass issued below carries it.
+ * @param {string} [args.subEventTitle]
+ * @param {Date} [args.subEventDate]
+ * @param {number} args.facePrice            the item's pre-discount price, frozen
+ *   at init — the flat-price fallback below. NOT `event.ticketPrice`: for a
+ *   sub-event item that field would be the wrong thing entirely (the umbrella
+ *   event's own price, unrelated to the stop actually being bought).
  * @returns {Promise<object>} the created ticket
  */
 export async function issueRecipientTicket({
@@ -217,6 +245,11 @@ export async function issueRecipientTicket({
   amountPaid,
   discountCode,
   discountAmount,
+  venueChoice = null,
+  subEvent = null,
+  subEventTitle = undefined,
+  subEventDate = undefined,
+  facePrice,
   sendPassEmail = true,
 }) {
   const ticketData = {
@@ -224,7 +257,7 @@ export async function issueRecipientTicket({
     user: recipientUserId,
     buyer: buyerUserId,
     recipientEmail,
-    ticketPrice: tier ? tier.price : event.ticketPrice,
+    ticketPrice: tier ? tier.price : facePrice,
     ...(tier ? { tierId: tier.tierId, tierName: tier.name } : {}),
     provider,
     // See fulfillTicket — absent when the seller has no payout rail.
@@ -236,6 +269,8 @@ export async function issueRecipientTicket({
     ...(amountPaid !== undefined ? { amountPaid } : {}),
     ...(discountCode ? { discountCode } : {}),
     ...(discountAmount !== undefined ? { discountAmount } : {}),
+    ...(venueChoice || {}),
+    ...(subEvent ? { subEvent, subEventTitle, subEventDate } : {}),
   };
   if (provider === "paystack") ticketData.paystackReference = paymentRef;
   else if (provider === "paypal") ticketData.paypalOrderId = paymentRef;
@@ -253,6 +288,10 @@ export async function issueRecipientTicket({
     ticketId: ticket._id,
     recipientEmail,
     recipientName,
+    venueChoice,
+    subEvent,
+    subEventTitle,
+    subEventDate,
     sendEmail: sendPassEmail,
   }).catch((e) => console.error("issueEventPass (issueRecipientTicket) failed:", e));
 
@@ -324,18 +363,33 @@ export async function fulfillTicketOrder({ order, event: loadedEvent, notifyBuye
 
   // Discounted orders spread the charge across items proportionally
   // (scale = total/subtotal) so per-ticket accounting sums to exactly what was
-  // paid; the rounding remainder lands on the last item. Undiscounted orders
-  // have no `subtotal`, scale 1. Computed for EVERY item up front so a resumed
-  // run gives the remainder to the same item a clean run would have.
+  // paid; the rounding remainder lands on the last item WITH A NONZERO PRICE.
+  // Not simply the last item: a mixed basket can end with a free sub-event
+  // (price 0), and dumping the remainder there would charge a stop that was
+  // never supposed to cost anything. Undiscounted orders have no `subtotal`,
+  // scale 1. Computed for EVERY item up front so a resumed run gives the
+  // remainder to the same item a clean run would have.
   const round2 = (n) => Math.round(n * 100) / 100;
   const scale = claimed.subtotal ? claimed.total / claimed.subtotal : 1;
+  const lastPricedIndex = (() => {
+    for (let i = claimed.items.length - 1; i >= 0; i--) {
+      if (claimed.items[i].price > 0) return i;
+    }
+    // Every item is free (a 100%-off code, or an all-free selection) — there is
+    // no remainder to place; every item is simply 0.
+    return -1;
+  })();
   const amounts = [];
   let paidSoFar = 0;
   for (let i = 0; i < claimed.items.length; i++) {
-    const isLast = i === claimed.items.length - 1;
-    const paidForItem = isLast
-      ? round2(claimed.total - paidSoFar)
-      : round2(claimed.items[i].price * scale);
+    let paidForItem;
+    if (claimed.items[i].price === 0) {
+      paidForItem = 0;
+    } else if (i === lastPricedIndex) {
+      paidForItem = round2(claimed.total - paidSoFar);
+    } else {
+      paidForItem = round2(claimed.items[i].price * scale);
+    }
     paidSoFar = round2(paidSoFar + paidForItem);
     amounts.push(paidForItem);
   }
@@ -362,6 +416,16 @@ export async function fulfillTicketOrder({ order, event: loadedEvent, notifyBuye
       const tier = item.tierId
         ? { tierId: item.tierId, name: item.tierName, price: item.price }
         : null;
+      // Frozen at init, per line item: a buyer can send one pass to the Lagos
+      // date and another to the Abuja one in a single charge.
+      const venueChoice =
+        item.locationIndex != null
+          ? {
+              locationIndex: item.locationIndex,
+              locationName: item.locationName,
+              locationCity: item.locationCity,
+            }
+          : null;
       const ticket = await issueRecipientTicket({
         event,
         recipientUserId: recipient._id,
@@ -375,6 +439,11 @@ export async function fulfillTicketOrder({ order, event: loadedEvent, notifyBuye
         sellerNetCents,
         recipientEmail: item.recipientEmail,
         recipientName: item.recipientName,
+        venueChoice,
+        subEvent: item.subEvent ? String(item.subEvent) : null,
+        subEventTitle: item.subEventTitle,
+        subEventDate: item.subEventDate,
+        facePrice: item.price,
         sendPassEmail: notifyBuyers,
         ...(claimed.discountCode
           ? {

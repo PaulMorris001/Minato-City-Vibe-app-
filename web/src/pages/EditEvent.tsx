@@ -253,6 +253,14 @@ export default function EditEvent() {
                 onChange={(e) => setAddress(e.target.value)}
               />
             </div>
+            {/* This page only ever sends location/address, which the server
+                applies to venue #1 and leaves the other venues untouched. */}
+            {!!ev?.additionalLocations?.length && (
+              <p className="cv-muted" style={{ fontSize: 13 }}>
+                Also at {ev.additionalLocations.length} other location
+                {ev.additionalLocations.length > 1 ? "s" : ""} — manage those in the app.
+              </p>
+            )}
           </>
         )}
 

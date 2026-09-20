@@ -85,15 +85,21 @@ export async function sendEngagementPushes() {
   // back to the latter, and accept that some users have neither.
   const cityOf = (user) => user.pushCity || user.location?.city || null;
 
-  // One event lookup per distinct city rather than per user. Covered by the
-  // existing { city: 1, date: 1 } index on events.
+  // One event lookup per distinct city rather than per user. An event counts
+  // for a city through any of its venues; each $or branch has its own
+  // { city, date } index on events.
   const cities = [...new Set(users.map(cityOf).filter(Boolean))];
   const horizon = new Date(now.getTime() + EVENT_HORIZON_MS);
   const featured = new Map();
 
   for (const city of cities) {
     const event = await Event.findOne(
-      { isPublic: true, isActive: true, city, date: { $gt: now, $lt: horizon } },
+      {
+        isPublic: true,
+        isActive: true,
+        $or: [{ city }, { "additionalLocations.city": city }],
+        date: { $gt: now, $lt: horizon },
+      },
       { _id: 1, title: 1 }
     )
       .sort({ date: 1 })

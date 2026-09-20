@@ -23,7 +23,6 @@ import axios from "axios";
 import { Avatar } from "@/components/shared/Avatar";
 import DiscoverPeoplePreview from "@/components/shared/DiscoverPeoplePreview";
 import GuestGate from "@/components/shared/GuestGate";
-import CreateEventModal from "@/components/client/CreateEventModal";
 import ImageViewerModal from "@/components/shared/ImageViewerModal";
 import VerifiedBadgePopup from "@/components/shared/VerifiedBadgePopup";
 import MediaTile from "@/components/shared/MediaTile";
@@ -42,7 +41,8 @@ import {
   PAYOUT_STATUS_ENDPOINTS,
 } from "@/constants/payments";
 import { isChecklistSnoozed, snoozeChecklist } from "@/utils/setupChecklist";
-import { Guide } from "@/libs/interfaces";
+import { EventVenue, Guide } from "@/libs/interfaces";
+import { locationWithMore } from "@/utils/location";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -71,6 +71,7 @@ interface UserEvent {
   title: string;
   date: string;
   location: string;
+  additionalLocations?: EventVenue[];
   image?: string;
   userStatus: "creator" | "accepted" | "pending" | "none";
   invitedUsers: unknown[];
@@ -90,9 +91,6 @@ export default function ProfileScreen() {
   const [isGuest, setIsGuest] = useState(false);
   const [avatarViewerVisible, setAvatarViewerVisible] = useState(false);
   const [respondingInvite, setRespondingInvite] = useState<string | null>(null);
-  // Mounted here rather than navigating: CreateEventModal is a self-contained
-  // component, and the events tab it used to live behind is gone.
-  const [createEventVisible, setCreateEventVisible] = useState(false);
 
   const fetchProfile = async () => {
     try {
@@ -270,7 +268,7 @@ export default function ProfileScreen() {
           }
           ListEmptyComponent={
             loading ? null : (
-              <EmptyState tab={tab} onCreateEvent={() => setCreateEventVisible(true)} />
+              <EmptyState tab={tab} onCreateEvent={() => router.push("/create-event" as any)} />
             )
           }
           ListFooterComponent={
@@ -297,15 +295,6 @@ export default function ProfileScreen() {
           onClose={() => setAvatarViewerVisible(false)}
         />
       ) : null}
-      <CreateEventModal
-        visible={createEventVisible}
-        onClose={() => setCreateEventVisible(false)}
-        onEventCreated={() => {
-          setCreateEventVisible(false);
-          loadData(true);
-        }}
-      />
-      <VerifiedBadgePopup onCreateEvent={() => setCreateEventVisible(true)} />
     </View>
   );
 }
@@ -842,7 +831,7 @@ function EventRow({ event }: { event: UserEvent }) {
           </Text>
           <View style={styles.subDot} />
           <Text style={styles.subText} numberOfLines={1}>
-            {event.location}
+            {locationWithMore(event.location, event.additionalLocations)}
           </Text>
         </View>
       </View>

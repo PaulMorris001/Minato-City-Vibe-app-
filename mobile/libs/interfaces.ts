@@ -55,6 +55,49 @@ export interface LocationSelection {
   city: string;
 }
 
+// A further venue an event runs at in parallel. The event's own top-level
+// location fields are venue #1; these are the rest (server: Event.additionalLocations).
+/**
+ * One stop of an event's programme — a distinct activity with its own venue,
+ * time, price and guest limit. Different feature from EventVenue above: that is
+ * the same event in several places, this is different things sharing one
+ * invitation. Mirrors Event.subEvents on the server.
+ */
+export interface EventSubEvent {
+  _id: string;
+  title: string;
+  description?: string;
+  location: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  geo?: { coordinates?: number[] };
+  /** This stop's own start, and optional end. */
+  date: string;
+  endDate?: string | null;
+  ticketPrice?: number;
+  ticketTiers?: { _id?: string; name: string; price: number; quantity?: number }[];
+  /** This stop's own cap. Withheld from non-organizers, like the event's. */
+  maxGuests?: number;
+  /** Server-derived. Availability survives the attendance opt-out; counts don't. */
+  soldOut?: boolean;
+  remaining?: number;
+  rsvpCount?: number;
+  salesClosed?: boolean;
+  salesClosedReason?: string | null;
+}
+
+export interface EventVenue {
+  location: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  /** GeoJSON [lng, lat], when the host pinned it. */
+  geo?: { coordinates?: number[] };
+}
+
 export interface VendorType {
   _id: string;
   name: string;

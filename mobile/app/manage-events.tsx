@@ -34,7 +34,7 @@ import { externalEventService, ExternalEvent } from "@/services/externalEvent.se
 import { Avatar } from "@/components/shared/Avatar";
 import { usePayment } from "@/hooks/usePayment";
 import { trackEvent as trackAnalyticsEvent } from "@/utils/analytics";
-import { LocationSelection } from "@/libs/interfaces";
+import { EventSubEvent, EventVenue, LocationSelection } from "@/libs/interfaces";
 import { useActiveCity } from "@/hooks/useActiveCity";
 import {
   LocationPicker,
@@ -45,7 +45,19 @@ import {
 import LocationPinPicker, {
   PinnedCoordinates,
 } from "@/components/shared/LocationPinPicker";
-import { formatLocation } from "@/utils/location";
+import AdditionalLocationsEditor, {
+  LocationDraft,
+  draftsFromVenues,
+  hasIncompleteDraft,
+  venuesFromDrafts,
+} from "@/components/shared/AdditionalLocationsEditor";
+import SubEventsEditor, {
+  SubEventDraft,
+  draftsFromSubEvents,
+  subEventDraftError,
+  subEventsFromDrafts,
+} from "@/components/shared/SubEventsEditor";
+import { formatLocation, locationWithMore } from "@/utils/location";
 import { resolveImageUrls } from "@/utils/imageUpload";
 import MediaTile from "@/components/shared/MediaTile";
 
@@ -63,6 +75,8 @@ interface Event {
   country?: string;
   /** Map pin, [lng, lat] per GeoJSON. Absent on events created before 1.2.0. */
   geo?: { type?: string; coordinates?: number[] };
+  additionalLocations?: EventVenue[];
+  subEvents?: EventSubEvent[];
   isVirtual?: boolean;
   meetingLink?: string;
   image?: string;
@@ -193,6 +207,8 @@ export default function EventsPage() {
   // Existing (or newly dragged) venue pin for the event being edited.
   const [editPin, setEditPin] = useState<PinnedCoordinates | null>(null);
   const [pinPickerOpen, setPinPickerOpen] = useState(false);
+  const [editExtraVenues, setEditExtraVenues] = useState<LocationDraft[]>([]);
+  const [editSubEvents, setEditSubEvents] = useState<SubEventDraft[]>([]);
 
   const PAGE_LIMIT = 10;
 
@@ -469,6 +485,10 @@ export default function EventsPage() {
         ? { latitude: coords[1], longitude: coords[0] }
         : null
     );
+    setEditExtraVenues(draftsFromVenues(event.additionalLocations));
+    // Carries each stop's _id, which subEventsFromDrafts sends back so the
+    // server keeps their identity instead of renumbering the programme.
+    setEditSubEvents(draftsFromSubEvents(event.subEvents));
     const eventDate = new Date(event.date);
     setEditData({
       title: event.title,
@@ -591,6 +611,17 @@ export default function EventsPage() {
       Alert.alert("Error", "Pick a location for the in-person event");
       return;
     }
+    if (!editData.isVirtual && hasIncompleteDraft(editExtraVenues)) {
+      Alert.alert("Error", "Every added location needs a country, state, and city — or remove it");
+      return;
+    }
+    if (!editData.isVirtual && editSubEvents.length) {
+      const subEventProblem = subEventDraftError(editSubEvents);
+      if (subEventProblem) {
+        Alert.alert("Error", subEventProblem);
+        return;
+      }
+    }
     if (editData.isVirtual && editData.meetingLink.trim() && !/^https?:\/\//i.test(editData.meetingLink.trim())) {
       Alert.alert("Error", "Event link must start with http:// or https://");
       return;
@@ -650,7 +681,7 @@ export default function EventsPage() {
       // Virtual events carry no physical location; physical events carry no
       // meeting link. Blank the other family so nothing stale is sent.
       const base = editData.isVirtual
-        ? { ...rest, images: imageUrls, location: "Online", address: "", city: "", state: "", country: "", meetingLink: editData.meetingLink.trim() }
+        ? { ...rest, images: imageUrls, location: "Online", address: "", city: "", state: "", country: "", additionalLocations: [], subEvents: [], meetingLink: editData.meetingLink.trim() }
         : {
             ...rest,
             images: imageUrls,
@@ -659,6 +690,11 @@ export default function EventsPage() {
             // `geo` untouched when latitude/longitude are absent, so an
             // untouched pin survives a description-only edit.
             ...(editPin ?? {}),
+            // Always sent: the server replaces the whole list, so removing
+            // the last extra venue has to send an empty one.
+            additionalLocations: venuesFromDrafts(editExtraVenues),
+            // Always sent, same reason as the venue list above.
+            subEvents: subEventsFromDrafts(editSubEvents),
           };
 
       // Pricing (paid events only). On a PUBLIC event the server holds these
@@ -875,7 +911,9 @@ export default function EventsPage() {
 
           <View style={styles.eventDetail}>
             <Ionicons name={event.isVirtual ? "videocam" : "location"} size={16} color={colors.primary} />
-            <Text style={styles.eventDetailText}>{event.location}</Text>
+            <Text style={styles.eventDetailText}>
+              {locationWithMore(event.location, event.additionalLocations)}
+            </Text>
           </View>
 
           {event.description ? (
@@ -1137,7 +1175,7 @@ export default function EventsPage() {
                             <Text style={styles.pendingMeta}>
                               {event.createdBy.username} · {eventDate.toLocaleDateString()}
                             </Text>
-                            <Text style={styles.pendingMeta} numberOfLines={1}>{event.location}</Text>
+                            <Text style={styles.pendingMeta} numberOfLines={1}>{locationWithMore(event.location, event.additionalLocations)}</Text>
                             <View style={styles.pendingActions}>
                               <TouchableOpacity
                                 style={[styles.pendingBtn, styles.acceptBtn]}
@@ -1389,6 +1427,27 @@ export default function EventsPage() {
                     </Text>
                     <Text style={styles.pinRowAction}>{editPin ? "Change" : "Optional"}</Text>
                   </TouchableOpacity>
+
+                  <View style={styles.inputGroup}>
+                    <AdditionalLocationsEditor
+                      value={editExtraVenues}
+                      onChange={setEditExtraVenues}
+                    />
+                    <SubEventsEditor
+                      value={editSubEvents}
+                      onChange={setEditSubEvents}
+                      currency={selectedEvent?.currency}
+                      eventStart={editData.date}
+                      eventEnd={editData.endDate || undefined}
+                      disabledReason={
+                        !editData.date
+                          ? "Set the event's start date first — every stop has to fall inside it."
+                          : editExtraVenues.length
+                            ? "Remove the extra locations to add a programme of sub-events instead — an event can have one or the other."
+                            : null
+                      }
+                    />
+                  </View>
                 </>
               )}
 

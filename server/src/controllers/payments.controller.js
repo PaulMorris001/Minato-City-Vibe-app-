@@ -42,7 +42,9 @@ import {
   applyRedemptionByReference,
 } from "../services/payments/discount.service.js";
 import { findEventByAnyId } from "../utils/resolveEvent.js";
-import { ticketSalesClosedReason } from "../utils/eventLifecycle.js";
+import { ticketSalesClosedReason, stopSalesClosedReason } from "../utils/eventLifecycle.js";
+import { resolveVenueChoice } from "../utils/eventLocations.js";
+import { findStop } from "../utils/subEvents.js";
 import { reserveOrderCoupon } from "../services/payments/coupon.service.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -82,24 +84,29 @@ function resolveTicketTier(event, tierId) {
 }
 
 /**
- * How many more tickets can still sell for a given tier (or the whole event when
- * the tier carries no per-tier quantity). Tiered events with a per-tier
- * `quantity` are counted against that tier's own sold count; otherwise the shared
- * event-level `maxGuests` pool governs (back-compat with legacy events).
+ * How many more tickets can still sell for a given tier (or the whole event/stop
+ * when the tier carries no per-tier quantity). Tiered events with a per-tier
+ * `quantity` are counted against that tier's own sold count; otherwise the
+ * relevant `maxGuests` pool governs (back-compat with legacy events).
  *
+ * @param {object|null} [stop]  a stop from allStops()/findStop() — omit (or pass
+ *   the main stop) for the event's own pool. A tier belongs to whichever stop
+ *   (or the event) declared it, so its sold-count is scoped the same way.
  * @returns {Promise<number>} remaining tickets (>= 0)
  */
-export async function ticketsRemaining(event, tier) {
+export async function ticketsRemaining(event, tier, stop = null) {
+  const subEvent = stop?.id ?? null;
   if (tier && tier.tierId && typeof tier.quantity === "number") {
     const soldForTier = await Ticket.countDocuments({
       event: event._id,
       tierId: tier.tierId,
+      subEvent,
       isValid: true,
     });
     return Math.max(0, tier.quantity - soldForTier);
   }
-  const sold = await Ticket.countDocuments({ event: event._id, isValid: true });
-  return Math.max(0, (event.maxGuests || 0) - sold);
+  const sold = await Ticket.countDocuments({ event: event._id, subEvent, isValid: true });
+  return Math.max(0, ((stop ? stop.maxGuests : event.maxGuests) || 0) - sold);
 }
 
 /**
@@ -126,6 +133,24 @@ function ticketSalesRejection(event) {
   }
 }
 
+/** Same as ticketSalesRejection, one stop of a programme deep. */
+function stopSalesRejection(event, stop) {
+  switch (stopSalesClosedReason(event, stop)) {
+    case "cancelled":
+      return { status: 400, message: "This event was cancelled." };
+    case "cancellation_pending":
+      return { status: 400, message: "Ticket sales are closed while this event is under review." };
+    case "ended":
+      return { status: 400, message: `"${stop.title}" has already happened.` };
+    case "closed_by_organizer":
+      return { status: 400, message: `Sales are closed for "${stop.title}".` };
+    case "not_approved":
+      return { status: 403, message: "Ticket sales are not available for this event." };
+    default:
+      return null;
+  }
+}
+
 /**
  * Load the item + seller for a purchase and run the type-specific validation.
  * Returns the normalized charge ({ seller, amount, currency, item }) or sends an
@@ -137,6 +162,16 @@ async function resolvePurchase(type, id, userId, res, tierId) {
     if (!event) return res.status(404).json({ message: "Event not found" }) && null;
     if (!event.isPublic || !event.isPaid) {
       return res.status(400).json({ message: "This event does not require payment" }) && null;
+    }
+    // A programme event MUST buy through the batch rail, even for a single
+    // stop — this rail's one-Ticket-per-(event,user) guard below has no notion
+    // of WHICH stop, so a main-event purchase here would then block every
+    // sub-event purchase this same buyer ever tries afterward.
+    if ((event.subEvents || []).length) {
+      return res.status(400).json({
+        message: "This event has a programme — buy through the ticket batch endpoint instead.",
+        code: "use_batch",
+      }) && null;
     }
     const rejection = ticketSalesRejection(event);
     if (rejection) {
@@ -242,16 +277,23 @@ export const previewDiscountHandler = async (req, res) => {
     // answered "Event not found" for every buyer who arrived from a share link.
     const event = await findEventByAnyId(eventId);
     if (!event) return res.status(404).json({ message: "Event not found" });
-    if (!event.isPaid) {
+    // A programme can sell through its stops even with a nominally free main
+    // event (the worked example: free main, one priced sub-event) — so the
+    // gate is "can this event charge for anything", not just its own isPaid.
+    if (!event.isPaid && !(event.subEvents || []).length) {
       return res.status(400).json({ message: "This event does not require payment" });
     }
 
     let subtotal = 0;
     if (Array.isArray(items) && items.length > 0) {
       for (const item of items) {
-        const { tier, error, code: errCode } = resolveTicketTier(event, item?.tierId);
+        const stop = findStop(event, item?.subEvent);
+        if (!stop) {
+          return res.status(400).json({ message: "One of the selected stops doesn't exist on this event." });
+        }
+        const { tier, error, code: errCode } = resolveTicketTier(stop, item?.tierId);
         if (error) return res.status(400).json({ message: error, code: errCode });
-        subtotal += tier ? tier.price : event.ticketPrice;
+        subtotal += tier ? tier.price : stop.ticketPrice;
       }
     } else if (tierId) {
       const { tier, error, code: errCode } = resolveTicketTier(event, tierId);
@@ -317,6 +359,17 @@ export const initPayment = async (req, res) => {
     const { seller, amount, currency, tier, item } = purchase;
 
     if (!seller) return res.status(400).json({ message: "Seller not found" });
+
+    // Which venue of a multi-venue event this ticket is for. Validated here and
+    // carried on the provider's own metadata (Stripe) / custom_id (PayPal), so
+    // the capture webhook — which never sees this request — issues the pass
+    // against the right door. Paystack and the free path re-send it at confirm.
+    let venueChoice = null;
+    if (type === "ticket") {
+      const resolved = resolveVenueChoice(item, req.body?.locationIndex);
+      if (resolved.error) return res.status(400).json({ message: resolved.error });
+      venueChoice = resolved.choice;
+    }
 
     // Discount codes (tickets only): reserve a redemption slot NOW so a
     // "first N" cap can't oversell between init and confirm. The discounted
@@ -404,7 +457,10 @@ export const initPayment = async (req, res) => {
         amount: chargeAmount,
         currency,
         buyer,
-        ...(tier ? { meta: { tierId: tier.tierId.toString() } } : {}),
+        meta: {
+          ...(tier ? { tierId: tier.tierId.toString() } : {}),
+          ...(venueChoice ? { locationIndex: venueChoice.locationIndex } : {}),
+        },
       });
       // The reference is PayPal's order id, which only exists after the order is
       // created — unlike Paystack, where we mint it ourselves before the call.
@@ -442,6 +498,7 @@ export const initPayment = async (req, res) => {
     if (type === "ticket") {
       params.metadata.eventId = id.toString();
       if (tier) params.metadata.tierId = tier.tierId.toString();
+      if (venueChoice) params.metadata.locationIndex = String(venueChoice.locationIndex);
       params.transfer_group = `event_${id}`;
     } else if (type === "guide") {
       params.metadata.guideId = id.toString();
@@ -480,8 +537,13 @@ export const confirmPayment = async (req, res) => {
     if (!TYPES.has(type)) return res.status(400).json({ message: "Unknown purchase type" });
     if (!reference) return res.status(400).json({ message: "reference is required" });
 
+    // Stripe and PayPal read the venue pick back off their own payment metadata,
+    // written at init; these two rails have nowhere to keep it, so the client
+    // re-sends it — same channel tierId already travels on.
+    const locationIndex = req.body?.locationIndex;
+
     if (provider === "paystack") {
-      return confirmPaystack(type, id, reference, userId, res, req.body?.tierId);
+      return confirmPaystack(type, id, reference, userId, res, req.body?.tierId, locationIndex);
     }
     if (provider === "paypal") {
       return confirmPaypal(type, id, reference, userId, res, req.body?.tierId);
@@ -490,7 +552,7 @@ export const confirmPayment = async (req, res) => {
       // No charge exists to verify — either a 100%-off ticket discount, or (for
       // orders) an OurCityVibe coupon that fully covered the total.
       if (type === "order") return confirmFreeOrder(id, reference, userId, res);
-      return confirmFreeTicket(type, id, reference, userId, res, req.body?.tierId);
+      return confirmFreeTicket(type, id, reference, userId, res, req.body?.tierId, locationIndex);
     }
     if (provider && provider !== "stripe") {
       // e.g. a stale client sending the retired "flutterwave" — never let it
@@ -635,7 +697,7 @@ async function confirmPaypal(type, id, reference, userId, res, tierId) {
  * total is re-derived server-side from the event price + the reserved code —
  * the client's claim of "free" is never trusted.
  */
-async function confirmFreeTicket(type, id, reference, userId, res, tierId) {
+async function confirmFreeTicket(type, id, reference, userId, res, tierId, locationIndex) {
   if (type !== "ticket") {
     return res.status(400).json({ message: "Unsupported payment provider" });
   }
@@ -670,6 +732,7 @@ async function confirmFreeTicket(type, id, reference, userId, res, tierId) {
     platformFeeCents: 0,
     sellerNetCents: 0,
     tierId,
+    locationIndex,
     amountPaid: 0,
     discountCode: redemption.code.code,
     discountAmount,
@@ -735,7 +798,7 @@ async function confirmFreeOrder(id, reference, userId, res) {
   return res.status(200).json({ message: "Order paid", order: fulfilled });
 }
 
-async function confirmPaystack(type, id, reference, userId, res, tierId) {
+async function confirmPaystack(type, id, reference, userId, res, tierId, locationIndex) {
   // A batch reference must never be redeemed as a single purchase.
   // verifyPaystackCharge only rejects UNDERpayment, so an NGN 750 two-ticket
   // charge would verify happily against a NGN 250 tier and issue ONE ticket,
@@ -795,6 +858,9 @@ async function confirmPaystack(type, id, reference, userId, res, tierId) {
       sellerNetCents: sellerNet,
       // Safe to honor: the charge was just verified against this tier's price.
       tierId,
+      // Which venue the buyer picked. No price impact, so nothing to verify —
+      // fulfillTicket drops an index that names no venue.
+      locationIndex,
       ...(discountCode
         ? { amountPaid: expectedAmount, discountCode, discountAmount }
         : {}),
@@ -918,7 +984,7 @@ async function resolvePurchaseForConfirm(type, id, userId, res, tierId) {
 
 /**
  * POST /payments/init/tickets/:eventId
- * body: { items: [{ tierId?, recipientEmail, recipientName? }] }
+ * body: { items: [{ tierId?, recipientEmail, recipientName?, locationIndex?, subEvent? }] }
  *
  * One charge for N tickets, each destined for a recipient email (the buyer's own
  * or someone else's — multiple to the same email is allowed). Works for a guest
@@ -956,37 +1022,64 @@ export const initTicketBatch = async (req, res) => {
       return res.status(409).json({ message: "Tickets aren't on sale yet — check back soon." });
     }
 
-    // Resolve each line item's tier + price and validate its recipient email.
+    // Resolve each line item's stop + tier + price and validate its recipient
+    // email. `subEvent` picks which stop of a programme this ticket is for —
+    // null/absent is the main event, matching how findStop() resolves it.
     const lineItems = [];
-    const perTierRequested = new Map(); // tierKey -> requested count
+    const perTierRequested = new Map(); // "<subEvent>:<tierKey>" -> requested count
     for (const raw of items) {
       const email = String(raw?.recipientEmail || "").trim().toLowerCase();
       if (!EMAIL_RE.test(email)) {
         return res.status(400).json({ message: "Every ticket needs a valid recipient email." });
       }
-      const { tier, error, code } = resolveTicketTier(event, raw?.tierId);
+
+      const subEventId = raw?.subEvent ? String(raw.subEvent) : null;
+      const stop = findStop(event, subEventId);
+      if (!stop) {
+        return res.status(400).json({ message: "One of the selected stops doesn't exist on this event." });
+      }
+      // The event-wide check above catches cancelled/pending/organizer-closed;
+      // this catches ONE stop having ended while its siblings are still open.
+      const stopRejection = stopSalesRejection(event, stop);
+      if (stopRejection) return res.status(stopRejection.status).json({ message: stopRejection.message });
+
+      const { tier, error, code } = resolveTicketTier(stop, raw?.tierId);
       if (error) return res.status(400).json({ message: error, code });
-      const key = tier?.tierId ? tier.tierId.toString() : "_single";
+      // Per item, not per order: a buyer can send one pass to the Lagos date and
+      // another to the Abuja one in a single charge. Frozen onto the order so the
+      // fan-out — and the webhook that runs it when the browser never comes
+      // back — issues each pass against the venue it was bought for.
+      const venue = resolveVenueChoice(event, raw?.locationIndex);
+      if (venue.error) return res.status(400).json({ message: venue.error });
+      const key = `${subEventId ?? "_main"}:${tier?.tierId ? tier.tierId.toString() : "_single"}`;
       perTierRequested.set(key, (perTierRequested.get(key) || 0) + 1);
       lineItems.push({
         tierId: tier?.tierId,
         tierName: tier?.name,
-        price: tier ? tier.price : event.ticketPrice,
+        price: tier ? tier.price : stop.ticketPrice,
         recipientEmail: email,
         recipientName: String(raw?.recipientName || "").trim() || undefined,
+        ...(subEventId ? { subEvent: subEventId, subEventTitle: stop.title, subEventDate: stop.date } : {}),
+        ...(venue.choice || {}),
       });
     }
 
-    // Per-tier availability for the whole batch (not just one ticket).
+    // Per-(stop,tier) availability for the whole batch (not just one ticket).
     for (const [key, requested] of perTierRequested) {
-      const tier = key === "_single" ? null : resolveTicketTier(event, key).tier;
-      const remaining = await ticketsRemaining(event, tier);
+      const sepIndex = key.indexOf(":");
+      const subKey = key.slice(0, sepIndex);
+      const tierKey = key.slice(sepIndex + 1);
+      const subEventId = subKey === "_main" ? null : subKey;
+      const stop = findStop(event, subEventId);
+      const tier = tierKey === "_single" ? null : resolveTicketTier(stop, tierKey).tier;
+      const remaining = await ticketsRemaining(event, tier, stop);
       if (requested > remaining) {
+        const label = subEventId ? `"${stop.title}"` : tier?.name || "ticket";
         return res.status(400).json({
           message:
             remaining <= 0
-              ? "Those tickets just sold out."
-              : `Only ${remaining} ${tier?.name || "ticket"}${remaining === 1 ? "" : "s"} left.`,
+              ? `Those tickets for ${label} just sold out.`
+              : `Only ${remaining} ${label}${remaining === 1 ? "" : "s"} left.`,
         });
       }
     }

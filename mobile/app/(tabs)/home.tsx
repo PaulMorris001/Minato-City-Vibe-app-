@@ -1,4 +1,3 @@
-import CreateEventModal from "@/components/client/CreateEventModal";
 import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
@@ -29,7 +28,8 @@ import { Image } from "expo-image";
 import MediaTile from "@/components/shared/MediaTile";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { locationWithMore } from "@/utils/location";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -520,8 +520,6 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const isIpad = Platform.OS === "ios" && Platform.isPad;
   const { payForTicket } = usePayment();
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [isBirthdayRaffle, setIsBirthdayRaffle] = useState(false);
   // Drives the RaffleBanner's two states ("Birthday Raffle is Live" vs "View
   // Your Raffle Status"). Guests and the not-yet-loaded case both read as
   // false, which is the right default — nothing to view yet either way.
@@ -986,8 +984,18 @@ export default function Home() {
 
   const openCreateEvent = async () => {
     if (!(await ensureAuth("create an event"))) return;
-    setIsModalVisible(true);
+    router.push("/create-event" as any);
   };
+
+  // The create-event flow is a real screen now, not a modal this component
+  // holds open — refetch whenever this screen regains focus (returning from
+  // it, from event details, from anywhere) rather than via a success callback.
+  useFocusEffect(
+    useCallback(() => {
+      fetchPublicEvents(selectedCity);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedCity])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -1084,14 +1092,12 @@ export default function Home() {
   }, [selectedCity, resolveHomeLocation]);
 
   useEffect(() => {
-  if (openCreate === "birthday") {
-    setIsBirthdayRaffle(true);
-    setIsModalVisible(true);
-
-    // Clear the param so it doesn't re-trigger
-    router.setParams({ openCreate: undefined });
-  }
-}, [openCreate]);
+    if (openCreate === "birthday") {
+      router.push({ pathname: "/create-event", params: { birthday: "1" } } as any);
+      // Clear the param so it doesn't re-trigger
+      router.setParams({ openCreate: undefined });
+    }
+  }, [openCreate]);
 
   // Checked once per mount rather than tied to `refreshing` — the banner only
   // needs to flip from "join" to "view status" after a birthday event is
@@ -1415,7 +1421,7 @@ export default function Home() {
                         <Text style={styles.heroTitle} numberOfLines={2}>{heroEvent.title}</Text>
                         {heroEvent.location && (
                           <Text style={styles.heroLocation} numberOfLines={1}>
-                            <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.78)" /> {heroEvent.location}
+                            <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.78)" /> {locationWithMore(heroEvent.location, heroEvent.additionalLocations)}
                           </Text>
                         )}
 
@@ -1902,17 +1908,7 @@ export default function Home() {
           keeps the FAB tappable through it. */}
       <CreateEventTooltip hidden={!feedAtTop} />
 
-        <CreateEventModal
-          visible={isModalVisible}
-          onClose={() => {
-            setIsModalVisible(false);
-            setIsBirthdayRaffle(false);
-          }}
-          onEventCreated={() => fetchPublicEvents(selectedCity)}
-          isBirthdayRaffle={isBirthdayRaffle}
-        />
-
-        <VerifiedBadgePopup onCreateEvent={openCreateEvent} />
+      
     </>
   );
 }
