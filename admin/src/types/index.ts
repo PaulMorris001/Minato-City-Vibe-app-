@@ -169,12 +169,35 @@ export interface AdminDiscountCode {
   createdAt: string;
 }
 
+export interface AdminCouponTransaction {
+  _id: string;
+  user: { _id: string; username: string; email?: string } | null;
+  type: "earned" | "spent" | "refunded" | "expired" | "adjusted";
+  amount: number;
+  currency: "NGN" | "USD";
+  description: string;
+  order: { _id: string; total: number; currency: string } | null;
+  createdAt: string;
+}
+
 export interface Stats {
   totalUsers: number;
   totalVendors: number;
   totalEvents: number;
   totalGuides: number;
+  newUsersToday: number;
   recentUsers: AdminUser[];
+}
+
+/** Dashboard "Action Items" — pending counts across every admin review queue. */
+export interface ActionItems {
+  verifications: number;
+  payouts: number;
+  eventEdits: number;
+  reports: number;
+  paidEvents: number;
+  cancellations: number;
+  newUsersToday: number;
 }
 
 export interface PaginatedResponse<T> {

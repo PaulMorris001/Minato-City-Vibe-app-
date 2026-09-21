@@ -74,6 +74,7 @@ import {
   toggleDiscountCode,
   deleteDiscountCode,
 } from "../controllers/discountAdmin.controller.js";
+import { getCouponTransactions } from "../controllers/couponAdmin.controller.js";
 
 const router = express.Router();
 
@@ -126,11 +127,14 @@ router.patch("/admin/raffle/campaigns/:id", authenticateAdmin, updateRaffleCampa
 router.post("/admin/raffle/campaigns/:id/end", authenticateAdmin, endRaffleCampaign);
 router.delete("/admin/raffle/campaigns/:id", authenticateAdmin, deleteRaffleCampaign);
 router.delete("/admin/raffle/entries/:id", authenticateAdmin, deleteRaffleEntry);
-// The weighted random draw the published official rules promise entrants.
+// The merit ranking (highest verified RSVPs) the published official rules promise entrants.
 router.post("/admin/raffle/campaigns/:id/draw", authenticateAdmin, drawRaffleWinners);
 // Birthday Raffle — entries + winner selection
 router.get("/admin/raffle/entries", authenticateAdmin, getRaffleEntries);
 router.patch("/admin/raffle/:id/winner", authenticateAdmin, setRaffleWinner);
+
+// OurCityVibe credit — read-only ledger of every award/spend/refund/expiry
+router.get("/admin/coupons", authenticateAdmin, getCouponTransactions);
 
 // Guides
 router.get("/admin/guides", authenticateAdmin, getGuides);

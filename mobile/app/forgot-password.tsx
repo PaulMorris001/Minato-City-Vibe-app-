@@ -10,6 +10,7 @@ import {
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
 import { FormInput, PrimaryButton } from "@/components/shared";
@@ -26,6 +27,7 @@ export default function ForgotPassword() {
   // flow, and theming only these steps made the flow flip to white mid-way.
   const styles = createStyles(darkColors);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -86,8 +88,11 @@ export default function ForgotPassword() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <View style={styles.content}>
-        {/* Back Button */}
-        <GlassBackButton style={styles.backButton} />
+        {/* Back Button. overMedia pins the glyph white and the fill to a dark
+            scrim regardless of the device's live theme — this screen's
+            background is pinned dark (see note above), so the button must be
+            too, or it goes dark-on-dark and disappears in light mode. */}
+        <GlassBackButton overMedia style={[styles.backButton, { top: insets.top + 8 }]} />
 
         <View style={styles.header}>
           <View style={styles.iconContainer}>
@@ -146,7 +151,6 @@ const createStyles = (c: ThemeColors) =>
   },
   backButton: {
     position: "absolute",
-    top: Platform.OS === "ios" ? 60 : 40,
     left: getResponsivePadding(),
     zIndex: 10,
     padding: 8,

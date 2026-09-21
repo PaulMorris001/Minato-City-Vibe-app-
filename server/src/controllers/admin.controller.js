@@ -90,11 +90,15 @@ export async function adminLogin(req, res) {
 
 export async function getStats(req, res) {
   try {
-    const [totalUsers, totalVendors, totalEvents, totalGuides] = await Promise.all([
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const [totalUsers, totalVendors, totalEvents, totalGuides, newUsersToday] = await Promise.all([
       User.countDocuments(),
       Vendor.countDocuments(),
       Event.countDocuments(),
       Guide.countDocuments(),
+      User.countDocuments({ createdAt: { $gte: startOfToday } }),
     ]);
 
     const recentUsers = await User.find()
@@ -102,7 +106,7 @@ export async function getStats(req, res) {
       .limit(5)
       .select("username email isVendor createdAt profilePicture");
 
-    res.json({ totalUsers, totalVendors, totalEvents, totalGuides, recentUsers });
+    res.json({ totalUsers, totalVendors, totalEvents, totalGuides, newUsersToday, recentUsers });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

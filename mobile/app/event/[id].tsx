@@ -44,9 +44,10 @@ import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
 import EventQRModal from "@/components/shared/EventQRModal";
 import { ImageViewerModal } from "@/components/shared";
 import MediaTile from "@/components/shared/MediaTile";
+import { isVideoUrl } from "@/utils/media";
 import EventLocationMap from "@/components/shared/EventLocationMap";
 import VenuePicker, { eventVenues, needsVenuePick } from "@/components/shared/VenuePicker";
-import StopPicker, { eventStops, selectionTotal } from "@/components/shared/StopPicker";
+import StopPicker, { eventStops, selectionTotal, stopKey } from "@/components/shared/StopPicker";
 import CollapsibleDescription from "@/components/shared/CollapsibleDescription";
 import { cacheRead, cacheWrite } from "@/utils/offlineCache";
 import { ensureOnline } from "@/utils/requireOnline";
@@ -437,6 +438,10 @@ export default function EventDetailsPage() {
   // the checkbox list + the dynamic RSVP-or-pay button.
   const [programmeSheetVisible, setProgrammeSheetVisible] = useState(false);
   const [programmeSelection, setProgrammeSelection] = useState<(string | null)[]>([]);
+  // Which price band the guest picked for each checked stop that has more
+  // than one — keyed by stopKey(stop.id). Used to be implicit (checkout
+  // always took the cheapest band silently); now it's an explicit choice.
+  const [programmeTierChoices, setProgrammeTierChoices] = useState<Record<string, string>>({});
   const [programmeSubmitting, setProgrammeSubmitting] = useState(false);
   const [codeInput, setCodeInput] = useState("");
   const [applyingCode, setApplyingCode] = useState(false);
@@ -787,9 +792,13 @@ export default function EventDetailsPage() {
   }, [event?.userLocationIndex]);
 
   // Same idea for a programme: whoever already picked stops sees those ticked
-  // when the sheet reopens, rather than starting from a blank list.
+  // when the sheet reopens, rather than starting from a blank list. Tier
+  // choices aren't returned per-pick by the server, so they reset here too —
+  // StopPicker re-defaults each already-ticked multi-tier stop to its
+  // cheapest band the next time it renders.
   useEffect(() => {
     setProgrammeSelection(event?.userSubEvents ?? []);
+    setProgrammeTierChoices({});
   }, [event?.userSubEvents]);
 
   const handleRsvp = async (status: "going" | "not_going", locationIndex?: number | null) => {
@@ -1129,7 +1138,7 @@ export default function EventDetailsPage() {
     if (!requireAuth("continue")) return;
     if (!ensureOnline("continue")) return;
     const stops = eventStops(event);
-    const total = selectionTotal(stops, programmeSelection);
+    const total = selectionTotal(stops, programmeSelection, programmeTierChoices);
 
     setProgrammeSubmitting(true);
     try {
@@ -1172,10 +1181,14 @@ export default function EventDetailsPage() {
       const items = programmeSelection.map((id) => {
         const stop = stops.find((s) => s.id === id)!;
         const tiers = stop.ticketTiers ?? [];
+        // The tier the guest actually picked in the sheet, when the stop had
+        // more than one — falling back to the cheapest for a single-tier (or
+        // untiered) stop, where there was never a choice to make.
+        const chosen = tiers.find((t) => t._id === programmeTierChoices[stopKey(id)]);
         const cheapest = tiers.length
           ? tiers.reduce((min, t) => (t.price < min.price ? t : min), tiers[0])
           : null;
-        return { subEvent: id, tierId: cheapest?._id, recipientEmail: myEmail };
+        return { subEvent: id, tierId: (chosen ?? cheapest)?._id, recipientEmail: myEmail };
       });
       const result = await payForProgramme(event._id, items);
       if (!result.success) {
@@ -1556,14 +1569,21 @@ export default function EventDetailsPage() {
             photo on the screen background, so text never fights the image
             for contrast and the layout reads the same in light and dark. */}
         <View style={styles.hero}>
-          {/* Cover image (or fallback gradient) */}
+          {/* Cover image or video (or fallback gradient). A video cover
+              self-plays here — muted, since this is a passive hero and not a
+              deliberate "watch this" tap (see MediaTile's autoPlay/muted
+              contract). */}
           {event.image ? (
-            <Image
-              source={{ uri: event.image }}
-              style={styles.heroImage}
-              contentFit="cover"
-              transition={200}
-            />
+            isVideoUrl(event.image) ? (
+              <MediaTile uri={event.image} style={styles.heroImage} autoPlay />
+            ) : (
+              <Image
+                source={{ uri: event.image }}
+                style={styles.heroImage}
+                contentFit="cover"
+                transition={200}
+              />
+            )
           ) : null}
           <LinearGradient
             colors={
@@ -2176,7 +2196,7 @@ export default function EventDetailsPage() {
               <View style={styles.rowBetween}>
                 <Text style={[styles.microLabel, { paddingHorizontal: 0 }]}>ON THE BILL</Text>
                 {isCreator && (
-                  <TouchableOpacity onPress={() => setVendorSearchVisible(true)}>
+                  <TouchableOpacity onPress={() => router.push(`/event-vendors/${event._id}` as any)}>
                     <Text style={styles.seeAll}>Manage</Text>
                   </TouchableOpacity>
                 )}
@@ -2795,6 +2815,10 @@ export default function EventDetailsPage() {
                   stops={eventStops(event)}
                   value={programmeSelection}
                   onChange={setProgrammeSelection}
+                  tierChoices={programmeTierChoices}
+                  onTierChange={(key, tierId) =>
+                    setProgrammeTierChoices((prev) => ({ ...prev, [key]: tierId }))
+                  }
                   currency={event.currency}
                 />
               </View>
@@ -2813,7 +2837,7 @@ export default function EventDetailsPage() {
                     : programmeSelection.length === 0
                       ? "Pick at least one"
                       : (() => {
-                          const total = selectionTotal(eventStops(event), programmeSelection);
+                          const total = selectionTotal(eventStops(event), programmeSelection, programmeTierChoices);
                           return total > 0
                             ? `Continue to payment · ${currencyPrefix(event.currency)}${total.toLocaleString()}`
                             : "Confirm — it's free";
@@ -3059,10 +3083,18 @@ export default function EventDetailsPage() {
                 />
                 <SheetAction
                   icon="briefcase-outline"
-                  label="Manage vendors"
+                  label="Add a vendor"
                   onPress={() => {
                     setActionSheetVisible(false);
                     setVendorSearchVisible(true);
+                  }}
+                />
+                <SheetAction
+                  icon="options-outline"
+                  label="Manage vendors"
+                  onPress={() => {
+                    setActionSheetVisible(false);
+                    router.push(`/event-vendors/${event._id}` as any);
                   }}
                 />
               </>

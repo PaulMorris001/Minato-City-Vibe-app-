@@ -24,18 +24,16 @@ import {
   payoutCountryKnown,
   payoutOnboardingRoute,
   payoutUnavailableMessage,
-  formatMoney,
 } from "@/constants/payments";
 import { showError, showSuccess, showInfo } from "@/utils/toast";
 import { getAddressFromCurrentPosition } from "@/hooks/useLocation";
 import { useActiveCity, setActiveCity } from "@/hooks/useActiveCity";
 import type { LocationSelection } from "@/libs/interfaces";
 import { Fonts } from "@/constants/fonts";
-import { useAccount } from "@/contexts/AccountContext";
-
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
+import AccountSwitchToggle from "@/components/shared/AccountSwitchToggle";
 import { clearLocalData } from "@/utils/localData";
 import { isSupportUser } from "@/constants/support";
 import { openSupportChat } from "@/utils/userNavigation";
@@ -54,7 +52,6 @@ export default function SettingsScreen() {
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const navigation = useNavigation();
-  const { activeAccount, switchAccount } = useAccount();
   const [loading, setLoading] = useState(true);
   // The single location the user's account is set to — used both as the
   // home feed's default filter city and to derive selling currency/payout.
@@ -73,8 +70,6 @@ export default function SettingsScreen() {
     isVendor: false,
     emailVerifiedAt: null as string | null,
     country: "",
-    couponBalanceNGN: 0,
-    couponBalanceUSD: 0,
   });
   // Device-level push permission. registerForPushNotifications() returns
   // silently when it's denied, so without surfacing it here a user has no way
@@ -217,8 +212,6 @@ export default function SettingsScreen() {
         isVendor: userData.isVendor || false,
         emailVerifiedAt: userData.emailVerifiedAt || null,
         country: userData.location?.country || "",
-        couponBalanceNGN: userData.couponBalanceNGN || 0,
-        couponBalanceUSD: userData.couponBalanceUSD || 0,
       });
       if (userData.location?.country) {
         setLocation({
@@ -286,35 +279,6 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleSwitchAccount = () => {
-    if (!user.isVendor) {
-      Alert.alert(
-        "No Vendor Account",
-        "You don't have a vendor account yet. Register as a vendor to access vendor features."
-      );
-      return;
-    }
-
-    const target: "client" | "vendor" =
-      activeAccount === "vendor" ? "client" : "vendor";
-
-    Alert.alert(
-      target === "vendor" ? "Switch to Vendor account?" : "Switch to Client account?",
-      target === "vendor"
-        ? "You'll be taken to your vendor dashboard."
-        : "You'll be taken to the client app.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Switch",
-          onPress: async () => {
-            await switchAccount(target);
-            resetToAccount(target);
-          },
-        },
-      ]
-    );
-  };
 
   if (loading) {
     return (
@@ -369,78 +333,15 @@ export default function SettingsScreen() {
       {/* Account */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account</Text>
-
-        <View style={[styles.infoRow, { borderBottomWidth: 0, marginBottom: 4 }]}>
-          <View style={styles.infoIconContainer}>
-            <Ionicons
-              name={activeAccount === "vendor" ? "briefcase-outline" : "person-outline"}
-              size={20}
-              color={Colors.primary}
-            />
-          </View>
-          <View style={styles.infoContent}>
-            <Text style={styles.infoLabel}>Active Account</Text>
-            <Text style={styles.infoValue}>
-              {activeAccount.charAt(0).toUpperCase() + activeAccount.slice(1)}
-              {user.isVendor && <Text style={styles.infoSubvalue}> • Dual Account</Text>}
-            </Text>
-          </View>
-        </View>
-
-        {(user.couponBalanceNGN > 0 || user.couponBalanceUSD > 0) && (
-          <View style={[styles.infoRow, { borderBottomWidth: 0, marginBottom: 4 }]}>
-            <View style={styles.infoIconContainer}>
-              <Ionicons name="pricetag-outline" size={20} color={Colors.primary} />
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>OurCityVibe Credit</Text>
-              <Text style={styles.infoValue}>
-                {[
-                  user.couponBalanceNGN > 0 ? formatMoney(user.couponBalanceNGN, "NGN") : null,
-                  user.couponBalanceUSD > 0 ? formatMoney(user.couponBalanceUSD, "USD") : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}{" "}
-                <Text style={styles.infoSubvalue}>
-                  · use at checkout with a vendor pricing in that currency — expires if unused
-                  for 30 days
-                </Text>
-              </Text>
-            </View>
-          </View>
-        )}
-
-        <TouchableOpacity
-          style={[
-            styles.switchAccountButton,
-            !user.isVendor && { opacity: 0.45 },
-          ]}
-          onPress={handleSwitchAccount}
-          activeOpacity={0.8}
-        >
-          <View style={styles.switchAccountLeft}>
-            <View style={styles.switchIconContainer}>
-              <Ionicons
-                name={activeAccount === "client" ? "briefcase" : "person"}
-                size={22}
-                color={Colors.primary}
-              />
-            </View>
-            <View>
-              <Text style={styles.switchAccountTitle}>
-                {activeAccount === "client"
-                  ? "Switch to Vendor"
-                  : "Switch to Client"}
-              </Text>
-              <Text style={styles.switchAccountSubtitle}>
-                {activeAccount === "client"
-                  ? "Manage your business dashboard"
-                  : "Browse events, guides & services"}
-              </Text>
-            </View>
-          </View>
-          <Ionicons name="swap-horizontal" size={22} color={Colors.primary} />
-        </TouchableOpacity>
+        <Text style={styles.sectionDescription}>
+          {user.isVendor
+            ? "Switch between browsing as a client and managing your vendor dashboard."
+            : "You're browsing as a client — register as a vendor to unlock a business dashboard."}
+        </Text>
+        <AccountSwitchToggle
+          hasVendorAccount={user.isVendor}
+          onSwitched={(target) => resetToAccount(target)}
+        />
       </View>
 
       
@@ -826,41 +727,6 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 16,
     fontFamily: Fonts.semiBold,
   },
-  infoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: c.border,
-  },
-  infoIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: c.primaryFaded,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  infoContent: {
-    flex: 1,
-  },
-  infoLabel: {
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: c.textSecondary,
-    marginBottom: 4,
-  },
-  infoValue: {
-    fontSize: 16,
-    fontFamily: Fonts.semiBold,
-    color: c.textBody,
-  },
-  infoSubvalue: {
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: c.textSecondary,
-  },
   preferenceItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -961,41 +827,6 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 14,
     fontFamily: Fonts.regular,
     color: c.textSecondary,
-  },
-  switchAccountButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "rgba(168, 85, 247, 0.05)",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "rgba(168, 85, 247, 0.2)",
-  },
-  switchAccountLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    flex: 1,
-  },
-  switchIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: c.primaryFadedStrong,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  switchAccountTitle: {
-    fontSize: 16,
-    fontFamily: Fonts.semiBold,
-    color: c.text,
-  },
-  switchAccountSubtitle: {
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    color: c.textSecondary,
-    marginTop: 2,
   },
   bottomPadding: {
     height: 100,

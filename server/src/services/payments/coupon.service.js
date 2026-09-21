@@ -120,8 +120,14 @@ export async function reserveOrderCoupon({ order, userId, amount, currency }) {
 
   // A locked balance is spendable ONLY at the vendor it was awarded for; a
   // null lock (no vendor assigned on that win's campaign) means any vendor.
+  // `order.vendor` may arrive populated (resolvePurchase in
+  // payments.controller.js does `.populate("vendor")`) or as a bare id —
+  // stringifying a populated Document directly gives "[object Object]", not
+  // its id, which made this comparison fail for every locked balance even
+  // against its own assigned vendor. Always compare against the id.
   const lockedVendor = user?.[lockField];
-  if (lockedVendor && String(lockedVendor) !== String(order.vendor)) {
+  const orderVendorId = order.vendor?._id || order.vendor;
+  if (lockedVendor && String(lockedVendor) !== String(orderVendorId)) {
     return { applied: 0 };
   }
 

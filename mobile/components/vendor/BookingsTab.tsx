@@ -8,6 +8,11 @@ import {
   RefreshControl,
   ActivityIndicator,
   Image,
+  Modal,
+  TextInput,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
@@ -82,6 +87,13 @@ export default function BookingsTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<OrderFilter>("all");
+  // Cancelling a quoted (invoiced but unpaid) order — the only state this tab
+  // shows where payment hasn't happened yet, so it's the only one a vendor can
+  // back out of from here. A reason is required so the client isn't left
+  // guessing; it's posted into the order's chat as a system message.
+  const [cancelingOrder, setCancelingOrder] = useState<VendorOrder | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [submittingCancel, setSubmittingCancel] = useState(false);
 
   const fetchOrders = useCallback(async (filter: OrderFilter = activeFilter) => {
     try {
@@ -116,6 +128,41 @@ export default function BookingsTab() {
     setRefreshing(true);
     await fetchOrders(activeFilter);
     setRefreshing(false);
+  };
+
+  const closeCancelModal = () => {
+    setCancelingOrder(null);
+    setCancelReason("");
+  };
+
+  const handleConfirmCancel = async () => {
+    if (!cancelingOrder || !cancelReason.trim()) return;
+    setSubmittingCancel(true);
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const res = await fetch(`${BASE_URL}/orders/${cancelingOrder._id}/decline`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ reason: cancelReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        Alert.alert("Error", data.message || "Failed to cancel order");
+        return;
+      }
+      // Declined orders no longer match this tab's status filters — drop it
+      // locally instead of a full refetch.
+      setOrders((prev) => prev.filter((o) => o._id !== cancelingOrder._id));
+      closeCancelModal();
+    } catch (error) {
+      console.error("Error cancelling order:", error);
+      Alert.alert("Error", "Failed to cancel order. Please try again.");
+    } finally {
+      setSubmittingCancel(false);
+    }
   };
 
   const renderOrderCard = ({ item }: { item: VendorOrder }) => {
@@ -179,17 +226,32 @@ export default function BookingsTab() {
           </Text>
         </View>
 
-        {/* Open the chat where the order/invoice card lives */}
-        {!!item.chat && (
-          <TouchableOpacity
-            style={styles.chatButton}
-            onPress={() => router.push(`/chat/${item.chat}` as any)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="chatbubbles-outline" size={16} color={colors.primary} />
-            <Text style={styles.chatButtonText}>Open Chat</Text>
-          </TouchableOpacity>
-        )}
+        <View style={styles.actionsRow}>
+          {/* Open the chat where the order/invoice card lives */}
+          {!!item.chat && (
+            <TouchableOpacity
+              style={[styles.chatButton, styles.actionButton]}
+              onPress={() => router.push(`/chat/${item.chat}` as any)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="chatbubbles-outline" size={16} color={colors.primary} />
+              <Text style={styles.chatButtonText}>Open Chat</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Only a quoted (invoiced, unpaid) order can be cancelled here —
+              once it's paid, this button doesn't render for it. */}
+          {item.status === "quoted" && (
+            <TouchableOpacity
+              style={[styles.cancelButton, styles.actionButton]}
+              onPress={() => setCancelingOrder(item)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close-circle-outline" size={16} color={colors.error} />
+              <Text style={styles.cancelButtonText}>Cancel Order</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     );
   };
@@ -257,6 +319,55 @@ export default function BookingsTab() {
           }
         />
       )}
+
+      <Modal visible={!!cancelingOrder} animationType="slide" transparent onRequestClose={closeCancelModal}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Cancel this order?</Text>
+            <Text style={styles.modalSubtitle}>
+              The client hasn't paid yet — they'll see your reason in the order chat.
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              value={cancelReason}
+              onChangeText={setCancelReason}
+              placeholder="Let the client know why you're cancelling…"
+              placeholderTextColor={colors.textMuted}
+              multiline
+              numberOfLines={4}
+              maxLength={500}
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSecondary]}
+                onPress={closeCancelModal}
+                disabled={submittingCancel}
+              >
+                <Text style={styles.modalButtonSecondaryText}>Keep Order</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.modalButtonDanger,
+                  (!cancelReason.trim() || submittingCancel) && styles.modalButtonDisabled,
+                ]}
+                onPress={handleConfirmCancel}
+                disabled={!cancelReason.trim() || submittingCancel}
+              >
+                {submittingCancel ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalButtonDangerText}>Cancel Order</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -422,12 +533,20 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.regular,
     color: c.textSecondary,
   },
+  actionsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 10,
+  },
+  actionButton: {
+    flex: 1,
+    marginTop: 0,
+  },
   chatButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    marginTop: 10,
     paddingVertical: 10,
     borderRadius: 10,
     backgroundColor: c.primaryFaded,
@@ -438,6 +557,90 @@ const createStyles = (c: ThemeColors) =>
     fontSize: 14,
     fontFamily: Fonts.semiBold,
     color: c.primary,
+  },
+  cancelButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: c.error + "14",
+    borderWidth: 1,
+    borderColor: c.error + "40",
+  },
+  cancelButtonText: {
+    fontSize: 14,
+    fontFamily: Fonts.semiBold,
+    color: c.error,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    backgroundColor: c.card,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 32,
+    gap: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: Fonts.bold,
+    color: c.text,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    fontFamily: Fonts.regular,
+    color: c.textSecondary,
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  modalInput: {
+    backgroundColor: c.background,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: c.border,
+    padding: 14,
+    fontSize: 14,
+    fontFamily: Fonts.regular,
+    color: c.text,
+    minHeight: 100,
+    textAlignVertical: "top",
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4,
+  },
+  modalButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  modalButtonSecondary: {
+    backgroundColor: c.backgroundSecondary,
+  },
+  modalButtonSecondaryText: {
+    fontSize: 14,
+    fontFamily: Fonts.semiBold,
+    color: c.textSecondary,
+  },
+  modalButtonDanger: {
+    backgroundColor: c.error,
+  },
+  modalButtonDisabled: {
+    opacity: 0.5,
+  },
+  modalButtonDangerText: {
+    fontSize: 14,
+    fontFamily: Fonts.semiBold,
+    color: "#fff",
   },
   centered: {
     flex: 1,
