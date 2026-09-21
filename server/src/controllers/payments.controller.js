@@ -763,9 +763,6 @@ async function confirmFreeOrder(id, reference, userId, res) {
   if (order.client.toString() !== userId) {
     return res.status(403).json({ message: "This order isn't yours" });
   }
-  if (order.paymentStatus === "paid") {
-    return res.status(200).json({ message: "Order paid", order });
-  }
   if (reference !== `coupon-${order._id}`) {
     return res.status(400).json({ message: "This reference does not match this order" });
   }
@@ -800,6 +797,9 @@ async function confirmFreeOrder(id, reference, userId, res) {
         `on order ${id}. Sale fulfilled; payout NOT queued — needs manual settlement.`
     );
   }
+  // A previous request may have marked the order paid and then lost the
+  // response before createPayout completed. Reaching the idempotent enqueue on
+  // every retry keeps the sale visible in the admin approval queue.
   return res.status(200).json({ message: "Order paid", order: fulfilled });
 }
 

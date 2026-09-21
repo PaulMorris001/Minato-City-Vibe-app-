@@ -99,8 +99,10 @@ const orderSchema = new mongoose.Schema(
       enum: ["unpaid", "paid", "refunded"],
       default: "unpaid",
     },
+    // "none" means the order was fully covered by OurCityVibe credit, so no
+    // external collection provider charged the buyer.
     // "stripe" is legacy-readable only (it stopped collecting in Sep 2026).
-    provider: { type: String, enum: ["stripe", "paystack", "paypal"] },
+    provider: { type: String, enum: ["none", "stripe", "paystack", "paypal"] },
     // "wise" and "stripe" are legacy-readable only (those rails are gone).
     payoutProvider: { type: String, enum: ["wise", "paystack", "stripe", "paypal"] },
     platformFee: { type: Number, default: 0 },
