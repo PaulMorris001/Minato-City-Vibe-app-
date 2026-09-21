@@ -33,6 +33,17 @@ export interface GuideTopic {
   createdAt?: string;
 }
 
+export interface AdminCatalogueCategory {
+  _id: string;
+  name: string;
+  description?: string;
+  kind: "product" | "service";
+  images?: string[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AdminVendor {
   _id: string;
   name: string;

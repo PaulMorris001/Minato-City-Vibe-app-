@@ -21,6 +21,7 @@ import Payouts from "./pages/Payouts";
 import Reports from "./pages/Reports";
 import DiscountCodes from "./pages/DiscountCodes";
 import Raffle from "./pages/Raffle";
+import CatalogueCategories from "./pages/CatalogueCategories";
 import Coupons from "./pages/Coupons";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -48,6 +49,7 @@ function AppRoutes() {
                 <Route path="/events" element={<Events />} />
                 <Route path="/guides" element={<Guides />} />
                 <Route path="/guide-topics" element={<GuideTopics />} />
+                <Route path="/catalogue-categories" element={<CatalogueCategories />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/verifications" element={<Verifications />} />
                 <Route path="/paid-events" element={<PaidEvents />} />

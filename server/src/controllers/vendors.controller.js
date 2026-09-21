@@ -1,5 +1,7 @@
 import { City, VendorType, Vendor } from "../models/vendor.model.js";
 import Review from "../models/review.model.js";
+import { Booking } from "../models/booking.model.js";
+import { Order } from "../models/order.model.js";
 import { escapeRegex } from "../utils/escapeRegex.js";
 
 /**
@@ -128,6 +130,25 @@ export async function rateVendor(req, res) {
 
     const vendor = await Vendor.findById(vendorId);
     if (!vendor) return res.status(404).json({ message: "Vendor not found" });
+    if (!vendor.user || String(vendor.user) === String(userId)) {
+      return res.status(403).json({ message: "You cannot rate this vendor" });
+    }
+
+    // Reviews are for real customer relationships: a vendor must have
+    // confirmed the user's booking, or the user must have paid an order.
+    const hasAcceptedService = await Booking.exists({
+      client: userId,
+      vendor: vendor.user,
+      status: "confirmed",
+    });
+    const hasPaidOrder = hasAcceptedService
+      ? false
+      : await Order.exists({ client: userId, vendor: vendor.user, status: "paid" });
+    if (!hasAcceptedService && !hasPaidOrder) {
+      return res.status(403).json({
+        message: "You can rate a vendor after they confirm your booking or you complete an order.",
+      });
+    }
 
     // Upsert: update existing review or create new one
     await Review.findOneAndUpdate(
@@ -156,6 +177,13 @@ export async function getVendorReviews(req, res) {
     const { page = 1, limit = 20 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
+    const vendor = await Vendor.findById(vendorId).select("user");
+    if (!vendor) return res.status(404).json({ message: "Vendor not found" });
+    const canReview = !!req.user && !!vendor.user && String(vendor.user) !== String(req.user.id) && !!(
+      await Booking.exists({ client: req.user.id, vendor: vendor.user, status: "confirmed" }) ||
+      await Order.exists({ client: req.user.id, vendor: vendor.user, status: "paid" })
+    );
+
     const [reviews, total, userReview] = await Promise.all([
       Review.find({ vendor: vendorId })
         .populate("user", "username profilePicture")
@@ -168,7 +196,7 @@ export async function getVendorReviews(req, res) {
         : null,
     ]);
 
-    res.json({ reviews, total, userReview });
+    res.json({ reviews, total, userReview, canReview });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

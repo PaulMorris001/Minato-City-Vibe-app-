@@ -20,6 +20,7 @@ import {
   deleteCity,
   getVendorTypesAdmin,
   createVendorType,
+  updateVendorType,
   deleteVendorType,
   getGuideTopicsAdmin,
   createGuideTopic,
@@ -57,6 +58,10 @@ import {
   getEventCancellations,
   approveEventCancellation,
   rejectEventCancellation,
+  getCatalogueCategoriesAdmin,
+  createCatalogueCategoryAdmin,
+  updateCatalogueCategoryAdmin,
+  deleteCatalogueCategoryAdmin,
 } from "../controllers/admin.controller.js";
 import {
   getPayouts,
@@ -95,7 +100,14 @@ router.delete("/admin/cities/:id", authenticateAdmin, deleteCity);
 // Vendor Types
 router.get("/admin/vendor-types", authenticateAdmin, getVendorTypesAdmin);
 router.post("/admin/vendor-types", authenticateAdmin, createVendorType);
+router.patch("/admin/vendor-types/:id", authenticateAdmin, updateVendorType);
 router.delete("/admin/vendor-types/:id", authenticateAdmin, deleteVendorType);
+
+// Catalogue Categories
+router.get("/admin/catalogue-categories", authenticateAdmin, getCatalogueCategoriesAdmin);
+router.post("/admin/catalogue-categories", authenticateAdmin, createCatalogueCategoryAdmin);
+router.patch("/admin/catalogue-categories/:id", authenticateAdmin, updateCatalogueCategoryAdmin);
+router.delete("/admin/catalogue-categories/:id", authenticateAdmin, deleteCatalogueCategoryAdmin);
 
 // Guide Topics
 router.get("/admin/guide-topics", authenticateAdmin, getGuideTopicsAdmin);

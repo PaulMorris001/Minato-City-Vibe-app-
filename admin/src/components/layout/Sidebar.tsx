@@ -16,6 +16,7 @@ const navItems = [
   { to: "/reports", label: "Reports", icon: "🚩" },
   { to: "/cities", label: "Cities", icon: "📍" },
   { to: "/vendor-types", label: "Vendor Types", icon: "🏷️" },
+  { to: "/catalogue-categories", label: "Catalogue Categories", icon: "📂" },
   { to: "/events", label: "Events", icon: "📅" },
   { to: "/raffle", label: "Birthday Raffle", icon: "🎂" },
   { to: "/coupons", label: "OurCityVibe Credit", icon: "💳" },

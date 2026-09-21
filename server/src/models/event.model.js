@@ -122,6 +122,9 @@ const eventSchema = mongoose.Schema({
     validate: mediaArrayLimit("Event photos"),
   },
   description: { type: String, default: "" },
+  // Cached average of attendee reviews. Individual reviews live separately so
+  // this browseable document does not grow with its audience.
+  rating: { type: Number, default: 0 },
 
   // Creator of the event
   createdBy: {

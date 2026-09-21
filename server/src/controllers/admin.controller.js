@@ -7,6 +7,7 @@ import { City, VendorType, Vendor } from "../models/vendor.model.js";
 import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
 import GuideTopic from "../models/guideTopic.model.js";
+import { CatalogueCategory } from "../models/catalogueCategory.model.js";
 import AnalyticsLog from "../models/analytics.model.js";
 import VerificationRequest from "../models/verification.model.js";
 import Notification from "../models/notification.model.js";
@@ -274,11 +275,107 @@ export async function createVendorType(req, res) {
   }
 }
 
+export async function updateVendorType(req, res) {
+  try {
+    const { name, icon } = req.body;
+    if (!name || !icon) return res.status(400).json({ message: "Name and icon are required" });
+    const vendorType = await VendorType.findByIdAndUpdate(
+      req.params.id,
+      { name: name.trim(), icon: icon.trim() },
+      { new: true, runValidators: true }
+    );
+    if (!vendorType) return res.status(404).json({ message: "Vendor type not found" });
+    res.json(vendorType);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
 export async function deleteVendorType(req, res) {
   try {
     const { id } = req.params;
     await VendorType.findByIdAndDelete(id);
     res.json({ message: "Vendor type deleted" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// ── Catalogue Categories ─────────────────────────────────────────────────────
+// Admin-managed list of top-level vendor catalogue categories (e.g. "Catering",
+// "Photography"). Vendors create their own categories from this list.
+
+export async function getCatalogueCategoriesAdmin(req, res) {
+  try {
+    const categories = await CatalogueCategory.find().sort({ name: 1 });
+    res.json(categories);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function createCatalogueCategoryAdmin(req, res) {
+  try {
+    const { name, description, kind, images } = req.body;
+    if (!name?.trim() || !kind) {
+      return res.status(400).json({ message: "Name and kind (product|service) are required" });
+    }
+    if (kind !== "product" && kind !== "service") {
+      return res.status(400).json({ message: "kind must be either 'product' or 'service'" });
+    }
+    const category = await new CatalogueCategory({
+      name: name.trim(),
+      description: (description || "").trim(),
+      kind,
+      images: images || [],
+    }).save();
+    res.status(201).json(category);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function updateCatalogueCategoryAdmin(req, res) {
+  try {
+    const { name, description, kind, images, isActive } = req.body;
+    const update = {};
+    if (name?.trim()) update.name = name.trim();
+    if (description !== undefined) update.description = description.trim();
+    if (kind) {
+      if (kind !== "product" && kind !== "service") {
+        return res.status(400).json({ message: "kind must be either 'product' or 'service'" });
+      }
+      update.kind = kind;
+    }
+    if (images) update.images = images;
+    if (typeof isActive === "boolean") update.isActive = isActive;
+
+    const category = await CatalogueCategory.findByIdAndUpdate(
+      req.params.id,
+      update,
+      { new: true, runValidators: true }
+    );
+    if (!category) return res.status(404).json({ message: "Category not found" });
+    res.json(category);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function deleteCatalogueCategoryAdmin(req, res) {
+  try {
+    const { id } = req.params;
+    // Check if any vendor categories reference this admin category
+    const { VendorCatalogueCategory } = await import("../models/vendorCatalogueCategory.model.js");
+    const refCount = await VendorCatalogueCategory.countDocuments({ adminCategory: id });
+    if (refCount > 0) {
+      return res.status(409).json({
+        message: `Cannot delete: ${refCount} vendor category(ies) reference this category`,
+        code: "category_in_use",
+      });
+    }
+    await CatalogueCategory.findByIdAndDelete(id);
+    res.json({ message: "Category deleted" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
