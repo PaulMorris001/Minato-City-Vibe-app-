@@ -124,13 +124,19 @@ const css = `
   }
 
   /* ── Nav ─────────────────────────────────────────────── */
+  /* A fixed height (rather than one derived from padding + content) keeps
+     this pinned bar from ever growing taller than intended — some
+     browsers mis-size a `position: sticky` + `backdrop-filter` element at
+     non-100% zoom/OS display-scale levels, and without a hard cap that
+     showed up as the bar visually swallowing a large chunk of the page. */
   .cv-nav {
     position: sticky; top: 0; z-index: 20;
+    height: 64px; overflow: hidden;
     background: rgba(11,6,19,0.72); backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--stroke);
   }
   .cv-nav-inner {
-    max-width: 1120px; margin: 0 auto; padding: 14px 24px;
+    max-width: 1120px; height: 100%; margin: 0 auto; padding: 0 24px;
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
   }
   .cv-brand {
@@ -406,7 +412,7 @@ const css = `
   @media (max-width: 560px) {
     .cv-hide-sm { display: none; }
     .cv-main { padding: 24px 16px 56px; }
-    .cv-nav-inner { padding: 12px 16px; }
+    .cv-nav-inner { padding: 0 16px; }
     .cv-grid { grid-template-columns: 1fr; }
   }
 `;

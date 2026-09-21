@@ -29,9 +29,9 @@ interface MultiImagePickerProps {
 /**
  * Add/remove multiple media items — photos and videos. Holds a list of URIs
  * (local file:// or remote https); the parent uploads the local ones at submit
- * via resolveImageUrls. Videos show as a still frame with a play badge; a
- * freshly-picked one has no poster yet, so it renders as a dark tile until it's
- * uploaded (see MediaTile).
+ * via resolveImageUrls. Videos show as a still frame; a freshly-picked one has
+ * no poster yet, so it renders as a dark tile with a small camera icon until
+ * it's uploaded (see MediaTile).
  */
 export default function MultiImagePicker({
   value,

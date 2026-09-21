@@ -77,7 +77,16 @@ export interface EventSubEvent {
   date: string;
   endDate?: string | null;
   ticketPrice?: number;
-  ticketTiers?: { _id?: string; name: string; price: number; quantity?: number }[];
+  // remaining/soldOut are server-derived per tier, same as the event's own
+  // ticketTiers — present only when the tier declares its own quantity.
+  ticketTiers?: {
+    _id?: string;
+    name: string;
+    price: number;
+    quantity?: number;
+    remaining?: number;
+    soldOut?: boolean;
+  }[];
   /** This stop's own cap. Withheld from non-organizers, like the event's. */
   maxGuests?: number;
   /** Server-derived. Availability survives the attendance opt-out; counts don't. */

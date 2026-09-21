@@ -1628,6 +1628,64 @@ export const setTicketSales = async (req, res) => {
   }
 };
 
+/**
+ * PATCH /events/:eventId/sub-events/:subEventId/ticket-sales
+ * body: { closed: boolean }
+ *
+ * Per-stop twin of setTicketSales — pausing the finished brunch leaves the
+ * still-upcoming club night untouched. The umbrella event's own toggle stays
+ * on setTicketSales; this one only ever reaches into `subEvents`.
+ */
+export const setStopTicketSales = async (req, res) => {
+  try {
+    const { eventId, subEventId } = req.params;
+    const { closed } = req.body;
+    const userId = req.user.id;
+
+    if (typeof closed !== "boolean") {
+      return res.status(400).json({ message: "closed must be true or false" });
+    }
+
+    const event = await Event.findById(eventId);
+    if (!event) return res.status(404).json({ message: "Event not found" });
+
+    const isCohost = (event.cohosts || []).some((c) => c.toString() === userId);
+    if (event.createdBy.toString() !== userId && !isCohost) {
+      return res.status(403).json({ message: "You don't have permission to update this event" });
+    }
+
+    const stop = event.subEvents.id(subEventId);
+    if (!stop) return res.status(404).json({ message: "Sub-event not found" });
+    if (!(stop.ticketPrice > 0)) {
+      return res.status(400).json({ message: "This stop doesn't sell tickets" });
+    }
+    if (event.cancelledAt) {
+      return res.status(400).json({ message: "This event has been cancelled" });
+    }
+    if (event.cancellationRequest?.status === "pending") {
+      return res.status(400).json({
+        message: "Ticket sales stay closed while your cancellation request is under review.",
+      });
+    }
+
+    stop.ticketSalesClosedAt = closed ? new Date() : null;
+    await event.save();
+
+    invalidateCachePattern(`event_detail_${eventId}_`);
+
+    const reason = stopSalesClosedReason(event, findStop(event, subEventId));
+    res.status(200).json({
+      message: closed ? "Ticket sales closed for this stop" : "Ticket sales reopened for this stop",
+      ticketSalesClosedAt: stop.ticketSalesClosedAt,
+      salesClosed: reason !== null,
+      salesClosedReason: reason,
+    });
+  } catch (error) {
+    console.error("setStopTicketSales:", error);
+    res.status(500).json({ message: "Failed to update ticket sales" });
+  }
+};
+
 // Delete an event
 export const deleteEvent = async (req, res) => {
   try {
@@ -2696,6 +2754,26 @@ export const getEventTicketSales = async (req, res) => {
       .populate('user', 'username email profilePicture')
       .sort({ purchaseDate: -1 });
 
+    // Per-stop breakdown for a programme event — allStops() puts the main
+    // event first (id null) so a plain, non-programme event still gets a
+    // single-entry list here rather than the client needing two code paths.
+    // sold/remaining are computed from the ticket list just fetched, not a
+    // second query, since every ticket already carries which stop it's for.
+    const stops = allStops(event).map((stop) => {
+      const sold = tickets.filter((t) => (t.subEvent ? String(t.subEvent) : null) === stop.id).length;
+      return {
+        id: stop.id,
+        title: stop.title,
+        date: stop.date,
+        ticketPrice: stop.ticketPrice,
+        ticketTiers: stop.ticketTiers,
+        maxGuests: stop.maxGuests,
+        ticketSalesClosedAt: stop.ticketSalesClosedAt,
+        sold,
+        remaining: stop.maxGuests > 0 ? Math.max(stop.maxGuests - sold, 0) : null,
+      };
+    });
+
     res.status(200).json({
       ticketsSold: soldTickets,
       ticketsRemaining,
@@ -2707,6 +2785,7 @@ export const getEventTicketSales = async (req, res) => {
       // tiers (and legacy price edits) tickets in the same event carry
       // different prices.
       totalRevenue: tickets.reduce((sum, t) => sum + (t.amountPaid ?? t.ticketPrice ?? 0), 0),
+      stops,
       tickets
     });
   } catch (error) {
@@ -3036,7 +3115,10 @@ export const getMyVendorEventInvites = async (req, res) => {
   }
 };
 
-// Remove a vendor from an event (creator only)
+// Remove a vendor from an event (creator only) — covers both an already
+// -accepted vendor and one with only a pending/declined invite, so this one
+// endpoint is the organizer's single "un-vendor" action regardless of where
+// that vendor was in the invite lifecycle.
 export const removeVendorFromEvent = async (req, res) => {
   try {
     const { eventId, vendorId } = req.params;
@@ -3048,7 +3130,14 @@ export const removeVendorFromEvent = async (req, res) => {
       return res.status(403).json({ message: "Only the event creator can remove vendors" });
     }
 
+    const wasAccepted = event.vendors.some(v => v.toString() === vendorId);
+    const hadInvite = event.vendorInvites.some(vi => vi.vendor.toString() === vendorId);
+    if (!wasAccepted && !hadInvite) {
+      return res.status(404).json({ message: "This vendor isn't on the event" });
+    }
+
     event.vendors = event.vendors.filter(v => v.toString() !== vendorId);
+    event.vendorInvites = event.vendorInvites.filter(vi => vi.vendor.toString() !== vendorId);
     await event.save();
 
     invalidateCachePattern(`event_detail_${eventId}_`);

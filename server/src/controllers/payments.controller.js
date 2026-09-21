@@ -44,7 +44,7 @@ import {
 import { findEventByAnyId } from "../utils/resolveEvent.js";
 import { ticketSalesClosedReason, stopSalesClosedReason } from "../utils/eventLifecycle.js";
 import { resolveVenueChoice } from "../utils/eventLocations.js";
-import { findStop } from "../utils/subEvents.js";
+import { findStop, hasProgramme } from "../utils/subEvents.js";
 import { reserveOrderCoupon } from "../services/payments/coupon.service.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -160,18 +160,23 @@ async function resolvePurchase(type, id, userId, res, tierId) {
   if (type === "ticket") {
     const event = await Event.findById(id).populate("createdBy");
     if (!event) return res.status(404).json({ message: "Event not found" }) && null;
-    if (!event.isPublic || !event.isPaid) {
+    if (!event.isPublic) {
       return res.status(400).json({ message: "This event does not require payment" }) && null;
     }
     // A programme event MUST buy through the batch rail, even for a single
     // stop — this rail's one-Ticket-per-(event,user) guard below has no notion
     // of WHICH stop, so a main-event purchase here would then block every
-    // sub-event purchase this same buyer ever tries afterward.
-    if ((event.subEvents || []).length) {
+    // sub-event purchase this same buyer ever tries afterward. Checked before
+    // the isPaid gate below: a programme can sell through its stops even with
+    // a nominally free main event (free main, one priced sub-event).
+    if (hasProgramme(event)) {
       return res.status(400).json({
         message: "This event has a programme — buy through the ticket batch endpoint instead.",
         code: "use_batch",
       }) && null;
+    }
+    if (!event.isPaid) {
+      return res.status(400).json({ message: "This event does not require payment" }) && null;
     }
     const rejection = ticketSalesRejection(event);
     if (rejection) {
@@ -758,9 +763,6 @@ async function confirmFreeOrder(id, reference, userId, res) {
   if (order.client.toString() !== userId) {
     return res.status(403).json({ message: "This order isn't yours" });
   }
-  if (order.paymentStatus === "paid") {
-    return res.status(200).json({ message: "Order paid", order });
-  }
   if (reference !== `coupon-${order._id}`) {
     return res.status(400).json({ message: "This reference does not match this order" });
   }
@@ -795,6 +797,9 @@ async function confirmFreeOrder(id, reference, userId, res) {
         `on order ${id}. Sale fulfilled; payout NOT queued — needs manual settlement.`
     );
   }
+  // A previous request may have marked the order paid and then lost the
+  // response before createPayout completed. Reaching the idempotent enqueue on
+  // every retry keeps the sale visible in the admin approval queue.
   return res.status(200).json({ message: "Order paid", order: fulfilled });
 }
 
@@ -1009,7 +1014,11 @@ export const initTicketBatch = async (req, res) => {
     const event = await findEventByAnyId(eventId, "createdBy");
     if (!event) return res.status(404).json({ message: "Event not found" });
     const eventKey = event._id;
-    if (!event.isPublic || !event.isPaid) {
+    // A programme can sell through its stops even with a nominally free main
+    // event (free main, one priced sub-event) — the gate is "can this event
+    // charge for anything", not just its own isPaid. Each item is still priced
+    // and validated per-stop below via resolveTicketTier.
+    if (!event.isPublic || (!event.isPaid && !hasProgramme(event))) {
       return res.status(400).json({ message: "This event does not require payment" });
     }
     const rejection = ticketSalesRejection(event);

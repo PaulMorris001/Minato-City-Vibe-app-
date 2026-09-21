@@ -24,6 +24,8 @@ import { Avatar } from "@/components/shared/Avatar";
 import DiscoverPeoplePreview from "@/components/shared/DiscoverPeoplePreview";
 import GuestGate from "@/components/shared/GuestGate";
 import ImageViewerModal from "@/components/shared/ImageViewerModal";
+import VerifiedBadgePopup from "@/components/shared/VerifiedBadgePopup";
+import MediaTile from "@/components/shared/MediaTile";
 import ShareSheet, { ShareTarget } from "@/components/shared/ShareSheet";
 import { displayName } from "@/utils/displayName";
 import { AU } from "@/components/auth/tokens";
@@ -196,8 +198,12 @@ export default function ProfileScreen() {
     () => events.filter((e) => e.userStatus === "creator"),
     [events]
   );
+  // "Attended" is a history tab — an accepted invite only belongs here once
+  // the event has actually happened. An accepted invite to something still
+  // upcoming used to land here immediately, which read as "you attended this"
+  // for an event that hadn't started yet.
   const attended = useMemo(
-    () => events.filter((e) => e.userStatus === "accepted"),
+    () => events.filter((e) => e.userStatus === "accepted" && new Date(e.date).getTime() < Date.now()),
     [events]
   );
   const pending = useMemo(
@@ -452,6 +458,14 @@ function Header({
           <Text style={styles.profileActionText}>Share Profile</Text>
         </TouchableOpacity>
       </View>
+      <TouchableOpacity
+        style={styles.dashboardActionBtn}
+        activeOpacity={0.8}
+        onPress={() => router.push("/manage-events" as any)}
+      >
+        <Ionicons name="speedometer-outline" size={16} color={colors.textBright} />
+        <Text style={styles.profileActionText}>Event Dashboard</Text>
+      </TouchableOpacity>
 
       {/* "Complete your setup" checklist — auto-hides once every item is done. */}
       <SetupChecklist user={user} sellsGuides={guidesTotal > 0} />
@@ -799,7 +813,7 @@ function EventRow({ event }: { event: UserEvent }) {
     >
       <View style={styles.thumbWrap}>
         {event.image ? (
-          <Image source={{ uri: event.image }} style={StyleSheet.absoluteFill} contentFit="cover" />
+          <MediaTile uri={event.image} style={StyleSheet.absoluteFill} posterOnly />
         ) : (
           <LinearGradient
             colors={[colors.accentCyan, colors.primaryDark, colors.accentPink]}
@@ -1065,6 +1079,19 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.semiBold,
     fontSize: 14,
     color: c.textBright,
+  },
+  dashboardActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: c.glassFillSubtle,
+    borderWidth: 1,
+    borderColor: c.glassFill,
+    marginHorizontal: 18,
+    marginTop: 10,
   },
 
   // Hero

@@ -15,6 +15,7 @@ import * as SecureStore from "expo-secure-store";
 import { Colors } from "@/constants/colors";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
+import { scaleFontSize } from "@/utils/responsive";
 import { showError } from "@/utils/toast";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -230,16 +231,12 @@ const createStyles = (c: ThemeColors) =>
     backButton: {
       padding: 4,
     },
-    headerTitle: {
-      fontSize: 32,
-      fontFamily: Fonts.bold,
-      color: c.text,
-      marginBottom: 8,
-    },
+    headerTitle: { fontSize: scaleFontSize(22), fontFamily: Fonts.bold, color: c.text },
     headerSubtitle: {
       fontSize: 16,
       fontFamily: Fonts.regular,
       color: c.textSecondary,
+      marginTop: 2,
     },
     section: {
       backgroundColor: c.card,

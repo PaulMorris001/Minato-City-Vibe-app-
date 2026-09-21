@@ -14,6 +14,7 @@ import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
+import { scaleFontSize } from "@/utils/responsive";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
@@ -299,7 +300,7 @@ const createStyles = (c: ThemeColors) =>
       borderBottomColor: c.border,
     },
     backButton: { marginRight: 16 },
-    headerTitle: { fontSize: 22, fontFamily: Fonts.bold, color: c.text },
+    headerTitle: { fontSize: scaleFontSize(22), fontFamily: Fonts.bold, color: c.text },
     content: { padding: 20, paddingBottom: 40 },
     statusCard: {
       borderRadius: 16,

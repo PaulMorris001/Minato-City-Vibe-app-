@@ -22,6 +22,7 @@ import Reports from "./pages/Reports";
 import DiscountCodes from "./pages/DiscountCodes";
 import Raffle from "./pages/Raffle";
 import CatalogueCategories from "./pages/CatalogueCategories";
+import Coupons from "./pages/Coupons";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
@@ -59,6 +60,7 @@ function AppRoutes() {
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/discount-codes" element={<DiscountCodes />} />
                 <Route path="/raffle" element={<Raffle />} />
+                <Route path="/coupons" element={<Coupons />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Layout>

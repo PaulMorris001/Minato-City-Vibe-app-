@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Image,
   Alert,
   ActivityIndicator,
 } from "react-native";
@@ -16,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { Avatar } from "@/components/shared/Avatar";
+import MediaTile from "@/components/shared/MediaTile";
 import { currencyPrefix } from "@/constants/payments";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 
@@ -213,7 +213,7 @@ export default function ShareEventScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         {event.image ? (
-          <Image source={{ uri: event.image }} style={styles.eventImage} />
+          <MediaTile uri={event.image} style={styles.eventImage} posterOnly />
         ) : (
           <View style={styles.placeholderImage}>
             <Ionicons name="calendar-outline" size={64} color={colors.textMuted} />

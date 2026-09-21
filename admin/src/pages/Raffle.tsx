@@ -422,17 +422,16 @@ export default function Raffle() {
           </div>
         )}
 
-        {/* The published official rules promise entrants a random draw weighted
-            by their entry count, so the draw is run here rather than by picking
+        {/* The published official rules promise entrants a merit ranking by
+            verified RSVPs, so the draw is run here rather than by picking
             winners out of the table by hand. */}
         {ended && !loading && entries.length > 0 && campaign?._id && (
           <div style={styles.notice}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <span style={{ flex: 1, minWidth: 240 }}>
-                This campaign has closed. Running the draw picks {prizeCount} winner
-                {prizeCount === 1 ? "" : "s"} at random, weighted by each entry's ticket count
-                (1 per event + 1 per verified RSVP), with one prize per entrant. It replaces any
-                existing result and notifies the winners.
+                This campaign has closed. Running the draw picks the {prizeCount} entrant
+                {prizeCount === 1 ? "" : "s"} with the most verified RSVPs, highest to lowest, with
+                one prize per entrant. It replaces any existing result and notifies the winners.
               </span>
               <Button variant="primary" size="sm" onClick={() => setDrawConfirm(true)}>
                 {totals.winners > 0 ? "Re-run draw" : "Draw winners"}
@@ -523,7 +522,7 @@ export default function Raffle() {
 
       <Modal
         open={drawConfirm}
-        title="Run the random draw?"
+        title="Run the draw?"
         onClose={() => setDrawConfirm(false)}
         footer={
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -537,10 +536,10 @@ export default function Raffle() {
         }
       >
         <p style={{ color: colors.textMuted, fontSize: 14, lineHeight: 1.5 }}>
-          This selects {prizeCount} winner{prizeCount === 1 ? "" : "s"} at random from{" "}
-          {entries.length} entr{entries.length === 1 ? "y" : "ies"}, weighted by ticket count,
-          and notifies them in the app. Any winners already recorded for this campaign are
-          replaced.
+          This ranks {entries.length} entr{entries.length === 1 ? "y" : "ies"} by verified RSVPs and
+          awards the top {prizeCount} prize{prizeCount === 1 ? "" : "s"} to the highest{" "}
+          {prizeCount === 1 ? "entrant" : "entrants"}, then notifies them in the app. Any winners
+          already recorded for this campaign are replaced.
         </p>
       </Modal>
 

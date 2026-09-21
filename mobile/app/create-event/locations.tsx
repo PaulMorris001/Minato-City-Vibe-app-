@@ -52,7 +52,7 @@ export default function CreateEventLocationsScreen() {
             <>
               <Text style={styles.hint}>
                 Running the same event in more than one place at once — a watch party
-                in Lagos and London, say. One ticket covers every venue; attendees pick
+                in New York and London, say. One ticket covers every venue; attendees pick
                 which one they're going to.
               </Text>
               <AdditionalLocationsEditor
