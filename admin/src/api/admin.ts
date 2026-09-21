@@ -16,6 +16,7 @@ import type {
   AnalyticsSummary,
   AdminAnnouncement,
   AnnouncementGroup,
+  AdminCatalogueCategory,
 } from "../types";
 
 export const adminApi = {
@@ -55,8 +56,19 @@ export const adminApi = {
   getVendorTypes: () => cachedGet<VendorType[]>("/admin/vendor-types"),
   createVendorType: (data: { name: string; icon: string }) =>
     client.post<VendorType>("/admin/vendor-types", data).then((r) => { bustCache("/admin/vendor-types"); return r; }),
+  updateVendorType: (id: string, data: { name: string; icon: string }) =>
+    client.patch<VendorType>(`/admin/vendor-types/${id}`, data).then((r) => { bustCache("/admin/vendor-types"); return r; }),
   deleteVendorType: (id: string) =>
     client.delete(`/admin/vendor-types/${id}`).then((r) => { bustCache("/admin/vendor-types"); return r; }),
+
+  // Catalogue Categories
+  getCatalogueCategories: () => cachedGet<AdminCatalogueCategory[]>("/admin/catalogue-categories"),
+  createCatalogueCategory: (data: { name: string; description?: string; kind: "product" | "service"; images?: string[] }) =>
+    client.post<AdminCatalogueCategory>("/admin/catalogue-categories", data).then((r) => { bustCache("/admin/catalogue-categories"); return r; }),
+  updateCatalogueCategory: (id: string, data: { name?: string; description?: string; kind?: "product" | "service"; images?: string[]; isActive?: boolean }) =>
+    client.patch<AdminCatalogueCategory>(`/admin/catalogue-categories/${id}`, data).then((r) => { bustCache("/admin/catalogue-categories"); return r; }),
+  deleteCatalogueCategory: (id: string) =>
+    client.delete(`/admin/catalogue-categories/${id}`).then((r) => { bustCache("/admin/catalogue-categories"); return r; }),
 
   // Guide Topics
   getGuideTopics: () => cachedGet<GuideTopic[]>("/admin/guide-topics"),

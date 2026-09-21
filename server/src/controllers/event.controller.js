@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Event from "../models/event.model.js";
 import User from "../models/user.model.js";
 import Ticket from "../models/ticket.model.js";
+import EventReview from "../models/eventReview.model.js";
 import Attendance from "../models/attendance.model.js";
 import DiscountCode from "../models/discountCode.model.js";
 import { Vendor } from "../models/vendor.model.js";
@@ -50,6 +51,14 @@ import config from "../config/env.js";
 function listHasUser(list, userId) {
   if (!userId) return false;
   return (list || []).some((x) => String(x?._id ?? x) === String(userId));
+}
+
+// A review is only meaningful from someone who accepted or otherwise joined
+// the event. Hosts cannot review their own event.
+async function canUserReviewEvent(event, userId) {
+  if (!userId || String(event.createdBy) === String(userId)) return false;
+  if (listHasUser(event.invitedUsers, userId) || listHasUser(event.rsvpUsers, userId)) return true;
+  return !!(await Ticket.exists({ event: event._id, user: userId, isValid: true }));
 }
 
 /**
@@ -3165,5 +3174,60 @@ export const toggleEventDiscountCodeByCreator = async (req, res) => {
   } catch (error) {
     console.error("Toggle discount code error:", error);
     res.status(500).json({ message: "Error updating discount code", error: error.message });
+  }
+};
+
+export const rateEvent = async (req, res) => {
+  try {
+    const event = await findEventByAnyId(req.params.eventId);
+    if (!event) return res.status(404).json({ message: "Event not found" });
+
+    const rating = Number(req.body.rating);
+    const review = typeof req.body.review === "string" ? req.body.review.trim() : "";
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: "Rating must be between 1 and 5" });
+    }
+    if (review.length > 500) return res.status(400).json({ message: "Review cannot exceed 500 characters" });
+    if (!(await canUserReviewEvent(event, req.user.id))) {
+      return res.status(403).json({ message: "You can rate an event after accepting or joining it." });
+    }
+
+    await EventReview.findOneAndUpdate(
+      { event: event._id, user: req.user.id },
+      { rating, review },
+      { upsert: true, new: true, runValidators: true }
+    );
+    const [summary] = await EventReview.aggregate([
+      { $match: { event: event._id } },
+      { $group: { _id: null, average: { $avg: "$rating" } } },
+    ]);
+    const average = summary ? Math.round(summary.average * 10) / 10 : 0;
+    await Event.findByIdAndUpdate(event._id, { rating: average });
+    invalidateCachePattern(`event_detail_${event._id}_`);
+    res.json({ rating: average });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to save event rating" });
+  }
+};
+
+export const getEventReviews = async (req, res) => {
+  try {
+    const event = await findEventByAnyId(req.params.eventId);
+    if (!event) return res.status(404).json({ message: "Event not found" });
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const [reviews, total, userReview, canReview] = await Promise.all([
+      EventReview.find({ event: event._id })
+        .populate("user", "username profilePicture")
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      EventReview.countDocuments({ event: event._id }),
+      EventReview.findOne({ event: event._id, user: req.user.id }),
+      canUserReviewEvent(event, req.user.id),
+    ]);
+    res.json({ reviews, total, userReview, canReview });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to load event reviews" });
   }
 };

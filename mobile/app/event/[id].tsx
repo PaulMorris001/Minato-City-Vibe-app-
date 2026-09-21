@@ -457,6 +457,18 @@ export default function EventDetailsPage() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
+
+  // Event Reviews
+  const [eventReviews, setEventReviews] = useState<any[]>([]);
+  const [totalEventReviews, setTotalEventReviews] = useState(0);
+  const [userEventReview, setUserEventReview] = useState<any | null>(null);
+  const [canReviewEvent, setCanReviewEvent] = useState(false);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [ratingModalVisible, setRatingModalVisible] = useState(false);
+  const [selectedRating, setSelectedRating] = useState(0);
+  const [reviewText, setReviewText] = useState("");
+  const [submittingRating, setSubmittingRating] = useState(false);
+
   const { payForTicket, payForProgramme } = usePayment();
 
   // ─── Data fetching ────────────────────────────────────────────────────────
@@ -488,13 +500,15 @@ export default function EventDetailsPage() {
       }
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setEvent(data.event);
+        const fetchedEvent = data.event;
+        setEvent(fetchedEvent);
         setNeedsLogin(false);
         setFromCache(false);
         // Keep a copy so this event stays readable with no connection. Only a
-        // 2xx is cached — a 401/403 body is an error, not the event.
+        // 401/403 body is an error, not the event.
         cacheWrite(`event:${id}`, data);
-        trackEvent("event_viewed", { eventId: data.event._id, isPublic: data.event.isPublic });
+        trackEvent("event_viewed", { eventId: fetchedEvent._id, isPublic: fetchedEvent.isPublic });
+        fetchEventReviews(fetchedEvent);
       } else if (res.status === 403) {
         // Logged in, but not on the guest list of a private/invite-only event.
         // Possessing the link IS the access grant, so send them to the
@@ -528,9 +542,11 @@ export default function EventDetailsPage() {
       // the only case where a saved copy is the right answer.
       const cached = await cacheRead<{ event: Event }>(`event:${id}`);
       if (cached?.data?.event) {
-        setEvent(cached.data.event);
+        const cachedEvent = cached.data.event;
+        setEvent(cachedEvent);
         setNeedsLogin(false);
         setFromCache(true);
+        fetchEventReviews(cachedEvent);
         return;
       }
       console.error("Fetch event details error:", err);
@@ -545,6 +561,65 @@ export default function EventDetailsPage() {
       ]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchEventReviews = async (fetchedEvent?: any) => {
+    const eventToUse = fetchedEvent || event;
+    if (!id || !eventToUse) return;
+    setReviewsLoading(true);
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const res = await fetch(`${BASE_URL}/events/${id}/reviews`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        console.log("user can review: ", data.canReview);
+        setEventReviews(data.reviews || []);
+        setTotalEventReviews(data.total || 0);
+        setCanReviewEvent(!!data.canReview);
+        if (data.userReview) {
+          setUserEventReview(data.userReview);
+          setSelectedRating(data.userReview.rating);
+          setReviewText(data.userReview.review || "");
+        }
+      }
+    } catch (error) {
+      console.error("Error loading event reviews:", error);
+    } finally {
+      setReviewsLoading(false);
+    }
+  };
+
+  const handleSubmitEventRating = async () => {
+    if (selectedRating === 0) {
+      showInfo("Please select a star rating.");
+      return;
+    }
+    setSubmittingRating(true);
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const res = await fetch(`${BASE_URL}/events/${id}/rate`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ rating: selectedRating, review: reviewText }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showSuccess("Your rating has been saved.", "Thanks!");
+        setRatingModalVisible(false);
+        fetchEventReviews(event);
+      } else {
+        showError(data.message || "Failed to submit rating");
+      }
+    } catch {
+      showError("Failed to submit rating");
+    } finally {
+      setSubmittingRating(false);
     }
   };
 
@@ -2163,6 +2238,88 @@ export default function EventDetailsPage() {
             </TouchableOpacity>
           )}
 
+          {/* Event Reviews */}
+          <View style={styles.reviewsSection}>
+            <View style={styles.reviewsHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Text style={styles.reviewsTitle}>Reviews</Text>
+                <View style={styles.countPill}>
+                  <Text style={styles.countPillText}>{totalEventReviews}</Text>
+                </View>
+              </View>
+              {canReviewEvent && (
+                <TouchableOpacity
+                  style={styles.rateButton}
+                  onPress={() => setRatingModalVisible(true)}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="star-outline" size={15} color={colors.primaryLight} />
+                  <Text style={styles.rateButtonText}>
+                    {userEventReview ? "Edit rating" : "Rate event"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {reviewsLoading ? (
+              <ActivityIndicator color={colors.primaryLight} style={{ marginVertical: 16 }} />
+            ) : eventReviews.length === 0 ? (
+              <Text style={styles.noReviewsText}>
+                {canReviewEvent ? "No reviews yet. Be the first!" : "No reviews yet."}
+              </Text>
+            ) : (
+              eventReviews.map((review) => (
+                <View key={review._id} style={styles.reviewCard}>
+                  <View style={styles.reviewTop}>
+                    <TouchableOpacity
+                      style={styles.reviewUser}
+                      activeOpacity={0.7}
+                      disabled={!review.user?._id}
+                      onPress={() => review.user?._id && openUserProfile(review.user._id)}
+                    >
+                      {review.user?.profilePicture ? (
+                        <Image
+                          source={{ uri: review.user.profilePicture }}
+                          style={styles.reviewAvatar}
+                          contentFit="cover"
+                        />
+                      ) : review.user ? (
+                        <View style={styles.reviewAvatarFallback}>
+                          <Text style={styles.reviewAvatarLetter}>
+                            {review.user.username?.[0]?.toUpperCase() || "?"}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={[styles.reviewAvatar, styles.reviewAvatarDeleted]}>
+                          <Text style={[styles.reviewAvatarLetter, { color: colors.textDim }]}>?</Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.reviewUsername} numberOfLines={1}>
+                          {review.user?.username || "Deleted user"}
+                        </Text>
+                        <Text style={styles.reviewTime}>
+                          {new Date(review.createdAt).toLocaleDateString()}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                    <View style={styles.reviewStars}>
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Ionicons
+                          key={star}
+                          name={star <= review.rating ? "star" : "star-outline"}
+                          size={14}
+                          color={star <= review.rating ? "#FFD700" : colors.textDim}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                  {!!review.review && <Text style={styles.reviewText}>{review.review}</Text>}
+                </View>
+              ))
+            )}
+          </View>
+
           {/* Attendees — organizer-only; the guest list is other people's data.
               Paid events come back with an empty rsvpUsers array (the server
               swaps the RSVP list for a ticket count), so the card keys off the
@@ -3192,6 +3349,92 @@ export default function EventDetailsPage() {
               />
             </View>
           </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ─── RATING MODAL ─────────────────────────────────────── */}
+      <Modal
+        visible={ratingModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setRatingModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setRatingModalVisible(false)}
+          />
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {userEventReview ? "Edit rating" : "Rate event"}
+              </Text>
+              <TouchableOpacity onPress={() => setRatingModalVisible(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <Text style={styles.modalEventName}>{event?.title || "Event"}</Text>
+
+              <Text style={styles.inputLabel}>Your rating</Text>
+              <View style={styles.starSelector}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <TouchableOpacity
+                    key={star}
+                    onPress={() => setSelectedRating(star)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={star <= selectedRating ? "star" : "star-outline"}
+                      size={36}
+                      color={star <= selectedRating ? "#FFD700" : colors.textDim}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.inputLabel}>Review (optional)</Text>
+              <TextInput
+                style={[styles.modalInput, styles.modalTextArea]}
+                placeholder="Share your experience..."
+                placeholderTextColor={colors.textDim}
+                value={reviewText}
+                onChangeText={setReviewText}
+                multiline
+                numberOfLines={4}
+                maxLength={500}
+            />
+
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                selectedRating === 0 && styles.submitButtonDisabled,
+              ]}
+              onPress={handleSubmitEventRating}
+              disabled={submittingRating || selectedRating === 0}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark, colors.accentPink]}
+                locations={[0, 0.5, 1]}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={styles.submitGradient}
+              >
+                {submittingRating ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.submitText}>Submit rating</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
         </KeyboardAvoidingView>
       </Modal>
     </View>
@@ -4364,6 +4607,11 @@ const createStyles = (c: ThemeColors) =>
     lineHeight: 17,
     marginTop: 2,
   },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   sheetGrabber: {
     alignSelf: "center",
     width: 36,
@@ -4497,5 +4745,185 @@ const createStyles = (c: ThemeColors) =>
     color: c.textDim,
     fontFamily: Fonts.medium,
     fontSize: 14,
+  },
+
+  // Reviews section
+  reviewsSection: {
+    marginHorizontal: 16,
+    marginTop: 4,
+    paddingTop: 18,
+    borderTopWidth: 1,
+    borderTopColor: c.glassFill,
+    gap: 12,
+  },
+  reviewsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  reviewsTitle: {
+    fontSize: 16,
+    fontFamily: Fonts.bold,
+    color: c.textBright,
+  },
+  countPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    backgroundColor: c.card,
+  },
+  countPillText: {
+    fontSize: 12,
+    fontFamily: Fonts.semiBold,
+    color: c.textDim,
+  },
+  rateButton: {
+    height: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: c.primary,
+  },
+  rateButtonText: {
+    fontSize: 13,
+    fontFamily: Fonts.semiBold,
+    color: c.primaryLight,
+  },
+  noReviewsText: {
+    fontSize: 13.5,
+    fontFamily: Fonts.regular,
+    color: c.textDim,
+    textAlign: "center",
+    paddingVertical: 20,
+  },
+  reviewCard: {
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: c.card,
+    borderWidth: 1,
+    borderColor: c.glassFill,
+    gap: 10,
+  },
+  reviewTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  reviewUser: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  reviewAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reviewAvatarFallback: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: c.primaryFaded,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reviewAvatarDeleted: {
+    backgroundColor: c.glassFill,
+  },
+  reviewAvatarLetter: {
+    fontSize: 14,
+    fontFamily: Fonts.bold,
+    color: "#ffffff",
+  },
+  reviewUsername: {
+    fontSize: 14,
+    fontFamily: Fonts.semiBold,
+    color: c.textBright,
+  },
+  reviewTime: {
+    fontSize: 11.5,
+    fontFamily: Fonts.regular,
+    color: c.textDim,
+    marginTop: 1,
+  },
+  reviewStars: {
+    flexDirection: "row",
+    gap: 2,
+  },
+  reviewText: {
+    fontSize: 13.5,
+    lineHeight: 20,
+    fontFamily: Fonts.regular,
+    color: c.text,
+  },
+
+  // Rating modal
+  modalEventName: {
+    fontSize: 14,
+    fontFamily: Fonts.medium,
+    color: c.primaryLight,
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 10.5,
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
+    fontFamily: Fonts.semiBold,
+    color: c.textDim,
+    marginBottom: 6,
+  },
+  starSelector: {
+    alignItems: "center",
+    paddingVertical: 16,
+    flexDirection: "row",
+    gap: 8,
+  },
+  modalInput: {
+    backgroundColor: c.glassFillSubtle,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    fontFamily: Fonts.regular,
+    color: c.text,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: c.glassFill,
+  },
+  modalTextArea: {
+    height: 100,
+    textAlignVertical: "top",
+  },
+  submitButton: {
+    height: 54,
+    borderRadius: 16,
+    overflow: "hidden",
+    backgroundColor: c.primary,
+    shadowColor: c.primary,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 28,
+    elevation: 8,
+  },
+  submitButtonDisabled: {
+    opacity: 0.5,
+  },
+  submitGradient: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  submitText: {
+    fontSize: 16,
+    fontFamily: Fonts.semiBold,
+    color: "#ffffff",
   },
 });

@@ -28,6 +28,8 @@ import {
   removeCohost,
   getEventDiscountCodes,
   toggleEventDiscountCodeByCreator,
+  rateEvent,
+  getEventReviews,
 } from "../controllers/event.controller.js";
 import { authenticate, optionalAuth, rejectGuest } from "../middleware/auth.middleware.js";
 
@@ -58,6 +60,8 @@ router.post("/events/:eventId/join", authenticate, joinFreePublicEvent);
 
 // Get ticket sales for an event (organizer only)
 router.get("/events/:eventId/tickets", authenticate, getEventTicketSales);
+router.get("/events/:eventId/reviews", authenticate, getEventReviews);
+router.post("/events/:eventId/rate", authenticate, rateEvent);
 
 // Organizer's stop/resume switch for ticket sales. Above "/events/:eventId"
 // like every other specific path here.
