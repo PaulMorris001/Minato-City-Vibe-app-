@@ -83,7 +83,8 @@ export interface Message {
   chat: string;
   /** Null when the author's account was deleted; the message survives in group chats. */
   sender: User | null;
-  type: "text" | "image" | "event" | "guide" | "system" | "order" | "profile";
+  type: "text" | "image" | "event" | "guide" | "system" | "order" | "profile" | "ticket_offer";
+  ticketOffer?: string;
   content?: string;
   imageUrl?: string;
   event?: any;

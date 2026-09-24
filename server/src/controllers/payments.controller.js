@@ -15,6 +15,8 @@
 import stripe from "../config/stripe.js";
 import config from "../config/env.js";
 import User from "../models/user.model.js";
+import TicketOffer from "../models/ticketOffer.model.js";
+import { offerPaymentError } from "../utils/ticketOffer.js";
 import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
 import Ticket from "../models/ticket.model.js";
@@ -67,7 +69,7 @@ const PURCHASE_MISMATCH = {
  * tierId (prices differ per tier); single-price events ignore it.
  * Returns { tier } — tier is null for single-price events — or { error }.
  */
-function resolveTicketTier(event, tierId) {
+export function resolveTicketTier(event, tierId) {
   const tiers = event.ticketTiers || [];
   if (!tiers.length) return { tier: null };
   // A lone tier needs no explicit choice — older call sites don't send one.
@@ -105,6 +107,8 @@ export async function ticketsRemaining(event, tier, stop = null) {
     });
     return Math.max(0, tier.quantity - soldForTier);
   }
+  // Programme stops explicitly use 0 for uncapped attendance.
+  if (stop && !stop.maxGuests) return Infinity;
   const sold = await Ticket.countDocuments({ event: event._id, subEvent, isValid: true });
   return Math.max(0, ((stop ? stop.maxGuests : event.maxGuests) || 0) - sold);
 }
@@ -160,6 +164,7 @@ async function resolvePurchase(type, id, userId, res, tierId) {
   if (type === "ticket") {
     const event = await Event.findById(id).populate("createdBy");
     if (!event) return res.status(404).json({ message: "Event not found" }) && null;
+    if (event.hidePrice) return res.status(409).json({ message: "Negotiate with the organizer and pay the final invoice.", code: "negotiation_required" }) && null;
     if (!event.isPublic) {
       return res.status(400).json({ message: "This event does not require payment" }) && null;
     }
@@ -289,6 +294,7 @@ export const previewDiscountHandler = async (req, res) => {
       return res.status(400).json({ message: "This event does not require payment" });
     }
 
+    if (event.hidePrice) return res.status(409).json({ message: "Discount codes cannot be applied to negotiated tickets." });
     let subtotal = 0;
     if (Array.isArray(items) && items.length > 0) {
       for (const item of items) {
@@ -1000,7 +1006,24 @@ export const initTicketBatch = async (req, res) => {
   try {
     const { eventId } = req.params;
     const buyerId = req.user.id;
-    const items = Array.isArray(req.body?.items) ? req.body.items : null;
+    let offer = null;
+    let items = Array.isArray(req.body?.items) ? req.body.items : null;
+    if (req.body?.offerId) {
+      if (!/^[a-f0-9]{24}$/i.test(String(req.body.offerId))) return res.status(400).json({ message: "Invalid invoice." });
+      offer = await TicketOffer.findById(req.body.offerId);
+      const invoiceEvent = await findEventByAnyId(eventId);
+      if (!invoiceEvent || invoiceEvent.isActive === false || !invoiceEvent.isPublic) return res.status(404).json({ message: "Event not found." });
+      const error = offerPaymentError(offer, invoiceEvent._id, buyerId);
+      if (error) return res.status(403).json({ message: error });
+      const closed = ticketSalesRejection(invoiceEvent);
+      if (closed) return res.status(closed.status).json({ message: closed.message });
+      const buyer = await User.findById(buyerId).select("email username");
+      items = Array.from({ length: offer.quantity }, () => ({
+        recipientEmail: buyer.email, recipientName: buyer.username,
+        subEvent: offer.subEvent, tierId: offer.tierId, locationIndex: offer.locationIndex,
+      }));
+      if (req.body.discountCode) return res.status(400).json({ message: "Discounts cannot be combined with a negotiated invoice." });
+    }
     if (!items || items.length === 0) {
       return res.status(400).json({ message: "Add at least one ticket." });
     }
@@ -1014,6 +1037,8 @@ export const initTicketBatch = async (req, res) => {
     const event = await findEventByAnyId(eventId, "createdBy");
     if (!event) return res.status(404).json({ message: "Event not found" });
     const eventKey = event._id;
+    if (event.hidePrice && !offer) return res.status(409).json({ message: "Negotiate with the organizer and pay the final invoice.", code: "negotiation_required" });
+    if (offer && offer.currency !== (event.currency || "USD")) return res.status(409).json({ message: "The event currency changed. Ask the organizer for a new invoice." });
     // A programme can sell through its stops even with a nominally free main
     // event (free main, one priced sub-event) — the gate is "can this event
     // charge for anything", not just its own isPaid. Each item is still priced
@@ -1052,6 +1077,9 @@ export const initTicketBatch = async (req, res) => {
       const stopRejection = stopSalesRejection(event, stop);
       if (stopRejection) return res.status(stopRejection.status).json({ message: stopRejection.message });
 
+      if (offer?.tierId && !(stop.ticketTiers || []).some((tier) => String(tier._id) === String(offer.tierId))) {
+        return res.status(409).json({ message: "This ticket tier changed. Ask the organizer for a new invoice." });
+      }
       const { tier, error, code } = resolveTicketTier(stop, raw?.tierId);
       if (error) return res.status(400).json({ message: error, code });
       // Per item, not per order: a buyer can send one pass to the Lagos date and
@@ -1065,7 +1093,7 @@ export const initTicketBatch = async (req, res) => {
       lineItems.push({
         tierId: tier?.tierId,
         tierName: tier?.name,
-        price: tier ? tier.price : stop.ticketPrice,
+        price: offer ? offer.finalPrice : tier ? tier.price : stop.ticketPrice,
         recipientEmail: email,
         recipientName: String(raw?.recipientName || "").trim() || undefined,
         ...(subEventId ? { subEvent: subEventId, subEventTitle: stop.title, subEventDate: stop.date } : {}),
@@ -1122,7 +1150,17 @@ export const initTicketBatch = async (req, res) => {
       appliedCode = reserved.codeDoc.code;
     }
 
+    if (offer) {
+      const existing = await TicketOrder.findOne({ ticketOffer: offer._id }).select("+paymentInit");
+      if (existing) {
+        if (existing.status === "paid") return res.status(409).json({ message: "This invoice is already paid." });
+        if (existing.paymentInit) return res.json(existing.paymentInit);
+        return res.status(409).json({ message: "Checkout is being prepared. Please retry shortly. If this persists, contact support before starting another payment." });
+      }
+    }
+
     const order = await TicketOrder.create({
+      ...(offer ? { ticketOffer: offer._id } : {}),
       event: event._id,
       buyer: buyerId,
       seller: seller._id,
@@ -1163,10 +1201,12 @@ export const initTicketBatch = async (req, res) => {
         // the popup must land on a page, not the app's custom scheme.
         callbackUrl: paystackReturnUrl({ web: true }),
       });
+      const response = { ...init, orderId: order._id };
       order.reference = init.reference;
+      if (offer) order.paymentInit = response;
       await order.save();
       if (redemption) await updateRedemptionReference(redemption._id, init.reference);
-      return res.status(200).json({ ...init, orderId: order._id });
+      return res.status(200).json(response);
     }
 
     if (provider === "paypal") {
@@ -1183,10 +1223,12 @@ export const initTicketBatch = async (req, res) => {
         // the popup must land on a page, not the app's custom scheme.
         callbackUrl: paypalReturnUrl({ web: true }),
       });
+      const response = { ...init, orderId: order._id };
       order.reference = init.reference;
+      if (offer) order.paymentInit = response;
       await order.save();
       if (redemption) await updateRedemptionReference(redemption._id, init.reference);
-      return res.status(200).json({ ...init, orderId: order._id });
+      return res.status(200).json(response);
     }
 
     // Stripe — charge the total into the platform balance; an approved Payout
@@ -1212,15 +1254,14 @@ export const initTicketBatch = async (req, res) => {
       },
       transfer_group: `event_${eventKey}`,
     });
+    const response = { provider: "stripe", clientSecret: paymentIntent.client_secret, orderId: order._id };
     order.reference = paymentIntent.id;
+    if (offer) order.paymentInit = response;
     await order.save();
     if (redemption) await updateRedemptionReference(redemption._id, paymentIntent.id);
-    return res.status(200).json({
-      provider: "stripe",
-      clientSecret: paymentIntent.client_secret,
-      orderId: order._id,
-    });
+    return res.status(200).json(response);
   } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ message: "Checkout is already starting. Please retry shortly." });
     console.error("initTicketBatch error:", error);
     res.status(500).json({ message: "Failed to start payment" });
   }

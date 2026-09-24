@@ -120,6 +120,7 @@ export default function Pay() {
       api<PaymentsConfig>("/payments/config", { auth: false }),
     ])
       .then(([{ event }, c]) => {
+        if (event.hidePrice) throw new Error("This event uses negotiated prices. Open the event in the app to send an offer and pay the organizer’s final invoice.");
         setEv(event);
         setConfig(c);
         document.title = `Get tickets – ${event.title}`;

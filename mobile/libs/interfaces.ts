@@ -76,6 +76,8 @@ export interface EventSubEvent {
   /** This stop's own start, and optional end. */
   date: string;
   endDate?: string | null;
+  hidePrice?: boolean;
+  priceOnRequest?: boolean;
   ticketPrice?: number;
   // remaining/soldOut are server-derived per tier, same as the event's own
   // ticketTiers — present only when the tier declares its own quantity.

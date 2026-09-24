@@ -40,6 +40,7 @@ import { normalizeSubEvents, allStops, findStop } from "../utils/subEvents.js";
 import { issueEventPass } from "../services/pass.service.js";
 import { linkQrDataUrl } from "../utils/qrcode.js";
 import config from "../config/env.js";
+import { applyPriceVisibility, stopRequiresPayment } from "../utils/eventPricing.js";
 
 /**
  * True when `userId` is in a list of user refs. Tolerates both raw ObjectIds
@@ -169,6 +170,7 @@ function applyAttendanceVisibility(eventObj, { isOrganizer }) {
   // — same reasoning as `pendingEdits`. Buyers see `salesClosed` instead.
   if (!isOrganizer) delete eventObj.cancellationRequest;
 
+  applyPriceVisibility(eventObj, isOrganizer);
   if (canSeeCounts) return eventObj;
 
   delete eventObj.rsvpCount;
@@ -214,6 +216,7 @@ export const createEvent = async (req, res) => {
       ticketTiers,
       maxGuests,
       showAttendance,
+      hidePrice,
       venueProofImage,
       isVirtual,
       meetingLink,
@@ -225,6 +228,9 @@ export const createEvent = async (req, res) => {
     } = req.body;
     const userId = req.user.id;
     const virtual = Boolean(isVirtual);
+    if (hidePrice !== undefined && typeof hidePrice !== "boolean") {
+      return res.status(400).json({ message: "hidePrice must be true or false." });
+    }
 
     if (!title || !date || (!virtual && !location)) {
       return res.status(400).json({ message: "Title, date, and location are required" });
@@ -340,8 +346,10 @@ export const createEvent = async (req, res) => {
       }
 
       // With tiers, the headline ticketPrice is derived (cheapest tier); a
-      // client-sent ticketPrice is ignored. Without tiers, it's required.
-      if (!tiers.length && (!ticketPrice || ticketPrice <= 0)) {
+      // client-sent ticketPrice is ignored. Without tiers, it's required —
+      // unless prices are hidden, where the event may go on sale with no asking
+      // price at all and the negotiated invoice is the only price there is.
+      if (!tiers.length && !(Number(ticketPrice) > 0) && hidePrice !== true) {
         return res.status(400).json({ message: "Ticket price must be greater than 0 for paid events" });
       }
       // When tiers declare per-tier quantities, capacity is the sum of them and a
@@ -474,7 +482,9 @@ export const createEvent = async (req, res) => {
         isPublic && isPaid
           ? tiers.length
             ? Math.min(...tiers.map((t) => t.price))
-            : ticketPrice
+            : Number(ticketPrice) > 0
+              ? Number(ticketPrice)
+              : 0
           : 0,
       ticketTiers: isPublic && isPaid ? tiers : [],
       currency: ticketCurrency,
@@ -482,6 +492,7 @@ export const createEvent = async (req, res) => {
       // Only meaningful on a public event — a private one has no audience to
       // reveal the numbers to.
       showAttendance: Boolean(isPublic && showAttendance),
+      hidePrice: hidePrice === true && Boolean((isPublic && isPaid) || programme.some((stop) => stop.ticketPrice > 0)),
       venueProofImage: venueProofUrl,
       approvalStatus,
       payoutStatus: isPublic && isPaid ? "pending" : "none",
@@ -1240,14 +1251,14 @@ export const updateEvent = async (req, res) => {
     const { eventId } = req.params;
     const {
       title, date, endDate, location, address, city, state, country, image, images,
-      description, isPublic, isVirtual, meetingLink, showAttendance,
+      description, isPublic, isVirtual, meetingLink, showAttendance, hidePrice,
       latitude, longitude, additionalLocations, subEvents,
       // Material (pricing/capacity) fields — held for admin approval on public events.
       ticketTiers, ticketPrice, maxGuests,
     } = req.body;
     const userId = req.user.id;
 
-    const event = await Event.findById(eventId);
+    const event = await findEventByAnyId(eventId);
 
     if (!event) {
       return res.status(404).json({ message: "Event not found" });
@@ -1257,6 +1268,10 @@ export const updateEvent = async (req, res) => {
     const isCohost = (event.cohosts || []).some(c => c.toString() === userId);
     if (event.createdBy.toString() !== userId && !isCohost) {
       return res.status(403).json({ message: "You don't have permission to update this event" });
+    }
+
+    if (hidePrice !== undefined && typeof hidePrice !== "boolean") {
+      return res.status(400).json({ message: "hidePrice must be true or false." });
     }
 
     // Visibility is locked once an event is created. Flipping private ↔ public
@@ -1427,6 +1442,19 @@ export const updateEvent = async (req, res) => {
     // date or capacity itself — so it applies immediately rather than sitting in
     // pendingEdits waiting on an admin.
     if (showAttendance !== undefined) event.showAttendance = Boolean(showAttendance);
+    if (hidePrice !== undefined) {
+      // Un-hiding needs a live number to reveal. A hidden-price event may have
+      // gone on sale with no asking price at all, and hidePrice applies at once
+      // while a price set in the same edit is held for review below — so a paid
+      // event would be left publicly priced at 0 and sell free tickets.
+      if (!hidePrice && event.hidePrice && event.isPaid &&
+          !(Number(event.ticketPrice) > 0) && !(event.ticketTiers || []).length) {
+        return res.status(400).json({
+          message: "Set a ticket price and wait for it to be approved before showing prices on this event.",
+        });
+      }
+      event.hidePrice = hidePrice && Boolean(event.isPaid || (event.subEvents || []).some((stop) => stop.ticketPrice > 0));
+    }
 
     // ── Material changes (date + pricing/capacity) ─────────────────────────────
     // On a PUBLIC event these are held in `pendingEdits` for an admin to approve
@@ -1476,10 +1504,13 @@ export const updateEvent = async (req, res) => {
         }
       } else {
         if (ticketPrice !== undefined) {
-          if (!Number.isFinite(Number(ticketPrice)) || Number(ticketPrice) <= 0) {
+          const next = ticketPrice === "" || ticketPrice === null ? 0 : Number(ticketPrice);
+          // 0 drops the asking price, which only a hidden-price event can do:
+          // its tickets are sold on a negotiated invoice, not a published rate.
+          if (!Number.isFinite(next) || next < 0 || (next === 0 && !event.hidePrice)) {
             return res.status(400).json({ message: "Ticket price must be greater than 0." });
           }
-          if (Number(ticketPrice) !== Number(event.ticketPrice)) material.ticketPrice = Number(ticketPrice);
+          if (next !== Number(event.ticketPrice)) material.ticketPrice = next;
         }
         if (maxGuests !== undefined) {
           if (!Number.isInteger(Number(maxGuests)) || Number(maxGuests) <= 0) {
@@ -1543,12 +1574,14 @@ export const updateEvent = async (req, res) => {
       await Chat.findByIdAndUpdate(event.groupChatId, { name: title });
     }
 
-    invalidateCachePattern(`event_detail_${eventId}_`);
+    for (const key of [event._id, event.slug, event.shareToken].filter(Boolean)) {
+      invalidateCachePattern(`event_detail_${key}_`);
+    }
     // Toggling virtual (or editing location) changes which discover filters
     // the event appears under — drop the feed caches too.
     invalidateCachePattern('public_events_');
     invalidateCachePattern('event_highlights_');
-    const updatedEvent = await Event.findById(eventId)
+    const updatedEvent = await Event.findById(event._id)
       .populate('createdBy', 'username email profilePicture')
       .populate('invitedUsers', 'username email profilePicture');
 
@@ -2638,9 +2671,7 @@ async function reconcileStopRsvp({ res, event, userId, isCreator, subEventIds })
     wanted.push({ key, stop });
   }
 
-  const priced = wanted.filter(
-    ({ stop }) => Number(stop.ticketPrice || 0) > 0 || (stop.ticketTiers || []).length > 0
-  );
+  const priced = wanted.filter(({ stop }) => stopRequiresPayment(event, stop));
   if (priced.length) {
     return res.status(400).json({
       message: `${priced.map((p) => `"${p.stop.title}"`).join(", ")} ${

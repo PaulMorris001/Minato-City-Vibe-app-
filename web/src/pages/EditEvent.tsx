@@ -49,6 +49,7 @@ export default function EditEvent() {
   // Organizer opt-in for public headcount/capacity. Minor field — the server
   // applies it immediately instead of queueing it for admin approval.
   const [showAttendance, setShowAttendance] = useState(false);
+  const [hidePrice, setHidePrice] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -80,6 +81,7 @@ export default function EditEvent() {
         setTicketPrice(event.ticketPrice ? String(event.ticketPrice) : "");
         setMaxGuests(event.maxGuests ? String(event.maxGuests) : "");
         setShowAttendance(!!event.showAttendance);
+        setHidePrice(!!event.hidePrice);
       })
       .catch((err) => setError(err.message || "Couldn't load this event"))
       .finally(() => setLoading(false));
@@ -104,6 +106,7 @@ export default function EditEvent() {
     try {
       const body: Record<string, unknown> = {
         title: title.trim(),
+        hidePrice,
         description,
         date: date ? new Date(date).toISOString() : undefined,
         // Always sent, so clearing the field actually clears the end date —
@@ -294,6 +297,10 @@ export default function EditEvent() {
               overall capacity, or set a quantity on every tier to cap each one.
             </p>
 
+            <label className="cv-row" style={{ marginBottom: 16 }}>
+              <input type="checkbox" checked={hidePrice} onChange={(e) => setHidePrice(e.target.checked)} />
+              Hide ticket price — guests negotiate with you in chat
+            </label>
             {useTiers ? (
               <div style={{ display: "grid", gap: 12 }}>
                 {tiers.map((t, i) => (

@@ -34,7 +34,13 @@ import {
 } from "../controllers/event.controller.js";
 import { authenticate, optionalAuth, rejectGuest } from "../middleware/auth.middleware.js";
 
+import { getNegotiationOptions, createTicketOffer, getTicketOffer, respondToTicketOffer } from "../controllers/ticketOffer.controller.js";
+
 const router = express.Router();
+router.get("/events/:eventId/negotiation", authenticate, rejectGuest, getNegotiationOptions);
+router.post("/events/:eventId/offers", authenticate, rejectGuest, createTicketOffer);
+router.get("/ticket-offers/:offerId", authenticate, rejectGuest, getTicketOffer);
+router.patch("/ticket-offers/:offerId", authenticate, rejectGuest, respondToTicketOffer);
 
 // Create a new event. `rejectGuest` keeps short-lived guest-checkout tokens from
 // creating content as their throwaway account.
