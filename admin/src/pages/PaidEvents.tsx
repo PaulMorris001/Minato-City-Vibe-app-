@@ -17,6 +17,9 @@ interface PaidEvent {
   image?: string;
   venueProofImage?: string;
   ticketPrice: number;
+  /** Prices are never published: every ticket is sold on a negotiated invoice,
+   *  and `ticketPrice` is 0 when the organizer set no guide price at all. */
+  hidePrice?: boolean;
   /** Currency the organizer prices in — USD for PayPal sellers, NGN for Paystack. */
   currency?: string;
   /** Named price tiers, when the organizer used them. `ticketPrice` is then the cheapest. */
@@ -180,6 +183,10 @@ export default function PaidEvents() {
             const priciestTier = tiers.length
               ? Math.max(...tiers.map((t) => t.price))
               : e.ticketPrice;
+            // Prices are hidden and every sale is a negotiated invoice, so the
+            // published figures below are a guide at best — and none at all when
+            // the organizer set no asking price.
+            const negotiated = !!e.hidePrice;
             // Worst case for a buyer-funds-at-risk decision: every seat sold at
             // the highest price the organizer can charge for it.
             const potentialRevenue = tiersHaveQty
@@ -241,15 +248,21 @@ export default function PaidEvents() {
                   <Stat
                     label={tiers.length > 1 ? "Ticket price (range)" : "Ticket price"}
                     value={
-                      tiers.length > 1
-                        ? `${formatMoney(e.ticketPrice, e.currency)} – ${formatMoney(priciestTier, e.currency)}`
-                        : formatMoney(e.ticketPrice, e.currency)
+                      negotiated && !e.ticketPrice
+                        ? "On request"
+                        : tiers.length > 1
+                          ? `${formatMoney(e.ticketPrice, e.currency)} – ${formatMoney(priciestTier, e.currency)}`
+                          : `${formatMoney(e.ticketPrice, e.currency)}${negotiated ? " (guide)" : ""}`
                     }
                   />
                   <Stat label="Max guests" value={e.maxGuests.toLocaleString()} />
                   <Stat
                     label="Potential revenue"
-                    value={formatMoney(potentialRevenue, e.currency)}
+                    value={
+                      negotiated && !e.ticketPrice
+                        ? "Set in chat"
+                        : formatMoney(potentialRevenue, e.currency)
+                    }
                   />
                   <Stat
                     label="Payout"

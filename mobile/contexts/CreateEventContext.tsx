@@ -32,6 +32,7 @@ export interface CreateEventDraft {
   isPublic: boolean;
   showAttendance: boolean;
   isPaid: boolean;
+  hidePrice: boolean;
   // Used only while `tiers` is empty.
   ticketPrice: string;
   maxGuests: string;
@@ -67,6 +68,7 @@ function emptyDraft(): CreateEventDraft {
     isPublic: false,
     showAttendance: false,
     isPaid: false,
+    hidePrice: false,
     ticketPrice: "",
     maxGuests: "",
     eventLocation: null,

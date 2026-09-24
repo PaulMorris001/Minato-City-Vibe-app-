@@ -35,7 +35,7 @@ export function useEventActions({ onDone }: { onDone?: () => void } = {}) {
       // The hook runs checkout AND confirms server-side before returning.
       const result = await payForTicket(eventId);
       if (!result.success) {
-        if (result.code === "tier_required") {
+        if (result.code === "tier_required" || result.code === "negotiation_required") {
           // Multi-tier event — the detail screen owns the tier picker.
           router.push(`/event/${eventId}`);
           return;

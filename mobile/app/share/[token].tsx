@@ -37,6 +37,7 @@ interface Event {
   isPublic: boolean;
   isPaid: boolean;
   approvalStatus?: "pending" | "approved" | "rejected";
+  hidePrice?: boolean;
   ticketPrice?: number;
   currency?: string;
   maxGuests?: number;
@@ -229,7 +230,7 @@ export default function ShareEventScreen() {
             {event.isPaid && (
               <View style={[styles.badge, styles.badgePaid]}>
                 <Text style={styles.badgeText}>
-                  {currencyPrefix(event.currency)}{event.ticketPrice}
+                  {event.hidePrice ? "Price on request" : `${currencyPrefix(event.currency)}${event.ticketPrice}`}
                 </Text>
               </View>
             )}

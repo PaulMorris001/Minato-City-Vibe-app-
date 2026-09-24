@@ -479,7 +479,7 @@ router.get('/event/:token', async (req, res) => {
   const when = formatEventWhen(event.date);
   const venue = allVenues(event).map((v) => v.location).filter(Boolean).join(' · ');
   const host = event.createdBy?.username ? `Hosted by ${event.createdBy.username}` : '';
-  const priceLine = event.isPaid && event.ticketPrice
+  const priceLine = event.hidePrice ? "Price on request" : event.isPaid && event.ticketPrice
     ? `From ${formatPrice(event.ticketPrice, event.currency)}`
     : (!event.isPaid && event.isPublic ? 'Free entry' : '');
 
