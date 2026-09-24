@@ -1,3 +1,4 @@
+import { applyPriceVisibility } from "../utils/eventPricing.js";
 import User from "../models/user.model.js";
 import Event from "../models/event.model.js";
 
@@ -11,7 +12,7 @@ export const getFavorites = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const events = user.favorites.map((event) => ({
-      ...event.toObject(),
+      ...applyPriceVisibility(event.toObject()),
       isFavorited: true,
     }));
 

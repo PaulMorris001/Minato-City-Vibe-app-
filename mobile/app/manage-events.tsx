@@ -86,6 +86,7 @@ interface Event {
   shareToken: string;
   isPublic: boolean;
   isPaid: boolean;
+  hidePrice?: boolean;
   /** Organizer opt-in: publishes the headcount/capacity numbers to all viewers. */
   showAttendance?: boolean;
   ticketPrice?: number;
@@ -195,6 +196,7 @@ export default function EventsPage() {
     description: "",
     isPublic: false,
     isPaid: false,
+    hidePrice: false,
     showAttendance: false,
     ticketPrice: "",
     maxGuests: "",
@@ -505,6 +507,7 @@ export default function EventsPage() {
       description: event.description || "",
       isPublic: event.isPublic,
       isPaid: !!event.isPaid,
+      hidePrice: !!event.hidePrice,
       showAttendance: !!event.showAttendance,
       ticketPrice: event.ticketPrice ? String(event.ticketPrice) : "",
       maxGuests: event.maxGuests ? String(event.maxGuests) : "",
@@ -718,7 +721,10 @@ export default function EventsPage() {
           const allQty = editTiers.every((t) => t.quantity.trim() !== "");
           if (!allQty && editData.maxGuests) pricing.maxGuests = parseInt(editData.maxGuests);
         } else {
+          // Clearing the field drops the asking price, which the server accepts
+          // only while prices are hidden — the event then sells by invoice alone.
           if (editData.ticketPrice) pricing.ticketPrice = parseFloat(editData.ticketPrice);
+          else if (editData.hidePrice) pricing.ticketPrice = 0;
           if (editData.maxGuests) pricing.maxGuests = parseInt(editData.maxGuests);
         }
       }
@@ -1508,6 +1514,23 @@ export default function EventsPage() {
                 />
               </View>
 
+              {(selectedEvent?.isPaid || editSubEvents.length > 0) && (
+              <TouchableOpacity
+                style={styles.inputGroup}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: editData.hidePrice }}
+                onPress={() => setEditData({ ...editData, hidePrice: !editData.hidePrice })}
+              >
+                <Text style={styles.inputLabel}>
+                  {editData.hidePrice ? "☑" : "☐"} Hide ticket price
+                </Text>
+                <Text style={styles.attendanceToggleHint}>
+                  Show “Price on request” and let guests negotiate with you in chat.
+                  You can clear the price below and sell on the agreed invoice alone.
+                </Text>
+              </TouchableOpacity>
+              )}
+
               {/* Ticket pricing — paid events only. On a PUBLIC event these are
                   material changes the server holds for admin approval. */}
               {selectedEvent?.isPaid && (
@@ -1523,7 +1546,11 @@ export default function EventsPage() {
                   {editTiers.length === 0 ? (
                     <TextInput
                       style={styles.input}
-                      placeholder="Ticket price (e.g. 25)"
+                      placeholder={
+                        editData.hidePrice
+                          ? "Ticket price — blank to price every sale in chat"
+                          : "Ticket price (e.g. 25)"
+                      }
                       placeholderTextColor={colors.textMuted}
                       keyboardType="decimal-pad"
                       value={editData.ticketPrice}

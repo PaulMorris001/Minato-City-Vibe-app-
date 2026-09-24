@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import { OAuth2Client } from "google-auth-library";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import config from "../config/env.js";
+import { applyPriceVisibility } from "../utils/eventPricing.js";
 import User from "../models/user.model.js";
 import PendingSignup from "../models/pendingSignup.model.js";
 import { Vendor, City, VendorType } from "../models/vendor.model.js";
@@ -976,7 +977,7 @@ export async function getUserEvents(req, res) {
       .sort({ date: -1 })
       .limit(20)
       .lean();
-    res.json({ events });
+    res.json({ events: events.map((event) => applyPriceVisibility(event)) });
   } catch (error) {
     res.status(400).json({ message: "Error fetching user events", details: error.message });
   }

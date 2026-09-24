@@ -332,7 +332,7 @@ function SmallEventCard({
           {/* Price badge */}
           <View style={[styles.smallCardBadge, event.isPaid ? styles.smallCardBadgePaid : styles.smallCardBadgeFree]}>
             <Text style={styles.smallCardBadgeText}>
-              {event.isPaid ? `${currencyPrefix(event.currency)}${event.ticketPrice ?? ""}` : "FREE"}
+              {event.hidePrice ? "Price on request" : event.isPaid ? `${currencyPrefix(event.currency)}${event.ticketPrice ?? ""}` : "FREE"}
             </Text>
           </View>
         </View>

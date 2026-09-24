@@ -90,6 +90,8 @@ export interface EventSubEvent {
   country?: string;
   date: string;
   endDate?: string | null;
+  hidePrice?: boolean;
+  priceOnRequest?: boolean;
   ticketPrice?: number;
   ticketTiers?: { _id?: string; name: string; price: number; quantity?: number; soldOut?: boolean; remaining?: number }[];
   maxGuests?: number;
@@ -129,6 +131,8 @@ export interface EventItem {
   images?: string[];
   isPublic?: boolean;
   isPaid?: boolean;
+  hidePrice?: boolean;
+  priceOnRequest?: boolean;
   ticketPrice?: number;
   ticketTiers?: EventTier[];
   currency?: string;

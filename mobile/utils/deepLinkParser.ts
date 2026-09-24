@@ -20,6 +20,8 @@
  */
 
 export type DeepLinkPathname =
+  | "/negotiate-ticket/[eventId]"
+  | "/ticket-offer/[id]"
   | "/event/[id]"
   | "/guide/[id]"
   | "/user/[id]"
@@ -45,6 +47,8 @@ const KIND_TO_ROUTE: Record<
   string,
   { pathname: DeepLinkPathname; paramName: string }
 > = {
+  "negotiate-ticket": { pathname: "/negotiate-ticket/[eventId]", paramName: "eventId" },
+  "ticket-offer": { pathname: "/ticket-offer/[id]", paramName: "id" },
   event: { pathname: "/event/[id]", paramName: "id" },
   guide: { pathname: "/guide/[id]", paramName: "id" },
   user: { pathname: "/user/[id]", paramName: "id" },

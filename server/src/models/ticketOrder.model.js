@@ -37,6 +37,9 @@ const ticketOrderSchema = mongoose.Schema(
     buyer: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true },
     seller: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true },
 
+    // One checkout per finalized negotiation, including concurrent retries.
+    ticketOffer: { type: mongoose.Schema.Types.ObjectId, ref: "ticketOffer" },
+    paymentInit: { type: mongoose.Schema.Types.Mixed, select: false },
     currency: { type: String, default: "USD" },
     // `total` is the DISCOUNTED total actually charged; `subtotal` is the
     // pre-discount sum of the items. Both major currency units. On orders with
@@ -64,5 +67,7 @@ const ticketOrderSchema = mongoose.Schema(
   },
   { timestamps: true }
 );
+
+ticketOrderSchema.index({ ticketOffer: 1 }, { unique: true, sparse: true });
 
 export default mongoose.model("ticketOrder", ticketOrderSchema);

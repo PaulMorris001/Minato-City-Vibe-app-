@@ -1,3 +1,4 @@
+import { applyPriceVisibility } from "../utils/eventPricing.js";
 import Chat from "../models/chat.model.js";
 import Message from "../models/message.model.js";
 import User from "../models/user.model.js";
@@ -229,7 +230,7 @@ class ChatService {
    * Send a message in a chat
    */
   async sendMessage(chatId, senderId, messageData) {
-    const { type, content, imageUrl, eventId, guideId, orderId, profileUserId, replyTo } = messageData;
+    const { type, content, imageUrl, eventId, guideId, orderId, ticketOfferId, profileUserId, replyTo } = messageData;
 
     // Verify chat exists and user is participant
     const chat = await Chat.findById(chatId);
@@ -282,6 +283,7 @@ class ChatService {
       event: eventId,
       guide: guideId,
       order: orderId,
+      ticketOffer: ticketOfferId,
       profileUser: profileUserId,
       replyTo,
       mentions
@@ -315,7 +317,7 @@ class ChatService {
     await message.populate([
       { path: 'sender', select: 'username email profilePicture' },
       { path: 'replyTo', populate: { path: 'sender', select: 'username profilePicture' } },
-      { path: 'event' },
+      { path: 'event', transform: (doc) => doc ? applyPriceVisibility(doc.toObject()) : doc },
       { path: 'guide', select: 'title authorName city cityState topic price currency' },
       { path: 'order' },
       { path: 'profileUser', select: 'username firstName lastName profilePicture isVendor businessName businessPicture verified' },
@@ -467,7 +469,7 @@ class ChatService {
         path: 'replyTo',
         populate: { path: 'sender', select: 'username profilePicture' }
       })
-      .populate('event')
+      .populate({ path: 'event', transform: (doc) => doc ? applyPriceVisibility(doc.toObject()) : doc })
       .populate('guide', 'title authorName city cityState topic price currency')
       .populate('order')
       .populate('profileUser', 'username firstName lastName profilePicture isVendor businessName businessPicture verified')
@@ -641,7 +643,7 @@ class ChatService {
       path: 'replyTo',
       populate: { path: 'sender', select: 'username profilePicture' }
     });
-    await message.populate('event');
+    await message.populate({ path: 'event', transform: (doc) => doc ? applyPriceVisibility(doc.toObject()) : doc });
     await message.populate('guide', 'title authorName city cityState topic price currency');
     await message.populate('order');
     await message.populate('reactions.user', 'username profilePicture');

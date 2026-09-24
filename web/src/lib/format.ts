@@ -38,6 +38,7 @@ export function priceLabel(ev: FeedEvent): string {
     }
     return `From ${money((priceMin ?? priceMax) as number, currency)}`;
   }
+  if (ev.hidePrice && (ev.isPaid || ev.subEvents?.some((s) => s.priceOnRequest))) return "Price on request";
   if (!ev.isPaid) return "Free";
   return `From ${money(fromPrice(ev), ev.currency)}`;
 }

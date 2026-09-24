@@ -324,7 +324,7 @@ export default function EventDetails() {
                 icon="🎟️"
                 label="Entry"
                 value={
-                  ev.isPaid
+                  ev.hidePrice ? "Price on request" : ev.isPaid
                     ? `Tickets from ${money(
                         tiers.length ? Math.min(...tiers.map((t) => t.price)) : ev.ticketPrice || 0,
                         ev.currency
@@ -587,6 +587,7 @@ const SALES_CLOSED_COPY: Record<string, { heading: string; detail: string }> = {
 
 /** "Free" / "$5" / "From $5" for one stop of a programme. */
 function stopPriceText(stop: EventSubEvent, currency?: string) {
+  if (stop.priceOnRequest) return "Price on request";
   const tiers = stop.ticketTiers ?? [];
   const price = tiers.length ? Math.min(...tiers.map((t) => t.price)) : stop.ticketPrice ?? 0;
   if (!price) return "Free";
@@ -630,6 +631,19 @@ function TicketBox({
   // is now withheld from non-organizers; fall back for older API responses.
   const soldOut =
     ev.soldOut ?? (ev.ticketsRemaining !== undefined && ev.ticketsRemaining <= 0);
+
+  if (ev.hidePrice && (ev.isPaid || ev.subEvents?.some((stop) => stop.priceOnRequest || (stop.ticketPrice ?? 0) > 0))) {
+    return <>
+      <h3 className="cv-h3">Price on request</h3>
+      <p className="cv-muted" style={{ marginBottom: 16 }}>
+        Send an offer to the organizer’s chat in the app, settle on a price,
+        then review and pay their final invoice.
+      </p>
+      {ev.salesClosed || soldOut ? <p className="cv-muted">{soldOut ? "Sold out" : "Ticket sales are closed."}</p> :
+        <a className="cv-btn" href={`mobile://negotiate-ticket/${ev._id}`}>Negotiate price in the app</a>}
+      <AppPromo />
+    </>;
+  }
 
   // A programme overrides the ordinary paid/free branching below entirely —
   // what matters is the PRICE OF WHAT'S TICKED, not the main event's own

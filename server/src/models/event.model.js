@@ -163,6 +163,7 @@ const eventSchema = mongoose.Schema({
 
   // Pricing options (only for public events)
   isPaid: { type: Boolean, default: false },
+  hidePrice: { type: Boolean, default: false },
   ticketPrice: { type: Number, default: 0 },
   // Named price tiers ("Basic", "VIP", …) for public paid events — max 10,
   // organizer-defined names and prices, all in the event's `currency`.

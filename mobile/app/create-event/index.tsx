@@ -147,7 +147,12 @@ export default function CreateEventScreen() {
           Alert.alert("Validation Error", tierProblem);
           return;
         }
-      } else if (!draft.ticketPrice || parseFloat(draft.ticketPrice) <= 0) {
+      } else if (
+        // With prices hidden the ticket is sold on a negotiated invoice, so a
+        // standard price is an optional guide rather than the thing being sold.
+        (!draft.hidePrice || draft.ticketPrice.trim()) &&
+        !(parseFloat(draft.ticketPrice) > 0)
+      ) {
         Alert.alert("Validation Error", "Please enter a valid ticket price");
         return;
       }
@@ -230,9 +235,12 @@ export default function CreateEventScreen() {
         images: eventImageUrls,
         isPublic: draft.isPublic,
         isPaid: draft.isPaid,
+        hidePrice: draft.hidePrice,
         showAttendance: draft.isPublic && draft.showAttendance,
         // With tiers, the server derives the headline price (cheapest tier).
-        ticketPrice: draft.isPaid && draft.tiers.length === 0 ? parseFloat(draft.ticketPrice) : 0,
+        // 0 when prices are hidden and the organizer named none — the server
+        // reads that as "no asking price", not as a free ticket.
+        ticketPrice: draft.isPaid && draft.tiers.length === 0 ? parseFloat(draft.ticketPrice) || 0 : 0,
         ticketTiers:
           draft.isPaid && draft.tiers.length > 0
             ? draft.tiers.map((t) => ({
@@ -651,11 +659,34 @@ export default function CreateEventScreen() {
                           "to pay you. Without it we can hold ticket money but can't send it."}
                   </InfoTip>
 
+                  {(draft.isPaid || draft.subEvents.length > 0) && (
+                    <TouchableOpacity
+                      style={styles.checkboxContainer}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: draft.hidePrice }}
+                      onPress={() => update("hidePrice", !draft.hidePrice)}
+                    >
+                      <View style={[styles.checkbox, draft.hidePrice && styles.checkboxChecked]}>
+                        {draft.hidePrice && <Text style={styles.checkmark}>✓</Text>}
+                      </View>
+                      <Text style={styles.checkboxLabel}>Hide published prices · accept offers in chat</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {draft.hidePrice && (
+                    <Text style={styles.tierHint}>
+                      Nobody sees a price. An attendee sends you an offer, you two settle
+                      it in chat, and they pay the final invoice you send back.
+                    </Text>
+                  )}
+
                   {draft.isPaid && (
                     <>
                       <Text style={styles.tierHint}>
-                        Price it and size it however you like — there are no limits.
-                        Every paid event is reviewed by our team before tickets go on
+                        {draft.hidePrice
+                          ? "A standard price is optional here — leave it blank and every ticket is priced in chat, or set one as the guide attendees start their offer from."
+                          : "Set a standard price per ticket."}
+                        {" "}Every paid event is reviewed by our team before tickets go on
                         sale, and we'll notify you the moment it's approved.
                       </Text>
 
@@ -676,11 +707,17 @@ export default function CreateEventScreen() {
                       {draft.tiers.length === 0 && (
                         <>
                           <Text style={styles.label}>
-                            Ticket Price ({currencyPrefix(draft.sellerCurrency).trim()}) *
+                            {draft.hidePrice
+                              ? `Standard price per ticket (${currencyPrefix(draft.sellerCurrency).trim()}) — optional`
+                              : `Ticket Price (${currencyPrefix(draft.sellerCurrency).trim()}) *`}
                           </Text>
                           <TextInput
                             style={styles.input}
-                            placeholder={draft.sellerCurrency === "NGN" ? "e.g., 15000" : "e.g., 25.00"}
+                            placeholder={
+                              draft.hidePrice
+                                ? "Leave blank to price every ticket in chat"
+                                : draft.sellerCurrency === "NGN" ? "e.g., 15000" : "e.g., 25.00"
+                            }
                             placeholderTextColor={colors.textGhost}
                             keyboardType="decimal-pad"
                             value={draft.ticketPrice}

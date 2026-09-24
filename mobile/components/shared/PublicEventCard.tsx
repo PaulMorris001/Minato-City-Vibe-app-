@@ -34,6 +34,8 @@ export interface PublicEvent {
   description?: string;
   isPublic: boolean;
   isPaid: boolean;
+  hidePrice?: boolean;
+  priceOnRequest?: boolean;
   ticketPrice?: number;
   /** ISO code the ticket is priced in (USD, NGN, …). Absent on legacy events → USD. */
   currency?: string;
@@ -177,7 +179,7 @@ export default function PublicEventCard({
               </Text>
             </View>
 
-            {event.isPaid && (
+            {(event.isPaid || event.hidePrice) && (
               <>
                 <View style={styles.eventCardPriceContainer}>
                   <LinearGradient
@@ -188,8 +190,7 @@ export default function PublicEventCard({
                   >
                     <Ionicons name="pricetag" size={12} color="#fff" />
                     <Text style={styles.eventCardPriceText} numberOfLines={1}>
-                      {(event.ticketTiers?.length ?? 0) > 1 ? "From " : ""}
-                      {currencyPrefix(event.currency)}{formatPrice(event.ticketPrice)}
+                      {event.hidePrice ? "Price on request" : `${(event.ticketTiers?.length ?? 0) > 1 ? "From " : ""}${currencyPrefix(event.currency)}${formatPrice(event.ticketPrice)}`}
                     </Text>
                   </LinearGradient>
 
@@ -210,7 +211,7 @@ export default function PublicEventCard({
                     style={styles.buyTicketButton}
                     onPress={(e) => {
                       e.stopPropagation();
-                      if ((event.ticketTiers?.length ?? 0) > 1) {
+                      if (event.hidePrice || (event.ticketTiers?.length ?? 0) > 1) {
                         // Tiered event — the detail screen owns the tier picker.
                         router.push(`/event/${event._id}` as any);
                         return;
@@ -230,7 +231,7 @@ export default function PublicEventCard({
                       style={styles.buyTicketGradient}
                     >
                       <Ionicons name="ticket" size={16} color="#fff" />
-                      <Text style={styles.buyTicketText}>Buy Ticket</Text>
+                      <Text style={styles.buyTicketText}>{event.hidePrice ? "Negotiate price" : "Buy Ticket"}</Text>
                     </LinearGradient>
                   </TouchableOpacity>
                 )}
@@ -253,7 +254,7 @@ export default function PublicEventCard({
               </>
             )}
 
-            {!event.isPaid && (
+            {!event.isPaid && !event.hidePrice && (
               <>
                 <View style={styles.freeEventBadge}>
                   <Text style={styles.freeEventText}>FREE EVENT</Text>

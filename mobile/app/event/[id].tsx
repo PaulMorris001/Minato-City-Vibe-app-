@@ -103,6 +103,8 @@ interface SimilarEvent {
   location?: string;
   isVirtual?: boolean;
   isPaid?: boolean;
+  hidePrice?: boolean;
+  priceOnRequest?: boolean;
   ticketPrice?: number;
   currency?: string;
 }
@@ -135,6 +137,8 @@ interface Event {
   isPaid: boolean;
   /** Optional end. Absent means the event is a single date. */
   endDate?: string | null;
+  hidePrice?: boolean;
+  priceOnRequest?: boolean;
   ticketPrice?: number;
   ticketTiers?: { _id: string; name: string; price: number }[];
   currency?: string;
@@ -356,6 +360,7 @@ function formatStopTime(iso?: string) {
 
 /** "Free" / "$5" / "From $5" for one stop of a programme. */
 function stopPriceText(stop: EventSubEvent, currency?: string) {
+  if (stop.priceOnRequest) return "Price on request";
   const tiers = stop.ticketTiers ?? [];
   const price = tiers.length ? Math.min(...tiers.map((t) => t.price)) : stop.ticketPrice ?? 0;
   if (!price) return "Free";
@@ -1138,6 +1143,11 @@ export default function EventDetailsPage() {
     if (!requireAuth("continue")) return;
     if (!ensureOnline("continue")) return;
     const stops = eventStops(event);
+    if (stops.some((stop) => stop.priceOnRequest && programmeSelection.includes(stop.id))) {
+      setProgrammeSheetVisible(false);
+      router.push(`/negotiate-ticket/${event._id}` as any);
+      return;
+    }
     const total = selectionTotal(stops, programmeSelection, programmeTierChoices);
 
     setProgrammeSubmitting(true);
@@ -1207,6 +1217,10 @@ export default function EventDetailsPage() {
     if (!event) return;
     if (!requireAuth("purchase a ticket")) return;
     if (!ensureOnline("buy a ticket")) return;
+    if (event.hidePrice) {
+      router.push(`/negotiate-ticket/${event._id}` as any);
+      return;
+    }
     // Every paid purchase goes through the checkout sheet — it hosts the tier
     // rows (one synthetic row for single-price events) and the discount-code
     // entry, so it always opens with a clean slate.
@@ -1653,8 +1667,7 @@ export default function EventDetailsPage() {
             {event.isPaid && (
               <View style={[styles.chip, styles.chipNeutral]}>
                 <Text style={[styles.chipText, { color: colors.textBright }]}>
-                  TICKETED · {(event.ticketTiers?.length ?? 0) > 1 ? "FROM " : ""}
-                  {currencyPrefix(event.currency)}{event.ticketPrice?.toFixed(0) ?? "—"}
+                  {event.hidePrice ? "PRICE ON REQUEST" : `TICKETED · ${(event.ticketTiers?.length ?? 0) > 1 ? "FROM " : ""}${currencyPrefix(event.currency)}${event.ticketPrice?.toFixed(0) ?? "—"}`}
                 </Text>
               </View>
             )}
@@ -2693,7 +2706,7 @@ export default function EventDetailsPage() {
                         : neighborhoodFromLocation(sug.location) || "—"}
                     </Text>
                     <Text style={styles.suggestPrice}>
-                      {sug.isPaid && sug.ticketPrice
+                      {sug.hidePrice ? "Price on request" : sug.isPaid && sug.ticketPrice
                         ? `${currencyPrefix(sug.currency)}${sug.ticketPrice}`
                         : "Free"}
                     </Text>
@@ -2807,8 +2820,7 @@ export default function EventDetailsPage() {
                 {event.userRsvp || userHasTicket ? "Your picks" : "What are you going to?"}
               </Text>
               <Text style={styles.venueSheetHint}>
-                Tick as many as you like — one checkout (or one free RSVP, if nothing
-                ticked costs anything) covers all of them.
+                {event.hidePrice ? "Choose free stops to RSVP, or a ticketed stop to negotiate its price with the organizer." : "Tick as many as you like — one checkout (or one free RSVP, if nothing ticked costs anything) covers all of them."}
               </Text>
               <View style={styles.checkoutVenueBlock}>
                 <StopPicker
@@ -2837,6 +2849,7 @@ export default function EventDetailsPage() {
                     : programmeSelection.length === 0
                       ? "Pick at least one"
                       : (() => {
+                          if (eventStops(event).some((stop) => stop.priceOnRequest && programmeSelection.includes(stop.id))) return "Negotiate ticket price →";
                           const total = selectionTotal(eventStops(event), programmeSelection, programmeTierChoices);
                           return total > 0
                             ? `Continue to payment · ${currencyPrefix(event.currency)}${total.toLocaleString()}`
@@ -3538,7 +3551,7 @@ function StickyCTA(props: {
             style={styles.ctaBtnGradient}
           />
           <Text style={styles.ctaBtnText}>
-            {userIsGoing || userHasTicket ? "Manage your picks →" : "Pick what you're going to →"}
+            {event.hidePrice ? "Negotiate price →" : userIsGoing || userHasTicket ? "Manage your picks →" : "Pick what you're going to →"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -3672,7 +3685,7 @@ function StickyCTA(props: {
             style={styles.ctaBtnGradient}
           />
           <Text style={styles.ctaBtnText}>
-            {purchasing ? "Charging…" : "Get ticket →"}
+            {purchasing ? "Charging…" : event.hidePrice ? "Negotiate price →" : "Get ticket →"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -3707,9 +3720,9 @@ function PriceBlock({ event }: { event: Event }) {
   return (
     <View style={styles.priceBlock}>
       <Text style={styles.priceLabel}>
-        {!event.isPaid ? "FREE" : (event.ticketTiers?.length ?? 0) > 1 ? "TICKETS FROM" : "TICKET"}
+        {event.hidePrice ? "PRICE ON REQUEST" : !event.isPaid ? "FREE" : (event.ticketTiers?.length ?? 0) > 1 ? "TICKETS FROM" : "TICKET"}
       </Text>
-      {event.isPaid && (
+      {event.isPaid && !event.hidePrice && (
         <Text style={styles.priceValue}>{currencyPrefix(event.currency)}{event.ticketPrice?.toFixed(0) ?? "—"}</Text>
       )}
     </View>

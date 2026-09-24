@@ -12,6 +12,7 @@ import type { EventSubEvent } from "@/libs/interfaces";
 export interface Stop {
   id: string | null;
   title: string;
+  priceOnRequest?: boolean;
   ticketPrice?: number;
   ticketTiers?: EventSubEvent["ticketTiers"];
   soldOut?: boolean;
@@ -31,6 +32,9 @@ export const stopKey = (id: string | null): string => id ?? "main";
  */
 export function eventStops(event: {
   title: string;
+  priceOnRequest?: boolean;
+  hidePrice?: boolean;
+  isPaid?: boolean;
   ticketPrice?: number;
   ticketTiers?: EventSubEvent["ticketTiers"];
   soldOut?: boolean;
@@ -42,6 +46,11 @@ export function eventStops(event: {
     {
       id: null,
       title: event.title,
+      // `isPaid` carries the main stop on its own because a hidden-price event
+      // can sell with no asking price at all, and the organizer's own copy of
+      // the event is never redacted, so `priceOnRequest` is absent there.
+      priceOnRequest:
+        event.priceOnRequest || (event.hidePrice && ((event.ticketPrice ?? 0) > 0 || !!event.isPaid)),
       ticketPrice: event.ticketPrice,
       ticketTiers: event.ticketTiers,
       soldOut: event.soldOut,
@@ -51,6 +60,7 @@ export function eventStops(event: {
     ...(event.subEvents ?? []).map((s) => ({
       id: s._id,
       title: s.title,
+      priceOnRequest: s.priceOnRequest || (event.hidePrice && (s.ticketPrice ?? 0) > 0),
       ticketPrice: s.ticketPrice,
       ticketTiers: s.ticketTiers,
       soldOut: s.soldOut,
@@ -148,7 +158,7 @@ export default function StopPicker({
         const tiers = stop.ticketTiers ?? [];
         const hasMultipleTiers = tiers.length > 1;
         const price = effectivePrice(stop, tierChoices);
-        const priceLabel = !price
+        const priceLabel = stop.priceOnRequest ? "Price on request" : !price
           ? "Free"
           : `${!checked && hasMultipleTiers ? "From " : ""}${currencyPrefix(currency)}${price.toLocaleString()}`;
         const key = stopKey(stop.id);
@@ -180,7 +190,7 @@ export default function StopPicker({
               <Text style={styles.price}>{priceLabel}</Text>
             </TouchableOpacity>
 
-            {checked && hasMultipleTiers && (
+            {checked && hasMultipleTiers && !stop.priceOnRequest && (
               <View style={styles.tierGroup}>
                 {tiers.map((tier) => {
                   const tierChosen = !!tier._id && tierChoices[key] === tier._id;

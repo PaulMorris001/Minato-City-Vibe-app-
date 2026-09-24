@@ -226,7 +226,8 @@ export function usePayment() {
   const payForProgramme = async (
     eventId: string,
     items: ProgrammeItem[],
-    discountCode?: string
+    discountCode?: string,
+    offerId?: string
   ): Promise<PaymentResult> => {
     const token = await SecureStore.getItemAsync("token");
     if (!token) return { success: false, error: "Not authenticated" };
@@ -236,7 +237,7 @@ export function usePayment() {
       const res = await fetch(`${BASE_URL}/payments/init/tickets/${eventId}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ items, ...(discountCode ? { discountCode } : {}) }),
+        body: JSON.stringify({ items, ...(offerId ? { offerId } : {}), ...(discountCode ? { discountCode } : {}) }),
       });
       init = await res.json();
       if (!res.ok) {

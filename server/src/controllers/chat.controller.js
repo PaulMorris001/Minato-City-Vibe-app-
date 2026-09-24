@@ -209,6 +209,9 @@ export const sendMessage = async (req, res) => {
     const userId = req.user.id;
     const { chatId } = req.params;
     const messageData = req.body;
+    if (messageData.type === "ticket_offer" || messageData.ticketOfferId) {
+      return res.status(400).json({ message: "Send ticket requests through the event's negotiation form." });
+    }
 
     const message = await ChatService.sendMessage(chatId, userId, messageData);
 

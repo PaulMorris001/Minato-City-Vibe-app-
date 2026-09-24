@@ -531,6 +531,14 @@ function MessageBubble({
         );
       }
 
+      case "ticket_offer":
+        return (
+          <TouchableOpacity style={styles.orderCard} onPress={() => router.push(`/ticket-offer/${message.ticketOffer}` as any)}>
+            <Text style={styles.orderKicker}>TICKET NEGOTIATION</Text>
+            <Text style={styles.orderUnavailable}>{message.content}</Text>
+            <Text style={styles.orderKicker}>Review request / invoice →</Text>
+          </TouchableOpacity>
+        );
       case "order": {
         const order: any = message.order;
         if (!order) {

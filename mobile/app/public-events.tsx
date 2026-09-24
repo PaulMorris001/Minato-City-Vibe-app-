@@ -313,7 +313,7 @@ export default function PublicEventsPage() {
 
   const onGetTicket = (ev: PublicEvent) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    if (ev.userHasPurchased) {
+    if (ev.hidePrice || ev.userHasPurchased) {
       router.push({ pathname: "/event/[id]", params: { id: ev._id } });
       return;
     }
@@ -488,7 +488,7 @@ export default function PublicEventsPage() {
       );
     }
     const item = feedItem.data;
-    const isFree = !item.isPaid || priceOf(item) === 0;
+    const isFree = !item.isPaid && !item.hidePrice;
     const left = item.ticketsRemaining;
     const scarce = typeof left === "number" && left <= 15;
     const tag = (item as any).city || item.location?.split(",")[0] || "Event";
@@ -559,7 +559,7 @@ export default function PublicEventsPage() {
           <View style={styles.cardFooter}>
             <View style={styles.priceCluster}>
               <Text style={styles.priceText}>
-                {isFree ? "Free" : `${currencyPrefix(item.currency)}${priceOf(item)}`}
+                {item.hidePrice ? "Price on request" : isFree ? "Free" : `${currencyPrefix(item.currency)}${priceOf(item)}`}
               </Text>
               {/* Spot counts are organizer-only; guests just get "Sold out". */}
               {typeof left === "number" ? (
@@ -579,7 +579,7 @@ export default function PublicEventsPage() {
               }}
             >
               <Text style={styles.ctaText}>
-                {item.userHasPurchased ? "View" : isFree ? "Join free" : "Get ticket"}
+                {item.userHasPurchased ? "View" : item.hidePrice ? "Negotiate" : isFree ? "Join free" : "Get ticket"}
               </Text>
               <Ionicons name="arrow-forward" size={14} color={colors.backgroundDeep} />
             </TouchableOpacity>
