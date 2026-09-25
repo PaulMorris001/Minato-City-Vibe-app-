@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
@@ -37,6 +37,10 @@ const TX_META: Record<
   adjusted: { icon: "create-outline", sign: "-" },
 };
 
+// Keep in sync with Invite & Earn (rewards) screen
+const POINTS_PER_USD = 100;
+const NGN_PER_100_POINTS = 1500;
+
 function formatTxDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
     month: "short",
@@ -46,11 +50,12 @@ function formatTxDate(iso: string) {
 }
 
 /**
- * Where a user checks their OurCityVibe credit — earned from Birthday Raffle
- * wins, spent at checkout only with the vendor that raffle assigned for that
- * currency (or any vendor pricing in that currency, if none was assigned).
- * Reached from the profile menu's "Wallet & Rewards" row
- * (app/(tabs)/_layout.tsx).
+ * OurCityVibe credit wallet.
+ * Credit can come from:
+ *  - Birthday Raffle wins
+ *  - Redeeming referral points (Invite & Earn) at 100 pts = $1 USD or ₦1,500 NGN
+ * Spend at checkout per existing vendor/currency rules. Reached from profile
+ * "Wallet & Rewards" and from the Rewards screen.
  */
 export default function WalletRewards() {
   const { colors } = useTheme();
@@ -132,10 +137,23 @@ export default function WalletRewards() {
           <EmptyState
             icon="wallet-outline"
             title="No credit yet"
-            subtitle="Win the Birthday Raffle to earn OurCityVibe credit."
+            subtitle="Win the Birthday Raffle or redeem referral points from Invite & Earn."
             actionLabel="See the Birthday Raffle"
             onAction={() => router.push("/birthday-raffle" as any)}
           />
+        )}
+
+        {/* Always offer a path to earn points (even when user already has credit) */}
+        {!loading && (
+          <TouchableOpacity
+            style={styles.pointsLink}
+            onPress={() => router.push("/rewards" as any)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="gift-outline" size={18} color={colors.primary} />
+            <Text style={styles.pointsLinkText}>Invite & Earn points</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
         )}
 
         {!loading && hasCredit && (
@@ -200,8 +218,15 @@ export default function WalletRewards() {
             <View style={styles.infoRow}>
               <Ionicons name="checkmark-circle-outline" size={16} color={colors.primary} />
               <Text style={styles.infoText}>
-                Each raffle assigns one vendor per currency — your credit is redeemable only
-                there.
+                Earn credit from the Birthday Raffle, or redeem referral points:
+                {" "}{POINTS_PER_USD} points = $1 USD or ₦{NGN_PER_100_POINTS.toLocaleString()} NGN.
+              </Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Ionicons name="checkmark-circle-outline" size={16} color={colors.primary} />
+              <Text style={styles.infoText}>
+                Raffle credit may be locked to a vendor per currency; points-redeemed credit
+                follows the same spend rules once issued.
               </Text>
             </View>
             <View style={styles.infoRow}>
@@ -233,6 +258,25 @@ const createStyles = (c: ThemeColors) =>
     },
     headerTitle: { fontSize: 18, fontFamily: Fonts.bold, color: c.text },
     content: { padding: 16, paddingBottom: 40 },
+
+    pointsLink: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginTop: 14,
+      paddingVertical: 14,
+      paddingHorizontal: 14,
+      borderRadius: 14,
+      backgroundColor: c.card,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    pointsLinkText: {
+      flex: 1,
+      fontSize: 14,
+      fontFamily: Fonts.semiBold,
+      color: c.text,
+    },
 
     hint: {
       fontSize: 12,
