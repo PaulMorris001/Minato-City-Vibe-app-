@@ -66,7 +66,7 @@ export default function DateTimeDropdown({
   defaultHour = 20,
   showTime = true,
 }: DateTimeDropdownProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const styles = useThemedStyles(createStyles);
   // iOS only: which combined sheet is open, if any.
   const [iosSheetOpen, setIosSheetOpen] = useState(false);
@@ -190,6 +190,11 @@ export default function DateTimeDropdown({
                 display="spinner"
                 minimumDate={minimumDate}
                 maximumDate={maximumDate}
+                // The wheel follows the OS appearance unless told otherwise, so
+                // an app set to Light on a phone in Dark renders white text on
+                // this light sheet — unreadable. Android's dialogs take their
+                // theme from the native app theme and have no JS equivalent.
+                themeVariant={isDark ? "dark" : "light"}
                 onChange={(_event, picked) => picked && setIosDraft(picked)}
               />
             </View>

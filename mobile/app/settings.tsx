@@ -35,6 +35,7 @@ import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 import AccountSwitchToggle from "@/components/shared/AccountSwitchToggle";
 import { clearLocalData } from "@/utils/localData";
+import { openStoreReview, settleRatingPrompt } from "@/utils/appRating";
 import { isSupportUser } from "@/constants/support";
 import { openSupportChat } from "@/utils/userNavigation";
 import {
@@ -256,6 +257,13 @@ export default function SettingsScreen() {
    * everything here re-downloads on the next open with a connection — so this
    * is a space/privacy control, not a destructive one.
    */
+  const handleRateApp = () => {
+    // Asking here answers the home-screen prompt too — RateAppPrompt should
+    // never nag someone who already came looking for the store themselves.
+    settleRatingPrompt();
+    openStoreReview();
+  };
+
   const handleClearLocalData = () => {
     Alert.alert(
       "Clear offline data?",
@@ -597,6 +605,15 @@ export default function SettingsScreen() {
             <Text style={styles.preferenceText}>Terms of Service</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.preferenceItem} onPress={handleRateApp}>
+          <View style={styles.preferenceLeft}>
+            <Ionicons name="star-outline" size={22} color={colors.textBody} />
+            <Text style={styles.preferenceText}>Rate OurCityvibe</Text>
+          </View>
+          {/* Leaves the app when the in-app review sheet isn't available. */}
+          <Ionicons name="open-outline" size={18} color={colors.textMuted} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.preferenceItem} onPress={() => router.push("/blocked-users" as any)}>

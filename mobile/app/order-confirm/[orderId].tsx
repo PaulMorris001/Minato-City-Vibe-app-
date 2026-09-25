@@ -23,6 +23,7 @@ import { usePayment } from "@/hooks/usePayment";
 import { showError, showSuccess } from "@/utils/toast";
 import { ensureOnline } from "@/utils/requireOnline";
 import GlassBackButton from "@/components/shared/GlassBackButton";
+import InvoiceSummary from "@/components/shared/InvoiceSummary";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import type { ThemeColors } from "@/constants/theme";
 
@@ -200,54 +201,23 @@ export default function OrderConfirm() {
           </View>
         )}
 
-        {/* Items */}
-        <Text style={styles.sectionLabel}>Items</Text>
-        <View style={styles.card}>
-          {order.items.map((it, idx) => (
-            <View
-              key={idx}
-              style={[styles.itemRow, idx > 0 && styles.itemRowBorder]}
-            >
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <View style={styles.itemNameRow}>
-                  <Text style={styles.itemName}>{it.name}</Text>
-                  {it.addedByVendor && (
-                    <View style={styles.addedTag}>
-                      <Text style={styles.addedTagText}>Added by vendor</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.itemQty} numberOfLines={1}>
-                  {money(it.priceSnapshot.amount)} × {it.quantity}
-                  {it.note ? ` · ${it.note}` : ""}
-                </Text>
-              </View>
-              <Text style={styles.itemAmount} numberOfLines={1}>
-                {money(it.priceSnapshot.amount * it.quantity)}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Fees + totals */}
-        <View style={[styles.card, { marginTop: 16 }]}>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Subtotal</Text>
-            <Text style={styles.totalValue}>{money(order.itemsSubtotal)}</Text>
-          </View>
-          {/* fee.label is vendor-supplied free text and can run long — give it
-              the shrink room, not the amount. */}
-          {order.additionalFees?.map((fee, idx) => (
-            <View key={idx} style={styles.totalRow}>
-              <Text style={styles.totalLabel} numberOfLines={1}>{fee.label}</Text>
-              <Text style={styles.totalValue} numberOfLines={1}>{money(fee.amount)}</Text>
-            </View>
-          ))}
-          <View style={[styles.totalRow, styles.grandTotalRow]}>
-            <Text style={styles.grandTotalLabel}>Total</Text>
-            <Text style={styles.grandTotalValue} numberOfLines={1}>{money(order.total)}</Text>
-          </View>
-        </View>
+        {/* Shared with the negotiated ticket invoice — see InvoiceSummary. */}
+        <InvoiceSummary
+          items={order.items.map((it) => ({
+            name: it.name,
+            meta: `${money(it.priceSnapshot.amount)} × ${it.quantity}${it.note ? ` · ${it.note}` : ""}`,
+            amount: money(it.priceSnapshot.amount * it.quantity),
+            tag: it.addedByVendor ? "Added by vendor" : undefined,
+          }))}
+          rows={[
+            { label: "Subtotal", value: money(order.itemsSubtotal) },
+            ...(order.additionalFees || []).map((fee) => ({
+              label: fee.label,
+              value: money(fee.amount),
+            })),
+          ]}
+          total={{ label: "Total", value: money(order.total) }}
+        />
 
         {payable && vendorLocked && rawCouponBalance > 0 && (
           <View style={[styles.card, styles.couponCard]}>
@@ -387,14 +357,6 @@ const createStyles = (c: ThemeColors) =>
     },
     paidBannerText: { flex: 1, fontSize: 13, fontFamily: Fonts.medium, color: c.success },
 
-    sectionLabel: {
-      fontSize: 13,
-      fontFamily: Fonts.semiBold,
-      color: c.textSecondary,
-      marginBottom: 8,
-      textTransform: "uppercase",
-      letterSpacing: 0.5,
-    },
     card: {
       backgroundColor: c.card,
       borderRadius: 14,
@@ -402,30 +364,11 @@ const createStyles = (c: ThemeColors) =>
       borderColor: c.border,
       paddingHorizontal: 16,
     },
-    itemRow: { flexDirection: "row", alignItems: "center", paddingVertical: 14, gap: 12 },
-    itemRowBorder: { borderTopWidth: 1, borderTopColor: c.border },
-    itemNameRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
-    itemName: { fontSize: 15, fontFamily: Fonts.semiBold, color: c.text },
-    addedTag: {
-      paddingHorizontal: 8,
-      paddingVertical: 2,
-      borderRadius: 999,
-      backgroundColor: c.primaryFadedStrong,
-      borderWidth: 1,
-      borderColor: c.primaryBorder,
-    },
-    addedTagText: { fontSize: 11, fontFamily: Fonts.semiBold, color: c.primaryLight },
-    itemQty: { fontSize: 13, fontFamily: Fonts.regular, color: c.textSecondary, marginTop: 3 },
-    itemAmount: { fontSize: 15, fontFamily: Fonts.bold, color: c.text },
-
     totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, gap: 10 },
     // flex+minWidth so a long vendor-supplied fee.label shrinks before the
     // amount does; the amount itself stays fixed (flexShrink:0).
     totalLabel: { flex: 1, minWidth: 0, fontSize: 14, fontFamily: Fonts.regular, color: c.textSecondary },
     totalValue: { flexShrink: 0, fontSize: 14, fontFamily: Fonts.medium, color: c.textBody },
-    grandTotalRow: { borderTopWidth: 1, borderTopColor: c.border, marginTop: 4, paddingTop: 14, paddingBottom: 14 },
-    grandTotalLabel: { fontSize: 16, fontFamily: Fonts.bold, color: c.text },
-    grandTotalValue: { flexShrink: 0, fontSize: 20, fontFamily: Fonts.bold, color: c.primary },
 
     couponCard: { marginTop: 16, paddingVertical: 14 },
     couponRow: { flexDirection: "row", alignItems: "center", gap: 12 },

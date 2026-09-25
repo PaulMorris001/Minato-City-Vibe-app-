@@ -2,6 +2,8 @@ import ActiveLocationChip from "@/components/shared/ActiveLocationChip";
 import ExternalEventCard from "@/components/shared/ExternalEventCard";
 import PublicEventCard, { PublicEvent } from "@/components/shared/PublicEventCard";
 import CreateEventTooltip from "@/components/shared/CreateEventTooltip";
+import RateAppPrompt from "@/components/shared/RateAppPrompt";
+import RafflePromoPopup from "@/components/shared/RafflePromoPopup";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import { currencyPrefix, priceLabel } from "@/constants/payments";
@@ -523,6 +525,18 @@ export default function Home() {
   // Your Raffle Status"). Guests and the not-yet-loaded case both read as
   // false, which is the right default — nothing to view yet either way.
   const [hasBirthdayRaffleEvent, setHasBirthdayRaffleEvent] = useState(false);
+  /**
+   * null until RafflePromoPopup has checked for an open campaign, then tracks
+   * whether it's actually on screen. RateAppPrompt stays dormant until this is
+   * false, so the two never stack — the raffle promo runs on every launch, so
+   * anything stronger would mute the rating ask for a whole campaign.
+   */
+  const [rafflePromoShowing, setRafflePromoShowing] = useState<boolean | null>(null);
+  // Stable identity — RafflePromoPopup's effect depends on this, so an inline
+  // arrow would refetch /raffle/public on every render.
+  const handleRafflePromoVisibility = useCallback((showing: boolean) => {
+    setRafflePromoShowing(showing);
+  }, []);
   const { openCreate } = useLocalSearchParams<{ openCreate?: string }>();
   const [publicEvents, setPublicEvents] = useState<PublicEvent[]>([]);
   /**
@@ -1906,6 +1920,12 @@ export default function Home() {
       {/* Rendered after the FAB so it layers above it; pointerEvents="none"
           keeps the FAB tappable through it. */}
       <CreateEventTooltip hidden={!feedAtTop} />
+
+      {/* Both self-gating. The raffle announcement wins the launch slot when a
+          campaign is open; the rating ask waits until it's off screen so the
+          two never stack. */}
+      <RafflePromoPopup onVisibilityChange={handleRafflePromoVisibility} />
+      <RateAppPrompt enabled={rafflePromoShowing === false} />
 
       
     </>

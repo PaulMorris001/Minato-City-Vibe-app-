@@ -179,7 +179,7 @@ function buildMessageSections(msgs: Message[]): MessageSection[] {
 }
 
 export default function ChatScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -2740,6 +2740,9 @@ export default function ChatScreen() {
                   mode="date"
                   display={Platform.OS === "ios" ? "inline" : "default"}
                   minimumDate={new Date()}
+                  // See DateTimeDropdown: the iOS picker takes the OS
+                  // appearance, not the app's theme, unless pinned here.
+                  themeVariant={isDark ? "dark" : "light"}
                   onChange={(_e, d) => {
                     setShowEvDate(Platform.OS === "ios");
                     if (d) {
@@ -2755,6 +2758,7 @@ export default function ChatScreen() {
                   value={evDate}
                   mode="time"
                   display={Platform.OS === "ios" ? "spinner" : "default"}
+                  themeVariant={isDark ? "dark" : "light"}
                   onChange={(_e, d) => {
                     setShowEvTime(Platform.OS === "ios");
                     if (d) {
