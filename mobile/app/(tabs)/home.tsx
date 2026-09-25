@@ -44,6 +44,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -245,6 +246,101 @@ function RaffleBanner({
           size={20}
           color="rgba(255,255,255,0.8)"
         />
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
+
+function ReferralBanner() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  const router = useRouter();
+
+  return (
+    <TouchableOpacity
+      style={styles.raffleBanner}
+      onPress={() => router.push("/rewards" as any)}
+      activeOpacity={0.85}
+    >
+      <LinearGradient
+        colors={["#0F766E", "#115E59"]} // teal so it feels distinct from raffle purple
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.raffleBannerInner}
+      >
+        <View style={styles.raffleBannerContent}>
+          <View style={styles.raffleBadge}>
+            <Ionicons name="people" size={12} color="#fff" />
+            <Text style={styles.raffleBadgeText}>NEW</Text>
+          </View>
+
+          <Text style={styles.raffleTitle}>Invite & Earn Points 🎁</Text>
+
+          <Text style={styles.raffleSubtitle}>
+            Refer friends and organizers. Earn points you can turn into credit.
+          </Text>
+        </View>
+
+        <Ionicons
+          name="chevron-forward"
+          size={20}
+          color="rgba(255,255,255,0.8)"
+        />
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
+
+import { getPartnerRoute, MOCK_PARTNER } from "@/data/mockPartner";
+
+function PartnerBanner() {
+  const styles = useThemedStyles(createStyles);
+  const router = useRouter();
+  const status = MOCK_PARTNER.status;
+
+  const copy =
+    status === "approved"
+      ? {
+          badge: "PARTNER",
+          title: "Partner Dashboard",
+          subtitle: "Track organizers, fees & your 10% commission",
+          icon: "briefcase" as const,
+        }
+      : status === "pending"
+        ? {
+            badge: "PENDING",
+            title: "Application in review",
+            subtitle: "We’ll notify you when you’re approved",
+            icon: "time" as const,
+          }
+        : {
+            badge: "EARN",
+            title: "Become a Partner",
+            subtitle: "Refer organizers & earn 10% of platform fees for 12 months",
+            icon: "people" as const,
+          };
+
+  return (
+    <TouchableOpacity
+      style={styles.raffleBanner}
+      onPress={() => router.push(getPartnerRoute(status) as any)}
+      activeOpacity={0.85}
+    >
+      <LinearGradient
+        colors={["#7C2D12", "#9A3412"]} // warm amber — distinct from raffle purple & referral teal
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.raffleBannerInner}
+      >
+        <View style={styles.raffleBannerContent}>
+          <View style={styles.raffleBadge}>
+            <Ionicons name={copy.icon} size={12} color="#fff" />
+            <Text style={styles.raffleBadgeText}>{copy.badge}</Text>
+          </View>
+          <Text style={styles.raffleTitle}>{copy.title}</Text>
+          <Text style={styles.raffleSubtitle}>{copy.subtitle}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.8)" />
       </LinearGradient>
     </TouchableOpacity>
   );
@@ -1349,9 +1445,26 @@ export default function Home() {
         {/* The search bar that used to sit here moved into the unified search
             page. */}
 
-            {/* Temporary Raffle Entry Point */}
-        <RaffleBanner hasBirthdayEvent={hasBirthdayRaffleEvent} />
-
+            {/* Promo banners carousel (Raffle + Referral) */}
+{/* Promo banners: Raffle · Invite & Earn · Partner */}
+<ScrollView
+  horizontal
+  pagingEnabled
+  showsHorizontalScrollIndicator={false}
+  decelerationRate="fast"
+  style={{ marginBottom: 12 }}
+  contentContainerStyle={{ paddingHorizontal: 20 }}
+>
+  <View style={{ width: Dimensions.get("window").width - 40, marginRight: 12 }}>
+    <RaffleBanner hasBirthdayEvent={hasBirthdayRaffleEvent} />
+  </View>
+  <View style={{ width: Dimensions.get("window").width - 40, marginRight: 12 }}>
+    <ReferralBanner />
+  </View>
+  <View style={{ width: Dimensions.get("window").width - 40 }}>
+    <PartnerBanner />
+  </View>
+</ScrollView>
         {locationBanner === "approximate" && (
           <View style={styles.locationBanner}>
             <Ionicons name="navigate-outline" size={16} color={colors.primary} />
@@ -2449,8 +2562,6 @@ const createStyles = (c: ThemeColors) =>
   promoSub: { fontSize: 11.5, fontFamily: Fonts.regular, color: c.textSecondary },
 
   raffleBanner: {
-  marginHorizontal: 20,
-  marginBottom: 20,
   borderRadius: 18,
   overflow: "hidden",
 },
