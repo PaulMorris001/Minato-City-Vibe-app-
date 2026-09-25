@@ -84,7 +84,9 @@ export interface Message {
   /** Null when the author's account was deleted; the message survives in group chats. */
   sender: User | null;
   type: "text" | "image" | "event" | "guide" | "system" | "order" | "profile" | "ticket_offer";
-  ticketOffer?: string;
+  /** Populated on fetched messages (see chat.service.js); `paid` is stamped
+   *  on server-side because TicketOffer.status never becomes "paid". */
+  ticketOffer?: import("@/services/ticketOffer.service").TicketOffer & { paid?: boolean; organizer?: string; buyer?: string };
   content?: string;
   imageUrl?: string;
   event?: any;

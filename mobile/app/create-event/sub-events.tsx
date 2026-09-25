@@ -5,7 +5,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import GlassBackButton from "@/components/shared/GlassBackButton";
 import SubEventsEditor from "@/components/shared/SubEventsEditor";
-import { Fonts } from "@/constants/fonts";
 import type { ThemeColors } from "@/constants/theme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
 import { useCreateEvent } from "@/contexts/CreateEventContext";
@@ -36,12 +35,6 @@ export default function CreateEventSubEventsScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.hint}>
-            Running a few different things under one invitation — brunch, then
-            dinner, then the after-party? Add each as its own stop with its own
-            time, place, price and guest limit. Attendees say yes to whichever
-            ones they want.
-          </Text>
           <SubEventsEditor
             value={draft.subEvents}
             onChange={(subEvents) => update("subEvents", subEvents)}
@@ -81,11 +74,4 @@ const createStyles = (c: ThemeColors) =>
       letterSpacing: -0.5,
     },
     scrollContent: { paddingHorizontal: 20, paddingBottom: 60 },
-    hint: {
-      fontSize: 13,
-      fontFamily: Fonts.regular,
-      color: c.textDim,
-      lineHeight: 18,
-      marginBottom: 16,
-    },
   });

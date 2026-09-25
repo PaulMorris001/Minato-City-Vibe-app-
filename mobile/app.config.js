@@ -40,6 +40,10 @@ module.exports = {
     supportsTablet: true,
     bundleIdentifier: "com.ourcityvibe.app",
     usesAppleSignIn: true,
+    // Read by expo-store-review's storeUrl(), the fallback RateAppPrompt uses
+    // when the native in-app review sheet isn't available (TestFlight, or a
+    // build made before the module was added).
+    appStoreUrl: "https://apps.apple.com/us/app/ourcityvibe/id6787367889",
     // New canonical host first; legacy Render host kept so older share links
     // still open the app until everyone has updated.
     associatedDomains: [
@@ -64,6 +68,7 @@ module.exports = {
   },
   android: {
     package: "com.ourcityvibe.app",
+    playStoreUrl: "https://play.google.com/store/apps/details?id=com.ourcityvibe.app",
     // Strip these even if a transitive library merges them back in — see the
     // expo-media-library granularPermissions note below. Google Play blocks the
     // release of any app that merely declares them without a justification.
@@ -134,6 +139,7 @@ module.exports = {
     "@react-native-firebase/app",
     "@react-native-firebase/messaging",
     "./plugins/withFirebaseFix",
+    "./plugins/withPodDeploymentTarget",
     "expo-apple-authentication",
     [
       "@react-native-google-signin/google-signin",

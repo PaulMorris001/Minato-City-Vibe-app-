@@ -531,14 +531,125 @@ function MessageBubble({
         );
       }
 
-      case "ticket_offer":
+      case "ticket_offer": {
+        const offer: any = message.ticketOffer;
+        // Older builds and the moment before the populate lands leave this an
+        // id (or absent) — fall back to the plain line rather than an empty card.
+        if (!offer || typeof offer !== "object") {
+          return (
+            <TouchableOpacity
+              style={styles.orderCard}
+              onPress={() => message.ticketOffer && router.push(`/ticket-offer/${message.ticketOffer}` as any)}
+            >
+              <View style={styles.orderHeader}>
+                <Ionicons name="ticket-outline" size={12} color={colors.primaryLight} />
+                <Text style={styles.orderKicker}>TICKET NEGOTIATION</Text>
+              </View>
+              <Text style={styles.orderUnavailable}>{message.content}</Text>
+            </TouchableOpacity>
+          );
+        }
+
+        const offerPrefix = currencyPrefix(offer.currency);
+        const offerMoney = (n: number) => `${offerPrefix}${formatPrice(n || 0)}`;
+        const isQuoted = offer.status === "quoted";
+        // The request card is sent by the buyer, the invoice card by the
+        // organizer — same sender-keyed rule the order card above uses.
+        const isOrganizer =
+          !!currentUserId && String(offer.organizer) === String(currentUserId);
+        const unit = isQuoted ? offer.finalPrice : offer.offeredPrice;
+        const lineTotal = (unit || 0) * (offer.quantity || 1);
+        const openOffer = () => router.push(`/ticket-offer/${offer._id}` as any);
+
+        let offerCta: React.ReactNode;
+        if (isQuoted && !offer.paid && !isOrganizer) {
+          offerCta = (
+            <TouchableOpacity activeOpacity={0.85} onPress={openOffer}>
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark, colors.accentPink]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.orderCta}
+              >
+                <Ionicons name="card-outline" size={15} color="#fff" />
+                <Text style={styles.orderCtaText}>Pay {offerMoney(lineTotal)}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          );
+        } else if (offer.status === "requested" && isOrganizer) {
+          offerCta = (
+            <TouchableOpacity activeOpacity={0.85} onPress={openOffer}>
+              <LinearGradient
+                colors={[colors.primary, colors.primaryDark, colors.accentPink]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.orderCta}
+              >
+                <Text style={styles.orderCtaText}>Send invoice</Text>
+                <Ionicons name="arrow-forward" size={14} color="#fff" />
+              </LinearGradient>
+            </TouchableOpacity>
+          );
+        } else {
+          const label = offer.paid
+            ? "Paid ✓"
+            : offer.status === "declined"
+              ? "Request declined"
+              : offer.status === "cancelled"
+                ? "Request cancelled"
+                : isQuoted
+                  ? "Invoice sent"
+                  : "Waiting for organizer's invoice";
+          offerCta = (
+            <View style={[styles.orderStatusPill, offer.paid && styles.orderStatusPaid]}>
+              <Text style={[styles.orderStatusText, offer.paid && styles.orderStatusTextPaid]}>
+                {label}
+              </Text>
+            </View>
+          );
+        }
+
         return (
-          <TouchableOpacity style={styles.orderCard} onPress={() => router.push(`/ticket-offer/${message.ticketOffer}` as any)}>
-            <Text style={styles.orderKicker}>TICKET NEGOTIATION</Text>
-            <Text style={styles.orderUnavailable}>{message.content}</Text>
-            <Text style={styles.orderKicker}>Review request / invoice →</Text>
-          </TouchableOpacity>
+          <Pressable onLongPress={handleLongPress} onPress={openOffer} style={styles.orderCard}>
+            <View style={styles.orderHeader}>
+              <Ionicons name="ticket-outline" size={12} color={colors.primaryLight} />
+              <Text style={styles.orderKicker}>
+                {isQuoted ? "TICKET INVOICE" : "TICKET REQUEST"}
+              </Text>
+            </View>
+
+            <View style={styles.orderItemRow}>
+              <Text style={styles.orderItemQty}>{offer.quantity}×</Text>
+              <Text style={styles.orderItemName} numberOfLines={1}>
+                {offer.ticketName}
+              </Text>
+              <Text style={styles.orderItemPrice}>{offerMoney(lineTotal)}</Text>
+            </View>
+
+            <View style={styles.orderDivider} />
+
+            {offer.standardPrice > 0 && (
+              <View style={styles.orderTotalRow}>
+                <Text style={styles.orderSubLabel}>Standard</Text>
+                <Text style={styles.orderSubValue}>{offerMoney(offer.standardPrice)}</Text>
+              </View>
+            )}
+            <View style={styles.orderTotalRow}>
+              <Text style={styles.orderSubLabel}>{isQuoted ? "Offered" : "Their offer"}</Text>
+              <Text style={styles.orderSubValue}>{offerMoney(offer.offeredPrice)}</Text>
+            </View>
+
+            {isQuoted ? (
+              <View style={styles.orderTotalRow}>
+                <Text style={styles.orderTotalLabel}>Total</Text>
+                <Text style={styles.orderTotalValue}>{offerMoney(lineTotal)}</Text>
+              </View>
+            ) : null}
+
+            <View style={{ marginTop: 12 }}>{offerCta}</View>
+          </Pressable>
         );
+      }
       case "order": {
         const order: any = message.order;
         if (!order) {
@@ -769,9 +880,11 @@ function MessageBubble({
       message.type === "event" ||
       message.type === "guide" ||
       message.type === "order" ||
+      message.type === "ticket_offer" ||
       message.type === "profile"
     ) {
-      // Event / guide / order / profile card stands alone — no surrounding bubble
+      // Event / guide / order / ticket-offer / profile card stands alone — no
+      // surrounding bubble
       return renderBubbleBody();
     }
     if (message.type === "image") {
