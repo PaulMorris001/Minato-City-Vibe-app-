@@ -1,6 +1,25 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Linking } from "react-native";
-import * as StoreReview from "expo-store-review";
+import { Linking, Platform } from "react-native";
+
+// Same listings as the website's web/src/lib/app.ts.
+const STORE_URL = Platform.select({
+  android: "https://play.google.com/store/apps/details?id=com.ourcityvibe.app",
+  default: "https://apps.apple.com/us/app/ourcityvibe/id6787367889",
+});
+
+/**
+ * expo-store-review, loaded on first use rather than at import. Its native
+ * module is resolved when the package is evaluated, so a top-level import
+ * crashed every build made before it was added ("Cannot find native module
+ * 'ExpoStoreReview'") at app start — this file is imported from screens.
+ */
+function loadStoreReview(): typeof import("expo-store-review") | null {
+  try {
+    return require("expo-store-review");
+  } catch {
+    return null;
+  }
+}
 
 /**
  * When to ask someone to rate the app, and how to take them there.
@@ -82,21 +101,21 @@ export async function settleRatingPrompt(): Promise<void> {
 /**
  * Open the native in-app review sheet, falling back to the store listing.
  *
- * The fallback is not just for TestFlight: expo-store-review is a native
- * module, so any build made before it was added throws on the first call and
- * lands here instead. `storeUrl()` is plain JS over the app config, so it keeps
- * working either way.
+ * The fallback is not just for TestFlight: a build made before expo-store-review
+ * was added has no native module, so `loadStoreReview()` returns null and the
+ * hardcoded listing is the only way to the store.
  */
 export async function openStoreReview(): Promise<void> {
+  const StoreReview = loadStoreReview();
   try {
-    if (await StoreReview.isAvailableAsync()) {
+    if (StoreReview && (await StoreReview.isAvailableAsync())) {
       await StoreReview.requestReview();
       return;
     }
   } catch {
-    // Native module missing or the sheet refused — fall through to the link.
+    // The sheet refused — fall through to the link.
   }
 
-  const url = StoreReview.storeUrl();
+  const url = StoreReview?.storeUrl() || STORE_URL;
   if (url) await Linking.openURL(url).catch(() => {});
 }
