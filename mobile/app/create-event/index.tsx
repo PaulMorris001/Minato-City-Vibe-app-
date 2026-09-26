@@ -36,6 +36,7 @@ import { tierDraftError, tiersHaveQuantities } from "@/components/shared/TicketT
 import { venuesFromDrafts } from "@/components/shared/AdditionalLocationsEditor";
 import { subEventsFromDrafts } from "@/components/shared/SubEventsEditor";
 import { uploadImage, resolveImageUrls } from "@/utils/imageUpload";
+import { markRatingMoment } from "@/utils/appRating";
 import { scaleFontSize } from "@/utils/responsive";
 import { formatLocation } from "@/utils/location";
 import { ensureOnline } from "@/utils/requireOnline";
@@ -263,6 +264,7 @@ export default function CreateEventScreen() {
       const { data } = await axios.post(`${BASE_URL}/events`, eventData, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      markRatingMoment();
 
       // Every paid event waits on admin review before it can sell tickets, so
       // trust the server's wording rather than always claiming it's live.

@@ -10,6 +10,30 @@ import { isVideoUrl } from "../config/cloudinary.js";
 import { sendPushNotification, wantsPush, notifyUser } from "./notification.service.js";
 import { areMutualFollows } from "../utils/followCheck.js";
 import { involvesSupport, withSupportMarkers } from "../utils/supportAccount.js";
+import TicketOrder from "../models/ticketOrder.model.js";
+
+/**
+ * Stamps `paid` onto every populated ticketOffer in a page of messages.
+ *
+ * A TicketOffer's own status never becomes "paid" — it stays "quoted" and the
+ * payment is recorded on the TicketOrder that references it. Without this the
+ * chat invoice card would go on offering "Pay" after the buyer already had.
+ * Mutates in place; the offers are plain objects via the populate transform.
+ */
+async function markPaidTicketOffers(messages) {
+  const offers = messages.map((m) => m.ticketOffer).filter(Boolean);
+  if (!offers.length) return;
+
+  const paid = await TicketOrder.find({
+    ticketOffer: { $in: offers.map((o) => o._id) },
+    status: "paid",
+  })
+    .select("ticketOffer")
+    .lean();
+
+  const paidIds = new Set(paid.map((o) => String(o.ticketOffer)));
+  for (const offer of offers) offer.paid = paidIds.has(String(offer._id));
+}
 
 /**
  * Chat Service - Business logic layer for chat operations
@@ -320,6 +344,7 @@ class ChatService {
       { path: 'event', transform: (doc) => doc ? applyPriceVisibility(doc.toObject()) : doc },
       { path: 'guide', select: 'title authorName city cityState topic price currency' },
       { path: 'order' },
+      { path: 'ticketOffer' },
       { path: 'profileUser', select: 'username firstName lastName profilePicture isVendor businessName businessPicture verified' },
     ]);
 
@@ -472,11 +497,18 @@ class ChatService {
       .populate({ path: 'event', transform: (doc) => doc ? applyPriceVisibility(doc.toObject()) : doc })
       .populate('guide', 'title authorName city cityState topic price currency')
       .populate('order')
+      .populate({ path: 'ticketOffer', transform: (doc) => doc ? doc.toObject() : doc })
       .populate('profileUser', 'username firstName lastName profilePicture isVendor businessName businessPicture verified')
       .populate('reactions.user', 'username profilePicture');
 
     // Delta mode already sorted oldest-first; the other two have to be flipped.
     const ordered = since ? messages : [...messages].reverse();
+
+    // TicketOffer.status has no "paid" — payment lives on the TicketOrder that
+    // references it — so the chat card would keep offering "Pay" on an invoice
+    // that's already been settled. One query for the whole page rather than a
+    // lookup per message.
+    await markPaidTicketOffers(ordered);
 
     if (cursored) {
       return {
@@ -646,6 +678,7 @@ class ChatService {
     await message.populate({ path: 'event', transform: (doc) => doc ? applyPriceVisibility(doc.toObject()) : doc });
     await message.populate('guide', 'title authorName city cityState topic price currency');
     await message.populate('order');
+    await message.populate('ticketOffer');
     await message.populate('reactions.user', 'username profilePicture');
 
     const io = getSocketInstance();

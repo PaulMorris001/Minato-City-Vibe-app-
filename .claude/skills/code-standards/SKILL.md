@@ -99,7 +99,13 @@ export default function Screen() {
 }
 ```
 
-The factory must be at module scope so its identity is stable. **No hardcoded hex
+The factory must be at module scope so its identity is stable. A **native**
+component doesn't see any of this — `@react-native-community/datetimepicker`
+follows the OS appearance until it's handed `themeVariant={isDark ? "dark" : "light"}`,
+so a screen that is otherwise perfectly themed draws a white-on-white wheel for a
+Light app on a Dark phone. Pass it on every iOS picker (`DateTimeDropdown`,
+`edit-profile`, `chat/[id]`); Android's dialogs take their theme from the native
+app theme and have no JS equivalent. **No hardcoded hex
 in new screen code** — pull from `constants/theme.ts` tokens. Deliberate
 exceptions that already exist and should stay: auth/poster screens are pinned
 dark, gradient tuples on `PrimaryButton`, and the vendor-details screen's own

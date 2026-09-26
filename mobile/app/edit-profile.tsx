@@ -50,7 +50,7 @@ const GENDER_OPTIONS = [
 ] as const;
 
 export default function EditProfileScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const styles = useThemedStyles(createStyles);
 
   const [loading, setLoading] = useState(true);
@@ -392,6 +392,10 @@ export default function EditProfileScreen() {
               mode="date"
               display={Platform.OS === "ios" ? "spinner" : "default"}
               maximumDate={maxDobDate()}
+              // Without this the iOS wheel follows the OS appearance rather
+              // than the app's own theme setting, so a Light app on a Dark
+              // phone draws white text on this light sheet.
+              themeVariant={isDark ? "dark" : "light"}
               onChange={(e: DateTimePickerEvent, picked?: Date) => {
                 if (Platform.OS !== "ios") setDobPickerOpen(false);
                 if (e.type === "dismissed" || !picked) return;

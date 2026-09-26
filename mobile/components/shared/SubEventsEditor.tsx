@@ -3,6 +3,7 @@ import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-nativ
 import { Ionicons } from "@expo/vector-icons";
 
 import DateTimeDropdown from "@/components/shared/DateTimeDropdown";
+import InfoTip from "@/components/shared/InfoTip";
 import LocationPicker from "@/components/shared/LocationPicker";
 import LocationPinPicker, { PinnedCoordinates } from "@/components/shared/LocationPinPicker";
 import { Fonts } from "@/constants/fonts";
@@ -211,17 +212,32 @@ export default function SubEventsEditor({
 
   const pinning = value.find((d) => d.key === pinningKey) ?? null;
 
+  const tip = (
+    <InfoTip label="WHAT'S A SUB-EVENT?" style={styles.infoTip} labelStyle={styles.infoTipLabel}>
+      A programme of separate stops under one invitation — brunch, then dinner, then
+      the after-party. Each stop carries its own time, place, price and guest limit,
+      and guests say yes to whichever ones they want: a free stop is an RSVP, a priced
+      one has to be paid for. Ticket sales open and close per stop, so finishing one
+      leaves the rest on sale. An event can have a programme or extra locations, never
+      both.
+    </InfoTip>
+  );
+
   if (disabledReason) {
     return (
-      <View style={styles.notice}>
-        <Ionicons name="information-circle-outline" size={17} color={colors.textDim} />
-        <Text style={styles.noticeText}>{disabledReason}</Text>
+      <View>
+        {tip}
+        <View style={styles.notice}>
+          <Ionicons name="information-circle-outline" size={17} color={colors.textDim} />
+          <Text style={styles.noticeText}>{disabledReason}</Text>
+        </View>
       </View>
     );
   }
 
   return (
     <View>
+      {tip}
       {value.map((draft, i) => (
         <View key={draft.key} style={styles.card}>
           <View style={styles.cardHeader}>
@@ -549,6 +565,14 @@ const createStyles = (c: ThemeColors) =>
       fontFamily: Fonts.semiBold,
       fontSize: scaleFontSize(13),
       color: c.primaryLight,
+    },
+    infoTip: { marginBottom: 8 },
+    infoTipLabel: {
+      fontSize: 13,
+      fontFamily: Fonts.semiBold,
+      color: c.textDim,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
     },
     notice: {
       flexDirection: "row",

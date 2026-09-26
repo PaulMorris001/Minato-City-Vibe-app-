@@ -5,6 +5,7 @@ import * as SecureStore from "expo-secure-store";
 import { BASE_URL } from "@/constants/constants";
 import { usePayment } from "@/hooks/usePayment";
 import { trackEvent as trackAnalyticsEvent } from "@/utils/analytics";
+import { markRatingMoment } from "@/utils/appRating";
 
 /**
  * Buying a ticket / joining a free event, shared by every surface that renders
@@ -44,6 +45,7 @@ export function useEventActions({ onDone }: { onDone?: () => void } = {}) {
         return;
       }
       trackAnalyticsEvent("ticket_purchased", { eventId, eventTitle });
+      markRatingMoment();
       Alert.alert("Success!", `You're going to "${eventTitle}"! Check your tickets.`);
       onDone?.();
     },
@@ -70,6 +72,7 @@ export function useEventActions({ onDone }: { onDone?: () => void } = {}) {
         });
         const data = await res.json();
         if (res.ok) {
+          markRatingMoment();
           Alert.alert("Success!", `You've joined "${eventTitle}"`);
           onDone?.();
         } else {
