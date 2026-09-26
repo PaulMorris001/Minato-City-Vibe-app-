@@ -173,7 +173,6 @@ export interface EventItem {
   rsvpUsers?: PublicUser[];
   invitedUsers?: PublicUser[];
   rsvpCount?: number;
-  seenCount?: number;
   friendsGoing?: number;
   hasMeetingLink?: boolean;
   meetingLink?: string;
