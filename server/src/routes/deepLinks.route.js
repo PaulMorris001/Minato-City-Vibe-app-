@@ -163,6 +163,7 @@ function buildLandingPage({
   appDeepLink,
   /** Optional www URL for the same item — renders a "View on the website" button. */
   webUrl,
+  webLabel = 'View on the website',
   body,
 }) {
   const t = escapeHtml(title || 'OurCityvibe');
@@ -328,7 +329,7 @@ function buildLandingPage({
     <div class="logo">OurCityvibe</div>
     ${bodyHtml}
     <a class="open-btn" href="${deepLinkEsc}">Open in the app</a>
-    ${webUrlEsc ? `<a class="web-btn" href="${webUrlEsc}">View on the website</a>` : ''}
+    ${webUrlEsc ? `<a class="web-btn" href="${webUrlEsc}">${escapeHtml(webLabel)}</a>` : ''}
     <div class="store-row">
       ${HAS_APP_STORE_LISTING ? `<a class="store-btn" href="${APP_STORE}">App Store</a>` : ''}
       <a class="store-btn" href="${PLAY_STORE}">Google Play</a>
@@ -520,11 +521,12 @@ router.get('/event/:token', async (req, res) => {
       appDeepLink,
       // The website's event page takes the same param the share link carries —
       // it hands it straight to GET /api/events/:param, which resolves slug,
-      // shareToken and _id alike. Only offered for events the site can actually
-      // show: a private event would bounce a logged-out visitor.
-      webUrl: opensOnEventScreen
-        ? `${WEB_BASE}/events/${event.slug || event.shareToken || token}`
-        : undefined,
+      // shareToken and _id alike. A private event is offered too: the site falls
+      // back to the share-token endpoints for it (possessing the link is the
+      // access grant), so guests can RSVP in the browser — only the group chat
+      // needs the app.
+      webUrl: `${WEB_BASE}/events/${event.slug || event.shareToken || token}`,
+      webLabel: opensOnEventScreen ? 'View on the website' : 'RSVP on the website',
       body,
     }));
 });

@@ -2032,6 +2032,15 @@ export const joinEventByShareLink = async (req, res) => {
       return res.status(410).json({ message: "This event is no longer available" });
     }
 
+    // Joining mints a QR entry pass, so a finished event has to refuse — same
+    // rule as joinFreePublicEvent. An old share link must not reopen it.
+    if (event.cancelledAt) {
+      return res.status(400).json({ message: "This event was cancelled." });
+    }
+    if (isEventPast(event)) {
+      return res.status(400).json({ message: "This event has ended." });
+    }
+
     if (event.createdBy.toString() === userId) {
       return res.status(400).json({ message: "You are the creator of this event" });
     }

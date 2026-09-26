@@ -1,6 +1,6 @@
 import { APP_STORE_URL, PLAY_STORE_URL } from "../lib/app";
 
-type Variant = "default" | "ticket" | "profile" | "vendor";
+type Variant = "default" | "ticket" | "invite" | "profile" | "vendor";
 
 const COPY: Record<Variant, { title: string; body: string; points: string[] }> = {
   default: {
@@ -19,6 +19,15 @@ const COPY: Record<Variant, { title: string; body: string; points: string[] }> =
       "Scannable ticket QR for entry",
       "Group chat with the host and other guests",
       "Reminders and last-minute updates from the organizer",
+    ],
+  },
+  invite: {
+    title: "The group chat is in the app 💬",
+    body: "RSVP right here — then download CityVibe and log in with the same account to join the private group chat with the host and the other guests.",
+    points: [
+      "Private group chat with everyone on the guest list",
+      "Your entry QR code for the door",
+      "Updates from the host as plans change",
     ],
   },
   profile: {

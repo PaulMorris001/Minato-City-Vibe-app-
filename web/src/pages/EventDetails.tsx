@@ -6,6 +6,7 @@ import AppPromo from "../components/AppPromo";
 import VenueChoice, { venueCount } from "../components/VenueChoice";
 import ProgrammePicker, { eventStops, selectionTotal } from "../components/ProgrammePicker";
 import { api } from "../lib/api";
+import { storeUrlForDevice } from "../lib/app";
 import { isVideoUrl, videoPosterUrl } from "../lib/media";
 import { useAuth } from "../context/AuthContext";
 import type { EventItem, EventSubEvent } from "../lib/types";
@@ -43,19 +44,37 @@ export default function EventDetails() {
   // someone already going sees their own picks; a guest starts with none ticked.
   const [selectedStops, setSelectedStops] = useState<(string | null)[]>([]);
 
+  // A private event the viewer isn't on the guest list for yet, loaded through
+  // the share-link endpoint: holding the link is the invite, same as the app's
+  // share screen. RSVPing goes through the share-link join, which also adds them
+  // to the event's group chat (which only exists in the app).
+  const [viaInvite, setViaInvite] = useState(false);
+
   function loadEvent() {
     // The detail endpoint wraps the event: { event: {...} }.
-    return api<{ event: EventItem }>(`/events/${eventId}`).then(({ event }) => {
-      setEv(event);
-      document.title = `${event.title} – OurCityvibe`;
-      if (event.ticketTiers && event.ticketTiers.length === 1) {
-        setSelectedTier(event.ticketTiers[0]._id);
-      }
-      // Seeded from the server so someone already going sees their own pick.
-      setVenueIndex(event.userLocationIndex ?? null);
-      setSelectedStops(event.userSubEvents ?? []);
-      return event;
-    });
+    return api<{ event: EventItem }>(`/events/${eventId}`)
+      .then((res) => {
+        setViaInvite(false);
+        return res;
+      })
+      .catch((err) => {
+        if (err.status !== 401 && err.status !== 403) throw err;
+        return api<{ event: EventItem }>(`/events/share/${eventId}`, { auth: false }).then((res) => {
+          setViaInvite(true);
+          return res;
+        });
+      })
+      .then(({ event }) => {
+        setEv(event);
+        document.title = `${event.title} – OurCityvibe`;
+        if (event.ticketTiers && event.ticketTiers.length === 1) {
+          setSelectedTier(event.ticketTiers[0]._id);
+        }
+        // Seeded from the server so someone already going sees their own pick.
+        setVenueIndex(event.userLocationIndex ?? null);
+        setSelectedStops(event.userSubEvents ?? []);
+        return event;
+      });
   }
 
   useEffect(() => {
@@ -92,7 +111,20 @@ export default function EventDetails() {
     setRsvpError("");
     setRsvping(true);
     try {
-      if (ev?.subEvents?.length) {
+      if (viaInvite) {
+        // Puts them on the guest list and in the group chat; /rsvp would 403
+        // until they're on it. Programme picks follow once they are.
+        await api(`/events/share/${eventId}/join`, {
+          method: "POST",
+          body: venueIndex !== null ? { locationIndex: venueIndex } : {},
+        });
+        if (ev?.subEvents?.length) {
+          await api(`/events/${ev._id}/rsvp`, {
+            method: "POST",
+            body: { subEvents: selectedStops },
+          });
+        }
+      } else if (ev?.subEvents?.length) {
         // The multi-select reconcile: `selectedStops` is the guest's full,
         // authoritative pick (main event as null), resent on every change —
         // /join has no notion of "which stops" and only ever allows one join.
@@ -196,7 +228,7 @@ export default function EventDetails() {
         <div className="cv-hero-text">
           <div className="cv-chips" style={{ marginBottom: 10 }}>
             <span className={`cv-pill ${ev.isPaid ? "cv-pill-accent" : "cv-pill-free"}`}>
-              {ev.isPaid ? "Ticketed" : "Free event"}
+              {ev.isPaid ? "Ticketed" : ev.isPublic === false ? "Private invite" : "Free event"}
             </span>
             {ev.isVirtual && <span className="cv-pill">Online</span>}
             {soon && <span className="cv-pill">{soon}</span>}
@@ -449,7 +481,11 @@ export default function EventDetails() {
             </section>
           )}
 
-          <AppPromo variant={going || ev.userHasPurchased ? "ticket" : "default"} />
+          <AppPromo
+            variant={
+              ev.isPublic === false ? "invite" : going || ev.userHasPurchased ? "ticket" : "default"
+            }
+          />
         </div>
 
         {/* ── Ticket sidebar ────────────────────────────── */}
@@ -474,14 +510,17 @@ export default function EventDetails() {
             <button className="cv-btn cv-btn-ghost" style={{ marginTop: 10 }} onClick={share}>
               {copied ? "Link copied ✓" : "Share this event"}
             </button>
-            <button
-              className="cv-btn cv-btn-ghost"
-              style={{ marginTop: 10 }}
-              onClick={toggleQr}
-              aria-expanded={qrOpen}
-            >
-              {qrOpen ? "Hide QR code" : "Show QR code"}
-            </button>
+            {/* The QR endpoint only serves viewers already on the guest list. */}
+            {!viaInvite && (
+              <button
+                className="cv-btn cv-btn-ghost"
+                style={{ marginTop: 10 }}
+                onClick={toggleQr}
+                aria-expanded={qrOpen}
+              >
+                {qrOpen ? "Hide QR code" : "Show QR code"}
+              </button>
+            )}
 
             {qrOpen && (
               <div style={{ marginTop: 12, textAlign: "center" }}>
@@ -689,10 +728,29 @@ function TicketBox({
         <p className="cv-muted">
           You're on the guest list. Open the CityVibe app for the group chat and updates.
         </p>
+        {ev.isPublic === false && (
+          <a
+            className="cv-btn"
+            style={{ marginTop: 16 }}
+            href={storeUrlForDevice()}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Get the app to join the group chat
+          </a>
+        )}
+      </>
+    ) : ev.salesClosedReason === "cancelled" || ev.salesClosedReason === "ended" ? (
+      // The server refuses these joins too; this just says so before the click.
+      <>
+        <h3 className="cv-h3">
+          {ev.salesClosedReason === "cancelled" ? "This event was cancelled" : "This event has ended"}
+        </h3>
+        <p className="cv-muted">RSVPs are closed.</p>
       </>
     ) : (
       <>
-        <h3 className="cv-h3">Free event</h3>
+        <h3 className="cv-h3">{ev.isPublic === false ? "You're invited" : "Free event"}</h3>
         <p className="cv-muted" style={{ marginBottom: 16 }}>
           RSVP to join the guest list — no charge.
         </p>
