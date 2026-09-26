@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
 import AppPromo from "../components/AppPromo";
@@ -85,6 +85,22 @@ export default function EventDetails() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
+  // Back from login/signup after tapping RSVP: complete it. Skipped when the
+  // guest still has a choice to make (venue, programme stops) — they land on
+  // the event with the picker and one tap left.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const resumeRsvp = searchParams.get("rsvp") === "1";
+  useEffect(() => {
+    if (!resumeRsvp || !user || !ev) return;
+    setSearchParams({}, { replace: true });
+    const alreadyGoing = ev.userRsvp || ev.userStatus === "accepted" || ev.userStatus === "creator";
+    const needsPick = !!ev.subEvents?.length || venueCount(ev) > 1;
+    const over = ev.salesClosedReason === "cancelled" || ev.salesClosedReason === "ended";
+    if (alreadyGoing || needsPick || ev.isPaid || over) return;
+    rsvpFree();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeRsvp, user, ev]);
+
   function goToPay() {
     // No login gate — checkout supports guests (they confirm an email with an OTP
     // on the Pay page). A pre-selected tier is passed through as the builder's
@@ -105,7 +121,13 @@ export default function EventDetails() {
 
   async function rsvpFree() {
     if (!user) {
-      navigate("/login", { state: { from: `/events/${eventId}` } });
+      // `?rsvp=1` finishes the RSVP on the way back (see the effect below), so
+      // signing up doesn't end with a second tap. A private invite mostly
+      // reaches people with no account yet, so it opens on signup; that page
+      // links to login and carries `from` across.
+      navigate(ev?.isPublic === false ? "/signup" : "/login", {
+        state: { from: `/events/${eventId}?rsvp=1` },
+      });
       return;
     }
     setRsvpError("");
