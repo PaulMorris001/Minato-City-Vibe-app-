@@ -126,7 +126,7 @@ const css = `
   /* ── Nav ─────────────────────────────────────────────── */
   /* A fixed height (rather than one derived from padding + content) keeps
      this pinned bar from ever growing taller than intended — some
-     browsers mis-size a `position: sticky` + `backdrop-filter` element at
+     browsers mis-size a position: sticky + backdrop-filter element at
      non-100% zoom/OS display-scale levels, and without a hard cap that
      showed up as the bar visually swallowing a large chunk of the page. */
   .cv-nav {

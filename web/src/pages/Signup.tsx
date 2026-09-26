@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
@@ -7,6 +7,10 @@ import { api } from "../lib/api";
 export default function Signup() {
   const { register, verifyEmail, needsVerification } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Same router-state handoff as Login, so someone sent here to RSVP (e.g. from
+  // a private invite) lands back on that event once their account exists.
+  const from: string | undefined = (location.state as any)?.from;
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -36,7 +40,7 @@ export default function Signup() {
     setSubmitting(true);
     try {
       await verifyEmail(otp);
-      navigate("/events", { replace: true });
+      navigate(from || "/events", { replace: true });
     } catch (err: any) {
       setError(err.message || "That code didn't work. Try again.");
     } finally {
@@ -102,7 +106,7 @@ export default function Signup() {
               </button>
             </form>
             <p className="cv-muted cv-center" style={{ marginTop: 20 }}>
-              Already have an account? <Link to="/login" className="cv-link">Log in</Link>
+              Already have an account? <Link to="/login" state={{ from }} className="cv-link">Log in</Link>
             </p>
           </>
         ) : (

@@ -101,7 +101,7 @@ export default function Login() {
           </button>
         </form>
         <p className="cv-muted cv-center" style={{ marginTop: 20 }}>
-          No account? <Link to="/signup" className="cv-link">Create one</Link>
+          No account? <Link to="/signup" state={{ from: (location.state as any)?.from }} className="cv-link">Create one</Link>
         </p>
       </div>
     </Layout>

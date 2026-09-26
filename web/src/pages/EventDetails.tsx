@@ -624,6 +624,26 @@ const SALES_CLOSED_COPY: Record<string, { heading: string; detail: string }> = {
   },
 };
 
+/**
+ * Shown once a guest is on a private event's list. RSVPing put them in the
+ * event's group chat, but that chat only exists in the app — without this they
+ * leave the website not knowing it's there.
+ */
+function GroupChatNudge() {
+  return (
+    <div className="cv-success" style={{ marginTop: 16 }}>
+      <strong>💬 You've been added to the event's group chat.</strong>
+      <p style={{ margin: "6px 0 12px" }}>
+        The chat with the host and other guests is only in the CityVibe app. Download it and log
+        in with this same account to join the conversation.
+      </p>
+      <a className="cv-btn" href={storeUrlForDevice()} target="_blank" rel="noreferrer">
+        Get the app to open the group chat
+      </a>
+    </div>
+  );
+}
+
 /** "Free" / "$5" / "From $5" for one stop of a programme. */
 function stopPriceText(stop: EventSubEvent, currency?: string) {
   if (stop.priceOnRequest) return "Price on request";
@@ -717,6 +737,7 @@ function TicketBox({
                   ? `Continue to payment · ${money(total, ev.currency)}`
                   : "Confirm — it's free"}
         </button>
+        {going && ev.isPublic === false && <GroupChatNudge />}
       </>
     );
   }
@@ -725,19 +746,12 @@ function TicketBox({
     return going ? (
       <>
         <h3 className="cv-h3">You're going 🎉</h3>
-        <p className="cv-muted">
-          You're on the guest list. Open the CityVibe app for the group chat and updates.
-        </p>
-        {ev.isPublic === false && (
-          <a
-            className="cv-btn"
-            style={{ marginTop: 16 }}
-            href={storeUrlForDevice()}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Get the app to join the group chat
-          </a>
+        {ev.isPublic === false ? (
+          <GroupChatNudge />
+        ) : (
+          <p className="cv-muted">
+            You're on the guest list. Open the CityVibe app for the group chat and updates.
+          </p>
         )}
       </>
     ) : ev.salesClosedReason === "cancelled" || ev.salesClosedReason === "ended" ? (
@@ -761,7 +775,7 @@ function TicketBox({
           onClick={onRsvp}
           disabled={rsvping || (venueCount(ev) > 1 && venueIndex === null)}
         >
-          {rsvping ? "Joining…" : user ? "RSVP — I'm going" : "Log in to RSVP"}
+          {rsvping ? "Joining…" : user ? "RSVP — I'm going" : "Log in or sign up to RSVP"}
         </button>
       </>
     );
