@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Layout from "../components/Layout";
 import EventCard from "../components/EventCard";
 import AppPromo from "../components/AppPromo";
+import RafflePromoPopup from "../components/RafflePromoPopup";
 import { api } from "../lib/api";
 import type { EventItem, ExternalEventItem, FeedEvent } from "../lib/types";
 import { eventPlace } from "../lib/format";
@@ -131,6 +132,7 @@ export default function Events() {
 
   return (
     <Layout wide>
+      <RafflePromoPopup />
       <header className="cv-section">
         <p className="cv-eyebrow">What's on</p>
         <h1 className="cv-h1">
