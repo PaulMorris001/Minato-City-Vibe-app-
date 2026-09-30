@@ -7,6 +7,7 @@ import Csae from "./pages/Csae";
 import DeleteAccount from "./pages/DeleteAccount";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import ForgotPassword from "./pages/ForgotPassword";
 import Events from "./pages/Events";
 import EventDetails from "./pages/EventDetails";
 import ExternalEventDetails from "./pages/ExternalEventDetails";
@@ -36,6 +37,7 @@ export default function App() {
           {/* Account + pay-for-events */}
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/events" element={<Events />} />
           <Route path="/events/:eventId" element={<EventDetails />} />
           <Route path="/events/:eventId/pay" element={<Pay />} />

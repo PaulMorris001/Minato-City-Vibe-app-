@@ -1918,9 +1918,19 @@ export async function forgotPassword(req, res) {
     await user.save();
 
     // Send OTP email
-    await sendPasswordResetOTP(email, otp, user.username);
-
-    console.log(`Password reset OTP sent to ${email}: ${otp}`); // For development
+    // In dev the OTP is the fixed 000000, so a blocked mailer (some ISPs block
+    // SMTP outright) must not stop the flow — same tolerance as signup.
+    try {
+      await sendPasswordResetOTP(email, otp, user.username);
+    } catch (mailErr) {
+      console.error("Failed to send password reset OTP email:", mailErr?.message ?? mailErr);
+      if (!config.dev.fixedOtp) {
+        return res.status(502).json({
+          message: "We couldn't email your code right now. Please try again shortly.",
+        });
+      }
+      console.log(`[password-reset] DEV fallback — OTP for ${email} is ${otp}`);
+    }
 
     res.json({
       success: true,

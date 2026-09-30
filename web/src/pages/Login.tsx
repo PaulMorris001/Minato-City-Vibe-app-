@@ -11,6 +11,7 @@ import { useAuth } from "../context/AuthContext";
  */
 const NOTICES: Record<string, string> = {
   "account-deleted": "Account deleted successfully",
+  "password-reset": "Password reset — log in with your new password",
 };
 
 const TOAST_MS = 5000;
@@ -100,6 +101,11 @@ export default function Login() {
             {submitting ? "Logging in…" : "Log in"}
           </button>
         </form>
+        <p className="cv-muted cv-center" style={{ marginTop: 16 }}>
+          <Link to="/forgot-password" state={{ from: (location.state as any)?.from }} className="cv-link">
+            Forgot password?
+          </Link>
+        </p>
         <p className="cv-muted cv-center" style={{ marginTop: 20 }}>
           No account? <Link to="/signup" state={{ from: (location.state as any)?.from }} className="cv-link">Create one</Link>
         </p>
