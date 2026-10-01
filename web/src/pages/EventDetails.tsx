@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom"
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
 import AppPromo from "../components/AppPromo";
+import GuestEmailGate from "../components/GuestEmailGate";
 import VenueChoice, { venueCount } from "../components/VenueChoice";
 import ProgrammePicker, { eventStops, selectionTotal } from "../components/ProgrammePicker";
 import { api } from "../lib/api";
@@ -32,6 +33,10 @@ export default function EventDetails() {
   // Free-event RSVP state
   const [rsvping, setRsvping] = useState(false);
   const [rsvpError, setRsvpError] = useState("");
+  // Guest RSVP: no account, just an emailed code (see GuestEmailGate).
+  const [askEmail, setAskEmail] = useState(false);
+  const [guestEmail, setGuestEmail] = useState("");
+  const [guestToken, setGuestToken] = useState<string | null>(null);
   const [justJoined, setJustJoined] = useState(false);
 
   // Multi-venue events ask which venue the attendee is going to, so the
@@ -118,15 +123,13 @@ export default function EventDetails() {
     navigate(`/events/${eventId}/pay${q ? `?${q}` : ""}`);
   }
 
-  async function rsvpFree() {
-    if (!user) {
-      // `?rsvp=1` finishes the RSVP on the way back (see the effect below), so
-      // signing up doesn't end with a second tap. A private invite mostly
-      // reaches people with no account yet, so it opens on signup; that page
-      // links to login and carries `from` across.
-      navigate(ev?.isPublic === false ? "/signup" : "/login", {
-        state: { from: `/events/${eventId}?rsvp=1` },
-      });
+  async function rsvpFree(freshGuestToken?: string) {
+    // A free RSVP needs no account: a visitor confirms an email with a code
+    // (the same guest token checkout uses) and joins on that. The token is
+    // deliberately not persisted as a login session.
+    const token = user ? undefined : freshGuestToken ?? guestToken ?? undefined;
+    if (!user && !token) {
+      setAskEmail(true);
       return;
     }
     setRsvpError("");
@@ -137,11 +140,13 @@ export default function EventDetails() {
         // until they're on it. Programme picks follow once they are.
         await api(`/events/share/${eventId}/join`, {
           method: "POST",
+          token,
           body: venueIndex !== null ? { locationIndex: venueIndex } : {},
         });
         if (ev?.subEvents?.length) {
           await api(`/events/${ev._id}/rsvp`, {
             method: "POST",
+            token,
             body: { subEvents: selectedStops },
           });
         }
@@ -151,15 +156,18 @@ export default function EventDetails() {
         // /join has no notion of "which stops" and only ever allows one join.
         await api(`/events/${eventId}/rsvp`, {
           method: "POST",
+          token,
           body: { subEvents: selectedStops },
         });
       } else {
         await api(`/events/${eventId}/join`, {
           method: "POST",
+          token,
           body: venueIndex !== null ? { locationIndex: venueIndex } : {},
         });
       }
       setJustJoined(true);
+      setAskEmail(false);
       loadEvent().catch(() => {});
     } catch (err: any) {
       // "already joined" → treat as success so the UI reflects reality.
@@ -522,7 +530,31 @@ export default function EventDetails() {
               setSelectedTier={setSelectedTier}
               rsvping={rsvping}
               rsvpError={rsvpError}
-              onRsvp={rsvpFree}
+              onRsvp={() => rsvpFree()}
+              emailGate={
+                askEmail && !user ? (
+                  <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+                    <GuestEmailGate
+                      email={guestEmail}
+                      setEmail={setGuestEmail}
+                      verified={!!guestToken}
+                      onVerified={(token, email) => {
+                        setGuestToken(token);
+                        setGuestEmail(email);
+                        rsvpFree(token);
+                      }}
+                    />
+                    <Link
+                      to={ev.isPublic === false ? "/signup" : "/login"}
+                      state={{ from: `/events/${eventId}?rsvp=1` }}
+                      className="cv-muted"
+                      style={{ fontSize: 13 }}
+                    >
+                      Have an account? Log in instead
+                    </Link>
+                  </div>
+                ) : null
+              }
               onPay={goToPay}
               venueIndex={venueIndex}
               setVenueIndex={setVenueIndex}
@@ -683,6 +715,7 @@ function TicketBox({
   rsvping,
   rsvpError,
   onRsvp,
+  emailGate,
   onPay,
   venueIndex,
   setVenueIndex,
@@ -698,6 +731,8 @@ function TicketBox({
   rsvping: boolean;
   rsvpError: string;
   onRsvp: () => void;
+  /** Email-code form for a visitor with no account; replaces the RSVP button. */
+  emailGate: React.ReactNode;
   onPay: () => void;
   venueIndex: number | null;
   setVenueIndex: (i: number) => void;
@@ -741,21 +776,23 @@ function TicketBox({
         </p>
         <ProgrammePicker ev={ev} value={selectedStops} onChange={setSelectedStops} currency={ev.currency} />
         {rsvpError && <div className="cv-error">{rsvpError}</div>}
-        <button
-          className="cv-btn"
-          onClick={total > 0 ? onPay : onRsvp}
-          disabled={rsvping || nothingTicked}
-        >
-          {!user
-            ? "Log in to continue"
-            : nothingTicked
+        {total === 0 && emailGate ? (
+          emailGate
+        ) : (
+          <button
+            className="cv-btn"
+            onClick={total > 0 ? onPay : onRsvp}
+            disabled={rsvping || nothingTicked}
+          >
+            {nothingTicked
               ? "Pick at least one"
               : rsvping
                 ? "Saving…"
                 : total > 0
                   ? `Continue to payment · ${money(total, ev.currency)}`
                   : "Confirm — it's free"}
-        </button>
+          </button>
+        )}
         {going && ev.isPublic === false && <GroupChatNudge />}
       </>
     );
@@ -789,13 +826,15 @@ function TicketBox({
         </p>
         <VenueChoice ev={ev} value={venueIndex} onChange={setVenueIndex} />
         {rsvpError && <div className="cv-error">{rsvpError}</div>}
-        <button
-          className="cv-btn"
-          onClick={onRsvp}
-          disabled={rsvping || (venueCount(ev) > 1 && venueIndex === null)}
-        >
-          {rsvping ? "Joining…" : user ? "RSVP — I'm going" : "Log in or sign up to RSVP"}
-        </button>
+        {emailGate || (
+          <button
+            className="cv-btn"
+            onClick={onRsvp}
+            disabled={rsvping || (venueCount(ev) > 1 && venueIndex === null)}
+          >
+            {rsvping ? "Joining…" : "RSVP — I'm going"}
+          </button>
+        )}
       </>
     );
   }

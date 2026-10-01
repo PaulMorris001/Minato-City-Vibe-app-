@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { City, VendorType, Vendor } from "../models/vendor.model.js";
 import Review from "../models/review.model.js";
 import { Booking } from "../models/booking.model.js";
@@ -277,6 +278,72 @@ export async function searchVendors(req, res) {
     res.json({ vendors });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+}
+
+/**
+ * GET /vendors/nearby?city=&state=&country=&limit=
+ * Vendors ordered by how close they are to the viewer — the home screen's
+ * "Where the city's at" rail. Cities carry no coordinates, so closeness is
+ * tiered: same city, then same state, then same country, then everywhere
+ * else; verified then rating within a tier.
+ *
+ * `city` alone is enough — its state and country are looked up from the City
+ * docs that share its name. `state`/`country` (from the device's location)
+ * are only a fallback for a city no vendor has used yet.
+ */
+export async function getNearbyVendors(req, res) {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 10, 30);
+    const city = String(req.query.city ?? "").trim();
+    const lower = (v) => String(v ?? "").trim().toLowerCase();
+
+    const homeCities = city
+      ? await City.find({ name: new RegExp(`^${escapeRegex(city)}$`, "i") }).select("_id state country").lean()
+      : [];
+    const states = [...new Set([...homeCities.map((c) => lower(c.state)), lower(req.query.state)].filter(Boolean))];
+    const countries = [...new Set([...homeCities.map((c) => lower(c.country)), lower(req.query.country)].filter(Boolean))];
+
+    const match = {};
+    // A signed-in vendor shouldn't see their own storefront here either.
+    if (req.user?.id) match.user = { $ne: new mongoose.Types.ObjectId(req.user.id) };
+
+    const ranked = await Vendor.aggregate([
+      { $match: match },
+      { $lookup: { from: City.collection.name, localField: "city", foreignField: "_id", as: "cityDoc" } },
+      { $set: { cityDoc: { $first: "$cityDoc" } } },
+      {
+        $set: {
+          tier: {
+            $switch: {
+              branches: [
+                { case: { $in: ["$city", homeCities.map((c) => c._id)] }, then: 0 },
+                { case: { $in: [{ $toLower: { $ifNull: ["$cityDoc.state", ""] } }, states] }, then: 1 },
+                { case: { $in: [{ $toLower: { $ifNull: ["$cityDoc.country", ""] } }, countries] }, then: 2 },
+              ],
+              default: 3,
+            },
+          },
+        },
+      },
+      { $sort: { tier: 1, verified: -1, rating: -1, _id: 1 } },
+      { $limit: limit },
+      { $project: { _id: 1 } },
+    ]);
+
+    const ids = ranked.map((r) => r._id);
+    const docs = await Vendor.find({ _id: { $in: ids } })
+      .populate("city", "name state country")
+      .populate("vendorType", "name icon")
+      .lean();
+    // $in comes back in storage order — restore the ranking.
+    const order = new Map(ids.map((id, i) => [String(id), i]));
+    docs.sort((a, b) => order.get(String(a._id)) - order.get(String(b._id)));
+
+    return res.json({ vendors: docs });
+  } catch (error) {
+    console.error("getNearbyVendors:", error);
+    return res.status(500).json({ message: "Failed to load vendors" });
   }
 }
 

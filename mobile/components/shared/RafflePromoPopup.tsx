@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 
 import { BASE_URL } from "@/constants/constants";
@@ -18,14 +19,21 @@ interface RafflePromoPopupProps {
   onVisibilityChange?: (showing: boolean) => void;
 }
 
+/** How long the pitch stays quiet after it has been shown once. */
+const REPEAT_DAYS = 3;
+const SHOWN_AT_KEY = "raffle_promo_shown_at";
+
 /**
- * Announces an open Birthday Raffle campaign every time the app is opened.
+ * Announces an open Birthday Raffle campaign to someone who is not in it yet.
  *
- * Deliberately NOT remembered between launches: while a campaign is running
- * this is the pitch, so it runs again on the next cold start even if the last
- * one was dismissed. It is held to once per launch rather than once per mount
- * so that switching tabs back to home doesn't re-nag inside one session —
- * module scope is the session, since a cold start re-evaluates it.
+ * Two gates, both deliberate. It goes quiet for REPEAT_DAYS after being shown
+ * — stored device-wide rather than per user, the same reasoning as
+ * `utils/appRating.ts`: the nag belongs to the phone, so an account switch
+ * shouldn't restart it. And it never appears at all for someone who already
+ * has a qualifying birthday event, because there is nothing left to pitch them
+ * (they have the home banner and their own status screen). On top of both, it
+ * is held to once per launch by module scope, so switching tabs back to home
+ * inside one session can't re-nag.
  *
  * The copy ties the outcome to RSVP count and nothing else, which is the real
  * mechanic — winners are a merit ranking on verified RSVPs, never a draw. Any
@@ -39,7 +47,6 @@ export default function RafflePromoPopup({ onVisibilityChange }: RafflePromoPopu
   const router = useRouter();
   const [visible, setVisible] = useState(false);
   const [campaignName, setCampaignName] = useState<string>("");
-  const [entered, setEntered] = useState(false);
 
   useEffect(() => {
     if (shownThisLaunch) {
@@ -51,14 +58,19 @@ export default function RafflePromoPopup({ onVisibilityChange }: RafflePromoPopu
     (async () => {
       let showing = false;
       try {
+        const lastShown = Number(await AsyncStorage.getItem(SHOWN_AT_KEY)) || 0;
+        if (Date.now() - lastShown < REPEAT_DAYS * 24 * 60 * 60 * 1000) return;
+
         // Public and unauthenticated on purpose — a signed-out browser should
         // hear about the raffle too.
         const res = await fetch(`${BASE_URL}/raffle/public`);
         const data = await res.json();
         if (cancelled || !res.ok || !data?.active) return;
 
-        // Decides which way the button points, same split as home's
-        // RaffleBanner. Guests have no entry, so this is skipped for them.
+        // Already entered means already sold; drop the pitch entirely. Guests
+        // have no entry, so this is skipped for them, and a failed check still
+        // shows the popup — silence there would mute an open campaign over a
+        // dropped request.
         const token = await SecureStore.getItemAsync("token");
         if (token) {
           try {
@@ -66,9 +78,9 @@ export default function RafflePromoPopup({ onVisibilityChange }: RafflePromoPopu
               headers: { Authorization: `Bearer ${token}` },
             });
             const status = await statusRes.json();
-            if (!cancelled && statusRes.ok) setEntered(!!status.hasQualifyingEvent);
+            if (statusRes.ok && status.hasQualifyingEvent) return;
           } catch {
-            // Falls back to the "see the raffle" route, which is never wrong.
+            // Falls through to showing it.
           }
         }
 
@@ -77,6 +89,7 @@ export default function RafflePromoPopup({ onVisibilityChange }: RafflePromoPopu
         setVisible(true);
         shownThisLaunch = true;
         showing = true;
+        AsyncStorage.setItem(SHOWN_AT_KEY, String(Date.now())).catch(() => {});
       } catch {
         // No raffle news is not worth an error state on app open.
       } finally {
@@ -96,9 +109,8 @@ export default function RafflePromoPopup({ onVisibilityChange }: RafflePromoPopu
   };
 
   const visit = () => {
-    const path = entered ? "/birthday-raffle/status" : "/birthday-raffle";
     dismiss();
-    router.push(path as any);
+    router.push("/birthday-raffle" as any);
   };
 
   const openRules = () => {
@@ -115,15 +127,12 @@ export default function RafflePromoPopup({ onVisibilityChange }: RafflePromoPopu
           </View>
           <Text style={styles.title}>{campaignName || "Birthday Raffle"}</Text>
           <Text style={styles.subtitle}>
-            {entered
-              ? "Your birthday event is live. Invite your friends and get them to RSVP. The higher your RSVPs, the better your chances!"
-              : "Create your birthday event and invite your friends and get them to RSVP. The higher your RSVPs, the better your chances!"}
+            Create your birthday event and invite your friends and get them to RSVP. The higher
+            your RSVPs, the better your chances!
           </Text>
           <TouchableOpacity style={styles.primaryButton} activeOpacity={0.85} onPress={visit}>
             <Ionicons name="sparkles-outline" size={16} color="#fff" />
-            <Text style={styles.primaryButtonText}>
-              {entered ? "View your status" : "See the raffle"}
-            </Text>
+            <Text style={styles.primaryButtonText}>See the raffle</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.linkButton} activeOpacity={0.7} onPress={openRules}>
             <Text style={styles.linkText}>Official rules</Text>

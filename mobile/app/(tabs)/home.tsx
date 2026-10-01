@@ -13,6 +13,7 @@ import { usePayment } from "@/hooks/usePayment";
 import { getApproximateLocation, getAddressFromCurrentPosition } from "@/hooks/useLocation";
 import {
   saveDevicePlace,
+  loadDevicePlace,
   widenUntilFound,
   filterQuery,
   fallbackSubtitle,
@@ -926,17 +927,26 @@ export default function Home() {
     }
   };
 
-  const fetchVendors = async () => {
+  // "Where the city's at": vendors in the active city first, then the rest of
+  // its state, then its country, then everywhere (GET /vendors/nearby — cities
+  // have no coordinates, so closeness is tiered). The device's own state and
+  // country only matter for a city no vendor has used yet.
+  const fetchVendors = async (city?: string | null) => {
     try {
       const token = await SecureStore.getItemAsync("token");
       const headers: Record<string, string> = {};
       if (token) headers.Authorization = `Bearer ${token}`;
-      const response = await fetch(`${BASE_URL}/vendors/search?query=&limit=10`, {
+      const place = await loadDevicePlace();
+      const params = new URLSearchParams({ limit: "10" });
+      if (city) params.set("city", city);
+      if (place?.state) params.set("state", place.state);
+      if (place?.country) params.set("country", place.country);
+      const response = await fetch(`${BASE_URL}/vendors/nearby?${params.toString()}`, {
         headers,
       });
       const data = await response.json();
-      if (response.ok) {
-        setVendors(data.vendors || data || []);
+      if (response.ok && activeCityRef.current === (city ?? null)) {
+        setVendors(data.vendors || []);
       }
     } catch {}
   };
@@ -1017,7 +1027,7 @@ export default function Home() {
       fetchPublicEvents(selectedCity, true),
       fetchExternalEvents(selectedCity),
       fetchHighlights(selectedCity),
-      fetchVendors(),
+      fetchVendors(selectedCity),
       fetchTopVendors(selectedCity),
       fetchTopGuides(selectedCity),
     ]);
@@ -1056,7 +1066,7 @@ export default function Home() {
         fetchPublicEvents(cityToUse),
         fetchExternalEvents(cityToUse),
         fetchHighlights(cityToUse),
-        fetchVendors(),
+        fetchVendors(cityToUse),
         fetchTopVendors(cityToUse),
         fetchTopGuides(cityToUse),
       ]).finally(() => {

@@ -8,6 +8,7 @@ import {
   getAllVendorTypes,
   searchVendors,
   getTopVendors,
+  getNearbyVendors,
   rateVendor,
   getVendorReviews,
 } from "../controllers/vendors.controller.js";
@@ -22,8 +23,9 @@ router.get("/cities/:cityId/vendors/:vendorTypeId", getVendorsByCityAndType);
 // optionalAuth so a signed-in vendor can be filtered out of their own results.
 router.get("/vendors/search", optionalAuth, searchVendors);
 router.get("/vendors/browse", optionalAuth, browseVendors);
-// Must stay above /vendors/:vendorId — "top" would otherwise be read as an id.
+// Must stay above /vendors/:vendorId — "top"/"nearby" would otherwise be read as an id.
 router.get("/vendors/top", getTopVendors);
+router.get("/vendors/nearby", optionalAuth, getNearbyVendors);
 router.get("/vendors/:vendorId", getVendorById);
 router.post("/vendors/:vendorId/rate", authenticate, rateVendor);
 router.get("/vendors/:vendorId/reviews", authenticate, getVendorReviews);
