@@ -33,6 +33,41 @@ export interface GuideTopic {
   createdAt?: string;
 }
 
+export type EmailAudience = "all" | "vendors";
+
+export interface EmailBroadcastDraft {
+  subject: string;
+  body: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+}
+
+export interface AdminEmailBroadcast {
+  _id: string;
+  subject: string;
+  body: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+  audienceSummary: string;
+  sentBy: string;
+  total: number;
+  nextIndex: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  status: "queued" | "sending" | "paused_daily_cap" | "done" | "cancelled";
+  createdAt: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+}
+
+export interface EventCategory {
+  _id: string;
+  name: string;
+  emoji?: string;
+  createdAt?: string;
+}
+
 export interface AdminCatalogueCategory {
   _id: string;
   name: string;
@@ -310,6 +345,7 @@ export interface AdminAnnouncement {
     summary?: string;
   };
   deepLink?: string;
+  ctaLabel?: string;
   sentBy?: string;
   /** Accounts addressed, and how many of them we held a push token for. */
   recipientCount: number;

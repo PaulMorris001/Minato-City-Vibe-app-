@@ -661,6 +661,101 @@ export const sendEventReminderEmail = async (
   }
 };
 
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+/**
+ * An admin broadcast email (admin "Email Users" page, sent by
+ * jobs/emailBroadcast.job.js). The admin's text is escaped — it's plain text,
+ * never HTML — and blank lines become paragraphs. Always carries a one-click
+ * unsubscribe for announcement emails only.
+ *
+ * @param {string} email
+ * @param {object} opts
+ * @param {string} opts.username
+ * @param {string} opts.subject
+ * @param {string} opts.body            plain text
+ * @param {string} [opts.ctaLabel]      optional button, shown with ctaUrl
+ * @param {string} [opts.ctaUrl]
+ * @param {string} opts.unsubscribeUrl
+ * @param {object} [opts.transporter]   reuse one connection across a batch
+ */
+export const sendBroadcastEmail = async (
+  email,
+  { username, subject, body, ctaLabel, ctaUrl, unsubscribeUrl, transporter }
+) => {
+  try {
+    const paragraphs = String(body)
+      .split(/\n{2,}/)
+      .map((p) => `<p style="margin: 0 0 16px;">${escapeHtml(p.trim()).replace(/\n/g, "<br>")}</p>`)
+      .join("");
+    const button =
+      ctaLabel && ctaUrl
+        ? `<p style="text-align: center; margin: 28px 0 8px;"><a class="cta" href="${escapeHtml(ctaUrl)}">${escapeHtml(ctaLabel)}</a></p>`
+        : "";
+
+    const info = await (transporter || createTransporter()).sendMail({
+      from: FROM_HELLO,
+      to: email,
+      subject,
+      headers: {
+        "List-Unsubscribe": `<${unsubscribeUrl}>`,
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      },
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, sans-serif; line-height: 1.6; color: #333; background: #f4f4f4; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 20px auto; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: white; padding: 30px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; font-weight: 800; }
+            .content { padding: 32px 30px 20px; font-size: 15px; color: #1f2937; }
+            .cta { display: inline-block; background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: #fff !important; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 28px; border-radius: 12px; }
+            .footer { background: #f9fafb; padding: 20px 30px; text-align: center; font-size: 13px; color: #6b7280; border-top: 1px solid #e5e7eb; }
+            .footer a { color: #a855f7; text-decoration: none; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header"><h1>🌙 OurCityvibe</h1></div>
+            <div class="content">
+              <p style="margin: 0 0 16px;">Hi ${escapeHtml(username || "there")},</p>
+              ${paragraphs}
+              ${button}
+            </div>
+            <div class="footer">
+              <p>Need help? <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></p>
+              <p style="margin-top: 8px;">You're getting this because you have an OurCityvibe account.
+                <a href="${unsubscribeUrl}">Unsubscribe from announcement emails</a></p>
+              <p style="margin-top: 8px;">© ${new Date().getFullYear()} OurCityvibe. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `Hi ${username || "there"},\n\n${body}${
+        ctaLabel && ctaUrl ? `\n\n${ctaLabel}: ${ctaUrl}` : ""
+      }\n\n— The OurCityvibe Team\n\nUnsubscribe from announcement emails: ${unsubscribeUrl}`,
+    });
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error(`❌ Error sending broadcast email to ${email}:`, error?.message ?? error);
+    return { success: false, error: error?.message ?? String(error) };
+  }
+};
+
+/** One SMTP connection for a whole broadcast batch instead of one per email. */
+export const createBroadcastTransporter = () => createTransporter();
+
 /**
  * Send password reset success notification
  */

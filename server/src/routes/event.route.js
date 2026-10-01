@@ -16,6 +16,7 @@ import {
   joinEventByShareLink,
   joinFreePublicEvent,
   getPublicEvents,
+  getEventCategories,
   getUserTickets,
   getEventTicketSales,
   rsvpEvent,
@@ -55,6 +56,10 @@ router.get("/events", authenticate, getUserEvents);
 
 // Get public events for exploration (guest-accessible)
 router.get("/events/public/explore", optionalAuth, getPublicEvents);
+
+// Admin-managed category list for the create picker and the browse filters.
+// Must stay above "/events/:eventId", which would otherwise swallow it.
+router.get("/events/categories", getEventCategories);
 
 // Get event highlights (trending + upcoming) — guest-accessible
 router.get("/events/highlights", optionalAuth, getEventHighlights);

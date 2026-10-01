@@ -24,6 +24,22 @@ const MAX_TARGET_VALUES = 100;
 
 const NON_EMPTY = { $nin: [null, ""] };
 
+const CTA_LABEL_MAX = 30;
+/**
+ * Where an announcement can send someone. Mirrored in the app's
+ * utils/announcementLink.ts, which refuses anything else — so the two lists
+ * must change together. Anything not here must be an https:// URL.
+ */
+const APP_PATHS = [
+  /^\/event\/[A-Za-z0-9_-]+$/,
+  /^\/guide\/[A-Za-z0-9_-]+$/,
+  /^\/public-events$/,
+  /^\/birthday-raffle$/,
+  /^\/\(tabs\)\/(home|bests|vendors)$/,
+];
+const isValidLink = (link) =>
+  /^https:\/\/\S+$/i.test(link) || APP_PATHS.some((re) => re.test(link));
+
 /**
  * Derived audience cohorts the console offers alongside locations and
  * hand-picked people. These are computed from account state rather than stored
@@ -207,18 +223,29 @@ export async function getAnnouncements(req, res) {
 
 /**
  * POST /admin/announcements
- * body: { title, body, audience: "all"|"city"|"targeted", city?, targets?, deepLink? }
+ * body: { title, body, audience: "all"|"city"|"targeted", city?, targets?, deepLink?, ctaLabel? }
  *
  * Sends to every matching account. Banned accounts are always excluded.
  */
 export async function sendAnnouncement(req, res) {
   try {
-    const { title, body, deepLink = "" } = req.body ?? {};
+    const { title, body, deepLink = "", ctaLabel = "" } = req.body ?? {};
 
     const cleanTitle = trimmed(title);
     const cleanBody = trimmed(body);
+    const cleanLink = trimmed(deepLink);
+    const cleanCta = trimmed(ctaLabel);
     if (!cleanTitle || !cleanBody) {
       return res.status(400).json({ message: "title and body are required" });
+    }
+    if (cleanLink && !isValidLink(cleanLink)) {
+      return res.status(400).json({ message: "That button destination isn't one the app can open" });
+    }
+    if (cleanCta && !cleanLink) {
+      return res.status(400).json({ message: "A button needs a destination" });
+    }
+    if (cleanCta.length > CTA_LABEL_MAX) {
+      return res.status(400).json({ message: `button text must be ${CTA_LABEL_MAX} characters or fewer` });
     }
     if (cleanTitle.length > TITLE_MAX) {
       return res.status(400).json({ message: `title must be ${TITLE_MAX} characters or fewer` });
@@ -242,7 +269,8 @@ export async function sendAnnouncement(req, res) {
       audience: built.audience,
       city: built.city ?? null,
       targets: { ...(built.targets ?? {}), summary: built.summary },
-      deepLink: trimmed(deepLink),
+      deepLink: cleanLink,
+      ctaLabel: cleanCta,
       sentBy: req.user?.username || "admin",
       recipientCount: users.length,
       pushedCount,
@@ -257,6 +285,7 @@ export async function sendAnnouncement(req, res) {
 
     const data = { announcementId: String(announcement._id) };
     if (announcement.deepLink) data.link = announcement.deepLink;
+    if (announcement.ctaLabel) data.ctaLabel = announcement.ctaLabel;
 
     for (let i = 0; i < users.length; i += NOTIFY_BATCH_SIZE) {
       const batch = users.slice(i, i + NOTIFY_BATCH_SIZE);

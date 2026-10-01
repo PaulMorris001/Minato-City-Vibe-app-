@@ -27,6 +27,8 @@ export interface CreateEventDraft {
   // Optional. Empty means the event is a single date.
   endDate: string;
   description: string;
+  // Optional browse category (an admin-managed name). "" = none picked.
+  category: string;
   isVirtual: boolean;
   meetingLink: string;
   isPublic: boolean;
@@ -63,6 +65,7 @@ function emptyDraft(): CreateEventDraft {
     date: "",
     endDate: "",
     description: "",
+    category: "",
     isVirtual: false,
     meetingLink: "",
     isPublic: false,

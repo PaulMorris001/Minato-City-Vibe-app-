@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,6 @@ import {
   RefreshControl,
   TouchableOpacity,
   ScrollView,
-  Modal,
 } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -19,8 +18,16 @@ import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import * as Haptics from "expo-haptics";
 import { BASE_URL } from "@/constants/constants";
-import { LocationSelection } from "@/libs/interfaces";
-import { LocationPicker } from "@/components/shared";
+import EventFiltersPage, {
+  DEFAULT_EVENT_FILTERS,
+  DATE_LABEL,
+  PRICE_LABEL,
+  SORT_LABEL,
+  activeFilterCount,
+  inDateWindow,
+  type EventFilters,
+} from "@/components/shared/EventFiltersPage";
+import { useEventCategories } from "@/hooks/useEventCategories";
 import { PublicEvent } from "@/components/shared/PublicEventCard";
 import { externalEventService, ExternalEvent } from "@/services/externalEvent.service";
 import { usePayment } from "@/hooks/usePayment";
@@ -33,19 +40,6 @@ import type { ThemeColors } from "@/constants/theme";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 const SCARCITY_WARN = "#FBA74A";
 const EVENTS_PER_PAGE = 20;
-
-// Date-derived categories (the only ones backable by current event data — see
-// note in the README; genre tags need a `category` field on events).
-const CATEGORIES = ["All", "Tonight", "This week"] as const;
-type Category = (typeof CATEGORIES)[number];
-
-type SortKey = "soonest" | "furthest" | "price_asc" | "price_desc";
-const SORT_LABEL: Record<SortKey, string> = {
-  soonest: "Soonest first",
-  furthest: "Furthest first",
-  price_asc: "Price: low → high",
-  price_desc: "Price: high → low",
-};
 
 // Poster gradients for events without a cover image.
 const POSTER_GRADIENTS: [string, string, ...string[]][] = [
@@ -63,6 +57,8 @@ const gradientFor = (id: string) => {
 };
 
 const priceOf = (e: PublicEvent) => (e.isPaid ? e.ticketPrice ?? 0 : 0);
+// Lowest listed price for an external event; null when the provider gave none.
+const externalPriceOf = (e: ExternalEvent) => e.priceMin ?? e.priceMax ?? null;
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
@@ -93,22 +89,24 @@ export default function PublicEventsPage() {
   const [totalEvents, setTotalEvents] = useState(0);
   const [nearby, setNearby] = useState<NearbyCity | null>(null);
 
-  const [discoverLoc, setDiscoverLoc] = useState<Partial<LocationSelection> | null>(null);
-  const [onlineOnly, setOnlineOnly] = useState(false);
-  const [pickerKey, setPickerKey] = useState(0);
-  const [activeCategory, setActiveCategory] = useState<Category>("All");
-  const [sort, setSort] = useState<SortKey>("soonest");
+  // Everything the Filter page sets. Location, category and price go to the
+  // server (the feed is paginated — filtering loaded pages would only search
+  // page 1); date and sort apply to what's loaded. Mirrored in a ref so
+  // every fetch path (refresh, load-more, after a purchase) sends the current
+  // filters without threading them through each call.
+  const { categories: eventCategories } = useEventCategories();
+  const [filters, setFilters] = useState<EventFilters>(DEFAULT_EVENT_FILTERS);
+  const filtersRef = useRef<EventFilters>(DEFAULT_EVENT_FILTERS);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  // Each page-1 load bumps this; a slower response for filters the user has
+  // already moved off is dropped instead of overwriting the newer feed.
+  const loadSeq = useRef(0);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
-  const [locationSheetOpen, setLocationSheetOpen] = useState(false);
-  const [sortSheetOpen, setSortSheetOpen] = useState(false);
-
-  const fetchPublicEvents = async (
-    pageNum: number,
-    isRefresh = false,
-    loc: Partial<LocationSelection> | null = discoverLoc,
-    online = onlineOnly
-  ) => {
+  const fetchPublicEvents = async (pageNum: number, isRefresh = false) => {
+    const f = filtersRef.current;
+    const seq = pageNum === 1 ? ++loadSeq.current : loadSeq.current;
+    const loc = f.online ? null : f.location;
     try {
       if (pageNum === 1) setLoading(true);
       else setLoadingMore(true);
@@ -118,13 +116,15 @@ export default function PublicEventsPage() {
       const token = await SecureStore.getItemAsync("token");
 
       const params = new URLSearchParams({ page: String(pageNum), limit: String(EVENTS_PER_PAGE) });
-      if (online) {
+      if (f.online) {
         params.append("online", "true");
       } else {
         if (loc?.city) params.append("city", loc.city);
         if (loc?.state) params.append("state", loc.state);
         if (loc?.country) params.append("country", loc.country);
       }
+      if (f.category) params.append("category", f.category);
+      if (f.price !== "any") params.append("price", f.price);
 
       // Fetch native + external in parallel. External events only on page 1
       // (they're a fixed batch — pagination tied to the native page count).
@@ -133,13 +133,14 @@ export default function PublicEventsPage() {
         fetch(`${BASE_URL}/events/public/explore?${params.toString()}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         }),
-        pageNum === 1 && !online
+        pageNum === 1 && !f.online
           ? externalEventService.explore({
               city: loc?.city || undefined,
               // ISO code matches what Ticketmaster stores; full country name
               // wouldn't match anything ("Nigeria" vs "NG"). See externalEvent
               // controller for the loose matching logic.
               country: loc?.countryIso || loc?.country || undefined,
+              category: f.category || undefined,
               // Server clamps to 100 max (see getExternalEventsExplore) — external
               // events aren't paginated here (fixed batch on page 1), so this is
               // the full ceiling of how many can ever show in one session.
@@ -147,6 +148,7 @@ export default function PublicEventsPage() {
             })
           : Promise.resolve({ events: [], nextCursor: null }),
       ]);
+      if (seq !== loadSeq.current) return;
 
       // Native (preserve existing behavior + error handling)
       if (nativeRes.status === "fulfilled") {
@@ -173,19 +175,23 @@ export default function PublicEventsPage() {
         }
       }
     } catch (error) {
+      if (seq !== loadSeq.current) return;
       console.error("Fetch public events error:", error);
       Alert.alert("Error", "Failed to load events. Please try again.");
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      setRefreshing(false);
+      // A superseded load leaves the spinners to the newer one.
+      if (seq === loadSeq.current) {
+        setLoading(false);
+        setLoadingMore(false);
+        setRefreshing(false);
+      }
     }
   };
 
   useEffect(() => {
     setPage(1);
     setHasMore(true);
-    fetchPublicEvents(1, true, null);
+    fetchPublicEvents(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -200,40 +206,43 @@ export default function PublicEventsPage() {
     });
   }, [publicEvents]);
 
-  const applyLocation = (loc: Partial<LocationSelection> | null) => {
-    setDiscoverLoc(loc);
-    setOnlineOnly(false);
-    setPage(1);
-    setHasMore(true);
-    fetchPublicEvents(1, true, loc, false);
-  };
-
-  // Dedicated "Online" filter — virtual events only, no place selected.
-  const applyOnline = () => {
-    setOnlineOnly(true);
-    setDiscoverLoc(null);
-    setPickerKey((k) => k + 1);
-    setPage(1);
-    setHasMore(true);
-    fetchPublicEvents(1, true, null, true);
+  // "Apply Filter" on the Filter page. Refetches only when a server-side filter
+  // changed; date/sort just re-slice what's already loaded.
+  // Resolves once the new results are in, so the Filter page can keep its
+  // button spinning until then and close onto a finished feed.
+  const applyFilters = async (next: EventFilters) => {
+    const prev = filtersRef.current;
+    filtersRef.current = next;
+    setFilters(next);
+    const refetch =
+      prev.online !== next.online ||
+      prev.category !== next.category ||
+      prev.price !== next.price ||
+      JSON.stringify(prev.location) !== JSON.stringify(next.location);
+    if (refetch) {
+      setPage(1);
+      setHasMore(true);
+      await fetchPublicEvents(1, true);
+    }
+    setFiltersOpen(false);
   };
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
     setPage(1);
     setHasMore(true);
-    fetchPublicEvents(1, true, discoverLoc, onlineOnly);
+    fetchPublicEvents(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [discoverLoc, onlineOnly]);
+  }, []);
 
   const handleLoadMore = useCallback(() => {
     if (!loading && !loadingMore && hasMore) {
       const nextPage = page + 1;
       setPage(nextPage);
-      fetchPublicEvents(nextPage, false, discoverLoc, onlineOnly);
+      fetchPublicEvents(nextPage, false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, loadingMore, hasMore, page, discoverLoc, onlineOnly]);
+  }, [loading, loadingMore, hasMore, page]);
 
   const handlePurchaseTicket = async (eventId: string, eventTitle: string) => {
     if (!(await SecureStore.getItemAsync("token"))) {
@@ -321,11 +330,10 @@ export default function PublicEventsPage() {
     else handleJoinFreeEvent(ev._id, ev.title);
   };
 
-  // Client-side category (date) filter + sort over the loaded events.
+  // One mixed feed — CityVibe and Ticketmaster/Eventbrite side by side — with
+  // the client-side filters (date, external price) and the sort.
   const visibleEvents = useMemo(() => {
     const now = new Date();
-    const startToday = new Date(now);
-    startToday.setHours(0, 0, 0, 0);
 
     // Unify both feeds into a tagged shape so we can sort/filter together,
     // then branch on `_kind` in the renderer.
@@ -333,59 +341,91 @@ export default function PublicEventsPage() {
       | { _kind: "native"; data: PublicEvent }
       | { _kind: "external"; data: ExternalEvent };
 
-    const inDateWindow = (iso: string) => {
-      const d = new Date(iso);
-      if (activeCategory === "Tonight") return d.toDateString() === now.toDateString();
-      if (activeCategory === "This week") {
-        const weekEnd = new Date(startToday);
-        weekEnd.setDate(startToday.getDate() + 7);
-        return d >= startToday && d <= weekEnd;
-      }
-      return true;
-    };
-
     const nativeItems: FeedItem[] = publicEvents
-      .filter((e) => inDateWindow(e.date))
+      .filter((e) => inDateWindow(e.date, filters.date, now))
       .map((e) => ({ _kind: "native", data: e }));
 
-    // Price-based sorts don't make sense for external events (range pricing,
-    // some no price at all). Drop external from those sorts.
-    const isPriceSort = sort === "price_asc" || sort === "price_desc";
-    const externalItems: FeedItem[] = isPriceSort
-      ? []
-      : externalEvents
-          .filter((e) => inDateWindow(e.date))
-          .map((e) => ({ _kind: "external", data: e }));
+    // The server already applied category + location to these; price has to
+    // be done here, because providers only give a price range. An unpriced
+    // show counts as paid — ticketed shows almost always are.
+    const externalItems: FeedItem[] = externalEvents
+      .filter((e) => inDateWindow(e.date, filters.date, now))
+      .filter((e) => {
+        const p = externalPriceOf(e);
+        if (filters.price === "free") return p === 0;
+        if (filters.price === "paid") return p !== 0;
+        return true;
+      })
+      .map((e) => ({ _kind: "external", data: e }));
 
     const all = [...nativeItems, ...externalItems];
 
-    switch (sort) {
+    // Comparable price across both kinds; null (hidden or not listed) sorts
+    // last in either direction rather than pretending to be free.
+    const priceKey = (item: FeedItem): number | null =>
+      item._kind === "native"
+        ? item.data.hidePrice
+          ? null
+          : priceOf(item.data)
+        : externalPriceOf(item.data);
+    const byPrice = (dir: 1 | -1) => (a: FeedItem, b: FeedItem) => {
+      const pa = priceKey(a);
+      const pb = priceKey(b);
+      if (pa === null) return pb === null ? 0 : 1;
+      if (pb === null) return -1;
+      return (pa - pb) * dir;
+    };
+
+    switch (filters.sort) {
       case "furthest":
         all.sort((a, b) => +new Date(b.data.date) - +new Date(a.data.date));
         break;
       case "price_asc":
-        all.sort((a, b) => priceOf(a.data as PublicEvent) - priceOf(b.data as PublicEvent));
+        all.sort(byPrice(1));
         break;
       case "price_desc":
-        all.sort((a, b) => priceOf(b.data as PublicEvent) - priceOf(a.data as PublicEvent));
+        all.sort(byPrice(-1));
         break;
       default:
         all.sort((a, b) => +new Date(a.data.date) - +new Date(b.data.date));
     }
     return all;
-  }, [publicEvents, externalEvents, activeCategory, sort]);
+  }, [publicEvents, externalEvents, filters]);
 
-  const locationLabel = onlineOnly
+  const loc = filters.location;
+  const locationLabel = filters.online
     ? "Online"
-    : discoverLoc?.city
-    ? `${discoverLoc.city}${discoverLoc.state ? `, ${discoverLoc.state}` : ""}`
-    : "All locations";
+    : loc?.city
+    ? `${loc.city}${loc.state ? `, ${loc.state}` : ""}`
+    : loc?.state
+    ? `${loc.state}${loc.country ? `, ${loc.country}` : ""}`
+    : loc?.country || "Anywhere";
 
-  const filtersActive =
-    activeCategory !== "All" ||
-    sort !== "soonest" ||
-    onlineOnly ||
-    !!(discoverLoc?.city || discoverLoc?.state || discoverLoc?.country);
+  const filterCount = activeFilterCount(filters);
+  const resetFilters = () => applyFilters(DEFAULT_EVENT_FILTERS);
+
+  // The applied filters as removable pills under the header, so the effect of
+  // the Filter page stays visible (and undoable) without reopening it.
+  const activePills: { key: string; label: string; clear: () => void }[] = [];
+  if (filters.online || loc?.city || loc?.state || loc?.country) {
+    activePills.push({
+      key: "loc",
+      label: `📍 ${locationLabel}`,
+      clear: () => applyFilters({ ...filters, location: null, online: false }),
+    });
+  }
+  if (filters.category) {
+    activePills.push({ key: "cat", label: filters.category, clear: () => applyFilters({ ...filters, category: null }) });
+  }
+  if (filters.date !== "any") {
+    activePills.push({ key: "date", label: DATE_LABEL[filters.date], clear: () => applyFilters({ ...filters, date: "any" }) });
+  }
+  if (filters.price !== "any") {
+    activePills.push({ key: "price", label: PRICE_LABEL[filters.price], clear: () => applyFilters({ ...filters, price: "any" }) });
+  }
+  if (filters.sort !== "soonest") {
+    activePills.push({ key: "sort", label: SORT_LABEL[filters.sort], clear: () => applyFilters({ ...filters, sort: "soonest" }) });
+  }
 
   // ─── Renderers ──────────────────────────────────────────────────────────
 
@@ -591,11 +631,11 @@ export default function PublicEventsPage() {
 
   const ListHeader = (
     <View style={{ gap: 14, paddingBottom: 2 }}>
-      {/* Location chip */}
+      {/* Location summary — opens the Filter page */}
       <TouchableOpacity
         style={styles.locationChip}
         activeOpacity={0.8}
-        onPress={() => setLocationSheetOpen(true)}
+        onPress={() => setFiltersOpen(true)}
       >
         <View style={styles.locationIconBox}>
           <Ionicons name="navigate" size={16} color={colors.primaryLight} />
@@ -609,41 +649,32 @@ export default function PublicEventsPage() {
         <Ionicons name="chevron-forward" size={16} color={colors.textDim} />
       </TouchableOpacity>
 
-      {/* Category row */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.categoryRow}
-      >
-        {CATEGORIES.map((c) => {
-          const active = c === activeCategory;
-          return (
-            <TouchableOpacity
-              key={c}
-              onPress={() => setActiveCategory(c)}
-              activeOpacity={0.8}
-              style={[styles.catChip, active ? styles.catChipActive : styles.catChipIdle]}
-            >
-              <Text style={[styles.catChipText, active && styles.catChipTextActive]}>{c}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-
-      {/* Sort caption row */}
-      <View style={styles.sortRow}>
-        <Text style={styles.sortLabel}>
-          {sort.startsWith("price") ? "SORTED BY PRICE" : "SORTED BY DATE"}
-        </Text>
-        <TouchableOpacity
-          style={styles.sortLink}
-          onPress={() => setSortSheetOpen(true)}
-          activeOpacity={0.7}
+      {/* Applied filters — each removable, plus Clear all */}
+      {activePills.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.pillRow}
         >
-          <Text style={styles.sortLinkText}>{SORT_LABEL[sort]}</Text>
-          <Ionicons name="chevron-down" size={12} color={colors.primaryLight} />
-        </TouchableOpacity>
-      </View>
+          {activePills.map((p) => (
+            <TouchableOpacity
+              key={p.key}
+              style={styles.activePill}
+              onPress={p.clear}
+              activeOpacity={0.8}
+              accessibilityLabel={`Remove filter ${p.label}`}
+            >
+              <Text style={styles.activePillText} numberOfLines={1}>{p.label}</Text>
+              <Ionicons name="close" size={13} color={colors.textBright} />
+            </TouchableOpacity>
+          ))}
+          {activePills.length > 1 && (
+            <TouchableOpacity style={styles.clearAll} onPress={resetFilters} activeOpacity={0.7}>
+              <Text style={styles.clearAllText}>Clear all</Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 
@@ -654,16 +685,8 @@ export default function PublicEventsPage() {
         <Ionicons name="compass-outline" size={56} color={colors.textFaint} />
         <Text style={styles.emptyTitle}>No events nearby</Text>
         <Text style={styles.emptyText}>Try widening your location or clearing filters.</Text>
-        {filtersActive && (
-          <TouchableOpacity
-            style={styles.resetBtn}
-            onPress={() => {
-              setActiveCategory("All");
-              setSort("soonest");
-              setPickerKey((k) => k + 1);
-              applyLocation(null);
-            }}
-          >
+        {filterCount > 0 && (
+          <TouchableOpacity style={styles.resetBtn} onPress={resetFilters}>
             <Text style={styles.resetBtnText}>Reset filters</Text>
           </TouchableOpacity>
         )}
@@ -738,17 +761,24 @@ export default function PublicEventsPage() {
             <GlassBackButton size={38} />
             <TouchableOpacity
               style={styles.circleBtn}
-              onPress={() => setSortSheetOpen(true)}
+              onPress={() => setFiltersOpen(true)}
               hitSlop={6}
-              accessibilityLabel="Filters"
+              accessibilityLabel={filterCount ? `Filters, ${filterCount} on` : "Filters"}
             >
               <Ionicons name="options-outline" size={18} color={colors.textBright} />
-              {filtersActive && <View style={styles.filtersDot} />}
+              {filterCount > 0 && (
+                <View style={styles.filtersBadge}>
+                  <Text style={styles.filtersBadgeText}>{filterCount}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
           <Text style={styles.title}>Public events</Text>
           <Text style={styles.subtitle}>
-            <Text style={styles.subtitleCount}>{totalEvents}</Text> happening near you
+            <Text style={styles.subtitleCount}>
+              {totalEvents + visibleEvents.filter((e) => e._kind === "external").length}
+            </Text>{" "}
+            happening near you
           </Text>
         </View>
 
@@ -792,98 +822,13 @@ export default function PublicEventsPage() {
         )}
       </SafeAreaView>
 
-      {/* Location bottom sheet */}
-      <Modal
-        visible={locationSheetOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setLocationSheetOpen(false)}
-      >
-        <View style={styles.sheetOverlay}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setLocationSheetOpen(false)} />
-          <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Filter by location</Text>
-              <TouchableOpacity onPress={() => setLocationSheetOpen(false)} hitSlop={8}>
-                <Ionicons name="close" size={22} color={colors.textBright} />
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity
-              style={styles.sortOption}
-              onPress={() => {
-                applyOnline();
-                setLocationSheetOpen(false);
-              }}
-            >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Ionicons name="videocam-outline" size={18} color={onlineOnly ? colors.primaryLight : colors.textDim} />
-                <Text style={[styles.sortOptionText, onlineOnly && { color: colors.primaryLight }]}>
-                  Online events
-                </Text>
-              </View>
-              {onlineOnly && <Ionicons name="checkmark" size={18} color={colors.primaryLight} />}
-            </TouchableOpacity>
-            <LocationPicker
-              key={pickerKey}
-              label=""
-              value={discoverLoc ?? undefined}
-              onChange={(sel) => applyLocation({ country: sel.country, state: sel.state, city: sel.city })}
-            />
-            {(discoverLoc?.city || discoverLoc?.state || discoverLoc?.country || onlineOnly) && (
-              <TouchableOpacity
-                style={styles.sheetClearBtn}
-                onPress={() => {
-                  setPickerKey((k) => k + 1);
-                  applyLocation(null);
-                }}
-              >
-                <Ionicons name="close-circle" size={16} color={colors.textDim} />
-                <Text style={styles.sheetClearText}>Show all locations</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* Sort bottom sheet */}
-      <Modal
-        visible={sortSheetOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setSortSheetOpen(false)}
-      >
-        <View style={styles.sheetOverlay}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setSortSheetOpen(false)} />
-          <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Sort events</Text>
-              <TouchableOpacity onPress={() => setSortSheetOpen(false)} hitSlop={8}>
-                <Ionicons name="close" size={22} color={colors.textBright} />
-              </TouchableOpacity>
-            </View>
-            {(Object.keys(SORT_LABEL) as SortKey[]).map((key) => {
-              const active = key === sort;
-              return (
-                <TouchableOpacity
-                  key={key}
-                  style={styles.sortOption}
-                  onPress={() => {
-                    setSort(key);
-                    setSortSheetOpen(false);
-                  }}
-                >
-                  <Text style={[styles.sortOptionText, active && { color: colors.primaryLight }]}>
-                    {SORT_LABEL[key]}
-                  </Text>
-                  {active && <Ionicons name="checkmark" size={18} color={colors.primaryLight} />}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      </Modal>
+      <EventFiltersPage
+        visible={filtersOpen}
+        value={filters}
+        categories={eventCategories}
+        onApply={applyFilters}
+        onClose={() => setFiltersOpen(false)}
+      />
     </View>
   );
 }
@@ -914,17 +859,21 @@ const createStyles = (c: ThemeColors) =>
     alignItems: "center",
     justifyContent: "center",
   },
-  filtersDot: {
+  filtersBadge: {
     position: "absolute",
-    top: 8,
-    right: 9,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
     backgroundColor: c.accentPink,
     borderWidth: 2,
     borderColor: c.backgroundDeep,
+    alignItems: "center",
+    justifyContent: "center",
   },
+  filtersBadgeText: { fontFamily: AU_FONT.bodyBold, fontSize: 9.5, color: c.white },
   title: {
     fontFamily: AU_FONT.display,
     fontSize: 32,
@@ -972,24 +921,22 @@ const createStyles = (c: ThemeColors) =>
     marginTop: 2,
   },
 
-  // Category row
-  categoryRow: { gap: 8, paddingHorizontal: 20 },
-  catChip: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999 },
-  catChipActive: { backgroundColor: c.textBright },
-  catChipIdle: { backgroundColor: "transparent", borderWidth: 1, borderColor: c.glassStrokeStrong },
-  catChipText: { fontFamily: AU_FONT.body, fontSize: 12.5, color: c.textDim, letterSpacing: -0.06 },
-  catChipTextActive: { fontFamily: AU_FONT.bodyBold, color: c.backgroundDeep },
-
-  // Sort row
-  sortRow: {
-    paddingHorizontal: 20,
+  // Applied-filter pills
+  pillRow: { gap: 8, paddingHorizontal: 20, alignItems: "center" },
+  activePill: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 6,
+    paddingVertical: 7,
+    paddingLeft: 12,
+    paddingRight: 10,
+    borderRadius: 999,
+    backgroundColor: c.primaryFadedStrong,
+    maxWidth: 220,
   },
-  sortLabel: { fontFamily: AU_FONT.bodySemi, fontSize: 11, letterSpacing: 0.8, color: c.textFaint },
-  sortLink: { flexDirection: "row", alignItems: "center", gap: 4 },
-  sortLinkText: { fontFamily: AU_FONT.bodySemi, fontSize: 12, color: c.primaryLight },
+  activePillText: { fontFamily: AU_FONT.bodySemi, fontSize: 12.5, color: c.textBright, flexShrink: 1 },
+  clearAll: { paddingVertical: 7, paddingHorizontal: 6 },
+  clearAllText: { fontFamily: AU_FONT.bodySemi, fontSize: 12.5, color: c.primaryLight },
 
   // Card
   card: {
@@ -1100,38 +1047,4 @@ const createStyles = (c: ThemeColors) =>
     color: c.textDim,
     marginHorizontal: 20,
   },
-
-  // Sheets
-  sheetOverlay: { flex: 1, backgroundColor: c.modalOverlay },
-  sheet: {
-    backgroundColor: c.backgroundDeep,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderWidth: 1,
-    borderColor: c.glassFill,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 34,
-  },
-  sheetHandle: {
-    alignSelf: "center",
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: c.glassStrokeStrong,
-    marginBottom: 14,
-  },
-  sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-  sheetTitle: { fontFamily: AU_FONT.bold, fontSize: 18, color: c.textBright },
-  sheetClearBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 10, marginTop: 4 },
-  sheetClearText: { fontFamily: AU_FONT.body, fontSize: 14, color: c.textDim },
-  sortOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: c.glassFill,
-  },
-  sortOptionText: { fontFamily: AU_FONT.bodySemi, fontSize: 15, color: c.textBright },
 });

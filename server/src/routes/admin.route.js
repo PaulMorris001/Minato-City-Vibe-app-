@@ -6,6 +6,13 @@ import {
   previewAudience,
   sendAnnouncement,
 } from "../controllers/announcement.controller.js";
+import {
+  previewEmailBroadcast,
+  sendTestEmailBroadcast,
+  createEmailBroadcast,
+  getEmailBroadcasts,
+  cancelEmailBroadcast,
+} from "../controllers/emailBroadcast.controller.js";
 import { adminLoginLimiter } from "../middleware/rateLimit.middleware.js";
 import {
   adminLogin,
@@ -25,6 +32,9 @@ import {
   getGuideTopicsAdmin,
   createGuideTopic,
   deleteGuideTopic,
+  getEventCategoriesAdmin,
+  createEventCategory,
+  deleteEventCategory,
   getEvents,
   getEventSignupsAdmin,
   toggleEventActive,
@@ -114,6 +124,11 @@ router.get("/admin/guide-topics", authenticateAdmin, getGuideTopicsAdmin);
 router.post("/admin/guide-topics", authenticateAdmin, createGuideTopic);
 router.delete("/admin/guide-topics/:id", authenticateAdmin, deleteGuideTopic);
 
+// Event Categories
+router.get("/admin/event-categories", authenticateAdmin, getEventCategoriesAdmin);
+router.post("/admin/event-categories", authenticateAdmin, createEventCategory);
+router.delete("/admin/event-categories/:id", authenticateAdmin, deleteEventCategory);
+
 // Events
 router.get("/admin/events", authenticateAdmin, getEvents);
 router.get("/admin/events/:id/signups", authenticateAdmin, getEventSignupsAdmin);
@@ -177,6 +192,14 @@ router.get("/admin/announcement-groups", authenticateAdmin, getAnnouncementGroup
 // No side effects — lets the console show the real reach before it sends.
 router.post("/admin/announcements/preview", authenticateAdmin, previewAudience);
 router.post("/admin/announcements", authenticateAdmin, sendAnnouncement);
+
+// Email broadcasts ("Email Users"). The literal /preview and /test paths are
+// POSTs, so they can't collide with /:id/cancel.
+router.get("/admin/email-broadcasts", authenticateAdmin, getEmailBroadcasts);
+router.post("/admin/email-broadcasts/preview", authenticateAdmin, previewEmailBroadcast);
+router.post("/admin/email-broadcasts/test", authenticateAdmin, sendTestEmailBroadcast);
+router.post("/admin/email-broadcasts", authenticateAdmin, createEmailBroadcast);
+router.post("/admin/email-broadcasts/:id/cancel", authenticateAdmin, cancelEmailBroadcast);
 
 // Event discount codes (admin-created; creators can only toggle theirs)
 router.get("/admin/discount-codes", authenticateAdmin, getDiscountCodes);

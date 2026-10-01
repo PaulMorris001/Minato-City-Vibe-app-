@@ -15,6 +15,7 @@ import { startDiscountReservationJob } from './jobs/discountReservation.job.js';
 import { startCouponReservationJob } from './jobs/couponReservation.job.js';
 import { startCouponExpirationJob } from './jobs/couponExpiration.job.js';
 import { startEngagementPushJob } from './jobs/engagementPush.job.js';
+import { startEmailBroadcastJob } from './jobs/emailBroadcast.job.js';
 
 import authRoutes from './routes/auth.route.js'
 import vendorRoutes from "./routes/vendor.route.js";
@@ -172,4 +173,5 @@ httpServer.listen(config.server.port, config.server.host, async () => {
   startCouponReservationJob();
   startCouponExpirationJob();
   startEngagementPushJob();
+  startEmailBroadcastJob();
 });

@@ -18,7 +18,11 @@ export type PendingDeepLink =
   | { kind: "chat"; chatId: string }
   | { kind: "user"; userId: string }
   | { kind: "event"; token: string }
-  | { kind: "guide"; token: string };
+  | { kind: "guide"; token: string }
+  // Admin announcement destinations (utils/announcementLink.ts): an
+  // allow-listed app path, or a web link that opens in the browser instead.
+  | { kind: "path"; path: string }
+  | { kind: "url"; url: string };
 
 let pending: PendingDeepLink | null = null;
 
@@ -50,6 +54,11 @@ export function deepLinkToPath(link: PendingDeepLink): string | null {
       return link.token ? `/share/${link.token}` : null;
     case "guide":
       return link.token ? `/guide/${link.token}` : null;
+    case "path":
+      return link.path || null;
+    case "url":
+      // Not a screen — _layout.tsx's route() opens it in the browser.
+      return null;
   }
 }
 

@@ -32,7 +32,7 @@ import * as Location from "expo-location";
 import { locationWithMore } from "@/utils/location";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -685,7 +685,7 @@ export default function Home() {
           const wantsToEnable = await new Promise<boolean>((resolve) => {
             Alert.alert(
               "Enable Location",
-              "Turn on location so CityVibe can show you the events happening around you.",
+              "Turn on location so OurCityVibe can show you the events happening around you.",
               [
                 { text: "Not Now", style: "cancel", onPress: () => resolve(false) },
                 { text: "Enable", onPress: () => resolve(true) },
@@ -769,7 +769,7 @@ export default function Home() {
       if (!canAskAgain) {
         Alert.alert(
           "Location Permission Required",
-          "CityVibe needs location access to show events near you. Please enable it in your device settings.",
+          "OurCityVibe needs location access to show events near you. Please enable it in your device settings.",
           [
             { text: "Cancel", style: "cancel" },
             {
@@ -1239,21 +1239,22 @@ export default function Home() {
   // const bindings so TS narrows them inside the hero's onPress closures.
   const heroEvent = resolvedHero;
   const heroExternal = resolvedExternal;
-  // Prefer vendors the rail above isn't already showing. A city with fewer than
-  // ~10 vendors would otherwise dedupe this section out of existence entirely,
-  // so fall back to the ranked list unfiltered rather than hiding it.
-  const rankedVendors = useMemo(() => {
-    const shown = new Set(vendors.map((v) => v._id));
-    const fresh = topVendors.filter((v) => !shown.has(v._id));
-    return fresh.length >= 3 ? fresh : topVendors;
-  }, [vendors, topVendors]);
-
   const mixedFeed = resolvedFeed;
 
+  // CityVibe events in the server's popularity order (see getEventHighlights)
+  // — never re-sorted by date, which is what made this a copy of "After
+  // that". While there are fewer than TRENDING_SIZE, the rest is topped up
+  // with the soonest Ticketmaster/Eventbrite events so a quiet city's rail
+  // still fills; they always come after our own.
+  const TRENDING_SIZE = 5;
   const trendingFeed = [
-    ...highlights.trending.map((e) => ({ _kind: "native" as const, data: e, sort: new Date(e.date).getTime() })),
-    ...externalEvents.map((e) => ({ _kind: "external" as const, data: e, sort: new Date(e.date).getTime() })),
-  ].sort((a, b) => a.sort - b.sort);
+    ...highlights.trending.map((e) => ({ _kind: "native" as const, data: e })),
+    ...externalEvents
+      .filter((e) => e._id !== heroExternal?._id)
+      .sort((a, b) => +new Date(a.date) - +new Date(b.date))
+      .slice(0, Math.max(0, TRENDING_SIZE - highlights.trending.length))
+      .map((e) => ({ _kind: "external" as const, data: e })),
+  ];
 
   const feedIsEmpty = mixedFeed.length === 0 && trendingFeed.length === 0;
 
@@ -1685,6 +1686,45 @@ export default function Home() {
           </View>
         )}
 
+            {/* Top vendors — only the ranked list, by review count so a lone
+                5-star review can't outrank a vendor with fifty. Sits between
+                the two event rails. */}
+            {initialLoading ? (
+              <View style={styles.section}>
+                <SectionHeader title="Top vendors" subtitle="Highest rated in your city" />
+                <FlatList
+                  horizontal
+                  data={[1, 2, 3, 4]}
+                  keyExtractor={(item) => String(item)}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={() => <VendorCardSkeleton />}
+                />
+              </View>
+            ) : topVendors.length > 0 && (
+              <View style={styles.section}>
+                <SectionHeader
+                  title="Top vendors"
+                  subtitle="Highest rated in your city"
+                  onAction={() => router.push("/(tabs)/vendors")}
+                  actionLabel="All"
+                />
+                <FlatList
+                  horizontal
+                  data={topVendors}
+                  keyExtractor={(item) => item._id}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={({ item }) => (
+                    <VendorCard
+                      vendor={item}
+                      onPress={() => router.push(`/vendor-details/${item._id}` as any)}
+                    />
+                  )}
+                />
+              </View>
+            )}
+
             {/* Trending Now */}
             {initialLoading ? (
               <View style={styles.section}>
@@ -1701,7 +1741,7 @@ export default function Home() {
                   ))}
                 </View>
               </View>
-            ) : (highlights.trending.length > 0 || externalEvents.length > 0) && (
+            ) : trendingFeed.length > 0 && (
           <View style={styles.section}>
             <SectionHeader
               title="Trending Now 🔥"
@@ -1768,44 +1808,6 @@ export default function Home() {
             />
           </View>
         )}
-
-            {/* Top vendors — ranked by review count, so a lone 5-star review
-                can't outrank a vendor with fifty. */}
-            {initialLoading ? (
-              <View style={styles.section}>
-                <SectionHeader title="Top vendors" subtitle="Highest rated in your city" />
-                <FlatList
-                  horizontal
-                  data={[1, 2, 3, 4]}
-                  keyExtractor={(item) => String(item)}
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}
-                  renderItem={() => <VendorCardSkeleton />}
-                />
-              </View>
-            ) : rankedVendors.length > 0 && (
-              <View style={styles.section}>
-                <SectionHeader
-                  title="Top vendors"
-                  subtitle="Highest rated in your city"
-                  onAction={() => router.push("/(tabs)/vendors")}
-                  actionLabel="All"
-                />
-                <FlatList
-                  horizontal
-                  data={rankedVendors}
-                  keyExtractor={(item) => item._id}
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalList}
-                  renderItem={({ item }) => (
-                    <VendorCard
-                      vendor={item}
-                      onPress={() => router.push(`/vendor-details/${item._id}` as any)}
-                    />
-                  )}
-                />
-              </View>
-            )}
 
             {/* Vendor fallback — stands in for both vendor rails when this
                 city has none, so the row widens instead of disappearing. */}

@@ -1,5 +1,5 @@
 import ExternalEvent from "../models/externalEvent.model.js";
-import { escapeRegex } from "../utils/escapeRegex.js";
+import { escapeRegex, exactCaseInsensitive } from "../utils/escapeRegex.js";
 
 /**
  * Map between ISO-2 country codes and display names so callers can pass
@@ -139,7 +139,9 @@ export const getExternalEventsExplore = async (req, res) => {
       match.country = { $in: candidates };
     }
     if (source) match.source = source;
-    if (category) match.category = category;
+    // Case-insensitive: the Discover filter sends our own category names
+    // ("Music"), which only line up with a provider's genre by name.
+    if (category) match.category = { $regex: exactCaseInsensitive(category) };
     if (!includePlaceholders) match.hasRealImage = true;
 
     const events = await ExternalEvent.aggregate(

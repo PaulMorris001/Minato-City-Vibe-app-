@@ -265,6 +265,10 @@ const css = `
   .cv-pill-free { background: rgba(16,185,129,0.16); border-color: rgba(16,185,129,0.38); color: #6ee7b7; }
   .cv-pill-ext { background: rgba(34,211,238,0.14); border-color: rgba(34,211,238,0.35); color: #a5f3fc; }
   .cv-chips { display: flex; gap: 9px; flex-wrap: wrap; }
+  /* One swipeable row for long lists (event categories) instead of a wall of wrapped chips. */
+  .cv-chips-scroll { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 4px; scrollbar-width: none; }
+  .cv-chips-scroll::-webkit-scrollbar { display: none; }
+  .cv-chips-scroll .cv-chip { flex: none; white-space: nowrap; }
   .cv-chip {
     font-size: 13.5px; font-weight: 600; padding: 9px 16px; border-radius: 999px; cursor: pointer;
     background: var(--surface); border: 1px solid var(--stroke); color: var(--dim); transition: all .15s;
@@ -341,7 +345,12 @@ const css = `
   .cv-hero-text { position: absolute; left: 24px; right: 24px; bottom: 22px; }
   .cv-detail { display: grid; grid-template-columns: minmax(0,1fr) 360px; gap: 26px; align-items: start; }
   .cv-sticky { position: sticky; top: 90px; }
-  .cv-gallery { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+  .cv-gallery {
+    display: flex; flex-wrap: nowrap; gap: 10px; max-width: 100%;
+    overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory;
+    padding-bottom: 6px;
+  }
+  .cv-gallery > * { scroll-snap-align: start; }
   .cv-gallery img { width: 150px; height: 100px; object-fit: cover; border-radius: 12px; flex: none; border: 1px solid var(--stroke); }
   /* Video tiles run wider than photos so the native controls aren't cramped. */
   .cv-gallery video { width: 220px; height: 130px; object-fit: cover; border-radius: 12px; flex: none; border: 1px solid var(--stroke); background: #000; }
@@ -405,7 +414,9 @@ const css = `
   .cv-empty-emoji { font-size: 40px; margin-bottom: 12px; }
 
   @media (max-width: 900px) {
-    .cv-detail { grid-template-columns: 1fr; }
+    /* minmax(0,…), not bare 1fr: a bare 1fr column grows to fit its widest
+       child, so the photo rail stretched the whole page instead of scrolling. */
+    .cv-detail { grid-template-columns: minmax(0, 1fr); }
     .cv-sticky { position: static; }
     .cv-h1 { font-size: 27px; }
   }

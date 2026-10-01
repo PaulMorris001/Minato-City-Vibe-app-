@@ -23,11 +23,13 @@ import axios from "axios";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
 import {
+  CategoryChips,
   DateTimeDropdown,
   InfoTip,
   LocationPicker,
   MultiImagePicker,
 } from "@/components/shared";
+import { useEventCategories } from "@/hooks/useEventCategories";
 import GlassBackButton from "@/components/shared/GlassBackButton";
 import LocationPinPicker from "@/components/shared/LocationPinPicker";
 import { hasIncompleteDraft } from "@/components/shared/AdditionalLocationsEditor";
@@ -68,6 +70,7 @@ export default function CreateEventScreen() {
   const router = useRouter();
   const { birthday } = useLocalSearchParams<{ birthday?: string }>();
   const { draft, update, reset } = useCreateEvent();
+  const { categories } = useEventCategories();
 
   const [loading, setLoading] = useState(false);
   const [pinPickerOpen, setPinPickerOpen] = useState(false);
@@ -233,6 +236,7 @@ export default function CreateEventScreen() {
         isVirtual: draft.isVirtual,
         meetingLink: draft.isVirtual ? draft.meetingLink.trim() : "",
         description: draft.description.trim(),
+        category: draft.category,
         images: eventImageUrls,
         isPublic: draft.isPublic,
         isPaid: draft.isPaid,
@@ -554,6 +558,20 @@ export default function CreateEventScreen() {
                 value={draft.description}
                 onChangeText={(value) => update("description", value)}
               />
+
+              {/* Category — optional; hidden until the list loads */}
+              {categories.length > 0 && (
+                <>
+                  <Text style={styles.label}>Category (optional)</Text>
+                  <CategoryChips
+                    options={categories.map((c) => ({ value: c.name, label: c.name, emoji: c.emoji }))}
+                    value={draft.category || null}
+                    onChange={(value) => update("category", value ?? "")}
+                    allLabel="None"
+                    contentContainerStyle={styles.categoryChips}
+                  />
+                </>
+              )}
 
               {/* Who can join — visibility toggle */}
               <InfoTip label="WHO CAN JOIN" style={styles.infoTip} labelStyle={styles.infoTipLabel}>
@@ -1043,6 +1061,9 @@ const createStyles = (c: ThemeColors) =>
     multilineInput: {
       height: 90,
       textAlignVertical: "top",
+    },
+    categoryChips: {
+      paddingHorizontal: 20,
     },
     visibilityRow: {
       flexDirection: "row",

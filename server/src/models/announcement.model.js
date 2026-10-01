@@ -37,8 +37,12 @@ const announcementSchema = new mongoose.Schema(
       /** Human summary, rendered straight into the history table. */
       summary: { type: String, default: "" },
     },
-    // Optional in-app destination for the tap, e.g. "/event/<id>".
+    // Optional destination for the tap: an app path from the allow-list in
+    // announcement.controller.js (e.g. "/event/<id>") or an https:// URL.
     deepLink: { type: String, default: "" },
+    // Optional button text shown under the message in the app's Notifications
+    // list; only meaningful with a deepLink.
+    ctaLabel: { type: String, default: "" },
     // Admin username string — the admin JWT carries no user id, same as
     // event.pendingEdits.reviewedBy.
     sentBy: { type: String },

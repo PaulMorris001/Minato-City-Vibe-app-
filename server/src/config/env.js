@@ -208,6 +208,14 @@ export const config = {
   apple: {
     clientId: process.env.APPLE_CLIENT_ID || "com.ourcityvibe.app",
   },
+
+  // Admin broadcast email (jobs/emailBroadcast.job.js). Broadcasts share the
+  // mailbox that sends password resets, signup codes and tickets, and a
+  // Google account stops sending for the day at ~2,000 messages — the cap
+  // leaves the rest for that mail. Raise it only on a bulk-sending provider.
+  emailBroadcast: {
+    dailyCap: Math.max(1, parseInt(process.env.EMAIL_BROADCAST_DAILY_CAP || "1500", 10) || 1500),
+  },
 };
 
 // Boot-time warnings for admin hardening that's configured but not yet migrated.

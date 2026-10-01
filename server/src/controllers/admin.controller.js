@@ -7,6 +7,7 @@ import { City, VendorType, Vendor } from "../models/vendor.model.js";
 import Event from "../models/event.model.js";
 import Guide from "../models/guide.model.js";
 import GuideTopic from "../models/guideTopic.model.js";
+import EventCategory from "../models/eventCategory.model.js";
 import { CatalogueCategory } from "../models/catalogueCategory.model.js";
 import AnalyticsLog from "../models/analytics.model.js";
 import VerificationRequest from "../models/verification.model.js";
@@ -420,6 +421,48 @@ export async function deleteGuideTopic(req, res) {
     const { id } = req.params;
     await GuideTopic.findByIdAndDelete(id);
     res.json({ message: "Guide topic deleted" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// ── Event Categories ───────────────────────────────────────────────────────
+// Same shape as Guide Topics above. See eventCategory.model.js and
+// event.controller.js's getEventCategories / resolveEventCategory.
+
+export async function getEventCategoriesAdmin(req, res) {
+  try {
+    const categories = await EventCategory.find().sort({ name: 1 });
+    res.json(categories);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function createEventCategory(req, res) {
+  try {
+    const { name, emoji } = req.body;
+    if (!name?.trim()) {
+      return res.status(400).json({ message: "Name is required" });
+    }
+    const category = await new EventCategory({
+      name: name.trim(),
+      emoji: (emoji || "").trim(),
+    }).save();
+    res.status(201).json(category);
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "That category already exists" });
+    }
+    res.status(500).json({ message: error.message });
+  }
+}
+
+export async function deleteEventCategory(req, res) {
+  try {
+    const { id } = req.params;
+    await EventCategory.findByIdAndDelete(id);
+    res.json({ message: "Event category deleted" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

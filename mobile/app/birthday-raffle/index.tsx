@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -22,6 +22,8 @@ import { BASE_URL } from "@/constants/constants";
 import { useCountdown } from "@/hooks/useCountdown";
 import { formatMoney } from "@/constants/payments";
 import RaffleWinnerPopup, { type RaffleStatusLike } from "@/components/shared/RaffleWinnerPopup";
+import NewRaffleBanner, { type NewRaffleInfo } from "@/components/shared/NewRaffleBanner";
+import { primeRaffleStatus } from "@/utils/raffleStatusPrime";
 
 // Prizes and rules are static marketing copy — safe to hardcode. The deadline
 // below is only a pre-fetch seed so the countdown ticks immediately (guests
@@ -99,6 +101,7 @@ export default function BirthdayRaffleScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
+  const forwardEntrants = useLocalSearchParams<{ forwardEntrants?: string }>().forwardEntrants === "1";
   const insets = useSafeAreaInsets();
 
   const [hasBirthdayEvent, setHasBirthdayEvent] = useState<boolean | null>(null);
@@ -124,6 +127,10 @@ export default function BirthdayRaffleScreen() {
   // Raw /raffle/status payload, handed to <RaffleWinnerPopup> as-is — it owns
   // its own "have they seen this?" bookkeeping, see that component.
   const [statusData, setStatusData] = useState<RaffleStatusLike | null>(null);
+  // A live raffle this user isn't in yet — only sent once their own raffle has
+  // ended. Without it, this page kept describing the finished one and its
+  // button only ever led to that old status.
+  const [newRaffle, setNewRaffle] = useState<NewRaffleInfo | null>(null);
 
   // Only the very first check shows the full-page spinner (see the `loading`
   // gate below) — a refocus refetch updates state quietly so returning to
@@ -132,6 +139,9 @@ export default function BirthdayRaffleScreen() {
 
   const checkStatus = useCallback(async () => {
     if (!hasLoadedOnceRef.current) setLoading(true);
+    // Keeps the spinner up while handing an entrant to the status page, so
+    // the landing page doesn't flash first.
+    let forwarded = false;
     try {
       const publicRes = await fetch(`${BASE_URL}/raffle/public`);
       const publicData = await publicRes.json();
@@ -159,6 +169,15 @@ export default function BirthdayRaffleScreen() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
+      // Opened from an announcement (utils/announcementLink.ts): an entrant
+      // belongs on their status page, same as the home banner sends them.
+      // First load only, so coming back here later doesn't bounce them again.
+      if (res.ok && forwardEntrants && !hasLoadedOnceRef.current && data.hasQualifyingEvent) {
+        forwarded = true;
+        primeRaffleStatus(data);
+        router.replace("/birthday-raffle/status" as any);
+        return;
+      }
       if (res.ok) {
         setHasBirthdayEvent(!!data.hasQualifyingEvent);
         setHasActiveCampaign(!!data.campaignOpen);
@@ -173,16 +192,17 @@ export default function BirthdayRaffleScreen() {
         if (typeof data.campaignOpen === "boolean") setCampaignOpen(data.campaignOpen);
         if (data.campaignName) setCampaignName(data.campaignName);
         setStatusData(data);
+        setNewRaffle(data.newRaffle ?? null);
       } else {
         setHasBirthdayEvent(false);
       }
     } catch {
       setHasBirthdayEvent(false);
     } finally {
-      setLoading(false);
+      if (!forwarded) setLoading(false);
       hasLoadedOnceRef.current = true;
     }
-  }, []);
+  }, [forwardEntrants, router]);
 
   // Re-check every time this screen gains focus, not just on first mount — an
   // admin ending or starting a campaign while this screen sat open (or
@@ -278,6 +298,13 @@ const handlePrimaryCTA = async () => {
           { paddingBottom: insets.bottom + 40 },
         ]}
       >
+        {newRaffle && (
+          <NewRaffleBanner
+            raffle={newRaffle}
+            onEnter={() => router.replace("/(tabs)/home?openCreate=birthday" as any)}
+          />
+        )}
+
         {/* Hero */}
         <LinearGradient
           colors={isWinner ? ["#2D1B69", "#B8860B"] : [colors.primary, colors.primaryDark]}

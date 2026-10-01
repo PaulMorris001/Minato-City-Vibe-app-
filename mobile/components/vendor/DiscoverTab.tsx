@@ -16,7 +16,7 @@ import { BASE_URL } from "@/constants/constants";
 import { fetchVendorsBrowse } from "@/libs/api";
 import { formatLocation } from "@/utils/location";
 import { useActiveCity } from "@/hooks/useActiveCity";
-import { ActiveLocationChip, VendorRow } from "@/components/shared";
+import { ActiveLocationChip, CategoryChips, VendorRow } from "@/components/shared";
 import type { VendorRowItem } from "@/components/shared";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 import MediaTile from "@/components/shared/MediaTile";
@@ -112,6 +112,12 @@ export default function DiscoverTab() {
     return Array.from(map.values()).sort((a, b) => a.type.name.localeCompare(b.type.name));
   }, [vendors]);
 
+  // Vendor-type filter — same behaviour as the client Vendors tab: chips list
+  // only the types present here, and a pick the new location lacks reads as "All".
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
+  const activeType = groups.some((g) => g.type._id === typeFilter) ? typeFilter : null;
+  const visibleGroups = activeType ? groups.filter((g) => g.type._id === activeType) : groups;
+
   const openVendor = (v: { _id: string; name: string }) =>
     router.push({
       pathname: "/vendor-details/[vendorId]",
@@ -206,6 +212,15 @@ export default function DiscoverTab() {
         >
           <ActiveLocationChip city={activeCity} />
 
+          {!loading && groups.length > 1 && (
+            <CategoryChips
+              options={groups.map((g) => ({ value: g.type._id, label: g.type.name }))}
+              value={activeType}
+              onChange={setTypeFilter}
+              contentContainerStyle={styles.typeChips}
+            />
+          )}
+
           {loading ? (
             <VendorCardSkeleton count={5} />
           ) : groups.length === 0 ? (
@@ -219,7 +234,7 @@ export default function DiscoverTab() {
               </Text>
             </View>
           ) : (
-            groups.map((g) => (
+            visibleGroups.map((g) => (
               <View key={g.type._id} style={styles.section}>
                 <View style={styles.sectionHeader}>
                   <Ionicons
@@ -280,6 +295,7 @@ const createStyles = (c: ThemeColors) =>
     },
     listContent: { paddingBottom: 40 },
     section: { marginBottom: 22 },
+    typeChips: { paddingBottom: 16 },
     sectionHeader: {
       flexDirection: "row",
       alignItems: "center",

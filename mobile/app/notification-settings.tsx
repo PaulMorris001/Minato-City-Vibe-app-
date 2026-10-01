@@ -34,7 +34,8 @@ type PrefKey =
   | "eventUpdates"
   | "sales"
   | "payouts"
-  | "eventReminderEmails";
+  | "eventReminderEmails"
+  | "announcementEmails";
 
 type Prefs = Record<PrefKey, boolean>;
 
@@ -45,6 +46,7 @@ const DEFAULT_PREFS: Prefs = {
   sales: true,
   payouts: true,
   eventReminderEmails: true,
+  announcementEmails: true,
 };
 
 const PUSH_ROWS: { key: PrefKey; icon: keyof typeof Ionicons.glyphMap; label: string; hint: string }[] = [
@@ -86,6 +88,12 @@ const EMAIL_ROWS: { key: PrefKey; icon: keyof typeof Ionicons.glyphMap; label: s
     icon: "mail-outline",
     label: "Event reminder emails",
     hint: "A reminder the day before an event you're going to.",
+  },
+  {
+    key: "announcementEmails",
+    icon: "megaphone-outline",
+    label: "News & announcements",
+    hint: "Occasional emails from OurCityVibe about what's new.",
   },
 ];
 

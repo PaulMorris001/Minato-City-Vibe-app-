@@ -9,6 +9,7 @@ import { Vendor } from "../models/vendor.model.js";
 import Chat from "../models/chat.model.js";
 import Follow from "../models/follow.model.js";
 import Notification from "../models/notification.model.js";
+import EventCategory from "../models/eventCategory.model.js";
 import ChatService from "../services/chat.service.js";
 import { uploadBase64Image, deleteImage } from "../services/image.service.js";
 import { emitEventInvite } from "../services/socket.service.js";
@@ -52,6 +53,23 @@ import { applyPriceVisibility, stopRequiresPayment } from "../utils/eventPricing
 function listHasUser(list, userId) {
   if (!userId) return false;
   return (list || []).some((x) => String(x?._id ?? x) === String(userId));
+}
+
+/**
+ * Validate an event's submitted `category` against the admin-managed list.
+ * Optional: absent → `undefined` (leave unchanged on update), "" or null →
+ * uncategorised. Anything else must name a current EventCategory; the stored
+ * value is that category's canonical spelling.
+ */
+async function resolveEventCategory(input) {
+  if (input === undefined) return { category: undefined };
+  if (input === null || (typeof input === "string" && !input.trim())) return { category: "" };
+  if (typeof input !== "string") return { error: "category must be a string" };
+  const match = await EventCategory.findOne({ name: { $regex: exactCaseInsensitive(input.trim()) } })
+    .select("name")
+    .lean();
+  if (!match) return { error: "That event category doesn't exist" };
+  return { category: match.name };
 }
 
 // A review is only meaningful from someone who accepted or otherwise joined
@@ -238,6 +256,9 @@ export const createEvent = async (req, res) => {
     if (meetingLink && !isValidMeetingLink(meetingLink)) {
       return res.status(400).json({ message: "Event link must be a valid URL (https://...)" });
     }
+
+    const { category, error: categoryError } = await resolveEventCategory(req.body.category);
+    if (categoryError) return res.status(400).json({ message: categoryError });
 
     let extraVenues = [];
     if (!virtual && additionalLocations !== undefined) {
@@ -475,6 +496,7 @@ export const createEvent = async (req, res) => {
       image: eventImageUrl,
       images: gallery,
       description: description || "",
+      category: category || "",
       createdBy: userId,
       isPublic: isPublic || false,
       isPaid: isPublic && isPaid ? isPaid : false,
@@ -1304,6 +1326,15 @@ export const updateEvent = async (req, res) => {
       additionalLocations !== undefined ? normalizeAdditionalLocations(additionalLocations) : null;
     if (extraVenues?.error) return res.status(400).json({ message: extraVenues.error });
 
+    // An unchanged category is let through unvalidated: edit forms resend the
+    // current value, and an admin may have deleted that category since — which
+    // must not make every later edit of the event fail.
+    const { category, error: categoryError } =
+      req.body.category === event.category
+        ? { category: undefined }
+        : await resolveEventCategory(req.body.category);
+    if (categoryError) return res.status(400).json({ message: categoryError });
+
     // The programme, normalized against the live stops so each one KEEPS ITS
     // _id. Without that, replacing the array would renumber every stop and
     // silently move attendees between them.
@@ -1437,6 +1468,8 @@ export const updateEvent = async (req, res) => {
       event.meetingLink = willBeVirtual ? meetingLink : "";
     }
     if (description !== undefined) event.description = description;
+    // Browse metadata, not pricing — applies immediately, never held for review.
+    if (category !== undefined) event.category = category;
 
     // Minor field: this only changes who may READ the headcount, not the price,
     // date or capacity itself — so it applies immediately rather than sitting in
@@ -2373,7 +2406,7 @@ function eventCityFilter(city) {
  * @param {object} args
  * @param {string} [args.q]  free-text term; matched against title/description/location/city
  */
-export function buildPublicEventQuery({ city, state, country, date, online, blockedIds = [], q }) {
+export function buildPublicEventQuery({ city, state, country, date, online, blockedIds = [], q, category, price }) {
   const onlineOnly = online === true || online === "true";
 
   const andConditions = [
@@ -2395,6 +2428,12 @@ export function buildPublicEventQuery({ city, state, country, date, online, bloc
   } else if (city || state || country) {
     andConditions.push({ isVirtual: { $ne: true } });
   }
+
+  // Price filter from the Discover filter page. "free" is the main event's own
+  // flag, so a free event with a priced programme stop still counts as free —
+  // same thing its card shows. Anything else means no price filter.
+  if (price === "free") andConditions.push({ isPaid: { $ne: true } });
+  else if (price === "paid") andConditions.push({ isPaid: true });
 
   // Free-text search is its own OR-group, AND-ed with everything above.
   const term = (q || "").trim();
@@ -2423,6 +2462,9 @@ export function buildPublicEventQuery({ city, state, country, date, online, bloc
     ...(state && !onlineOnly ? { state: { $regex: exactCaseInsensitive(state) } } : {}),
     ...(country && !onlineOnly ? { country: { $regex: exactCaseInsensitive(country) } } : {}),
     ...(blockedIds.length > 0 ? { createdBy: { $nin: blockedIds } } : {}),
+    // Stored in the category's canonical spelling, so an exact match can use
+    // the { category, date } index — no regex.
+    ...(category ? { category: String(category) } : {}),
     $and: andConditions,
   };
 
@@ -2437,10 +2479,26 @@ export function buildPublicEventQuery({ city, state, country, date, online, bloc
   return query;
 }
 
+/**
+ * GET /events/categories
+ * The admin-managed category list (see admin.controller.js's
+ * getEventCategoriesAdmin/createEventCategory/deleteEventCategory), so a
+ * category added from the dashboard shows up without an app release.
+ */
+export async function getEventCategories(req, res) {
+  try {
+    const categories = await EventCategory.find().select("name emoji").sort({ name: 1 }).lean();
+    return res.status(200).json({ categories });
+  } catch (err) {
+    console.error("getEventCategories:", err);
+    return res.status(500).json({ message: "Failed to fetch event categories" });
+  }
+}
+
 // Get public events for exploration
 export const getPublicEvents = async (req, res) => {
   try {
-    const { limit = 20, page = 1, city, state, country, date, sort, online, q } = req.query;
+    const { limit = 20, page = 1, city, state, country, date, sort, online, q, category, price } = req.query;
     // optionalAuth — userId is null for logged-out (guest) browsers.
     const userId = req.user?.id || null;
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -2451,7 +2509,7 @@ export const getPublicEvents = async (req, res) => {
     // no eviction, so caching the per-keystroke keyspace at a 2-minute TTL grows
     // memory without bound. `q` is still in the key so that if this ever does
     // cache, a searched request can never collide with the unsearched feed.
-    const cacheKey = `public_events_${userId || 'guest'}_${page}_${limit}_${city || ''}_${state || ''}_${country || ''}_${date || ''}_${onlineOnly ? 'online' : ''}_${term}`;
+    const cacheKey = `public_events_${userId || 'guest'}_${page}_${limit}_${city || ''}_${state || ''}_${country || ''}_${date || ''}_${onlineOnly ? 'online' : ''}_${category || ''}_${price || ''}_${term}`;
     if (!term) {
       const cached = getCache(cacheKey);
       if (cached) return res.status(200).json(cached);
@@ -2460,7 +2518,7 @@ export const getPublicEvents = async (req, res) => {
     const blockedIds = userId ? await getBlockedIds(userId) : [];
 
     const query = buildPublicEventQuery({
-      city, state, country, date, online: onlineOnly, blockedIds, q: term,
+      city, state, country, date, online: onlineOnly, blockedIds, q: term, category, price,
     });
 
     const total = await Event.countDocuments(query);
@@ -2477,9 +2535,11 @@ export const getPublicEvents = async (req, res) => {
     // city instead of leaving the page feeling empty. Only worth the extra
     // queries on page 1 — a "load more" call already knows the feed is real.
     // Skipped for searches: "nothing here, try Austin" is a nonsensical reply to
-    // a text query, and it costs two extra queries per keystroke.
+    // a text query, and it costs two extra queries per keystroke. Same for a
+    // category filter — the nearby lookup doesn't narrow by category, so it
+    // would answer "no Music here" with whatever is on nearby.
     let nearby = null;
-    if (city && !onlineOnly && !term && parseInt(page) === 1 && total < NEARBY_MIN_RESULTS) {
+    if (city && !onlineOnly && !term && !category && !price && parseInt(page) === 1 && total < NEARBY_MIN_RESULTS) {
       nearby = await findNearbyCityEvents({ city, state, country, blockedIds, userId });
     }
 
@@ -2871,11 +2931,45 @@ export const getEventHighlights = async (req, res) => {
       $and: [...(publicFilter.$and || []), upcomingFilter(now), ...extra],
     });
 
+    // Trending ranks EVERY still-on event by popularity: going (RSVPs + valid
+    // tickets — a paid event's buyers aren't in rsvpUsers) weighted over views.
+    // It used to take the 20 soonest events and sort only those, which made it
+    // a near copy of "upcoming". While few events have any engagement, the
+    // rest of the five slots fill with the soonest unengaged ones (score 0,
+    // tie-broken by date) so the rail isn't empty in a quiet city.
+    const trendingRanked = await Event.aggregate([
+      { $match: stillOn() },
+      {
+        $lookup: {
+          from: Ticket.collection.name,
+          let: { eventId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$event", "$$eventId"] }, isValid: true } },
+            { $count: "n" },
+          ],
+          as: "sold",
+        },
+      },
+      {
+        $addFields: {
+          score: {
+            $add: [
+              { $multiply: [{ $size: { $ifNull: ["$rsvpUsers", []] } }, 3] },
+              { $multiply: [{ $ifNull: [{ $first: "$sold.n" }, 0] }, 3] },
+              { $size: { $ifNull: ["$viewedBy", []] } },
+            ],
+          },
+        },
+      },
+      { $sort: { score: -1, date: 1 } },
+      { $limit: 5 },
+      { $project: { _id: 1 } },
+    ]);
+    const trendingIds = trendingRanked.map((r) => r._id);
+
     const [trendingRaw, upcoming] = await Promise.all([
-      Event.find(stillOn())
-        .populate('createdBy', 'username email profilePicture')
-        .sort({ date: 1 })
-        .limit(20),
+      Event.find({ _id: { $in: trendingIds } })
+        .populate('createdBy', 'username email profilePicture'),
       // Starting within the week — an event already under way still counts.
       Event.find(stillOn([{ date: { $lte: sevenDaysFromNow } }]))
         .populate('createdBy', 'username email profilePicture')
@@ -2883,9 +2977,9 @@ export const getEventHighlights = async (req, res) => {
         .limit(5),
     ]);
 
-    const trending = [...trendingRaw]
-      .sort((a, b) => (b.rsvpUsers?.length || 0) - (a.rsvpUsers?.length || 0))
-      .slice(0, 5);
+    // $in returns in storage order — put the aggregate's ranking back.
+    const rank = new Map(trendingIds.map((id, i) => [String(id), i]));
+    const trending = [...trendingRaw].sort((a, b) => rank.get(String(a._id)) - rank.get(String(b._id)));
 
     const enrichEvent = async (event) => {
       const obj = event.toObject();

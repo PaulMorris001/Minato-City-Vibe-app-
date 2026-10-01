@@ -172,11 +172,30 @@ export async function getRaffleStatus(req, res) {
     // entry's month yet — it's registered but waiting for that batch.
     const pending = campaign._id === null;
 
+    // Everything else in this response describes the user's OWN entry, so
+    // once their raffle has ended a past entrant had no way to learn that a
+    // new batch had opened. Surface the live campaign when they have no entry
+    // dated inside it (entries belong to whichever window holds event.date).
+    let newRaffle = null;
+    if (!pending && !isCampaignOpen(campaign)) {
+      const open = await getOpenCampaign();
+      const alreadyIn =
+        open && withCampaign.some((w) => w.campaign._id && String(w.campaign._id) === String(open._id));
+      if (open && !alreadyIn) {
+        newRaffle = {
+          name: open.name,
+          deadline: new Date(open.endDate).toISOString(),
+          daysLeft: Math.max(0, Math.ceil((new Date(open.endDate).getTime() - Date.now()) / DAY_MS)),
+        };
+      }
+    }
+
     res.json({
       hasQualifyingEvent: true,
       pending,
       ...scoreEntry(best, campaign),
       ...(await publicCampaignInfo(campaign, isNigerian)),
+      newRaffle,
     });
   } catch (error) {
     console.error("Get raffle status error:", error);

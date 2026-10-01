@@ -22,7 +22,7 @@ import { ensureAuth } from "@/utils/requireAuth";
 import { formatLocation } from "@/utils/location";
 import { Fonts } from "@/constants/fonts";
 import BecomeVendorModal from "@/components/client/BecomeVendorModal";
-import { ActiveLocationChip, VendorRow } from "@/components/shared";
+import { ActiveLocationChip, CategoryChips, VendorRow } from "@/components/shared";
 import VendorCardSkeleton from "@/components/skeletons/VendorCardSkeleton";
 import { scaleFontSize } from "@/utils/responsive";
 import { useActiveCity } from "@/hooks/useActiveCity";
@@ -189,6 +189,13 @@ export default function VendorsPage() {
     return Array.from(map.values()).sort((a, b) => a.type.name.localeCompare(b.type.name));
   }, [vendors]);
 
+  // Vendor-type filter. The chips come from the types present in this
+  // location, so a pick never lands on an empty screen; if the location changes
+  // and the picked type isn't there, the filter quietly reads as "All".
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
+  const activeType = groups.some((g) => g.type._id === typeFilter) ? typeFilter : null;
+  const visibleGroups = activeType ? groups.filter((g) => g.type._id === activeType) : groups;
+
   const openVendor = (v: { _id: string; name: string }) =>
     router.push({
       pathname: "/vendor-details/[vendorId]",
@@ -301,6 +308,15 @@ export default function VendorsPage() {
         >
           <ActiveLocationChip city={activeCity} />
 
+          {!loading && groups.length > 1 && (
+            <CategoryChips
+              options={groups.map((g) => ({ value: g.type._id, label: g.type.name }))}
+              value={activeType}
+              onChange={setTypeFilter}
+              contentContainerStyle={styles.typeChips}
+            />
+          )}
+
           {loading ? (
             <VendorCardSkeleton count={5} />
           ) : groups.length === 0 && fallback ? (
@@ -336,7 +352,7 @@ export default function VendorsPage() {
               </Text>
             </View>
           ) : (
-            groups.map((g) => (
+            visibleGroups.map((g) => (
               <View key={g.type._id} style={styles.section}>
                 <View style={styles.sectionHeader}>
                   <Ionicons name={(g.type.icon as any) || "business"} size={18} color={colors.primary} />
@@ -371,6 +387,9 @@ const createStyles = (c: ThemeColors) =>
   },
   headerContainer: {
     marginBottom: 16,
+  },
+  typeChips: {
+    paddingBottom: 16,
   },
   headerRow: {
     flexDirection: "row",

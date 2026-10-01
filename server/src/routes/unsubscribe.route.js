@@ -1,14 +1,29 @@
 /**
- * One-click unsubscribe for event reminder emails.
+ * One-click unsubscribe for event reminder emails and admin announcement
+ * emails. `?list=announcements` picks the announcement list; no list means
+ * reminders, which is what every reminder email already sent links to.
  *
- * Reached from the footer (and the List-Unsubscribe header) of the reminder
- * email, so it must work with no session — the token on the user document is
- * the only credential. Lives outside /api because it's opened in a browser.
+ * Reached from the footer (and the List-Unsubscribe header) of those emails,
+ * so it must work with no session — the token on the user document is the
+ * only credential. Lives outside /api because it's opened in a browser.
  */
 import express from 'express';
 import User from '../models/user.model.js';
 
 const router = express.Router();
+
+const LISTS = {
+  reminders: {
+    pref: 'notificationPrefs.eventReminderEmails',
+    name: 'event reminder emails',
+    unaffected: 'Push notifications and your event passes are unaffected.',
+  },
+  announcements: {
+    pref: 'notificationPrefs.announcementEmails',
+    name: 'OurCityvibe announcement emails',
+    unaffected: 'Your tickets, passes, event reminders and account emails are unaffected.',
+  },
+};
 
 function page(title, message, actionHref, actionLabel) {
   return `<!DOCTYPE html>
@@ -76,11 +91,18 @@ function page(title, message, actionHref, actionLabel) {
 async function handle(req, res) {
   const { token } = req.params;
   const resubscribe = req.query.resubscribe === '1';
+  const listKey = req.query.list === 'announcements' ? 'announcements' : 'reminders';
+  const list = LISTS[listKey];
+  const listParam = listKey === 'reminders' ? '' : `list=${listKey}`;
+  const selfHref = (extra) => {
+    const q = [listParam, extra].filter(Boolean).join('&');
+    return `/unsubscribe/${token}${q ? `?${q}` : ''}`;
+  };
 
   try {
     const user = await User.findOneAndUpdate(
       { unsubscribeToken: token },
-      { $set: { 'notificationPrefs.eventReminderEmails': resubscribe } },
+      { $set: { [list.pref]: resubscribe } },
       { new: true }
     ).select('email');
 
@@ -90,7 +112,7 @@ async function handle(req, res) {
       return res.status(404).send(
         page(
           'Link not recognised',
-          'This unsubscribe link is no longer valid. You can manage reminder emails in the app under Settings → Notifications.',
+          'This unsubscribe link is no longer valid. You can manage emails in the app under Settings → Notifications.',
           null,
           null
         )
@@ -101,8 +123,8 @@ async function handle(req, res) {
       return res.send(
         page(
           "You're subscribed again",
-          `Event reminder emails will be sent to ${user.email}.`,
-          `/unsubscribe/${token}`,
+          `${list.name[0].toUpperCase()}${list.name.slice(1)} will be sent to ${user.email}.`,
+          selfHref(''),
           'Unsubscribe again'
         )
       );
@@ -111,8 +133,8 @@ async function handle(req, res) {
     return res.send(
       page(
         'Unsubscribed',
-        `${user.email} will no longer receive event reminder emails. Push notifications and your event passes are unaffected.`,
-        `/unsubscribe/${token}?resubscribe=1`,
+        `${user.email} will no longer receive ${list.name}. ${list.unaffected}`,
+        selfHref('resubscribe=1'),
         'Undo — resubscribe me'
       )
     );

@@ -161,6 +161,11 @@ const eventSchema = mongoose.Schema({
   // Event visibility
   isPublic: { type: Boolean, default: false },
 
+  // Optional browse category — a name from the admin-managed EventCategory
+  // list (see eventCategory.model.js). "" means uncategorised: it still shows
+  // under "All", just never under a specific category filter.
+  category: { type: String, trim: true, default: "" },
+
   // Pricing options (only for public events)
   isPaid: { type: Boolean, default: false },
   hidePrice: { type: Boolean, default: false },
@@ -368,6 +373,8 @@ eventSchema.index({ city: 1, date: 1 });
 eventSchema.index({ "additionalLocations.city": 1, date: 1 });
 // The reminder job scans for stops starting in ~24h across every event.
 eventSchema.index({ "subEvents.date": 1 });
+// The category filter on Discover / the website's events page.
+eventSchema.index({ category: 1, date: 1 });
 
 // Generate share token + slug before saving. Async hook — mongoose waits on
 // the returned promise, so no next() callback is needed.

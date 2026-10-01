@@ -21,6 +21,7 @@ import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import NotificationItemSkeleton from "@/components/skeletons/NotificationItemSkeleton";
 import { useUnread } from "@/contexts/UnreadContext";
 import socketService from "@/services/socket.service";
+import { parseAnnouncementLink, openAnnouncementTarget } from "@/utils/announcementLink";
 
 import type { ThemeColors } from "@/constants/theme";
 import { useTheme, useThemedStyles } from "@/contexts/ThemeContext";
@@ -214,26 +215,51 @@ export default function NotificationsScreen() {
       case "raffle_winner":
         router.push("/birthday-raffle/status" as any);
         break;
+      // Admin announcement — its optional destination (see announcementLink.ts).
+      case "general": {
+        const target = parseAnnouncementLink(item.data?.link);
+        if (target) openAnnouncementTarget(target);
+        break;
+      }
     }
   };
 
-  const renderItem = ({ item }: { item: Notification }) => (
-    <TouchableOpacity
-      style={[styles.notifItem, !item.read && styles.notifItemUnread]}
-      onPress={() => handleNotifPress(item)}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.notifIcon, !item.read && styles.notifIconUnread]}>
-        <Ionicons name={notifIcon(item.type) as any} size={20} color={item.read ? colors.textMuted : colors.primary} />
-      </View>
-      <View style={styles.notifBody}>
-        <Text style={styles.notifTitle}>{item.title}</Text>
-        <Text style={styles.notifText}>{item.body}</Text>
-        <Text style={styles.notifTime}>{timeAgo(item.createdAt)}</Text>
-      </View>
-      {!item.read && <View style={styles.unreadDot} />}
-    </TouchableOpacity>
-  );
+  const renderItem = ({ item }: { item: Notification }) => {
+    // An announcement's button, when the admin gave it text and a destination
+    // the app can open. The whole row goes to the same place.
+    const cta =
+      item.type === "general" && item.data?.ctaLabel && parseAnnouncementLink(item.data?.link)
+        ? item.data.ctaLabel
+        : null;
+    return (
+      <TouchableOpacity
+        style={[styles.notifItem, !item.read && styles.notifItemUnread]}
+        onPress={() => handleNotifPress(item)}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.notifIcon, !item.read && styles.notifIconUnread]}>
+          <Ionicons name={notifIcon(item.type) as any} size={20} color={item.read ? colors.textMuted : colors.primary} />
+        </View>
+        <View style={styles.notifBody}>
+          <Text style={styles.notifTitle}>{item.title}</Text>
+          <Text style={styles.notifText}>{item.body}</Text>
+          {cta && (
+            <TouchableOpacity
+              style={styles.ctaButton}
+              onPress={() => handleNotifPress(item)}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+            >
+              <Text style={styles.ctaText} numberOfLines={1}>{cta}</Text>
+              <Ionicons name="arrow-forward" size={14} color={colors.white} />
+            </TouchableOpacity>
+          )}
+          <Text style={styles.notifTime}>{timeAgo(item.createdAt)}</Text>
+        </View>
+        {!item.read && <View style={styles.unreadDot} />}
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -357,6 +383,25 @@ const createStyles = (c: ThemeColors) =>
     fontFamily: Fonts.regular,
     color: c.textMuted,
     marginTop: 4,
+  },
+  ctaButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    marginTop: 10,
+    marginBottom: 2,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: c.primary,
+    maxWidth: "100%",
+  },
+  ctaText: {
+    fontSize: scaleFontSize(13),
+    fontFamily: Fonts.semiBold,
+    color: c.white,
+    flexShrink: 1,
   },
   unreadDot: {
     width: 8,

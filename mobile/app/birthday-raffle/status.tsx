@@ -25,6 +25,8 @@ import { createEventShareLink } from "@/utils/shareLinks";
 import { useCountdown } from "@/hooks/useCountdown";
 import { formatMoney } from "@/constants/payments";
 import RaffleWinnerPopup, { type RaffleStatusLike } from "@/components/shared/RaffleWinnerPopup";
+import NewRaffleBanner, { type NewRaffleInfo } from "@/components/shared/NewRaffleBanner";
+import { takePrimedRaffleStatus } from "@/utils/raffleStatusPrime";
 
 const ordinal = (n: number) => {
   const s = ["th", "st", "nd", "rd"];
@@ -53,19 +55,47 @@ interface RaffleStatus {
   pending: boolean;
 }
 
+/** The screen's view of a GET /raffle/status payload that has an entry. */
+function toRaffleStatus(data: any): RaffleStatus {
+  return {
+    eventTitle: data.eventTitle,
+    eventDate: data.eventDate,
+    // Same helper every other share flow in the app uses — the
+    // server sends back the slug/shareToken/id, not a built URL.
+    trackingLink: createEventShareLink(data.trackingCode),
+    verifiedRsvps: data.verifiedRsvps,
+    totalInvites: data.totalInvites,
+    eligibilityScore: data.eligibilityScore,
+    isEligible: data.isEligible,
+    status: data.status,
+    winnerRank: data.winnerRank ?? null,
+    campaignDeadlineMs: new Date(data.campaignDeadline).getTime(),
+    minReferrals: typeof data.minReferrals === "number" ? data.minReferrals : 6,
+    pending: !!data.pending,
+  };
+}
+
 export default function RaffleStatusScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState<RaffleStatus | null>(null);
+  // Data the landing page already fetched when it forwarded us here — drawn
+  // straight away instead of a second spinner (see utils/raffleStatusPrime.ts).
+  const [primed] = useState(() => {
+    const data = takePrimedRaffleStatus();
+    return data?.hasQualifyingEvent ? data : null;
+  });
+  const [loading, setLoading] = useState(!primed);
+  const [status, setStatus] = useState<RaffleStatus | null>(primed ? toRaffleStatus(primed) : null);
   // Raw /raffle/status payload, handed to <RaffleWinnerPopup> as-is — the
   // winner_raffle push notification deep-links straight to this screen (not
   // the landing page), so this screen needs the same popup, not just its own
   // typed-down `status` above.
-  const [statusData, setStatusData] = useState<RaffleStatusLike | null>(null);
+  const [statusData, setStatusData] = useState<RaffleStatusLike | null>(primed);
+  // A live raffle this user isn't in yet, sent only once their own has ended.
+  const [newRaffle, setNewRaffle] = useState<NewRaffleInfo | null>(primed?.newRaffle ?? null);
   const countdown = useCountdown(status?.campaignDeadlineMs ?? null);
 
   const loadStatus = async () => {
@@ -76,23 +106,9 @@ export default function RaffleStatusScreen() {
       });
       const data = await res.json();
       if (res.ok && data.hasQualifyingEvent) {
-        setStatus({
-          eventTitle: data.eventTitle,
-          eventDate: data.eventDate,
-          // Same helper every other share flow in the app uses — the
-          // server sends back the slug/shareToken/id, not a built URL.
-          trackingLink: createEventShareLink(data.trackingCode),
-          verifiedRsvps: data.verifiedRsvps,
-          totalInvites: data.totalInvites,
-          eligibilityScore: data.eligibilityScore,
-          isEligible: data.isEligible,
-          status: data.status,
-          winnerRank: data.winnerRank ?? null,
-          campaignDeadlineMs: new Date(data.campaignDeadline).getTime(),
-          minReferrals: typeof data.minReferrals === "number" ? data.minReferrals : 6,
-          pending: !!data.pending,
-        });
+        setStatus(toRaffleStatus(data));
         setStatusData(data);
+        setNewRaffle(data.newRaffle ?? null);
       } else if (!status) {
         // No qualifying event on the very first load (or the fetch failed) —
         // nothing to show here. A failed refresh on a later focus just keeps
@@ -181,17 +197,30 @@ export default function RaffleStatusScreen() {
           { paddingBottom: insets.bottom + 40 },
         ]}
       >
+        {/* Same entry path as the landing page's "Create Birthday Event &
+            Enter" — Home is the screen that opens create-event in birthday mode. */}
+        {newRaffle && (
+          <NewRaffleBanner
+            raffle={newRaffle}
+            onEnter={() => router.replace("/(tabs)/home?openCreate=birthday" as any)}
+          />
+        )}
+
         {/* Status Hero — a winner keeps a permanent gold "WINNER" badge and
             prize line here even after the one-time congratulations popup
             (RaffleWinnerPopup) has been dismissed, so checking back later
             still shows they won, not just "eligible". */}
+        {/* Pinned dark in every state, both themes: the hero's text and badge
+            are white by design, so the old theme-card fallback for the
+            in-progress/pending state went near-white in light mode and hid
+            everything on it. */}
         <LinearGradient
           colors={
             isWinner
               ? ["#2D1B69", "#B8860B"]
               : status.isEligible
               ? ["#2D1B69", colors.primaryDark || "#1a0f3d"]
-              : [colors.card, colors.cardAlt]
+              : ["#2A2145", "#15102A"]
           }
           style={styles.hero}
           start={{ x: 0, y: 0 }}

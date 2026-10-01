@@ -14,10 +14,14 @@ import type {
   City,
   VendorType,
   GuideTopic,
+  EventCategory,
   AnalyticsLog,
   AnalyticsSummary,
   AdminAnnouncement,
   AnnouncementGroup,
+  AdminEmailBroadcast,
+  EmailAudience,
+  EmailBroadcastDraft,
   AdminCatalogueCategory,
 } from "../types";
 
@@ -107,6 +111,12 @@ export const adminApi = {
     client.post<GuideTopic>("/admin/guide-topics", data).then((r) => { bustCache("/admin/guide-topics"); return r; }),
   deleteGuideTopic: (id: string) =>
     client.delete(`/admin/guide-topics/${id}`).then((r) => { bustCache("/admin/guide-topics"); return r; }),
+
+  getEventCategories: () => cachedGet<EventCategory[]>("/admin/event-categories"),
+  createEventCategory: (data: { name: string; emoji?: string }) =>
+    client.post<EventCategory>("/admin/event-categories", data).then((r) => { bustCache("/admin/event-categories"); return r; }),
+  deleteEventCategory: (id: string) =>
+    client.delete(`/admin/event-categories/${id}`).then((r) => { bustCache("/admin/event-categories"); return r; }),
 
   // Events
   getEvents: (params?: { search?: string; page?: number; limit?: number }) =>
@@ -321,11 +331,26 @@ export const adminApi = {
       groupIds: string[];
     };
     deepLink?: string;
+    ctaLabel?: string;
   }) =>
     client.post<{ message: string; announcement: AdminAnnouncement }>(
       "/admin/announcements",
       data
     ),
+
+  // Email Users — broadcast email, sent gradually by the server under a daily cap
+  getEmailBroadcasts: () =>
+    client.get<{ broadcasts: AdminEmailBroadcast[]; sentToday: number; dailyCap: number }>(
+      "/admin/email-broadcasts"
+    ),
+  previewEmailBroadcast: (data: { audience: EmailAudience }) =>
+    client.post<{ recipientCount: number }>("/admin/email-broadcasts/preview", data),
+  sendTestEmailBroadcast: (data: EmailBroadcastDraft & { to: string }) =>
+    client.post<{ message: string }>("/admin/email-broadcasts/test", data),
+  createEmailBroadcast: (data: EmailBroadcastDraft & { audience: EmailAudience }) =>
+    client.post<{ message: string; broadcast: AdminEmailBroadcast }>("/admin/email-broadcasts", data),
+  cancelEmailBroadcast: (id: string) =>
+    client.post<{ message: string }>(`/admin/email-broadcasts/${id}/cancel`),
 
   // Payout Approval Queue — release held vendor funds
   getPayouts: (params?: { status?: string; page?: number; limit?: number }) =>

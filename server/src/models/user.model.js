@@ -200,6 +200,9 @@ const userSchema = mongoose.Schema({
   // Notification record is always written regardless.
   notificationPrefs: {
     eventReminderEmails: { type: Boolean, default: true },
+    // Admin broadcast emails (admin "Email Users" page). Separate from the
+    // reminder flag so opting out of news never costs someone their reminders.
+    announcementEmails: { type: Boolean, default: true },
     newFollowers: { type: Boolean, default: true },
     messages: { type: Boolean, default: true },
     eventUpdates: { type: Boolean, default: true },

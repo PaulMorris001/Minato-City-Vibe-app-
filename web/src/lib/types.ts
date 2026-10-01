@@ -137,6 +137,8 @@ export interface EventItem {
   ticketTiers?: EventTier[];
   currency?: string;
   isVirtual?: boolean;
+  /** Admin-managed browse category; "" / absent = uncategorised. */
+  category?: string;
   /**
    * Capacity + headcount reach the event's creator and co-hosts always, and
    * every other viewer only when the organizer turned on `showAttendance`.

@@ -6,7 +6,6 @@ import AppPromo from "../components/AppPromo";
 import VenueChoice, { venueCount } from "../components/VenueChoice";
 import ProgrammePicker, { eventStops, selectionTotal } from "../components/ProgrammePicker";
 import { api } from "../lib/api";
-import { storeUrlForDevice } from "../lib/app";
 import { isVideoUrl, videoPosterUrl } from "../lib/media";
 import { useAuth } from "../context/AuthContext";
 import type { EventItem, EventSubEvent } from "../lib/types";
@@ -252,6 +251,7 @@ export default function EventDetails() {
             <span className={`cv-pill ${ev.isPaid ? "cv-pill-accent" : "cv-pill-free"}`}>
               {ev.isPaid ? "Ticketed" : ev.isPublic === false ? "Private invite" : "Free event"}
             </span>
+            {ev.category && <span className="cv-pill">{ev.category}</span>}
             {ev.isVirtual && <span className="cv-pill">Online</span>}
             {soon && <span className="cv-pill">{soon}</span>}
             {going && <span className="cv-pill cv-pill-free">You're going</span>}
@@ -655,13 +655,10 @@ function GroupChatNudge() {
   return (
     <div className="cv-success" style={{ marginTop: 16 }}>
       <strong>💬 You've been added to the event's group chat.</strong>
-      <p style={{ margin: "6px 0 12px" }}>
+      <p style={{ margin: "6px 0 0" }}>
         The chat with the host and other guests is only in the CityVibe app. Download it and log
         in with this same account to join the conversation.
       </p>
-      <a className="cv-btn" href={storeUrlForDevice()} target="_blank" rel="noreferrer">
-        Get the app to open the group chat
-      </a>
     </div>
   );
 }

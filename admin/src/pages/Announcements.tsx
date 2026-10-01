@@ -5,6 +5,49 @@ import { colors } from "../constants/colors";
 
 const TITLE_MAX = 80;
 const BODY_MAX = 240;
+const CTA_LABEL_MAX = 30;
+
+/**
+ * Where the button (and a tap on the notification) can send people. The app
+ * only opens these exact paths or an https:// link — see APP_PATHS in the
+ * server's announcement.controller.js and the app's utils/announcementLink.ts.
+ */
+type Destination = "none" | "event" | "public-events" | "birthday-raffle" | "guides" | "vendors" | "url";
+const DESTINATIONS: { value: Destination; label: string }[] = [
+  { value: "none", label: "No button — just open the app" },
+  { value: "event", label: "A specific event" },
+  { value: "public-events", label: "Public events" },
+  { value: "birthday-raffle", label: "Birthday Raffle" },
+  { value: "guides", label: "City guides" },
+  { value: "vendors", label: "Vendors" },
+  { value: "url", label: "A web link" },
+];
+const FIXED_PATHS: Partial<Record<Destination, string>> = {
+  "public-events": "/public-events",
+  "birthday-raffle": "/birthday-raffle",
+  guides: "/(tabs)/bests",
+  vendors: "/(tabs)/vendors",
+};
+
+/** The deepLink to send, "" for none, or null when the input isn't usable yet. */
+function buildDeepLink(dest: Destination, value: string): string | null {
+  if (dest === "none") return "";
+  if (FIXED_PATHS[dest]) return FIXED_PATHS[dest]!;
+  const v = value.trim();
+  if (dest === "url") return /^https:\/\/\S+$/i.test(v) ? v : null;
+  // Event: accept a pasted share link, website link, slug or id — the event
+  // screen resolves all three — and keep only its last path segment.
+  const token = v.split(/[?#]/)[0].replace(/\/+$/, "").split("/").pop() || "";
+  return /^[A-Za-z0-9_-]+$/.test(token) ? `/event/${token}` : null;
+}
+
+const destinationLabel = (link?: string) => {
+  if (!link) return "";
+  const fixed = DESTINATIONS.find((d) => FIXED_PATHS[d.value] === link);
+  if (fixed) return fixed.label;
+  if (link.startsWith("/event/")) return `event ${link.slice(7)}`;
+  return link;
+};
 
 type Audience = "all" | "targeted";
 type StateTarget = { country: string; state: string };
@@ -39,7 +82,9 @@ export default function Announcements() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [userSearch, setUserSearch] = useState("");
   const [selectedUsers, setSelectedUsers] = useState<AdminUser[]>([]);
-  const [deepLink, setDeepLink] = useState("");
+  const [destination, setDestination] = useState<Destination>("none");
+  const [destinationValue, setDestinationValue] = useState("");
+  const [ctaLabel, setCtaLabel] = useState("");
   const [confirming, setConfirming] = useState(false);
   // Real reach, fetched when the confirm modal opens. Location coverage is
   // patchy and stored values are inconsistent, so a target that reads as broad
@@ -68,11 +113,13 @@ export default function Announcements() {
     load();
   }, [load]);
 
+  const deepLink = buildDeepLink(destination, destinationValue);
   const canSend =
     title.trim().length > 0 &&
     body.trim().length > 0 &&
     title.length <= TITLE_MAX &&
     body.length <= BODY_MAX &&
+    deepLink !== null &&
     (audience === "all" || countries.length + states.length + targetCities.length + groupIds.length + selectedUsers.length > 0);
 
   const searchUsers = async () => {
@@ -119,12 +166,14 @@ export default function Announcements() {
         title: title.trim(),
         body: body.trim(),
         ...audiencePayload(),
-        ...(deepLink.trim() ? { deepLink: deepLink.trim() } : {}),
+        ...(deepLink ? { deepLink, ...(ctaLabel.trim() ? { ctaLabel: ctaLabel.trim() } : {}) } : {}),
       });
       setResult(res.data.message);
       setTitle("");
       setBody("");
-      setDeepLink("");
+      setDestination("none");
+      setDestinationValue("");
+      setCtaLabel("");
       setCountries([]); setStates([]); setTargetCities([]); setGroupIds([]); setSelectedUsers([]); setUsers([]); setUserSearch("");
       setConfirming(false);
       load();
@@ -203,15 +252,66 @@ export default function Announcements() {
             </select>
           </div>
           <div style={{ flex: 1 }}>
-            <label style={styles.label}>Deep link (optional)</label>
-            <input
+            <label style={styles.label}>Button goes to</label>
+            <select
               style={styles.input}
-              value={deepLink}
-              onChange={(e) => setDeepLink(e.target.value)}
-              placeholder="/event/abc123"
-            />
+              value={destination}
+              onChange={(e) => {
+                setDestination(e.target.value as Destination);
+                setDestinationValue("");
+              }}
+            >
+              {DESTINATIONS.map((d) => (
+                <option key={d.value} value={d.value}>{d.label}</option>
+              ))}
+            </select>
           </div>
         </div>
+
+        {destination !== "none" && (
+          <div style={styles.row}>
+            <div style={{ flex: 1 }}>
+              <label style={styles.label}>
+                Button text
+                <span style={styles.counter}>{ctaLabel.length}/{CTA_LABEL_MAX}</span>
+              </label>
+              <input
+                style={styles.input}
+                value={ctaLabel}
+                onChange={(e) => setCtaLabel(e.target.value)}
+                placeholder="e.g. Get tickets"
+                maxLength={CTA_LABEL_MAX}
+              />
+            </div>
+            {(destination === "event" || destination === "url") && (
+              <div style={{ flex: 2 }}>
+                <label style={styles.label}>
+                  {destination === "event" ? "Event link or ID" : "Web link"}
+                </label>
+                <input
+                  style={styles.input}
+                  value={destinationValue}
+                  onChange={(e) => setDestinationValue(e.target.value)}
+                  placeholder={
+                    destination === "event"
+                      ? "Paste the event's share link, e.g. https://api.ourcityvibe.com/event/lagos-beach-party"
+                      : "https://…"
+                  }
+                />
+              </div>
+            )}
+          </div>
+        )}
+        {destination !== "none" && deepLink === null && destinationValue.trim() !== "" && (
+          <div style={styles.fieldError}>
+            {destination === "url" ? "Web links must start with https://" : "That doesn't look like an event link or ID."}
+          </div>
+        )}
+        {destination !== "none" && !ctaLabel.trim() && (
+          <div style={styles.fieldHint}>
+            Without button text, tapping the notification still opens this — there's just no button.
+          </div>
+        )}
 
         {audience === "targeted" && (
           <div style={styles.targets}>
@@ -256,6 +356,7 @@ export default function Announcements() {
           <div style={styles.previewCard}>
             <div style={styles.previewTitle}>{title || "Title"}</div>
             <div style={styles.previewBody}>{body || "Your message goes here."}</div>
+            {deepLink && ctaLabel.trim() && <div style={styles.previewCta}>{ctaLabel.trim()} →</div>}
           </div>
         </div>
 
@@ -292,7 +393,9 @@ export default function Announcements() {
                 {new Date(a.createdAt).toLocaleString()}
                 {a.sentBy ? ` by ${a.sentBy}` : ""} · {a.recipientCount} recipient
                 {a.recipientCount === 1 ? "" : "s"} · {a.pushedCount} with a push token
-                {a.deepLink ? ` · → ${a.deepLink}` : ""}
+                {a.deepLink
+                  ? ` · ${a.ctaLabel ? `"${a.ctaLabel}" button` : "Tap"} → ${destinationLabel(a.deepLink)}`
+                  : ""}
               </div>
             </div>
           ))}
@@ -472,6 +575,18 @@ const styles: Record<string, React.CSSProperties> = {
   reachHint: { marginTop: 4, fontSize: 12, color: colors.textMuted },
   previewTitle: { fontSize: 14, fontWeight: 700, color: colors.text },
   previewBody: { fontSize: 13, color: colors.textMuted, marginTop: 3, lineHeight: 1.5 },
+  previewCta: {
+    display: "inline-block",
+    marginTop: 10,
+    background: colors.primary,
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: 600,
+    padding: "6px 12px",
+    borderRadius: 8,
+  },
+  fieldError: { fontSize: 12, color: "#ef4444", marginTop: 4 },
+  fieldHint: { fontSize: 12, color: colors.textMuted, marginTop: 4 },
   actionBtns: { display: "flex", gap: 8, marginTop: 20 },
   btn: {
     padding: "9px 20px",

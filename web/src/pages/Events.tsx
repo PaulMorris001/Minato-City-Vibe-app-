@@ -32,6 +32,15 @@ export default function Events() {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
 
+  // Admin-managed genre filter (Music, Party, …). Applied by the server — both
+  // feeds are paginated, so filtering loaded rows would only search page 1.
+  const [categories, setCategories] = useState<{ name: string; emoji?: string }[]>([]);
+  const [category, setCategory] = useState<string | null>(null);
+  const categoryRef = useRef<string | null>(null);
+  // Bumped on every fresh load, so a slow response for a category the visitor
+  // already moved off can't overwrite the newer one.
+  const loadSeq = useRef(0);
+
   // Pagination cursors: native events page by number, external ones by date.
   const page = useRef(1);
   const cursor = useRef<string | null>(null);
@@ -39,17 +48,20 @@ export default function Events() {
   const [externalMore, setExternalMore] = useState(false);
 
   const load = useCallback(async (initial: boolean) => {
+    const seq = initial ? ++loadSeq.current : loadSeq.current;
+    const cat = categoryRef.current ? `&category=${encodeURIComponent(categoryRef.current)}` : "";
     // Both feeds are optional — if one fails we still show the other.
     const nativeReq = api<{ events: EventItem[]; total: number }>(
-      `/events/public/explore?limit=${PAGE_SIZE}&page=${page.current}`
+      `/events/public/explore?limit=${PAGE_SIZE}&page=${page.current}${cat}`
     ).catch(() => null);
     const externalReq = api<{ events: ExternalEventItem[]; nextCursor: string | null }>(
       `/external-events/explore?limit=${PAGE_SIZE}${
         cursor.current ? `&cursor=${encodeURIComponent(cursor.current)}` : ""
-      }`
+      }${cat}`
     ).catch(() => null);
 
     const [nat, ext] = await Promise.all([nativeReq, externalReq]);
+    if (seq !== loadSeq.current) return;
 
     if (!nat && !ext && initial) {
       throw new Error("Couldn't load events right now. Please try again.");
@@ -78,7 +90,24 @@ export default function Events() {
     load(true)
       .catch((err) => setError(err.message || "Couldn't load events"))
       .finally(() => setLoading(false));
+    // No categories (offline, older API) just means no genre row.
+    api<{ categories: { name: string; emoji?: string }[] }>("/events/categories")
+      .then((res) => setCategories(res.categories || []))
+      .catch(() => {});
   }, [load]);
+
+  function pickCategory(next: string | null) {
+    if (next === category) return;
+    categoryRef.current = next;
+    setCategory(next);
+    page.current = 1;
+    cursor.current = null;
+    setError("");
+    setLoading(true);
+    load(true)
+      .catch((err) => setError(err.message || "Couldn't load events"))
+      .finally(() => setLoading(false));
+  }
 
   async function loadMore() {
     setLoadingMore(true);
@@ -163,6 +192,26 @@ export default function Events() {
             </button>
           ))}
         </div>
+
+        {categories.length > 0 && (
+          <div className="cv-chips cv-chips-scroll" style={{ marginTop: 10 }} aria-label="Event categories">
+            <button
+              className={`cv-chip${category === null ? " cv-chip-on" : ""}`}
+              onClick={() => pickCategory(null)}
+            >
+              All categories
+            </button>
+            {categories.map((c) => (
+              <button
+                key={c.name}
+                className={`cv-chip${category === c.name ? " cv-chip-on" : ""}`}
+                onClick={() => pickCategory(c.name)}
+              >
+                {c.emoji ? `${c.emoji} ${c.name}` : c.name}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       {loading ? (

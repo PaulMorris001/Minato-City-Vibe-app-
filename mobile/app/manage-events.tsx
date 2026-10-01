@@ -23,7 +23,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { BASE_URL } from "@/constants/constants";
 import { Fonts } from "@/constants/fonts";
-import { DateTimeDropdown } from "@/components/shared";
+import { CategoryChips, DateTimeDropdown } from "@/components/shared";
+import { useEventCategories } from "@/hooks/useEventCategories";
 import { scaleFontSize, getResponsivePadding } from "@/utils/responsive";
 import socketService from "@/services/socket.service";
 import EventCardSkeleton from "@/components/skeletons/EventCardSkeleton";
@@ -82,6 +83,7 @@ interface Event {
   image?: string;
   images?: string[];
   description?: string;
+  category?: string;
   slug?: string;
   shareToken: string;
   isPublic: boolean;
@@ -179,6 +181,7 @@ export default function EventsPage() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [total, setTotal] = useState(0);
+  const { categories: eventCategories } = useEventCategories();
   const [editData, setEditData] = useState({
     title: "",
     date: "",
@@ -194,6 +197,7 @@ export default function EventsPage() {
     meetingLink: "",
     images: [] as string[],
     description: "",
+    category: "",
     isPublic: false,
     isPaid: false,
     hidePrice: false,
@@ -505,6 +509,7 @@ export default function EventsPage() {
       meetingLink: event.meetingLink || "",
       images: event.images && event.images.length > 0 ? event.images : event.image ? [event.image] : [],
       description: event.description || "",
+      category: event.category || "",
       isPublic: event.isPublic,
       isPaid: !!event.isPaid,
       hidePrice: !!event.hidePrice,
@@ -1513,6 +1518,18 @@ export default function EventsPage() {
                   numberOfLines={4}
                 />
               </View>
+
+              {eventCategories.length > 0 && (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Category (optional)</Text>
+                  <CategoryChips
+                    options={eventCategories.map((c) => ({ value: c.name, label: c.name, emoji: c.emoji }))}
+                    value={editData.category || null}
+                    onChange={(value) => setEditData({ ...editData, category: value ?? "" })}
+                    allLabel="None"
+                  />
+                </View>
+              )}
 
               {(selectedEvent?.isPaid || editSubEvents.length > 0) && (
               <TouchableOpacity

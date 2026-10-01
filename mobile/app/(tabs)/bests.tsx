@@ -14,7 +14,7 @@ import * as SecureStore from "expo-secure-store";
 import { Guide } from "@/libs/interfaces";
 import { useGuideTopics } from "@/hooks/useGuideTopics";
 import { Fonts } from "@/constants/fonts";
-import { ActiveLocationChip } from "@/components/shared";
+import { ActiveLocationChip, CategoryChips } from "@/components/shared";
 import MediaTile from "@/components/shared/MediaTile";
 import UserListItemSkeleton from "@/components/skeletons/UserListItemSkeleton";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -36,7 +36,7 @@ export default function BestsPage() {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const router = useRouter();
-  const { topicNames } = useGuideTopics();
+  const { topics, topicNames } = useGuideTopics();
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [guides, setGuides] = useState<Guide[]>([]);
@@ -110,15 +110,32 @@ export default function BestsPage() {
     router.push(isLoggedIn ? ("/guide/create" as any) : "/login");
   };
 
-  // Group guides into per-topic carousels, ordered by the canonical topic list
+  // Group guides into per-topic carousels, ordered by the canonical topic list.
+  // Topics missing from that list still get a carousel, after the known ones —
+  // it's admin-managed, so a deleted (or never-seeded) topic used to hide every
+  // guide tagged with it, which could leave the whole tab empty.
   const groups = useMemo(() => {
     const map = new Map<string, Guide[]>();
     for (const g of guides) {
-      if (!map.has(g.topic)) map.set(g.topic, []);
-      map.get(g.topic)!.push(g);
+      const topic = g.topic || "Others";
+      if (!map.has(topic)) map.set(topic, []);
+      map.get(topic)!.push(g);
     }
-    return topicNames.filter((t) => map.has(t)).map((t) => ({ topic: t, guides: map.get(t)! }));
+    const known = topicNames.filter((t) => map.has(t));
+    const unknown = [...map.keys()].filter((t) => !topicNames.includes(t)).sort();
+    return [...known, ...unknown].map((t) => ({ topic: t, guides: map.get(t)! }));
   }, [guides, topicNames]);
+
+  // Topic filter — chips list only the topics with guides in this location, so
+  // a pick never lands on an empty screen; a pick that the new location doesn't
+  // have reads as "All".
+  const [topicFilter, setTopicFilter] = useState<string | null>(null);
+  const activeTopic = groups.some((g) => g.topic === topicFilter) ? topicFilter : null;
+  const visibleGroups = activeTopic ? groups.filter((g) => g.topic === activeTopic) : groups;
+  const topicEmoji = useMemo(
+    () => new Map(topics.map((t) => [t.name, t.emoji] as const)),
+    [topics]
+  );
 
   const renderGuideCard = (g: Guide) => (
     <TouchableOpacity
@@ -216,6 +233,15 @@ export default function BestsPage() {
 
         <ActiveLocationChip city={activeCity} />
 
+        {!loading && groups.length > 1 && (
+          <CategoryChips
+            options={groups.map((g) => ({ value: g.topic, label: g.topic, emoji: topicEmoji.get(g.topic) }))}
+            value={activeTopic}
+            onChange={setTopicFilter}
+            contentContainerStyle={styles.topicChips}
+          />
+        )}
+
         {loading ? (
           <UserListItemSkeleton count={6} showButton={false} />
         ) : groups.length === 0 && fallback ? (
@@ -243,7 +269,7 @@ export default function BestsPage() {
               : "No guides yet. Be the first to create one for your city!"}
           </Text>
         ) : (
-          groups.map((g) => (
+          visibleGroups.map((g) => (
             <View key={g.topic} style={styles.section}>
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionTitle}>{g.topic}</Text>
@@ -274,6 +300,9 @@ const createStyles = (c: ThemeColors) =>
   list: {
     flex: 1,
     backgroundColor: c.background,
+  },
+  topicChips: {
+    paddingBottom: 16,
   },
   fixedHeader: {
     paddingHorizontal: getResponsivePadding(),

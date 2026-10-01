@@ -13,6 +13,7 @@ import {
   type PendingDeepLink,
 } from "@/utils/pendingDeepLink";
 import { parseDeepLink } from "@/utils/deepLinkParser";
+import { parseAnnouncementLink } from "@/utils/announcementLink";
 import {
   useFonts,
   Outfit_300Light,
@@ -121,6 +122,10 @@ function dedupeKey(link: PendingDeepLink): string {
     case "event":
     case "guide":
       return `${link.kind}:${link.token}`;
+    case "path":
+      return `path:${link.path}`;
+    case "url":
+      return `url:${link.url}`;
   }
 }
 
@@ -297,6 +302,14 @@ export default Sentry.wrap(function RootLayout() {
       if (ORDER_CHAT_PUSH_TYPES.has(type ?? "") && looksLikeObjectId(d.chatId)) {
         return { kind: "chat", chatId: d.chatId };
       }
+      // Admin announcements carry their optional destination as `link`. One
+      // without a link (or with one the app doesn't recognise) just opens
+      // the app, which is what it always did.
+      if (type === "general") {
+        const target = parseAnnouncementLink(d.link);
+        if (!target) return null;
+        return target.kind === "url" ? { kind: "url", url: target.url } : { kind: "path", path: target.path };
+      }
       // The engagement nudge falls back to generic copy when the user's city
       // had nothing on, and then deliberately carries no eventId. Opening the
       // app on its default route is the intended outcome, not a bug worth
@@ -333,6 +346,13 @@ export default Sentry.wrap(function RootLayout() {
         return;
       }
       lastRouted = { key, at: now };
+
+      // A web link isn't a screen: open the browser straight away, cold start
+      // included — there's nothing for index.tsx to redirect to.
+      if (link.kind === "url") {
+        Linking.openURL(link.url).catch(() => {});
+        return;
+      }
 
       if (park) {
         setPendingDeepLink(link);

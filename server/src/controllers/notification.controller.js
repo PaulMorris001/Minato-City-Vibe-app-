@@ -52,11 +52,13 @@ export const deletePushToken = async (req, res) => {
   }
 };
 
-// The toggles the app exposes. `eventReminderEmails` gates a marketing email;
-// the rest gate push delivery per notification category (see the type→prefKey
-// map in services/notification.service.js). All are opt-out: absent ⇒ on.
+// The toggles the app exposes. `eventReminderEmails` and `announcementEmails`
+// gate marketing email (the latter: admin "Email Users" broadcasts); the rest
+// gate push delivery per notification category (see the type→prefKey map in
+// services/notification.service.js). All are opt-out: absent ⇒ on.
 const NOTIFICATION_PREF_KEYS = [
   "eventReminderEmails",
+  "announcementEmails",
   "newFollowers",
   "messages",
   "eventUpdates",

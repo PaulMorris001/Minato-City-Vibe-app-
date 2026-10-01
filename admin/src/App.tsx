@@ -11,6 +11,8 @@ import VendorTypes from "./pages/VendorTypes";
 import Events from "./pages/Events";
 import Guides from "./pages/Guides";
 import GuideTopics from "./pages/GuideTopics";
+import EventCategories from "./pages/EventCategories";
+import EmailUsers from "./pages/EmailUsers";
 import Analytics from "./pages/Analytics";
 import Verifications from "./pages/Verifications";
 import PaidEvents from "./pages/PaidEvents";
@@ -47,6 +49,7 @@ function AppRoutes() {
                 <Route path="/cities" element={<Cities />} />
                 <Route path="/vendor-types" element={<VendorTypes />} />
                 <Route path="/events" element={<Events />} />
+                <Route path="/event-categories" element={<EventCategories />} />
                 <Route path="/guides" element={<Guides />} />
                 <Route path="/guide-topics" element={<GuideTopics />} />
                 <Route path="/catalogue-categories" element={<CatalogueCategories />} />
@@ -56,6 +59,7 @@ function AppRoutes() {
                 <Route path="/event-edits" element={<EventEdits />} />
                 <Route path="/event-cancellations" element={<EventCancellations />} />
                 <Route path="/announcements" element={<Announcements />} />
+                <Route path="/email-users" element={<EmailUsers />} />
                 <Route path="/payouts" element={<Payouts />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/discount-codes" element={<DiscountCodes />} />
