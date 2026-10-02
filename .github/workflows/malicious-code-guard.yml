@@ -1,0 +1,49 @@
+# Fails any push or pull request that carries the obfuscated payload that was
+# injected into this repo in 2026 (appended after a long run of spaces to the
+# last line of server/src/index.js, server/src/seed/seed.js,
+# server/scripts/hash-admin-password.mjs and mobile/metro.config.js, with a
+# `createRequire` header added so it can load Node modules).
+#
+# To make it BLOCK merges, mark this check as required in the repo's branch
+# ruleset for main (Settings → Rules → Rulesets → Require status checks).
+name: Malicious code guard
+
+on:
+  pull_request:
+  push:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan for the injected payload
+        run: |
+          status=0
+          files=(-- '*.js' '*.cjs' '*.mjs' '*.ts' '*.tsx' '*.jsx' ':!**/node_modules/**')
+
+          markers=$(git grep -nI -e 'global\.o=' -e '_\$_[0-9a-f]\{4\}' -e "global\[_\\$" "${files[@]}" | cut -c1-160 || true)
+          if [ -n "$markers" ]; then
+            echo "::error::Known payload markers found:"; echo "$markers"; status=1
+          fi
+
+          # The payload hides after hundreds of spaces so it's off-screen in an editor.
+          hidden=$(git grep -nIE ' {150,}[^ ]' "${files[@]}" | cut -c1-160 || true)
+          if [ -n "$hidden" ]; then
+            echo "::error::Code hidden after a long run of spaces:"; echo "$hidden"; status=1
+          fi
+
+          # The injected header that hands the payload Node's require().
+          header=$(git grep -nI -F "const require = createRequire(import.meta.url);" -- \
+            server/src/index.js server/src/seed/seed.js server/scripts/hash-admin-password.mjs mobile/metro.config.js || true)
+          if [ -n "$header" ]; then
+            echo "::error::Injected createRequire header found:"; echo "$header"; status=1
+          fi
+
+          if [ "$status" -eq 0 ]; then echo "No injected code found."; fi
+          exit $status
