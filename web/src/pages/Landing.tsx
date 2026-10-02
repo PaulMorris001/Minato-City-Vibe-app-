@@ -1,4 +1,5 @@
 import StaticHtml from "./StaticHtml";
+import RaffleHomeSection from "../components/RaffleHomeSection";
 
 const html = `
 <style>
@@ -467,6 +468,18 @@ const html = `
 </div>
 `;
 
+// The live Birthday Raffle section (a React component — it reads the current
+// campaign) sits between the hero and "What OurCityvibe does". The static
+// markup is split there, each half closing/reopening the shared `.wrap`.
+const RAFFLE_SLOT = '  <section id="what">';
+const [htmlTop, htmlRest] = html.split(RAFFLE_SLOT);
+
 export default function Landing() {
-  return <StaticHtml title="OurCityvibe — Plan together. Experience more." html={html} />;
+  return (
+    <>
+      <StaticHtml title="OurCityvibe — Plan together. Experience more." html={`${htmlTop}</div>`} />
+      <RaffleHomeSection />
+      <div dangerouslySetInnerHTML={{ __html: `<div class="wrap">${RAFFLE_SLOT}${htmlRest}` }} />
+    </>
+  );
 }
